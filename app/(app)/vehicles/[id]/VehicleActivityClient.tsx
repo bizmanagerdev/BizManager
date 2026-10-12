@@ -15,11 +15,11 @@ import {
   DeleteIcon,
   DocumentIcon,
   EditIcon,
-  ExternalLinkIcon,
   MoreIcon,
   TaskIcon,
 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { DocumentQuickActions } from "@/components/ui/document-tile";
 import { MetaRow } from "@/components/ui/meta-row";
 import {
   DropdownMenu,
@@ -182,17 +182,20 @@ function DocumentYearGroup({
                     ) : null}
                   </div>
                 </div>
-                {d.url ? (
-                  <Button asChild variant="outline" size="icon" aria-label="פתיחה" title="פתיחה" className="shrink-0">
-                    <a href={d.url} target="_blank" rel="noreferrer">
-                      <ExternalLinkIcon className="h-4 w-4" />
-                    </a>
-                  </Button>
-                ) : null}
+                {/* צפייה and הורדה (owner, 2026-10-12: "a download option and a
+                    view option on hover"): on hover on a computer; always on a
+                    phone, where the swipe holds only the delete. */}
+                <DocumentQuickActions
+                  name={d.documentType || d.title || "מסמך"}
+                  fileName={d.fileName}
+                  url={d.url}
+                  variant="inline"
+                  className="shrink-0 transition-opacity duration-150 lg:opacity-0 lg:focus-within:opacity-100 lg:group-hover/doc:opacity-100"
+                />
               </div>
             );
             return (
-              <div key={d.id} className="border-b last:border-0">
+              <div key={d.id} className="group/doc border-b last:border-0">
                 <div className="lg:hidden">
                   <SwipeActions
                     className="rounded-none"

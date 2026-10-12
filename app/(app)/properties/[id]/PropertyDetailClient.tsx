@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -59,6 +58,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
 import { createLease, updateLease, deleteLease, setLeaseDocument, type LeaseInput } from "../actions";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { DocumentLink, DocumentRow, DocumentTile } from "@/components/ui/document-tile";
 import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
 import { isImageDocument } from "@/lib/documents";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
@@ -478,16 +478,19 @@ const PURCHASE_DOCUMENT_CATEGORIES = new Set(["מסמכי רכישה", "נסח �
 function LeaseDocumentLink({ lease }: { lease: LeaseAgreement }) {
   if (!lease.documentId) return null;
   const label = lease.documentFileName || "חוזה חתום";
+  // Opens as it did; הורדה follows it on hover (owner, 2026-10-12).
   return lease.documentUrl ? (
-    <a
-      href={lease.documentUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="mt-0.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-    >
-      <DocumentIcon className="h-3.5 w-3.5" />
-      <span>{label}</span>
-    </a>
+    <div className="mt-0.5">
+      <DocumentLink
+        name={label}
+        fileName={lease.documentFileName}
+        url={lease.documentUrl}
+        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+      >
+        <DocumentIcon className="h-3.5 w-3.5" />
+        <span>{label}</span>
+      </DocumentLink>
+    </div>
   ) : (
     <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
       <DocumentIcon className="h-3.5 w-3.5" />
@@ -1242,30 +1245,23 @@ export default function PropertyDetailClient({
               <p className="text-sm text-muted-foreground">אין תמונות לנכס זה.</p>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {/* View and download on hover, the delete in the photo's quiet ⋮
+                    (owner, 2026-10-12: "the edit and delete somewhere else, much
+                    less prominent"). */}
                 {photos.map((photo) => (
-                  <div key={photo.id} className="space-y-1">
-                    <a
-                      href={photo.url ?? "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="relative block h-28 w-full overflow-hidden rounded-xl border border-border/70 bg-background/70"
-                    >
-                      {photo.url ? (
-                        <Image
-                          src={photo.url}
-                          alt={photo.title ?? photo.fileName ?? "תמונה"}
-                          fill
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-28 w-full items-center justify-center text-xs text-muted-foreground">אין תצוגה</div>
-                      )}
-                    </a>
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="truncate text-[0.647rem] text-muted-foreground">{fmtDate(photo.uploadedAt)}</span>
-                      <DeleteButton onClick={() => setDel({ kind: "document", id: photo.id, label: photo.title || "תמונה" })} label="מחיקת תמונה" />
-                    </div>
-                  </div>
+                  <DocumentTile
+                    key={photo.id}
+                    name={photo.title ?? photo.fileName ?? "תמונה"}
+                    fileName={photo.fileName}
+                    url={photo.url}
+                    isImage
+                    hideName
+                    previewClassName="h-28"
+                    imageSizes="(max-width: 640px) 50vw, 200px"
+                    date={fmtDate(photo.uploadedAt)}
+                    onDelete={() => setDel({ kind: "document", id: photo.id, label: photo.title || "תמונה" })}
+                    deleteLabel="מחיקת תמונה"
+                  />
                 ))}
               </div>
             )}
@@ -1288,26 +1284,18 @@ export default function PropertyDetailClient({
             {otherDocuments.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין מסמכים נוספים לנכס זה.</p>
             ) : (
+              // The row opens the file; view and download at its end on hover, the
+              // delete in its quiet ⋮ (owner, 2026-10-12).
               otherDocuments.map((d) => (
-                <div key={d.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    {d.url ? (
-                      <a href={d.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
-                        {d.title || d.fileName || "מסמך"}
-                      </a>
-                    ) : (
-                      <div className="font-medium">{d.title || d.fileName || "מסמך"}</div>
-                    )}
-                    <MetaRow
-                      className="text-xs text-muted-foreground"
-                      items={[d.documentType, fmtDate(d.uploadedAt)]}
-                      fallback="—"
-                    />
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <DeleteButton onClick={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })} label="מחיקת מסמך" />
-                  </div>
-                </div>
+                <DocumentRow
+                  key={d.id}
+                  name={d.title || d.fileName || "מסמך"}
+                  fileName={d.fileName}
+                  url={d.url}
+                  meta={<MetaRow as="span" items={[d.documentType, fmtDate(d.uploadedAt)]} fallback="—" />}
+                  onDelete={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })}
+                  deleteLabel="מחיקת מסמך"
+                />
               ))
             )}
           </CardContent>
@@ -1506,9 +1494,14 @@ export default function PropertyDetailClient({
             {editLeaseId ? (
               leaseDoc.documentUrl ? (
                 <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 p-2 text-sm">
-                  <a href={leaseDoc.documentUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                  <DocumentLink
+                    name={leaseDoc.documentFileName || "מסמך"}
+                    fileName={leaseDoc.documentFileName}
+                    url={leaseDoc.documentUrl}
+                    className="text-primary hover:underline"
+                  >
                     {leaseDoc.documentFileName || "מסמך"}
-                  </a>
+                  </DocumentLink>
                   <Button type="button" variant="secondary" size="sm" onClick={detachLeaseDoc} disabled={leaseDocBusy}>
                     הסרה
                   </Button>

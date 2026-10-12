@@ -41,7 +41,6 @@ import {
 import { ClientOnly } from "@/components/ClientOnly";
 import { ProjectBodySkeleton } from "@/app/(app)/projects/[id]/ProjectPageSkeleton";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { toast } from "sonner";
@@ -89,7 +88,7 @@ import { cn } from "@/lib/utils";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, isDocumentCategory } from "@/lib/documents";
 import dynamic from "next/dynamic";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { DocumentTile } from "@/components/ui/document-tile";
 import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
 import {
   customerPaymentStatusLabel,
@@ -2297,52 +2296,29 @@ export default function ProjectTabsClient({
             <EmptyState dense>אין מסמכים להצגה.</EmptyState>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {filteredProjectDocuments.map((d) => {
-                const name = d.title ?? d.file_name ?? "קובץ";
-                const isImage = /\.(png|jpe?g|gif|webp|bmp|heic|heif|avif)$/i.test(
-                  d.file_name ?? ""
-                );
-                const extension = (d.file_name ?? "").split(".").pop();
-                return (
-                  <div
-                    key={d.document_id}
-                    className="overflow-hidden rounded-2xl border border-border/60 bg-card"
-                  >
-                    <a
-                      href={d.url ?? "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="relative flex h-20 items-center justify-center bg-muted/40"
-                    >
-                      {isImage && d.url ? (
-                        <Image src={d.url} alt={name} fill className="object-cover" />
-                      ) : (
-                        <DocumentIcon className="h-6 w-6 text-muted-foreground" />
-                      )}
-                      {extension ? (
-                        <span className="absolute bottom-1 start-1 rounded bg-foreground/70 px-1 text-[0.647rem] uppercase text-white">
-                          {extension}
-                        </span>
-                      ) : null}
-                    </a>
-                    <div className="space-y-1 p-2">
-                      <div className="break-words text-xs font-medium">{name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        <LtrInline>{d.uploaded_at ? formatDate(d.uploaded_at) : "—"}</LtrInline>
-                      </div>
-                      {d.document_type ? (
-                        <span className="inline-block rounded-full border border-border/70 bg-background px-1.5 py-0 text-[0.647rem] text-muted-foreground">
-                          {d.document_type}
-                        </span>
-                      ) : null}
-                      <div className="flex gap-1 pt-1">
-                        <EditButton onClick={() => openEditTag(d.document_id)} label="עריכת קטגוריה" />
-                        <DeleteButton label="מחיקת קובץ" onClick={() => openDeleteDocument(d.document_id)} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {/* View and download on hover, edit and delete in the tile's quiet
+                  ⋮ (owner, 2026-10-12: "the edit and delete somewhere else, much
+                  less prominent") — components/ui/document-tile.tsx. */}
+              {filteredProjectDocuments.map((d) => (
+                <DocumentTile
+                  key={d.document_id}
+                  name={d.title ?? d.file_name ?? "קובץ"}
+                  fileName={d.file_name}
+                  url={d.url}
+                  date={<LtrInline>{d.uploaded_at ? formatDate(d.uploaded_at) : "—"}</LtrInline>}
+                  meta={
+                    d.document_type ? (
+                      <span className="inline-block rounded-full border border-border/70 bg-background px-1.5 py-0 text-[0.647rem] text-muted-foreground">
+                        {d.document_type}
+                      </span>
+                    ) : null
+                  }
+                  onEdit={() => openEditTag(d.document_id)}
+                  editLabel="עריכת קטגוריה"
+                  onDelete={() => openDeleteDocument(d.document_id)}
+                  deleteLabel="מחיקת קובץ"
+                />
+              ))}
             </div>
           )}
 

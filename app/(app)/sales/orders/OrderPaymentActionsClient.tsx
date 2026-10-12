@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AttachIcon } from "@/components/ui/icons";
+import { DocumentLink } from "@/components/ui/document-tile";
 import { isImageDocument } from "@/lib/documents";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
@@ -93,31 +94,31 @@ function PaymentFilesLine({ payment, checksLink }: { payment: PaymentItem; check
   return (
     <div className={`mt-2 flex flex-wrap items-center gap-2 ${isCheck ? "min-h-12" : ""}`}>
       {pending ? <Skeleton className="h-12 w-16 rounded-md" /> : null}
+      {/* Each opens as it did; הורדה follows it on hover (owner, 2026-10-12:
+          "wherever there is a doc … a download option"). */}
       {files.map((file) =>
         isImageDocument(file) ? (
-          <a
+          <DocumentLink
             key={file.document_id}
-            href={file.url ?? "#"}
-            target="_blank"
-            rel="noreferrer"
-            title={isCheck ? "צילום הצ׳ק" : (file.file_name ?? "קובץ")}
+            name={isCheck ? "צילום הצ׳ק" : (file.file_name ?? "קובץ")}
+            fileName={file.file_name}
+            url={file.url as string}
             className="block shrink-0 overflow-hidden rounded-md border border-border/70"
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- a signed storage link, not a static asset */}
             <img src={file.url ?? ""} alt={isCheck ? "צילום הצ׳ק" : (file.file_name ?? "קובץ")} className="h-12 w-16 object-cover" loading="lazy" />
-          </a>
+          </DocumentLink>
         ) : (
-          <a
+          <DocumentLink
             key={file.document_id}
-            href={file.url ?? "#"}
-            target="_blank"
-            rel="noreferrer"
-            title={file.file_name ?? "קובץ"}
+            name={file.file_name ?? "קובץ"}
+            fileName={file.file_name}
+            url={file.url as string}
             className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-xs text-secondary hover:bg-accent"
           >
             <AttachIcon className="h-3 w-3" />
             קובץ
-          </a>
+          </DocumentLink>
         )
       )}
       {link ? (

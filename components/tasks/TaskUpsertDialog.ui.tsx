@@ -6,13 +6,13 @@
 // TaskUpsertDialog.helpers.ts; the orchestrator is TaskUpsertDialog.tsx.)
 
 import { useState } from "react";
-import Image from "next/image";
 import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, LocationIcon, NotificationIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { DocumentRow } from "@/components/ui/document-tile";
 import { NativeSelect } from "@/components/ui/native-select";
 import { MetaRow } from "@/components/ui/meta-row";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
@@ -544,54 +544,39 @@ export function TaskAttachmentsSection({
         <EmptyState dense>{t(tasksDict, locale, "noAttachmentsLabel")}</EmptyState>
       ) : (
         <div className="space-y-1.5">
+          {/* View and download on hover, the delete in the row's quiet ⋮ (owner,
+              2026-10-12: "the edit and delete somewhere else, much less
+              prominent"). The delete still asks first, in the dialog. */}
           {attachments.map((attachment) => (
-            <div
+            <DocumentRow
               key={attachment.id}
-              className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5"
-            >
-              <a
-                href={attachment.url ?? "#"}
-                target="_blank"
-                rel="noreferrer"
-                className="flex min-w-0 items-center gap-2"
-              >
-                {attachment.url && attachment.kind === "image" ? (
-                  <Image
-                    src={attachment.url}
-                    alt={attachment.original_name ?? "image"}
-                    width={64}
-                    height={64}
-                    unoptimized
-                    className="h-9 w-9 shrink-0 rounded object-cover"
-                  />
-                ) : (
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-[0.647rem] text-muted-foreground">
-                    {attachment.kind === "video" ? t(tasksDict, locale, "videoWord") : t(tasksDict, locale, "fileWord")}
-                  </span>
-                )}
-                <span className="min-w-0">
-                  <span className="block text-sm text-primary hover:underline">
-                    {attachment.original_name ?? t(tasksDict, locale, "fileWord")}
-                  </span>
-                  <MetaRow
-                    as="span"
-                    className="text-[0.647rem] text-muted-foreground"
-                    items={[
-                      attachment.created_at ? formatShortDateTime(attachment.created_at) : null,
-                      attachment.uploader_name
-                        ? `${t(tasksDict, locale, "uploadedByPrefix")} ${attachment.uploader_name}`
-                        : null,
-                    ]}
-                  />
-                </span>
-              </a>
-              {canDelete ? (
-                <DeleteButton
-                  label={t(tasksDict, locale, "deleteFileOfflineLabel")}
-                  onClick={() => onRequestDelete({ id: attachment.id, name: attachment.original_name })}
+              name={attachment.original_name ?? t(tasksDict, locale, "fileWord")}
+              fileName={attachment.original_name}
+              url={attachment.url}
+              isImage={attachment.kind === "image"}
+              meta={
+                <MetaRow
+                  as="span"
+                  className="text-[0.647rem] text-muted-foreground"
+                  items={[
+                    attachment.created_at ? formatShortDateTime(attachment.created_at) : null,
+                    attachment.uploader_name
+                      ? `${t(tasksDict, locale, "uploadedByPrefix")} ${attachment.uploader_name}`
+                      : null,
+                  ]}
                 />
-              ) : null}
-            </div>
+              }
+              onDelete={
+                canDelete ? () => onRequestDelete({ id: attachment.id, name: attachment.original_name }) : undefined
+              }
+              deleteLabel={t(tasksDict, locale, "deleteFileOfflineLabel")}
+              labels={{
+                view: t(tasksDict, locale, "viewFileLabel"),
+                download: t(tasksDict, locale, "downloadFileLabel"),
+                more: t(tasksDict, locale, "fileActionsLabel"),
+                downloadFailed: t(tasksDict, locale, "downloadFailedLabel"),
+              }}
+            />
           ))}
         </div>
       )}

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useTransition, type ReactNode } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BackspaceIcon, BankIcon, CardIcon, CashIcon, RecurringIcon, SpinnerIcon, SplitIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { DocumentRow } from "@/components/ui/document-tile";
 import { MetaRow } from "@/components/ui/meta-row";
 import { StepWizard, WizardTitle } from "@/components/ui/step-wizard";
 import { OptionRow, StepHeading } from "@/components/ui/option-row";
@@ -3418,32 +3418,19 @@ export function ExpenseDialog({
               {existingAttachments.length > 0 && (
                 <div className="space-y-2">
                   <div className="text-xs text-muted-foreground">קבצים קיימים</div>
-                  <div className="flex flex-wrap gap-2">
+                  {/* One line per file — its photo, its name, and view / download
+                      on hover (owner, 2026-10-12). The names and the photos were
+                      two separate strips. */}
+                  <div className="space-y-1.5">
                     {existingAttachments.map((att) => (
-                      <a
+                      <DocumentRow
                         key={att.document_id}
-                        href={att.url ?? "#"}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
-                      >
-                        {att.file_name ?? "קובץ"}
-                      </a>
+                        name={att.file_name ?? "קובץ"}
+                        fileName={att.file_name}
+                        url={att.url}
+                        isImage={isImageAttachment(att)}
+                      />
                     ))}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {existingAttachments
-                      .filter((att) => att.url && isImageAttachment(att))
-                      .map((att) => (
-                        <Image
-                          key={`${att.document_id}-preview`}
-                          src={att.url as string}
-                          alt={att.file_name ?? "קובץ"}
-                          width={80}
-                          height={80}
-                          className="h-20 w-20 rounded-lg border object-cover"
-                        />
-                      ))}
                   </div>
                 </div>
               )}

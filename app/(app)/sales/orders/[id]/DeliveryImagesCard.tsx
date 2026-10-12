@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 // The "אספקה" card's own photo management — add / replace / delete, right on
 // the order details page, independent of the אישור אספקה confirm flow (which
 // still lets a driver attach proof AT confirmation time; this is for managing
@@ -15,7 +13,8 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, DeliveryIcon } from "@/components/ui/icons";
-import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
+import { IconButton } from "@/components/ui/icon-button";
+import { DocumentTile } from "@/components/ui/document-tile";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -263,30 +262,25 @@ export default function DeliveryImagesCard({
         <EmptyState dense>לא צורפו תמונות אספקה.</EmptyState>
       ) : (
         <div className="grid grid-cols-2 gap-2">
+          {/* View and download on hover; replace and delete in the photo's quiet
+              ⋮ (owner, 2026-10-12: "the edit and delete somewhere else, much
+              less prominent"). The photos never showed their camera names. */}
           {visibleImages.map((image) => (
-            <div key={image.id} className="overflow-hidden rounded-xl border border-border/70 bg-background/70">
-              {image.url ? (
-                <a href={image.url} target="_blank" rel="noreferrer" className="block">
-                  <img
-                    src={image.url}
-                    alt={image.file_name ?? "Delivery image"}
-                    className="h-28 w-full object-cover"
-                  />
-                </a>
-              ) : null}
-              <div className="flex items-center justify-between gap-1 px-2 py-1">
-                <span className="text-[0.647rem] text-muted-foreground">{formatShortDate(image.uploaded_at)}</span>
-                <div className="flex shrink-0 gap-1">
-                  <EditButton
-                    label="החלפת תמונה"
-                    size="sm"
-                    loading={replacingId === image.id}
-                    onClick={() => openReplace(image.id)}
-                  />
-                  <DeleteButton label="מחיקת תמונה" size="sm" onClick={() => openDelete(image)} />
-                </div>
-              </div>
-            </div>
+            <DocumentTile
+              key={image.id}
+              name={image.file_name ?? "תמונת אספקה"}
+              fileName={image.file_name}
+              url={image.url}
+              isImage
+              hideName
+              previewClassName="h-28"
+              date={formatShortDate(image.uploaded_at)}
+              onEdit={() => openReplace(image.id)}
+              editLabel="החלפת תמונה"
+              onDelete={() => openDelete(image)}
+              deleteLabel="מחיקת תמונה"
+              busy={replacingId === image.id}
+            />
           ))}
         </div>
       )}

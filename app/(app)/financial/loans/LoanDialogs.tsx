@@ -46,6 +46,7 @@ import RepaymentPlanPicker, {
 } from "./RepaymentPlanPicker";
 import { Field, METHOD_OPTIONS, StatBox, formatDate, formatIls, todayIso } from "./shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { DocumentRow } from "@/components/ui/document-tile";
 
 // The business owner — auto-filled on "our" side of every loan.
 const BUSINESS_OWNER_NAME = "יעקב הלר";
@@ -925,33 +926,20 @@ export function LoanDocumentsDialog({
             ) : visibleDocs.length === 0 ? (
               <div className="text-sm text-muted-foreground">אין מסמכים מצורפים עדיין.</div>
             ) : (
+              // The row opens the file; view and download at its end on hover, the
+              // delete in its quiet ⋮ (owner, 2026-10-12). It now asks first, as
+              // every delete does (owner, 2026-10-11) — it used to go on the tap.
               visibleDocs.map((doc) => (
-                <div
+                <DocumentRow
                   key={doc.id}
-                  className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <div className="min-w-0">
-                    {doc.url ? (
-                      <a
-                        href={doc.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {doc.fileName}
-                      </a>
-                    ) : (
-                      <span className="font-medium">{doc.fileName}</span>
-                    )}
-                    {doc.uploadedAt ? (
-                      <span className="text-muted-foreground"> · {formatDate(doc.uploadedAt)}</span>
-                    ) : null}
-                  </div>
-                  <DeleteButton
-                    onClick={() => removeDoc(doc.id)}
-                    label="מחיקת מסמך"
-                  />
-                </div>
+                  name={doc.fileName}
+                  fileName={doc.fileName}
+                  url={doc.url}
+                  meta={doc.uploadedAt ? formatDate(doc.uploadedAt) : null}
+                  onDelete={() => removeDoc(doc.id)}
+                  deleteLabel="מחיקת מסמך"
+                  confirmDelete={{ title: "מחיקת מסמך", description: `למחוק את ${doc.fileName}?` }}
+                />
               ))
             )}
           </div>

@@ -15,13 +15,13 @@
 // same reasoning as ExpenseDialog's `expressSteps`.
 
 import { useMemo, useState, useEffect, useTransition } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
 import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
 import { OptionRow, DateQuickPicks, StepHeading } from "@/components/ui/option-row";
 import { Button } from "@/components/ui/button";
+import { DocumentRow } from "@/components/ui/document-tile";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
@@ -834,32 +834,19 @@ export function IncomeDialog({
           {existingAttachments.length > 0 ? (
             <div className="space-y-2">
               <div className="text-xs text-muted-foreground">קבצים קיימים</div>
-              <div className="flex flex-wrap gap-2">
+              {/* One line per file — its photo, its name, and view / download on
+                  hover (owner, 2026-10-12). The names and the photos were two
+                  separate strips. */}
+              <div className="space-y-1.5">
                 {existingAttachments.map((attachment) => (
-                  <a
+                  <DocumentRow
                     key={attachment.document_id}
-                    href={attachment.url ?? "#"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
-                  >
-                    {attachment.file_name ?? "קובץ"}
-                  </a>
+                    name={attachment.file_name ?? "קובץ"}
+                    fileName={attachment.file_name}
+                    url={attachment.url}
+                    isImage={isImageAttachment(attachment)}
+                  />
                 ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {existingAttachments
-                  .filter((attachment) => attachment.url && isImageAttachment(attachment))
-                  .map((attachment) => (
-                    <Image
-                      key={`${attachment.document_id}-preview`}
-                      src={attachment.url as string}
-                      alt={attachment.file_name ?? "קובץ"}
-                      width={80}
-                      height={80}
-                      className="h-20 w-20 rounded-lg border object-cover"
-                    />
-                  ))}
               </div>
             </div>
           ) : null}

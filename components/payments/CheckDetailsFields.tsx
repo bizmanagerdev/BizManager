@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Button } from "@/components/ui/button";
+import { DocumentLink } from "@/components/ui/document-tile";
 
 type CheckDetailsFieldsProps = {
   checkNumber: string;
@@ -40,18 +41,18 @@ export function CheckDetailsFields({
       <div className="space-y-1">
         <label className="text-sm font-medium">צילום צ&apos;ק</label>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Each opens as it did; הורדה follows it on hover (owner, 2026-10-12). */}
           {existingPhotoUrls.map((url, index) => (
-            <a
+            <DocumentLink
               key={url}
-              href={url}
-              target="_blank"
-              rel="noreferrer"
+              name={existingPhotoUrls.length > 1 ? `צילום הצ׳ק ${index + 1}` : "צילום הצ׳ק"}
+              url={url}
               title="צילום הצ׳ק"
               className="block shrink-0 overflow-hidden rounded-md border border-border/70"
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- a signed storage link, not a static asset */}
               <img src={url} alt={existingPhotoUrls.length > 1 ? `צילום הצ׳ק ${index + 1}` : "צילום הצ׳ק"} className="h-12 w-16 object-cover" />
-            </a>
+            </DocumentLink>
           ))}
           <FileUploadActions
             files={photoFiles}

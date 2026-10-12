@@ -476,8 +476,12 @@ describe("opening", () => {
 
     expect(screen.getByRole("img", { name: "door.jpg" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /door\.jpg/ })).toHaveAttribute("href", "/signed/door.jpg");
-    // No name, no link: still listed, under a generic name.
-    expect(screen.getByRole("link", { name: /^תמונה/ })).toHaveAttribute("href", "#");
+    // View and download on hover, as every file (owner, 2026-10-12).
+    expect(screen.getByRole("link", { name: "צפייה" })).toHaveAttribute("href", "/signed/door.jpg");
+    expect(screen.getByRole("link", { name: "הורדה" })).toHaveAttribute("download", "door.jpg");
+    // No name, no link: still listed, under a generic name, with nothing to open.
+    expect(screen.getByText("תמונה")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /תמונה/ })).toBeNull();
   });
 
   it("an order the copy doesn't hold is loaded from the server", async () => {

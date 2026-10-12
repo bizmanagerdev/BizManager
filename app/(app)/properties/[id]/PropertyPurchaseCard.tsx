@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { AddIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { EditButton } from "@/components/ui/icon-button";
+import { DocumentRow } from "@/components/ui/document-tile";
 import { MetaRow } from "@/components/ui/meta-row";
 import { updateProperty } from "../actions";
 import { PropertyPurchaseFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
@@ -189,24 +190,18 @@ export default function PropertyPurchaseCard({
 
         {!editing && documents.length > 0 ? (
           <div className="space-y-2 border-t pt-2">
+            {/* The row opens the file; view and download at its end on hover, the
+                delete in its quiet ⋮ (owner, 2026-10-12). */}
             {documents.map((d) => (
-              <div key={d.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                <div className="min-w-0 text-sm">
-                  {d.url ? (
-                    <a href={d.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
-                      {d.title || d.fileName || "מסמך"}
-                    </a>
-                  ) : (
-                    <div className="font-medium">{d.title || d.fileName || "מסמך"}</div>
-                  )}
-                  <MetaRow
-                    className="text-xs text-muted-foreground"
-                    items={[d.documentType, fmtDate(d.uploadedAt)]}
-                    fallback="—"
-                  />
-                </div>
-                <DeleteButton onClick={() => onDeleteDocument(d.id, d.title || "מסמך")} label="מחיקת מסמך" />
-              </div>
+              <DocumentRow
+                key={d.id}
+                name={d.title || d.fileName || "מסמך"}
+                fileName={d.fileName}
+                url={d.url}
+                meta={<MetaRow as="span" items={[d.documentType, fmtDate(d.uploadedAt)]} fallback="—" />}
+                onDelete={() => onDeleteDocument(d.id, d.title || "מסמך")}
+                deleteLabel="מחיקת מסמך"
+              />
             ))}
           </div>
         ) : null}

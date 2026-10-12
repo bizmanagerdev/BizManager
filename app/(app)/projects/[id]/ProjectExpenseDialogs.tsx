@@ -3,10 +3,10 @@
 // Lazy-loaded heavy financial-entry dialogs, extracted from ProjectTabsClient so
 // their code only downloads when a user actually opens "add expense"/"add income".
 import { useEffect, useState, useTransition } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DocumentRow } from "@/components/ui/document-tile";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -545,32 +545,19 @@ export function AddIncomeDialog({
             {existingAttachments.length > 0 ? (
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground">קבצים קיימים</div>
-                <div className="flex flex-wrap gap-2">
+                {/* One line per file — its photo, its name, and view / download on
+                    hover (owner, 2026-10-12). The names and the photos were two
+                    separate strips. */}
+                <div className="space-y-1.5">
                   {existingAttachments.map((attachment) => (
-                    <a
+                    <DocumentRow
                       key={attachment.document_id}
-                      href={attachment.url ?? "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
-                    >
-                      {attachment.file_name ?? "קובץ"}
-                    </a>
+                      name={attachment.file_name ?? "קובץ"}
+                      fileName={attachment.file_name}
+                      url={attachment.url}
+                      isImage={isImageAttachment(attachment)}
+                    />
                   ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {existingAttachments
-                    .filter((attachment) => attachment.url && isImageAttachment(attachment))
-                    .map((attachment) => (
-                      <Image
-                        key={`${attachment.document_id}-preview`}
-                        src={attachment.url as string}
-                        alt={attachment.file_name ?? "קובץ"}
-                        width={80}
-                        height={80}
-                        className="h-20 w-20 rounded-lg border object-cover"
-                      />
-                    ))}
                 </div>
               </div>
             ) : null}

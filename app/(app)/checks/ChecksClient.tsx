@@ -14,6 +14,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EditButton, DeleteButton } from "@/components/ui/icon-button";
+import { DocumentLink } from "@/components/ui/document-tile";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import AccountSelect from "@/components/financial/AccountSelect";
 import type { Account } from "@/lib/accounts";
@@ -398,17 +399,17 @@ function DueCell({ c, today }: { c: CheckRow; today: string }) {
 
 function PhotoCell({ c }: { c: CheckRow }) {
   if (!c.photo_url) return <span className="text-muted-foreground/40">—</span>;
+  // Opens as it did; הורדה follows it on hover (owner, 2026-10-12).
   return (
-    <a
-      href={c.photo_url}
-      target="_blank"
-      rel="noreferrer"
+    <DocumentLink
+      name="צילום הצ׳ק"
+      url={c.photo_url}
       title="צפייה בצילום הצ׳ק"
       className="inline-flex items-center gap-1 text-primary hover:underline"
     >
       <AttachIcon className="h-3.5 w-3.5" />
       {c.photo_count > 1 ? c.photo_count : "צילום"}
-    </a>
+    </DocumentLink>
   );
 }
 

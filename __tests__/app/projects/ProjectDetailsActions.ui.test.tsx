@@ -7,7 +7,9 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 // - in the ⋮, שיתוף and הדפסה are items of their own, as on the order page —
 //   they sat one level down in a "שיתוף / הדפסה" submenu;
 // - deleting a file from the edit dialog asks first, as every delete does — it
-//   used to delete on the tap.
+//   used to delete on the tap;
+// and of 2026-10-12: a file shows view and download on hover, its delete in a
+// quiet ⋮ (components/ui/document-tile.tsx).
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("@/components/layout/page-title-context", () => ({ useSetHeaderAction: () => {} }));
@@ -91,6 +93,12 @@ function renderActions() {
   );
 }
 
+/** The file's ⋮ in the edit dialog, then its מחיקת מסמך. */
+function openFileMenuDelete(edit: HTMLElement) {
+  fireEvent.click(within(edit).getByRole("button", { name: "פעולות" }));
+  fireEvent.click(within(within(edit).getByRole("menu")).getByText("מחיקת מסמך"));
+}
+
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
   share.printProjectSheet.mockClear();
@@ -108,6 +116,18 @@ describe("ProjectDetailsActions", () => {
     expect(share.printProjectSheet).toHaveBeenCalled();
   });
 
+  it("a file in the edit dialog: view and download on hover, the delete in its quiet ⋮", async () => {
+    renderActions();
+    fireEvent.click(screen.getByRole("button", { name: "עריכה" }));
+    const edit = await screen.findByRole("dialog");
+    // No bin on the row (owner, 2026-10-12: "much less prominent").
+    expect(within(edit).queryByRole("button", { name: "מחיקת מסמך" })).toBeNull();
+    expect(within(edit).getByRole("link", { name: "צפייה" })).toHaveAttribute("href", DOC.url);
+    expect(within(edit).getByRole("link", { name: "הורדה" })).toHaveAttribute("download", "contract.pdf");
+    fireEvent.click(within(edit).getByRole("button", { name: "פעולות" }));
+    expect(within(within(edit).getByRole("menu")).getByText("מחיקת מסמך")).toBeInTheDocument();
+  });
+
   it("deleting a file from the edit dialog asks first, and only then deletes it", async () => {
     renderActions();
     fireEvent.click(screen.getByRole("button", { name: "עריכה" }));
@@ -115,7 +135,7 @@ describe("ProjectDetailsActions", () => {
     // The shared Field: the required ones carry the red "*".
     expect(within(edit).getByText("שם פרויקט").querySelector(".text-destructive")?.textContent).toBe(" *");
 
-    fireEvent.click(within(edit).getByRole("button", { name: "מחיקת מסמך" }));
+    openFileMenuDelete(edit);
     const confirm = await screen.findByRole("dialog", { name: "מחיקת מסמך" });
     expect(within(confirm).getByText("למחוק את חוזה?")).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
@@ -130,7 +150,7 @@ describe("ProjectDetailsActions", () => {
     renderActions();
     fireEvent.click(screen.getByRole("button", { name: "עריכה" }));
     const edit = await screen.findByRole("dialog");
-    fireEvent.click(within(edit).getByRole("button", { name: "מחיקת מסמך" }));
+    openFileMenuDelete(edit);
     const confirm = await screen.findByRole("dialog", { name: "מחיקת מסמך" });
     fireEvent.click(within(confirm).getByRole("button", { name: "ביטול" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "מחיקת מסמך" })).toBeNull());

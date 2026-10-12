@@ -44,7 +44,8 @@ import {
   type MovingEndpointValue,
 } from "@/components/projects/MovingAddressFields";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { EditButton } from "@/components/ui/icon-button";
+import { DocumentRow } from "@/components/ui/document-tile";
 import { formatShortDateTime } from "@/lib/date";
 import {
   printProjectSheet,
@@ -717,40 +718,30 @@ export default function ProjectDetailsActions({
                     const displayName = document.title?.trim() || document.file_name?.trim() || "קובץ";
                     const uploadedAt = formatDateTime(document.uploaded_at);
                     return (
-                      <div
+                      // View and download on hover, the delete in the row's quiet ⋮
+                      // (owner, 2026-10-12). The delete still asks first, as every
+                      // delete does (owner, 2026-10-11) — it used to delete on the tap.
+                      <DocumentRow
                         key={document.document_id}
-                        className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border/60 p-2"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium">{displayName}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {[
-                              document.document_type ? `סוג: ${document.document_type}` : null,
-                              uploadedAt ? `הועלה: ${uploadedAt}` : null,
-                              document.uploaded_by_name ? `על ידי: ${document.uploaded_by_name}` : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" • ") || "קובץ מצורף לפרויקט"}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {document.url ? (
-                            <Button type="button" variant="outline" size="sm" asChild>
-                              <Link href={document.url} target="_blank" rel="noreferrer">
-                                פתיחה
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {/* Asks first, as every delete does (owner, 2026-10-11)
-                              — it used to delete the file on the tap. */}
-                          <DeleteButton
-                            label="מחיקת מסמך"
-                            disabled={editSubmitting}
-                            loading={deletingDocumentId === document.document_id}
-                            onClick={() => setDocumentToDelete({ id: document.document_id, name: displayName })}
-                          />
-                        </div>
-                      </div>
+                        name={displayName}
+                        fileName={document.file_name}
+                        url={document.url}
+                        meta={
+                          [
+                            document.document_type ? `סוג: ${document.document_type}` : null,
+                            uploadedAt ? `הועלה: ${uploadedAt}` : null,
+                            document.uploaded_by_name ? `על ידי: ${document.uploaded_by_name}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" • ") || "קובץ מצורף לפרויקט"
+                        }
+                        onDelete={() => {
+                          // Not while the dialog itself is saving.
+                          if (!editSubmitting) setDocumentToDelete({ id: document.document_id, name: displayName });
+                        }}
+                        deleteLabel="מחיקת מסמך"
+                        busy={deletingDocumentId === document.document_id}
+                      />
                     );
                   })}
                 </div>

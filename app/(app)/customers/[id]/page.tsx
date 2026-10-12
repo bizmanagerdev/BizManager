@@ -4,6 +4,7 @@ import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
 import { AddressLink } from "@/components/ui/address-link";
 import { ContactTapZone } from "@/components/ui/contact-link";
 import { Badge } from "@/components/ui/badge";
+import { DocumentRow } from "@/components/ui/document-tile";
 import { MetaRow } from "@/components/ui/meta-row";
 import { Button } from "@/components/ui/button";
 import { CustomerDeliveryDetails } from "./CustomerDeliveryDetails";
@@ -533,6 +534,8 @@ export default async function CustomerDetailsPage({
     return {
       id: s(doc, "id"),
       name: s(doc, "title") || s(doc, "file_name") || "מסמך",
+      // Its own name, for הורדה: the title is prose, the file name has the type.
+      fileName: s(doc, "file_name") || null,
       type: s(doc, "document_type"),
       uploadedAt: s(doc, "uploaded_at") || null,
       url: storageKey ? signedUrlByStorageKey.get(storageKey) ?? null : null,
@@ -1484,50 +1487,39 @@ export default async function CustomerDetailsPage({
               >
                 <MissingDocumentsChecklist entityType="customer" entityId={id} />
                 <div className="divide-y divide-border/60">
-                  {customerDocuments.map((doc) => {
-                    const inner = (
-                      <>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-medium">{doc.name}</span>
+                  {/* The row opens the file; view and download at its end on hover
+                      (owner, 2026-10-12). It said "פתיחה" in the corner. Each is
+                      wrapped, so the list's dividers still fall between them. */}
+                  {customerDocuments.map((doc) => (
+                    <div key={doc.id}>
+                      <DocumentRow
+                        name={doc.name}
+                        fileName={doc.fileName}
+                        url={doc.url}
+                        showThumb={false}
+                        className="-mx-2 rounded-xl border-0 bg-transparent py-2.5 hover:bg-muted/20"
+                        meta={
+                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                             {doc.type ? (
                               <Badge className={getStatusColorClasses("neutral")}>
                                 {getDocumentCategoryLabel(doc.type)}
                               </Badge>
                             ) : null}
-                          </div>
-                          <div className="mt-0.5 text-xs text-muted-foreground">
-                            {doc.sourceType === "order" ? (
-                              <OrderRef orderId={doc.sourceId} />
-                            ) : doc.sourceType === "project" ? (
-                              projectNameById.get(doc.sourceId) ?? "פרויקט"
-                            ) : (
-                              "לקוח"
-                            )}
-                            {doc.uploadedAt ? ` · הועלה ${formatDate(doc.uploadedAt)}` : ""}
-                          </div>
-                        </div>
-                        <span className="shrink-0 text-xs font-medium text-primary">
-                          {doc.url ? "פתיחה" : ""}
-                        </span>
-                      </>
-                    );
-                    return doc.url ? (
-                      <a
-                        key={doc.id}
-                        href={doc.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="-mx-2 flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 text-sm hover:bg-muted/20"
-                      >
-                        {inner}
-                      </a>
-                    ) : (
-                      <div key={doc.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                        {inner}
-                      </div>
-                    );
-                  })}
+                            <span>
+                              {doc.sourceType === "order" ? (
+                                <OrderRef orderId={doc.sourceId} />
+                              ) : doc.sourceType === "project" ? (
+                                projectNameById.get(doc.sourceId) ?? "פרויקט"
+                              ) : (
+                                "לקוח"
+                              )}
+                              {doc.uploadedAt ? ` · הועלה ${formatDate(doc.uploadedAt)}` : ""}
+                            </span>
+                          </span>
+                        }
+                      />
+                    </div>
+                  ))}
                 </div>
                 {totalDocumentsCount > DOCUMENTS_DISPLAY_LIMIT ? (
                   <Button asChild size="sm" variant="secondary" className="w-full">

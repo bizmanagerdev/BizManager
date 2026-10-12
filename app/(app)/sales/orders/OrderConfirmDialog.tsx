@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { BackspaceIcon, CheckIcon, LocationIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
 import { withSentry } from "@/lib/sentry-lazy";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { DocumentTile } from "@/components/ui/document-tile";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
@@ -1225,28 +1225,20 @@ export default function OrderConfirmDialog({
             {(serverImages ?? data.deliveryImages ?? []).length > 0 ? (
               <div className="space-y-2">
                 <div className="text-sm font-medium">תמונות קיימות</div>
+                {/* View and download on hover, as every file (owner, 2026-10-12)
+                    — components/ui/document-tile.tsx. */}
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {(serverImages ?? data.deliveryImages ?? []).map((image) => (
-                    <a
+                    <DocumentTile
                       key={image.id}
-                      href={image.url ?? "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-xl border border-border/70 bg-background/70 p-2 text-sm"
-                    >
-                      {image.url ? (
-                        <div className="relative mb-2 h-32 w-full">
-                          <Image
-                            src={image.url}
-                            alt={image.file_name ?? "תמונת אספקה"}
-                            fill
-                            className="rounded object-cover"
-                          />
-                        </div>
-                      ) : null}
-                      <div className="font-medium">{image.file_name ?? "תמונה"}</div>
-                      <div className="text-xs text-muted-foreground">{formatDate(image.uploaded_at)}</div>
-                    </a>
+                      name={image.file_name ?? "תמונה"}
+                      fileName={image.file_name}
+                      url={image.url}
+                      isImage
+                      previewClassName="h-32"
+                      imageSizes="(max-width: 640px) 100vw, 280px"
+                      date={formatDate(image.uploaded_at)}
+                    />
                   ))}
                 </div>
               </div>

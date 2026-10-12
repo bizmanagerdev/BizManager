@@ -20,6 +20,7 @@ import {
   ShieldIcon,
   DeleteIcon,
   DocumentIcon,
+  DownloadIcon,
   ExternalLinkIcon,
   GalleryIcon,
   LayersIcon,
@@ -30,6 +31,8 @@ import {
 } from "@/components/ui/icons";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import PdfThumbnail from "@/components/documents/PdfThumbnail";
+import { DocumentQuickActions } from "@/components/ui/document-tile";
+import { downloadFileName } from "@/lib/documents/downloadName";
 import { getDocumentCategoryLabel, getDocumentSourceLabel } from "@/lib/documents";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { categoryIcon, type DocumentCategoryRow } from "@/lib/documents/categories";
@@ -75,6 +78,8 @@ export type DocumentRowContext = {
   onEditDomain: (doc: DocumentArchiveItem) => void;
   onLinkToLedger: (doc: DocumentArchiveItem) => void;
   onDelete: (doc: DocumentArchiveItem) => void;
+  /** Saves the file under its own name (lib/file-download.ts). */
+  onDownload: (doc: DocumentArchiveItem) => void;
 };
 
 const CATEGORY_ICONS = {
@@ -179,6 +184,12 @@ export function DocumentTile({
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48">
+                                {doc.url ? (
+                                  <DropdownMenuItem onClick={() => ctx.onDownload(doc)}>
+                                    <DownloadIcon className="me-2 h-4 w-4" />
+                                    הורדה
+                                  </DropdownMenuItem>
+                                ) : null}
                                 <DropdownMenuItem onClick={() => ctx.onAssign(doc)}>
                                   <LinkIcon className="me-2 h-4 w-4" />
                                   שייך ל…
@@ -245,6 +256,25 @@ export function DocumentTile({
                             />
                           ) : (
                             <KindIcon className="h-8 w-8 text-muted-foreground" />
+                          )}
+                          {/* צפייה (the archive's own preview) and הורדה over the
+                              picture on hover or keyboard focus, as on every file
+                              (owner, 2026-10-12). Not while picking files: a tap
+                              then selects. Clicks and keys stay here, so the
+                              card's own open doesn't fire as well. */}
+                          {selecting ? null : (
+                            <div
+                              className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-background/45 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/card:opacity-100 [@media(hover:none)]:hidden"
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              <DocumentQuickActions
+                                name={doc.title}
+                                fileName={downloadFileName(doc)}
+                                url={doc.url}
+                                onView={() => ctx.onPreview(doc)}
+                              />
+                            </div>
                           )}
                           {/* Only STATE survives on the card, and only as a dot:
                               the document says it needs a person, and hovering
@@ -406,7 +436,7 @@ export function DocumentListRow({
                         ctx.onPreview(doc);
                       }
                     }}
-                    className="flex min-h-14 cursor-pointer items-center gap-x-3 border-b border-border/50 px-2 py-2 transition-colors last:border-b-0 hover:bg-secondary/10 @[40em]:min-h-0 @[40em]:py-1.5"
+                    className="group/doc flex min-h-14 cursor-pointer items-center gap-x-3 border-b border-border/50 px-2 py-2 transition-colors last:border-b-0 hover:bg-secondary/10 @[40em]:min-h-0 @[40em]:py-1.5"
                   >
                     {doc.file_kind === "image" && doc.url ? (
                       <a
@@ -515,21 +545,19 @@ export function DocumentListRow({
                     <div
                       className="flex shrink-0 items-center gap-1"
                       onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
                     >
-                      {doc.url ? (
-                        <Button
-                          asChild
-                          variant="outline"
-                          size="icon"
-                          aria-label="פתיחה"
-                          title="פתיחה"
-                          className="hidden @[40em]:inline-flex"
-                        >
-                          <a href={doc.url} target="_blank" rel="noreferrer">
-                            <ExternalLinkIcon className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      ) : null}
+                      {/* צפייה (the archive's own preview) and הורדה on hover or
+                          keyboard focus, as on every file (owner, 2026-10-12). It
+                          was an always-on outlined "פתיחה" — still in the ⋮. */}
+                      <DocumentQuickActions
+                        name={doc.title}
+                        fileName={downloadFileName(doc)}
+                        url={doc.url}
+                        onView={() => ctx.onPreview(doc)}
+                        variant="inline"
+                        className="hidden opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/doc:opacity-100 @[40em]:flex [@media(hover:none)]:!hidden"
+                      />
                       <DropdownMenu modal={false}>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -550,6 +578,12 @@ export function DocumentListRow({
                                 <ExternalLinkIcon className="me-2 h-4 w-4" />
                                 פתיחה
                               </a>
+                            </DropdownMenuItem>
+                          ) : null}
+                          {doc.url ? (
+                            <DropdownMenuItem onClick={() => ctx.onDownload(doc)}>
+                              <DownloadIcon className="me-2 h-4 w-4" />
+                              הורדה
                             </DropdownMenuItem>
                           ) : null}
                           <DropdownMenuItem onClick={() => ctx.onAssign(doc)}>

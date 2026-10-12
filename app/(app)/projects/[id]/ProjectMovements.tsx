@@ -41,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { DocumentLink } from "@/components/ui/document-tile";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
@@ -158,18 +159,20 @@ function Attachments({ attachments, label = "קובץ" }: { attachments: Financi
   if (withUrl.length === 0) return <span className="text-muted-foreground">—</span>;
   return (
     <div className="flex flex-wrap gap-1">
+      {/* The chip opens the file as it did; הורדה follows it on hover (owner,
+          2026-10-12: "wherever there is a doc … a download option"). */}
       {withUrl.map((attachment, index) => (
-        <a
+        <DocumentLink
           key={attachment.document_id}
-          href={attachment.url ?? "#"}
-          target="_blank"
-          rel="noreferrer"
+          name={attachment.file_name ?? label}
+          fileName={attachment.file_name}
+          url={attachment.url as string}
           title={attachment.file_name ?? label}
           className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-xs text-secondary hover:bg-accent"
         >
           <AttachIcon className="h-3 w-3" />
           {withUrl.length > 1 ? `${label} ${index + 1}` : label}
-        </a>
+        </DocumentLink>
       ))}
     </div>
   );

@@ -21,6 +21,7 @@ import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses"
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
 import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
+import { DocumentDownloadLink } from "@/components/ui/document-tile";
 import { CheckIcon, LinkIcon } from "@/components/ui/icons";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { resolveSplit, type SplitPartDraft } from "@/lib/financial/statementSplit";
@@ -1039,10 +1040,13 @@ export default function StatementDetailClient({
             {markingDone ? "שומר..." : markedDone ? "בטל סימון בוצע" : "סמן כבוצע"}
           </Button>
           {fileUrl ? (
+            // It said הורדה and opened the file in a tab; now it saves it, under
+            // its own name, on a computer and in the phone app (owner,
+            // 2026-10-12: "wherever there is a doc I want a download option").
             <Button asChild variant="outline" size="sm">
-              <a href={fileUrl} target="_blank" rel="noreferrer">
+              <DocumentDownloadLink url={fileUrl} name={statement.fileName || "פירוט אשראי"}>
                 הורדת הקובץ
-              </a>
+              </DocumentDownloadLink>
             </Button>
           ) : null}
           <DeleteButton

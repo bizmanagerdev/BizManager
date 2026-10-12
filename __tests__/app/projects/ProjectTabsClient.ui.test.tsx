@@ -683,6 +683,8 @@ describe("ProjectTabsClient — תנועות ledger", () => {
     expect(check.facts).toEqual(["אמצעי:צ'ק", "מס'צ'ק:1234", "פירעון:01/12/26"]);
     expect(check.links).toEqual([
       ["צילוםהצ׳ק", "https://files.example.test/check.jpg"],
+      // Its הורדה glyph right after it (owner, 2026-10-12).
+      ["", "https://files.example.test/check.jpg"],
       ["לצ׳קבדףהצ׳קים←", "/checks?focus=p2"],
     ]);
     // A partly paid expense says how much of it was paid.
@@ -1341,12 +1343,19 @@ describe("ProjectTabsClient — documents section", () => {
     expect(header.textContent).not.toMatch(/קבצים/);
     expect(header.querySelector("svg")).toHaveClass("text-muted-foreground");
     expect(header.querySelector("svg")).not.toHaveClass("text-primary");
-    expect(screen.getByText("חוזה עבודה").closest("div.overflow-hidden")?.querySelector("a")).toHaveAttribute(
+    // View and download on hover; no pencil or bin on the tile — they wait in
+    // its quiet ⋮ (owner, 2026-10-12).
+    const contract = screen.getByText("חוזה עבודה").closest("div.overflow-hidden") as HTMLElement;
+    expect(within(contract).getByRole("link", { name: "צפייה" })).toHaveAttribute(
       "href",
       "https://files.example.test/contract.pdf"
     );
-    // A file with no title goes by its file name; one with no link points nowhere.
-    expect(screen.getByText("photo.jpg").closest("div.overflow-hidden")?.querySelector("a")).toHaveAttribute("href", "#");
+    expect(within(contract).getByRole("link", { name: "הורדה" })).toHaveAttribute("download", "contract.pdf");
+    expect(within(contract).queryByRole("button", { name: "מחיקת קובץ" })).toBeNull();
+    expect(within(contract).queryByRole("button", { name: "עריכת קטגוריה" })).toBeNull();
+    // A file with no title goes by its file name; one with no link has nothing to open.
+    const photo = screen.getByText("photo.jpg").closest("div.overflow-hidden") as HTMLElement;
+    expect(within(photo).queryByRole("link")).toBeNull();
     expect(screen.getByText("חוזה")).toBeInTheDocument();
 
     // A category filed before the controlled list stays pickable for new uploads.
@@ -1372,9 +1381,16 @@ describe("ProjectTabsClient — documents section", () => {
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 
+  /** A file tile's quiet ⋮, then one of its items. */
+  function pickFromFileMenu(fileName: string, item: string) {
+    const tile = screen.getByText(fileName).closest("div.overflow-hidden") as HTMLElement;
+    fireEvent.click(within(tile).getByRole("button", { name: "פעולות" }));
+    fireEvent.click(within(within(tile).getByRole("menu")).getByText(item));
+  }
+
   it("deleting a file asks first, by name, and deletes it through the API on commit", async () => {
     render(<ProjectTabsClient {...props({ projectDocuments: DOCS })} />);
-    fireEvent.click(screen.getAllByRole("button", { name: "מחיקת קובץ" })[0]!);
+    pickFromFileMenu("חוזה עבודה", "מחיקת קובץ");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("מחיקת מסמך")).toBeInTheDocument();
     expect(within(dialog).getByText("חוזה עבודה")).toBeInTheDocument();
@@ -1398,7 +1414,7 @@ describe("ProjectTabsClient — documents section", () => {
   it("a refused file delete hands back the server's error", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ error: "forbidden" }), { status: 403 }));
     render(<ProjectTabsClient {...props({ projectDocuments: DOCS })} />);
-    fireEvent.click(screen.getAllByRole("button", { name: "מחיקת קובץ" })[1]!);
+    pickFromFileMenu("photo.jpg", "מחיקת קובץ");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("photo.jpg")).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "מחיקה" }));
@@ -1408,7 +1424,7 @@ describe("ProjectTabsClient — documents section", () => {
 
   it("changing a file's category: the current one is kept as an option, and the change goes through the undo window", async () => {
     render(<ProjectTabsClient {...props({ projectDocuments: DOCS })} />);
-    fireEvent.click(screen.getAllByRole("button", { name: "עריכת קטגוריה" })[0]!);
+    pickFromFileMenu("חוזה עבודה", "עריכת קטגוריה");
     const dialog = await screen.findByRole("dialog");
     // A noun, as every title and button (owner, 2026-10-11: one wording).
     expect(within(dialog).getByText("עריכת קטגוריה")).toBeInTheDocument();

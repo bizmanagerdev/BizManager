@@ -50,6 +50,7 @@ import { documentsHe } from "@/lib/i18n/pluralHe";
 import { israelDateKey } from "@/lib/timezone";
 import { offerVehicleDateSync } from "@/lib/documents/vehicleDateSync";
 import { downloadFileName } from "@/lib/documents/downloadName";
+import { downloadFile } from "@/lib/file-download";
 import PdfViewer from "@/components/documents/PdfViewer";
 import PdfThumbnail from "@/components/documents/PdfThumbnail";
 import DocumentsFilterSheet from "@/app/(app)/documents/DocumentsFilterSheet";
@@ -111,6 +112,21 @@ const ARROW_BUTTON =
 
 /** Sizes read from storage, kept per document for the life of the page. */
 const fileSizeCache = new Map<string, number | null>();
+
+async function downloadOne(doc: DocumentArchiveItem) {
+  if (!doc.url) {
+    toast.error("לא נמצא קובץ להורדה.");
+    return;
+  }
+  try {
+    // Straight from Storage under its own name on a computer, through the
+    // app's own save on the phone — the one download every file uses now
+    // (lib/file-download.ts). It read the whole file into the page first.
+    await downloadFile(doc.url, downloadFileName(doc));
+  } catch {
+    toast.error("ההורדה נכשלה.");
+  }
+}
 
 function fileKindIcon(value: string) {
   switch (value) {
@@ -817,26 +833,6 @@ export default function DocumentsArchiveClient({
     }
   }
 
-  async function downloadOne(doc: DocumentArchiveItem) {
-    if (!doc.url) {
-      toast.error("לא נמצא קובץ להורדה.");
-      return;
-    }
-    try {
-      const response = await fetch(doc.url);
-      if (!response.ok) throw new Error("fetch failed");
-      const blob = await response.blob();
-      const href = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = href;
-      anchor.download = downloadFileName(doc);
-      anchor.click();
-      URL.revokeObjectURL(href);
-    } catch {
-      toast.error("ההורדה נכשלה.");
-    }
-  }
-
   function bulkDelete() {
     if (selectedDocs.length === 0) return;
     const targets = selectedDocs;
@@ -1024,6 +1020,7 @@ export default function DocumentsArchiveClient({
       },
       onLinkToLedger: setLinkDoc,
       onDelete: setDeleteDialogDoc,
+      onDownload: (doc: DocumentArchiveItem) => void downloadOne(doc),
     }),
     [
       groupBy,

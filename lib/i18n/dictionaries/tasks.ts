@@ -164,6 +164,10 @@ export type TasksKey =
   | "videoWord"
   | "fileWord"
   | "uploadedByPrefix"
+  | "viewFileLabel"
+  | "downloadFileLabel"
+  | "fileActionsLabel"
+  | "downloadFailedLabel"
   | "statusFieldLabel"
   | "reminderDeleteLabel"
   | "remindersCanAddNowNote"
@@ -367,6 +371,10 @@ export const tasksDict: Dictionary<TasksKey> = {
     videoWord: "וידאו",
     fileWord: "קובץ",
     uploadedByPrefix: "הועלה ע\"י",
+    viewFileLabel: "צפייה",
+    downloadFileLabel: "הורדה",
+    fileActionsLabel: "פעולות",
+    downloadFailedLabel: "ההורדה נכשלה.",
     statusFieldLabel: "סטטוס",
     reminderDeleteLabel: "הסרת תזכורת",
     remindersCanAddNowNote: "אפשר להוסיף תזכורות כבר עכשיו — הן ייווצרו עם המשימה.",
@@ -571,6 +579,10 @@ export const tasksDict: Dictionary<TasksKey> = {
     videoWord: "فيديو",
     fileWord: "ملف",
     uploadedByPrefix: "تم الرفع بواسطة",
+    viewFileLabel: "عرض",
+    downloadFileLabel: "تنزيل",
+    fileActionsLabel: "إجراءات",
+    downloadFailedLabel: "فشل التنزيل.",
     statusFieldLabel: "الحالة",
     reminderDeleteLabel: "إزالة التذكير",
     remindersCanAddNowNote: "يمكن إضافة تذكيرات الآن — ستُنشأ مع المهمة.",
