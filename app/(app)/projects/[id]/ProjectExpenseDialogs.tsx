@@ -16,6 +16,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { FormDialog } from "@/components/ui/form-dialog";
+import { Field } from "@/components/ui/field";
 import { ORDER_PAYMENT_METHOD_OPTIONS } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
@@ -339,9 +340,10 @@ export function AddIncomeDialog({
             {"\u05e9\u05d3\u05d5\u05ea \u05d4\u05de\u05e1\u05d5\u05de\u05e0\u05d9\u05dd \u05d1-* \u05d4\u05dd \u05e9\u05d3\u05d5\u05ea \u05d7\u05d5\u05d1\u05d4."}
           </div>
 
+          {/* The shared label-over-input, its "*" red (owner, 2026-10-11: every
+              form the same Field). The fields keep their red border on an error. */}
           <AdaptiveGrid variant="formTwo">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
+            <Field label="\u05e1\u05db\u05d5\u05dd" required>
               <CurrencyInput
                 inputMode="numeric"
                 value={amount}
@@ -359,9 +361,8 @@ export function AddIncomeDialog({
               {showAmountError ? (
                 <div className="text-xs text-destructive">{amountError}</div>
               ) : null}
-            </div>
-            <div className="space-y-1">
-              <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
+            </Field>
+            <Field label="\u05ea\u05d0\u05e8\u05d9\u05da" required>
               <DateInput
                 value={paymentDate}
                 onChange={(e) => {
@@ -379,12 +380,11 @@ export function AddIncomeDialog({
               {showPaymentDateError ? (
                 <div className="text-xs text-destructive">{paymentDateError}</div>
               ) : null}
-            </div>
+            </Field>
           </AdaptiveGrid>
 
           <AdaptiveGrid variant="formTwo">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">{"\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd *"}</div>
+            <Field label="\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd" required>
               <NativeSelect
                 value={paymentMethod}
                 onChange={(e) => {
@@ -411,7 +411,7 @@ export function AddIncomeDialog({
                   {"צ'ק נשמר כ\"ממתין לפירעון\" עד לתאריך הפירעון."}
                 </div>
               ) : null}
-            </div>
+            </Field>
             <AccountSelect
               required
               value={paymentAccountId}
@@ -430,10 +430,11 @@ export function AddIncomeDialog({
                 disabled={submitting}
               />
             ) : (
-            <div className="space-y-1">
-              <div className="text-sm font-medium">
-                {requiresDueDate ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}
-              </div>
+            <Field
+              label={requiresDueDate ? "תאריך פירעון" : "תאריך פירעון צפוי"}
+              required={requiresDueDate}
+              hint={requiresDueDate ? undefined : "רשות"}
+            >
               <DateInput
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
@@ -449,22 +450,20 @@ export function AddIncomeDialog({
                   לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                 </div>
               ) : null}
-            </div>
+            </Field>
             )}
           </AdaptiveGrid>
 
           <AdaptiveGrid variant="formTwo">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">אסמכתא (אופציונלי)</div>
+            <Field label="אסמכתא" hint="רשות">
               <Input
                 value={referenceNumber}
                 onChange={(e) => setReferenceNumber(e.target.value)}
                 placeholder="מספר קבלה/העברה"
               />
-            </div>
+            </Field>
             {requiresDueDate ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">מספר צ׳ק</div>
+              <Field label="מספר צ׳ק">
                 <Input
                   value={checkNumber}
                   onChange={(e) => setCheckNumber(e.target.value)}
@@ -474,7 +473,7 @@ export function AddIncomeDialog({
                 <div className="text-xs text-muted-foreground">
                   ניתן לצרף צילום של הצ&apos;ק במקטע &quot;קבצים מצורפים&quot; למטה.
                 </div>
-              </div>
+              </Field>
             ) : null}
           </AdaptiveGrid>
 
@@ -510,8 +509,7 @@ export function AddIncomeDialog({
             </div>
           )}
 
-          <div className="space-y-1">
-            <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
+          <Field label="\u05d4\u05e2\u05e8\u05d5\u05ea" hint="\u05e8\u05e9\u05d5\u05ea">
             <div className="relative">
               <Textarea
                 value={notes}
@@ -524,16 +522,15 @@ export function AddIncomeDialog({
                 className="absolute bottom-1 end-1 h-8 w-8"
               />
             </div>
-          </div>
+          </Field>
 
-          <div className="space-y-2">
-            <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
+          <Field label="קבצים מצורפים" hint="רשות" className="space-y-2">
             <div className="flex items-center gap-2">
               <FileUploadActions
                 files={attachmentFiles}
                 multiple
                 onFilesSelected={setAttachmentFiles}
-                chooseLabel={attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                chooseLabel={attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוספת קבצים" : "העלאת קבצים"}
                 chooseVariant="outline"
                 size="sm"
               />
@@ -577,7 +574,7 @@ export function AddIncomeDialog({
                 </div>
               </div>
             ) : null}
-          </div>
+          </Field>
 
     </FormDialog>
   );

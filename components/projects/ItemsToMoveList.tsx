@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDownIcon, ProductIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { SectionCount } from "@/components/ui/section-card";
 
 /**
  * The load list inside the הובלה card.
@@ -31,18 +32,19 @@ export function ItemsToMoveList({
           פריטים להעברה
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-            {items.length}
-          </span>
+          {/* A count beside a title: the grey pill every section's count wears
+              (owner, 2026-10-11). The toggle is a less important action — the
+              soft style (dashed outline), its label a noun. */}
+          <SectionCount count={items.length} />
           {hiddenCount > 0 ? (
             <Button
               type="button"
               size="sm"
-              variant="secondary"
-              className="hidden h-6 gap-1 px-2 text-[0.6875rem] lg:inline-flex"
+              variant="soft"
+              className="hidden h-6 gap-1 px-2 text-xs lg:inline-flex"
               onClick={() => setOpen((prev) => !prev)}
             >
-              {open ? "הצג פחות" : `הצג עוד ${hiddenCount}`}
+              {open ? "הצגת פחות" : `הצגת עוד ${hiddenCount}`}
               <ChevronDownIcon
                 className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
               />

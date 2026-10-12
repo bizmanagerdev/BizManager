@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
-import { PlainTableSkeleton, TableSkeleton, TextLineSkeleton } from "@/components/layout/loading-skeletons";
+import { TableSkeleton, TextLineSkeleton } from "@/components/layout/loading-skeletons";
 import { PageHeaderToolbarSkeleton } from "@/components/layout/PageHeaderToolbarSkeleton";
+import { LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { cn } from "@/lib/utils";
 import { SalesHeaderSkeleton, type SalesTab } from "./SalesHeader";
@@ -91,13 +92,15 @@ function OrdersSkeleton() {
       <div className="relative">
         <ResponsiveDataView
           breakpoint="xl"
-          desktop={<TableSkeleton headers={ORDER_COLUMNS} rows={4} rowClassName="h-[10rem]" />}
+          // A row is as tall as its actions cell: צפייה בהזמנה, ✓ אישור אספקה
+          // and the ⋮ stacked (2 × h-9, h-8, two gaps), its padding and border.
+          desktop={<TableSkeleton headers={ORDER_COLUMNS} rows={4} rowClassName="h-[calc(9.5rem+1px)]" />}
           mobile={
             <div className="grid grid-cols-1 gap-2">
               <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="min-w-0 overflow-hidden rounded-card border border-border/70 bg-background shadow-card">
-                  <div className="divide-y divide-border/60 p-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-2">
+                  <div className={cn("divide-y divide-border/60 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-2", LIST_CARD_BODY)}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <Skeleton className="h-4 w-36" />
@@ -105,9 +108,12 @@ function OrdersSkeleton() {
                       </div>
                       <Skeleton className="h-2.5 w-10" />
                     </div>
+                    {/* The total, then its pill: a list card's pill (LIST_CARD_BADGE:
+                        0.647rem text on a 1.5 line, py-0.5 and its border) — the
+                        row's height, as the projects list's skeleton draws it. */}
                     <div className="flex items-center gap-2">
                       <Skeleton className="h-5 w-16" />
-                      <Skeleton className="h-5 w-16 rounded-full" />
+                      <Skeleton className="h-[calc(0.647rem*1.5+0.25rem+2px)] w-16 rounded-full" />
                     </div>
                     <div className="flex gap-1.5">
                       <Skeleton className="h-6 w-20 rounded-full" />
@@ -133,31 +139,32 @@ function OrdersSkeleton() {
 }
 
 // A product line's phone card (the inventory's and the price list's): name and
-// code, the figures line, and — price list — its buttons.
-function ProductCardSkeleton({ actions = false }: { actions?: boolean }) {
+// code, then the figures line — and the inventory's "עדכון מלאי" button in the
+// corner, where the price list has the price (its edit and delete are a swipe
+// now, not a row of buttons under the card; owner, 2026-10-11).
+function ProductCardSkeleton({ priced = false }: { priced?: boolean }) {
+  // Bars in the card's own line boxes (its LIST_CARD_NAME / LIST_CARD_META
+  // and text-xs lines), so the card is the real one's height at any text size.
   return (
-    <div className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-background p-3 shadow-sm">
+    <div className={cn("min-w-0 overflow-hidden rounded-card border border-border/70 bg-background shadow-sm", LIST_CARD_BODY)}>
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-3 w-24" />
+        <div className="min-w-0 flex-1">
+          <TextLineSkeleton className={LIST_CARD_NAME} barClassName="w-40" />
+          <TextLineSkeleton className={LIST_CARD_META} barClassName="w-24" />
         </div>
-        <Skeleton className={cn("shrink-0", actions ? "h-4 w-14" : "h-8 w-8 rounded-lg")} />
+        {priced ? (
+          <TextLineSkeleton className="shrink-0 text-sm" barClassName="w-14" />
+        ) : (
+          <Skeleton className="h-8 w-8 shrink-0 rounded-lg" />
+        )}
       </div>
-      <div className="mt-2 flex gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-3 w-12" />
-        ))}
-      </div>
-      {actions ? (
-        <div className="mt-2 flex justify-end gap-2">
-          <Skeleton className="h-9 w-20" />
-          <Skeleton className="h-9 w-9" />
-        </div>
-      ) : null}
+      <TextLineSkeleton className="mt-1.5 text-xs" barClassName="w-56 max-w-full" />
     </div>
   );
 }
+
+// The hint over the price list's cards, which swipe open on edit and delete.
+const SWIPE_HINT = <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות</p>;
 
 // SalesInventoryClient: the "stock by product" card — its title and (md+)
 // search in the header, the table from xl, product cards below it — and the
@@ -173,11 +180,13 @@ function InventorySkeleton() {
           </div>
         </CardHeader>
         <CardContent>
-          <PlainTableSkeleton
+          {/* The orders table's frame and px-4 py-4 cells now (owner,
+              2026-10-11): a text line, the padding and the row's border. */}
+          <TableSkeleton
             headers={["מוצר", "מק״ט", "במלאי", "שמור", "זמין", "נמכר", "פעולות"]}
             rows={10}
-            className="hidden max-h-[70vh] overflow-hidden rounded-md border xl:block"
-            rowClassName="h-[3.0625rem]"
+            className="hidden xl:block"
+            rowClassName="h-[calc(3.25rem+1px)]"
           />
           <div className="grid grid-cols-1 gap-2 xl:hidden">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -221,15 +230,19 @@ function PriceListSkeleton() {
           <Skeleton className="h-11 lg:h-10 lg:w-28" />
         </div>
       </div>
-      <PlainTableSkeleton
-        headers={["מוצר", "קוד", "מחיר", "עלות בסיס", "מלאי נוכחי", "כמות שנרכשה", "כמות שנמכרה", "סטטוס", "פעולות"]}
+      {/* The orders table's frame and px-4 py-4 cells now (owner,
+          2026-10-11): the name and its category under it, the padding and the
+          row's border. */}
+      <TableSkeleton
+        headers={["מוצר", "מק״ט", "מחיר", "עלות בסיס", "מלאי נוכחי", "כמות שנרכשה", "כמות שנמכרה", "סטטוס", "פעולות"]}
         rows={10}
-        className="hidden max-h-[70vh] overflow-hidden rounded-md border xl:block"
-        rowClassName="h-[3.0625rem]"
+        className="hidden xl:block"
+        rowClassName="h-[calc(4.25rem+1px)]"
       />
       <div className="grid grid-cols-1 gap-2 xl:hidden">
+        {SWIPE_HINT}
         {Array.from({ length: 6 }).map((_, i) => (
-          <ProductCardSkeleton key={i} actions />
+          <ProductCardSkeleton key={i} priced />
         ))}
       </div>
       {LIST_FOOTER}
@@ -266,18 +279,20 @@ function DeliveriesSkeleton() {
       <ResponsiveDataView
         breakpoint="xl"
         desktop={
+          // The orders table's px-4 py-4 cells now (owner, 2026-10-11: one
+          // table density) — the rows half a rem taller than at py-3.
           <TableSkeleton
             headers={["לקוח", "עיר", "כתובת", "מוצרים", "סכום", "פעולות"]}
             rows={6}
-            cellClassName="px-4 py-3"
-            rowClassName="h-[6.5rem]"
+            rowClassName="h-[7rem]"
             maxHeight="75vh"
           />
         }
         mobile={
           <div className="space-y-2">
-            {/* A city's heading, then its stops: where (Waze, address, customer),
-                who to call, the delivery — its money, items and buttons. */}
+            {/* A city's heading, then its stops: where (Waze, then the customer
+                and the address under it), who to call, the delivery — its
+                money, items and buttons. */}
             <div className="flex h-6 items-center justify-between gap-2 px-1">
               <Skeleton className="h-5 w-28" />
               <Skeleton className="h-3 w-14" />
@@ -286,12 +301,15 @@ function DeliveriesSkeleton() {
               <div key={i} className="relative overflow-hidden rounded-card border border-border bg-card ps-1.5 shadow-card">
                 {/* The city's colour strip down the start edge. */}
                 <span aria-hidden className="absolute inset-y-0 start-0 w-1.5 bg-muted" />
-                <div className="flex items-start gap-3 p-3">
+                {/* The customer, the address and the arrival-directions line,
+                    as bars in the stop's own line boxes — the same height at
+                    any text size. */}
+                <div className={cn("flex items-start gap-3", LIST_CARD_BODY)}>
                   <Skeleton className="h-11 w-10 shrink-0 rounded-xl" />
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Skeleton className="h-4 w-40" />
-                    <Skeleton className="h-3 w-28" />
-                    <Skeleton className="h-3 w-32" />
+                  <div className="min-w-0 flex-1">
+                    <TextLineSkeleton className={LIST_CARD_NAME} barClassName="w-32" />
+                    <TextLineSkeleton className={LIST_CARD_META} barClassName="w-40" />
+                    <TextLineSkeleton className="mt-1 text-xs" barClassName="w-32" />
                   </div>
                 </div>
                 <div className="border-t border-border/60 p-3">

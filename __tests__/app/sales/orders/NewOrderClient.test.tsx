@@ -1006,7 +1006,7 @@ describe("a pay-ahead customer", () => {
     expect(orderRequests()).toHaveLength(0);
 
     fireEvent.click(createButton());
-    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "צור בכל זאת" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "יצירה בכל זאת" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/sales"));
     expect(sentOrder()).toMatchObject({ customer_id: "c2", payment_status: "unpaid" });
   });

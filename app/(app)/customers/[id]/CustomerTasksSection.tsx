@@ -26,9 +26,6 @@ export type CustomerTaskItem = {
   is_private: boolean;
 };
 
-const SOFT_ADD_BUTTON_CLASSES =
-  "border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15";
-
 /**
  * The customer's tasks, on the customer page: a compact list plus a "+ משימה"
  * button that opens the task dialog pre-linked to this customer (so a follow-up
@@ -63,8 +60,7 @@ export default function CustomerTasksSection({
   const addButton = (
     <Button
       size="sm"
-      variant="secondary"
-      className={SOFT_ADD_BUTTON_CLASSES}
+      variant="soft"
       onClick={() => setCreateOpen(true)}
     >
       <AddIcon className="h-3.5 w-3.5" /> משימה

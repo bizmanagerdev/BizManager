@@ -8,7 +8,7 @@ import { uploadTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { AttachIcon, BusinessIcon, ChevronDownIcon, ClockIcon, CommentIcon, HistoryIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
+import { AttachIcon, BusinessIcon, CheckboxCheckedIcon, CheckboxUncheckedIcon, ChevronDownIcon, ClockIcon, CommentIcon, HistoryIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, TagIcon, TextIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import {
@@ -1661,10 +1661,12 @@ export function TaskUpsertDialog(rawProps: Props) {
                 onClick={() => setStatus(status === "done" ? "todo" : "done")}
                 className={cn("shrink-0 text-muted-foreground transition-colors hover:text-success disabled:opacity-40", HEADER_ICON_TAP_CLASS)}
               >
+                {/* The square tick the board and the dashboard use (owner,
+                    2026-10-11: one look for "done") — it was a circle here. */}
                 {status === "done" ? (
-                  <SuccessIcon className="h-5 w-5 text-success" />
+                  <CheckboxCheckedIcon className="h-5 w-5 text-success" />
                 ) : (
-                  <UncheckedIcon className="h-5 w-5" />
+                  <CheckboxUncheckedIcon className="h-5 w-5" />
                 )}
               </button>
             ) : null}

@@ -138,10 +138,6 @@ function CountPill({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Quiet "+" action: filled tint, one visual step below the primary הזמנה button. */
-const SOFT_ADD_BUTTON_CLASSES =
-  "h-8 border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary";
-
 const ORDERS_DISPLAY_LIMIT = 10;
 const PROJECTS_DISPLAY_LIMIT = 10;
 const PAYMENTS_DISPLAY_LIMIT = 10;
@@ -985,7 +981,7 @@ export default async function CustomerDetailsPage({
                 title="פרויקטים"
                 hint="אין פרויקטים ללקוח זה"
                 action={
-                  <Button asChild size="sm" variant="secondary" className={SOFT_ADD_BUTTON_CLASSES}>
+                  <Button asChild size="sm" variant="soft" className="h-8">
                     <Link href={newProjectHref}>+ פרויקט</Link>
                   </Button>
                 }
@@ -997,7 +993,7 @@ export default async function CustomerDetailsPage({
                 aside={
                   <div className="flex flex-wrap items-center gap-2">
                     <CountPill>{projectInfos.length} פרויקטים</CountPill>
-                    <Button asChild size="sm" variant="secondary" className={SOFT_ADD_BUTTON_CLASSES}>
+                    <Button asChild size="sm" variant="soft" className="h-8">
                       <Link href={newProjectHref}>+ פרויקט</Link>
                     </Button>
                   </div>

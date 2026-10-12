@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { DeliveryIcon, DocumentIcon, OrderIcon, PaymentIcon, UserIcon } from "@/components/ui/icons";
-import { SectionCard } from "@/components/ui/section-card";
+import { SECTION_ICON_CLASS, SectionCard } from "@/components/ui/section-card";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -59,9 +59,10 @@ export default function OrderPageSkeleton({
             <Line className="w-10" />
             <Skeleton className="h-5 w-32" />
           </div>
+          {/* The edit pencil and the ⋮ (OrderHeaderMenu). */}
           <div className="flex items-center gap-2">
-            {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-9 w-24" />
+            {[0, 1].map((i) => (
+              <Skeleton key={i} className="h-9 w-9" />
             ))}
           </div>
         </div>
@@ -98,7 +99,8 @@ export default function OrderPageSkeleton({
             <div className="h-32 animate-pulse rounded-card border border-border/70 bg-muted/40" />
           </div>
           <div className="space-y-3 lg:order-1 lg:col-span-2">
-            <SectionCard icon={<OrderIcon className="h-4 w-4" />} title="פריטים" aside={<Skeleton className="h-5 w-16 rounded-full" />}>
+            {/* The count is a SectionCount: a grey pill one number wide. */}
+            <SectionCard icon={<OrderIcon className={SECTION_ICON_CLASS} />} title="פריטים" aside={<Skeleton className="h-5 w-7 rounded-full" />}>
               <div className="divide-y divide-border/60">
                 {[0, 1, 2].map((i) => (
                   <div key={i} className="flex items-center justify-between gap-3 py-3">

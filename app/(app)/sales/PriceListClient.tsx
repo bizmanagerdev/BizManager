@@ -8,7 +8,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getOrCreateProductCategory } from "@/lib/products/productCategories";
 import { loadMorePriceList } from "@/app/(app)/sales/actions";
 import type { ProductsFilters } from "@/app/(app)/sales/loadProducts";
-import { AddIcon, FilterIcon, SearchIcon, SendIcon, SpinnerIcon } from "@/components/ui/icons";
+import { AddIcon, DeleteIcon, EditIcon, FilterIcon, SearchIcon, SendIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -25,8 +25,12 @@ import { appendDictatedText } from "@/lib/dictation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
+import { DataTableShell } from "@/components/ui/data-table-shell";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
+import { SwipeActions } from "@/components/ui/swipe-actions";
+import RowActionsMenu from "@/app/(app)/sales/RowActionsMenu";
 
 type CategoryOption = {
   id: string;
@@ -54,9 +58,9 @@ type ProductRow = {
 };
 
 // ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts. The shared
-// price-list PDF too.
+// price-list PDF too. A missing value is "—", as everywhere (owner, 2026-10-11).
 function formatCurrency(value: number | null) {
-  if (value === null) return "-";
+  if (value === null) return "—";
   return formatMoney(value);
 }
 
@@ -114,6 +118,8 @@ export default function PriceListClient({
   const [categories, setCategories] = useState<CategoryOption[]>(initialCategories);
   const [query, setQuery] = useState(initialQuery);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // One swiped-open card at a time, like a native list.
+  const [swipedRow, setSwipedRow] = useState<string | null>(null);
 
   function pushFilters(next: { q?: string; category?: string }) {
     const params = new URLSearchParams(searchParams.toString());
@@ -846,7 +852,7 @@ export default function PriceListClient({
             type="button"
             size="icon"
             variant="outline"
-            aria-label={filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
+            aria-label={filtersOpen ? "הסתרת מסננים" : "הצגת מסננים"}
             aria-pressed={filtersOpen}
             className={cn(
               "relative h-10 w-10 shrink-0 rounded-xl",
@@ -869,12 +875,14 @@ export default function PriceListClient({
       <div className="hidden md:flex md:flex-col md:gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative sm:max-w-sm">
-            <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            {/* On the start side, logical, as every search; "מק״ט", the stock
+                tab's word (owner, 2026-10-11). */}
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="חיפוש מוצר לפי שם או קוד"
-              className="h-11 pr-10"
+              placeholder="חיפוש מוצר לפי שם או מק״ט"
+              className="h-11 ps-9"
             />
           </div>
           <NativeSelect
@@ -984,7 +992,7 @@ export default function PriceListClient({
               </div>
               <div className="rounded-3xl border border-brand bg-surface-muted p-5">
                 <div className="text-xs font-medium tracking-[0.14em] text-muted-pdf">מחיר ממוצע</div>
-                <div className="mt-2 text-lg font-semibold">{averagePrice === null ? "-" : formatCurrency(averagePrice)}</div>
+                <div className="mt-2 text-lg font-semibold">{formatCurrency(averagePrice)}</div>
               </div>
             </div>
 
@@ -993,7 +1001,7 @@ export default function PriceListClient({
                 <thead className="sticky top-0 z-10 bg-muted-pdf">
                   <tr className="bg-muted-pdf text-muted-pdf">
                     <th className="px-4 py-3 font-medium">מוצר</th>
-                    <th className="px-4 py-3 font-medium">קוד</th>
+                    <th className="px-4 py-3 font-medium">מק״ט</th>
                     <th className="px-4 py-3 font-medium">קטגוריה</th>
                     <th className="px-4 py-3 font-medium">סטטוס</th>
                     <th className="px-4 py-3 font-medium">מחיר</th>
@@ -1008,8 +1016,8 @@ export default function PriceListClient({
                           <div className="mt-1 text-xs leading-5 text-muted-pdf">{product.description}</div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 text-muted-pdf">{product.code ?? "-"}</td>
-                      <td className="px-4 py-3 text-muted-pdf">{product.category ?? "-"}</td>
+                      <td className="px-4 py-3 text-muted-pdf">{product.code ?? "—"}</td>
+                      <td className="px-4 py-3 text-muted-pdf">{product.category ?? "—"}</td>
                       <td className="px-4 py-3">
                         <span
                           className={
@@ -1036,105 +1044,124 @@ export default function PriceListClient({
         </div>
       </div>
 
+      {/* An empty list has the app's one look (owner, 2026-10-11). */}
       {filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground">אין מוצרים להצגה במחירון.</p>
+        <EmptyState>אין מוצרים להצגה במחירון.</EmptyState>
       ) : (
         <>
-          <div ref={scrollRef} className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-right font-medium">מוצר</th>
-                  <th className="px-3 py-2 text-right font-medium">קוד</th>
-                  <th className="px-3 py-2 text-right font-medium">מחיר</th>
-                  <th className="px-3 py-2 text-right font-medium">עלות בסיס</th>
-                  <th className="px-3 py-2 text-right font-medium">מלאי נוכחי</th>
-                  <th className="px-3 py-2 text-right font-medium">כמות שנרכשה</th>
-                  <th className="px-3 py-2 text-right font-medium">כמות שנמכרה</th>
-                  <th className="px-3 py-2 text-right font-medium">סטטוס</th>
-                  <th className="px-3 py-2 text-right font-medium">פעולות</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filtered.map((product) => (
-                  <tr key={product.id} className="hover:bg-muted/30">
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{product.name}</div>
-                      {product.category ? (
-                        <div className="text-xs text-muted-foreground">{product.category}</div>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2">{product.code ?? "-"}</td>
-                    <td className="px-3 py-2">{formatCurrency(product.unitPrice)}</td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {product.baseCost !== null ? formatCurrency(product.baseCost) : "-"}
-                    </td>
-                    <td className="px-3 py-2">{product.stock ?? "-"}</td>
-                    <td className="px-3 py-2">{product.purchasedAmount}</td>
-                    <td className="px-3 py-2">{product.soldAmount}</td>
-                    <td className="px-3 py-2">{product.active === false ? "לא פעיל" : "פעיל"}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <EditButton onClick={() => openEdit(product)} label="עריכה" />
-                        <DeleteButton
-                          loading={deleteLoadingId === product.id}
-                          onClick={() => openDeleteDialog(product)}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 xl:hidden">
+          {/* The orders table's frame, head and px-4 py-4 cells (owner,
+              2026-10-11: one table density); the row's edit and delete wait
+              behind a ⋮ at its end — they were an always-visible pencil and bin
+              on every row. -my-1.5 keeps the ⋮ from making the rows taller
+              than their text — block-level (flex), or on the text's baseline
+              the margin doesn't fully cancel. */}
+          <DataTableShell
+            ref={scrollRef}
+            className="hidden xl:block"
+            header={
+              <>
+                <th className="px-4 py-3 font-medium">מוצר</th>
+                <th className="px-4 py-3 font-medium">מק״ט</th>
+                <th className="px-4 py-3 font-medium">מחיר</th>
+                <th className="px-4 py-3 font-medium">עלות בסיס</th>
+                <th className="px-4 py-3 font-medium">מלאי נוכחי</th>
+                <th className="px-4 py-3 font-medium">כמות שנרכשה</th>
+                <th className="px-4 py-3 font-medium">כמות שנמכרה</th>
+                <th className="px-4 py-3 font-medium">סטטוס</th>
+                <th className="px-4 py-3 font-medium">פעולות</th>
+              </>
+            }
+            footer={hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+          >
             {filtered.map((product) => (
-              <div
+              <tr key={product.id} className="align-top hover:bg-muted/20">
+                <td className="px-4 py-4">
+                  <div className="font-medium">{product.name}</div>
+                  {product.category ? (
+                    <div className="text-xs text-muted-foreground">{product.category}</div>
+                  ) : null}
+                </td>
+                <td className="px-4 py-4">{product.code ?? "—"}</td>
+                <td className="px-4 py-4">{formatCurrency(product.unitPrice)}</td>
+                <td className="px-4 py-4 text-muted-foreground">{formatCurrency(product.baseCost)}</td>
+                <td className="px-4 py-4">{product.stock ?? "—"}</td>
+                <td className="px-4 py-4">{product.purchasedAmount}</td>
+                <td className="px-4 py-4">{product.soldAmount}</td>
+                <td className="px-4 py-4">{product.active === false ? "לא פעיל" : "פעיל"}</td>
+                <td className="px-4 py-4">
+                  <RowActionsMenu
+                    className="-my-1.5 flex"
+                    busy={deleteLoadingId === product.id}
+                    onEdit={() => openEdit(product)}
+                    onDelete={() => openDeleteDialog(product)}
+                  />
+                </td>
+              </tr>
+            ))}
+          </DataTableShell>
+
+          {/* Phone: a swipe uncovers edit and delete, as on the orders list
+              (owner, 2026-10-11) — the card no longer carries a row of
+              buttons under it. */}
+          <div className="grid grid-cols-1 gap-2 xl:hidden">
+            <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות</p>
+            {filtered.map((product) => (
+              <SwipeActions
                 key={product.id}
-                className={`min-w-0 overflow-hidden rounded-lg border ${product.active === false ? "border-border/60 bg-muted/30" : "border-border/70 bg-background"} p-3 shadow-sm`}
+                className={cn(
+                  "border shadow-sm",
+                  product.active === false ? "border-border/60" : "border-border/70"
+                )}
+                open={swipedRow === product.id}
+                onOpenChange={(next) => setSwipedRow(next ? product.id : null)}
+                actions={[
+                  {
+                    key: "edit",
+                    label: "עריכה",
+                    icon: <EditIcon className="h-5 w-5" />,
+                    className: "bg-secondary-2",
+                    onSelect: () => openEdit(product),
+                  },
+                  {
+                    key: "delete",
+                    label: "מחיקה",
+                    icon: <DeleteIcon className="h-5 w-5" />,
+                    className: "bg-destructive",
+                    onSelect: () => openDeleteDialog(product),
+                  },
+                ]}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold leading-tight">{product.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {product.category ?? "ללא קטגוריה"}
-                      {product.code ? ` • ${product.code}` : ""}
-                      {product.active === false ? " • לא פעיל" : ""}
+                <div className={cn("min-w-0", LIST_CARD_BODY, product.active === false ? "bg-muted/30" : "bg-background")}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className={LIST_CARD_NAME}>{product.name}</div>
+                      <div className={LIST_CARD_META}>
+                        {product.category ?? "ללא קטגוריה"}
+                        {product.code ? ` • ${product.code}` : ""}
+                        {product.active === false ? " • לא פעיל" : ""}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-left text-sm font-semibold">
+                      {formatCurrency(product.unitPrice)}
                     </div>
                   </div>
-                  <div className="shrink-0 text-left text-sm font-semibold">
-                    {formatCurrency(product.unitPrice)}
+
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                    <span className="text-muted-foreground">
+                      עלות: <span className="font-medium text-foreground">{formatCurrency(product.baseCost)}</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      מלאי: <span className="font-medium text-foreground">{product.stock ?? "—"}</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      נרכש: <span className="font-medium text-foreground">{product.purchasedAmount}</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      נמכר: <span className="font-medium text-foreground">{product.soldAmount}</span>
+                    </span>
                   </div>
                 </div>
-
-                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-                  <span className="text-muted-foreground">
-                    עלות:{" "}
-                    <span className="font-medium text-foreground">
-                      {product.baseCost !== null ? formatCurrency(product.baseCost) : "-"}
-                    </span>
-                  </span>
-                  <span className="text-muted-foreground">
-                    מלאי: <span className="font-medium text-foreground">{product.stock ?? "-"}</span>
-                  </span>
-                  <span className="text-muted-foreground">
-                    נרכש: <span className="font-medium text-foreground">{product.purchasedAmount}</span>
-                  </span>
-                  <span className="text-muted-foreground">
-                    נמכר: <span className="font-medium text-foreground">{product.soldAmount}</span>
-                  </span>
-                </div>
-
-                <div className="mt-2 flex justify-end gap-2">
-                  <EditButton onClick={() => openEdit(product)} label="עריכה" />
-                  <DeleteButton
-                    loading={deleteLoadingId === product.id}
-                    onClick={() => openDeleteDialog(product)}
-                  />
-                </div>
-              </div>
+              </SwipeActions>
             ))}
           </div>
           {hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
@@ -1158,13 +1185,15 @@ export default function PriceListClient({
         busy={createLoading}
         error={createError || undefined}
       >
-            <Field label="שם מוצר *">
+            {/* The required mark is Field's own red "*"; the product's code
+                is "מק״ט", the stock tab's word (owner, 2026-10-11). */}
+            <Field label="שם מוצר" required>
               <Input value={createName} onChange={(e) => setCreateName(e.target.value)} />
             </Field>
-            <Field label="קוד מוצר *">
+            <Field label="מק״ט" required>
               <Input value={createCode} onChange={(e) => setCreateCode(e.target.value)} />
             </Field>
-            <Field label="קטגוריה *">
+            <Field label="קטגוריה" required>
               <NativeSelect
                 value={createCategoryId}
                 onChange={(e) => setCreateCategoryId(e.target.value)}
@@ -1261,13 +1290,13 @@ export default function PriceListClient({
         busy={editLoading}
         error={editError || undefined}
       >
-            <Field label="שם מוצר *">
+            <Field label="שם מוצר" required>
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </Field>
-            <Field label="קוד מוצר *">
+            <Field label="מק״ט" required>
               <Input value={editCode} onChange={(e) => setEditCode(e.target.value)} />
             </Field>
-            <Field label="קטגוריה *">
+            <Field label="קטגוריה" required>
               <NativeSelect
                 value={editCategoryId}
                 onChange={(e) => setEditCategoryId(e.target.value)}

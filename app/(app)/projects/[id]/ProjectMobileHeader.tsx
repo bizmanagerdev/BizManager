@@ -45,10 +45,10 @@ export default function ProjectMobileHeader({
             <StatusBadge
               value={status}
               type="project"
-              className="shrink-0 px-2 py-0.5 text-[0.6875rem]"
+              className="shrink-0 px-2 py-0.5 text-xs"
             />
           ) : null}
-          <Badge variant="outline" className="shrink-0 px-2 py-0.5 text-[0.6875rem]">
+          <Badge variant="outline" className="shrink-0 px-2 py-0.5 text-xs">
             {typeLabel}
           </Badge>
         </div>

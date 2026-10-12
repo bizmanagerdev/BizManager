@@ -17,11 +17,12 @@ import type { OrderPreview } from "@/app/(app)/sales/orders/[id]/orderPreview";
 // element, so the bar's title isn't re-set on every render.
 const HEADER_MENU_PLACEHOLDER = <HeaderActionsPlaceholder />;
 
+// The edit pencil and the ⋮ the page will put there (OrderHeaderMenu).
 function ActionsSkeleton() {
   return (
     <div className="flex items-center gap-2" aria-hidden>
-      {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="h-9 w-20 animate-pulse rounded-md bg-muted/60" />
+      {[0, 1].map((i) => (
+        <div key={i} className="h-9 w-9 animate-pulse rounded-md bg-muted/60" />
       ))}
     </div>
   );

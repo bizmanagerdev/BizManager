@@ -6,8 +6,8 @@
 
 import { useState } from "react";
 import { AddIcon, NotificationIcon } from "@/components/ui/icons";
-import { Button } from "@/components/ui/button";
-import { SectionCard } from "@/components/ui/section-card";
+import { IconButton } from "@/components/ui/icon-button";
+import { SECTION_ICON_CLASS, SectionCard } from "@/components/ui/section-card";
 import EntityReminders from "@/components/reminders/EntityReminders";
 
 export default function OrderRemindersSection({
@@ -26,20 +26,13 @@ export default function OrderRemindersSection({
   return (
     <SectionCard
       id={id}
-      icon={<NotificationIcon className="h-4 w-4" />}
+      icon={<NotificationIcon className={SECTION_ICON_CLASS} />}
       title="תזכורות"
       aside={
+        // A section's "+" is a less important action: the soft style (dashed outline), the
+        // same square as the delivery card's (owner, 2026-10-11).
         canManage ? (
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 w-8 p-0"
-            aria-label="הוספת תזכורת"
-            title="הוספת תזכורת"
-            onClick={() => setAddOpen(true)}
-          >
-            <AddIcon className="h-4 w-4" />
-          </Button>
+          <IconButton icon={AddIcon} variant="soft" label="הוספת תזכורת" onClick={() => setAddOpen(true)} />
         ) : null
       }
     >

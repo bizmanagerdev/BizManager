@@ -32,6 +32,15 @@ const buttonVariants = cva(
         // it looked exactly like the save next to it.
         muted:
           "bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/10 hover:text-foreground",
+        // The less important action — "+ משימה", "+ תשלום", "+ הכנסה" in a
+        // section, anything that isn't the page's main move: white with a
+        // dashed sky outline, one step below the bold sky of the main button.
+        // The owner's rule: "all main buttons are bold secondary, all buttons
+        // less important like this" — "this" being the project page's
+        // add-task / add-document buttons, outline + dashed when he said it
+        // (Trello, 2026-08). The customer page had read it as a navy tint.
+        soft:
+          "border-dashed border-secondary/40 bg-background text-secondary hover:border-secondary/60 hover:bg-secondary/5",
         ghost:
           "text-secondary hover:bg-secondary/10",
         link: "text-secondary underline-offset-4 hover:underline",

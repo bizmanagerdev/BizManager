@@ -90,15 +90,17 @@ test.describe("admin — order creation and payment collection", () => {
       await loginAs(page, "admin");
       await page.goto(`/sales/orders/${order.id}`);
 
-      await page.getByRole("button", { name: "עדכון תשלום" }).click();
+      // "+ תשלום" since 2026-10-11 (the owner's soft add button; it was "עדכון תשלום").
+      await page.getByRole("button", { name: "תשלום", exact: true }).click();
       await page.getByPlaceholder("0.00").fill("1000");
       // NativeSelect renders a bare native <select> (no wrapper, no aria-label
       // — the label is an unassociated sibling <label>, same pattern as every
       // other form in this app), so selectOption by visible option text is
       // the correct interaction — NOT click-to-open, that's for a custom
-      // combobox, which this isn't.
+      // combobox, which this isn't. The label is the shared Field's: its own
+      // text node, then the red "*" in a span of its own.
       await page
-        .locator('xpath=//label[text()="אמצעי תשלום *"]/following-sibling::select')
+        .locator('xpath=//label[text()="אמצעי תשלום"]/following-sibling::select')
         .selectOption({ label: "מזומן" });
       await page.getByRole("button", { name: "שמירת תשלום" }).click();
 
@@ -117,10 +119,10 @@ test.describe("admin — order creation and payment collection", () => {
       await loginAs(page, "admin");
       await page.goto(`/sales/orders/${order.id}`);
 
-      await page.getByRole("button", { name: "עדכון תשלום" }).click();
+      await page.getByRole("button", { name: "תשלום", exact: true }).click();
       await page.getByPlaceholder("0.00").fill("400");
       await page
-        .locator('xpath=//label[text()="אמצעי תשלום *"]/following-sibling::select')
+        .locator('xpath=//label[text()="אמצעי תשלום"]/following-sibling::select')
         .selectOption({ label: "מזומן" });
       await page.getByRole("button", { name: "שמירת תשלום" }).click();
 

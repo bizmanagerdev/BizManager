@@ -20,7 +20,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
-import { SectionCard } from "@/components/ui/section-card";
+import { SECTION_ICON_CLASS, SectionCard, SectionCount } from "@/components/ui/section-card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { registerReversibleAction, scheduleDeferredDelete } from "@/lib/undo-engine";
 import { offlineUpload } from "@/lib/offline-upload";
@@ -224,16 +225,14 @@ export default function DeliveryImagesCard({
 
   return (
     <SectionCard
-      icon={<DeliveryIcon className="h-4 w-4" />}
+      icon={<DeliveryIcon className={SECTION_ICON_CLASS} />}
       title="אספקה"
       aside={
+        // The section's count is the grey pill and its "+" the soft style (dashed outline), as
+        // on every page (owner, 2026-10-11).
         <div className="flex items-center gap-1.5">
-          {visibleImages.length > 0 ? (
-            <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-              {visibleImages.length} תמונות
-            </span>
-          ) : null}
-          <IconButton icon={AddIcon} label="הוספת תמונת אספקה" onClick={openAdd} />
+          {visibleImages.length > 0 ? <SectionCount count={visibleImages.length} /> : null}
+          <IconButton icon={AddIcon} variant="soft" label="הוספת תמונת אספקה" onClick={openAdd} />
         </div>
       }
     >
@@ -261,7 +260,7 @@ export default function DeliveryImagesCard({
       </div>
 
       {visibleImages.length === 0 ? (
-        <p className="text-xs text-muted-foreground">לא צורפו תמונות אספקה.</p>
+        <EmptyState dense>לא צורפו תמונות אספקה.</EmptyState>
       ) : (
         <div className="grid grid-cols-2 gap-2">
           {visibleImages.map((image) => (
@@ -276,7 +275,7 @@ export default function DeliveryImagesCard({
                 </a>
               ) : null}
               <div className="flex items-center justify-between gap-1 px-2 py-1">
-                <span className="text-[0.588rem] text-muted-foreground">{formatShortDate(image.uploaded_at)}</span>
+                <span className="text-[0.647rem] text-muted-foreground">{formatShortDate(image.uploaded_at)}</span>
                 <div className="flex shrink-0 gap-1">
                   <EditButton
                     label="החלפת תמונה"
@@ -321,7 +320,7 @@ export default function DeliveryImagesCard({
           multiple
           disabled={addBusy}
           onFilesSelected={setAddFiles}
-          chooseLabel="בחר תמונות"
+          chooseLabel="בחירת תמונות"
         />
       </FormDialog>
 

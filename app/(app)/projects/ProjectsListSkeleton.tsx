@@ -6,9 +6,11 @@ import { CountSkeleton, FieldSkeleton, TableSkeleton, TextLineSkeleton } from "@
 import { PageHeaderToolbarSkeleton } from "@/components/layout/PageHeaderToolbarSkeleton";
 import { DocumentIcon, ProjectIcon, SuccessIcon } from "@/components/ui/icons";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
+import { LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { parseProjectsView } from "@/app/(app)/projects/projectsFilters";
+import { cn } from "@/lib/utils";
 
 // The projects list's placeholder, from ProjectsClient's own pieces: the
 // underline tabs (הצעות / פרויקטים / סגורים — the open one from the address),
@@ -94,20 +96,27 @@ export default function ProjectsListSkeleton() {
               <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="relative min-w-0 overflow-hidden rounded-card border border-border/70 bg-background shadow-card">
-                  <div className="space-y-3 p-4">
-                    <div className="flex gap-1.5">
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                      <Skeleton className="h-5 w-14 rounded-full" />
+                  {/* The card's own order: the name and the customer line with the
+                      call button in the corner, the status pills, the figures —
+                      each line in the card's own type, so it is as tall. */}
+                  <div className={cn("space-y-2.5", LIST_CARD_BODY)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <TextLineSkeleton className={LIST_CARD_NAME} barClassName="w-40" />
+                        <TextLineSkeleton className={cn("mt-0.5", LIST_CARD_META)} barClassName="w-32" />
+                      </div>
+                      <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
                     </div>
-                    <div className="space-y-1.5">
-                      <Skeleton className="h-5 w-44" />
-                      <Skeleton className="h-3 w-32" />
+                    {/* A pill's height: its 0.647rem line, py-0.5 and the border. */}
+                    <div className="flex gap-1.5">
+                      <Skeleton className="h-[calc(0.647rem*1.5+0.25rem+2px)] w-16 rounded-full" />
+                      <Skeleton className="h-[calc(0.647rem*1.5+0.25rem+2px)] w-14 rounded-full" />
                     </div>
                     <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2.5">
                       {[0, 1, 2].map((j) => (
-                        <div key={j} className="space-y-1">
-                          <Skeleton className="h-2.5 w-8" />
-                          <Skeleton className="h-4 w-14" />
+                        <div key={j}>
+                          <TextLineSkeleton className="text-[0.647rem]" barClassName="w-8" />
+                          <TextLineSkeleton className="text-xs font-semibold" barClassName="w-14" />
                         </div>
                       ))}
                     </div>

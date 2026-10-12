@@ -30,7 +30,16 @@ import {
 import { useProjectsListSource } from "@/app/(app)/projects/ProjectsListSource";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { searchProjectEntries, useProjectSearchIndex, type ProjectSearchIndexEntry } from "@/hooks/useProjectSearchIndex";
-import { ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
+import { ChatIcon, DeleteIcon, DocumentIcon, EditIcon, FilterIcon, MoreIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
+import { LIST_CARD_BADGE, LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
 import {
   emitNavigationStart,
   emitProgressActivityEnd,
@@ -72,7 +81,6 @@ import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import NewProjectClient, { type ProjectCustomerOption, type InitialProject } from "@/app/(app)/projects/NewProjectClient";
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
 import { PROJECT_NOT_SENT_YET, deviceProjectForEdit, deviceProjectSaves } from "@/lib/projects/device-project-saves";
-import { EditButton } from "@/components/ui/icon-button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { formatShortDate } from "@/lib/date";
@@ -201,16 +209,12 @@ function formatDate(value: string | null) {
 }
 const formatDateShort = formatDate;
 
-// Badges on the mobile card sit as a caption above the title, so they're dialled
-// down from the standalone badge: tighter padding, smaller text, medium weight.
-const CARD_BADGE = "px-2 py-0.5 text-[0.647rem] font-medium";
-
 function projectDisplayName(row: ProjectRow) {
   return getString(row, "name") ?? "פרויקט";
 }
 
 function clientDisplayName(row: ProjectRow) {
-  return getString(row, "customer_name") ?? "-";
+  return getString(row, "customer_name") ?? "—";
 }
 
 function clientPhone(row: ProjectRow) {
@@ -653,6 +657,10 @@ export default function ProjectsClient({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   // One swiped-open row at a time, like a native list.
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
+  // The row whose ⋮ → מחיקה asked to delete it: one confirm for the table.
+  // Kept after the confirm closes, so it closes with its words still in it.
+  const [deleteTarget, setDeleteTarget] = useState<ProjectRow | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // A tapped project's page shows at once: over the list straight away on a
   // phone, and as the page's loading screen everywhere — drawn from this
@@ -1103,10 +1111,12 @@ export default function ProjectsClient({
           </div>
 
           {/* Clearing is the quiet one, grey — it looked exactly like "הצגת
-              התוצאות" beside it (owner, 2026-10-11: cancel-type buttons grey). */}
+              התוצאות" beside it (owner, 2026-10-11: cancel-type buttons grey).
+              "נקה סינון", the orders list's words (owner, 2026-10-11: one
+              wording). */}
           <div className="grid grid-cols-2 gap-2">
             <Button type="button" variant="muted" className="h-11" onClick={resetFilters}>
-              איפוס סינון
+              נקה סינון
             </Button>
             <Button
               type="button"
@@ -1133,12 +1143,12 @@ export default function ProjectsClient({
               {offline ? <StaleDataBadge savedAt={savedAt} /> : null}
             </div>
             <div className="relative mt-1">
-              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="חיפוש לפי לקוח או פרויקט..."
-                className="h-11 pr-9"
+                className="h-11 ps-9"
               />
             </div>
           </div>
@@ -1189,6 +1199,28 @@ export default function ProjectsClient({
           isFiltersPending ? "pointer-events-none opacity-50" : "opacity-100"
         )}
       >
+      {/* Nothing to list: the app's one empty box, and with a search or filter
+          on, the way out of it (owner, 2026-10-11: like the orders list — the
+          page said only "נמצאו 0 פרויקטים", and on a phone nothing at all). */}
+      {rows.length === 0 ? (
+        <EmptyState
+          action={
+            hasActiveToolbarFilters ? (
+              <Button type="button" variant="muted" size="sm" onClick={resetFilters}>
+                נקה סינון
+              </Button>
+            ) : undefined
+          }
+        >
+          {hasActiveToolbarFilters
+            ? `לא נמצאו ${activeTab === "quotes" ? "הצעות מחיר" : "פרויקטים"} לפי החיפוש.`
+            : activeTab === "quotes"
+              ? "אין הצעות מחיר."
+              : activeTab === "closed"
+                ? "אין פרויקטים סגורים."
+                : "אין פרויקטים."}
+        </EmptyState>
+      ) : (
       <ResponsiveDataView
         breakpoint="xl"
         desktop={
@@ -1286,17 +1318,17 @@ export default function ProjectsClient({
                     {canSeeMoney ? (
                       <td className="px-4 py-4">
                         {currentStatus === "quote" ? (
-                          actualPrice === null ? "-" : formatMoneyRounded(actualPrice)
+                          actualPrice === null ? "—" : formatMoneyRounded(actualPrice)
                         ) : (
                           <div className="space-y-0.5">
                             <div className="text-xs text-muted-foreground">
-                              מחיר: {actualPrice === null ? "-" : formatMoneyRounded(actualPrice)}
+                              מחיר: {actualPrice === null ? "—" : formatMoneyRounded(actualPrice)}
                             </div>
                             {/* ₪ first (owner, 2026-10-11). A loss reads "₪-500": its own
                                 left-to-right run, or the minus takes the number to the
                                 far side of the ₪. */}
                             <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
-                              רווח: {profit === null ? "-" : <span dir="ltr">{formatMoneyRounded(profit)}</span>}
+                              רווח: {profit === null ? "—" : <span dir="ltr">{formatMoneyRounded(profit)}</span>}
                             </div>
                             {/* What WE still owe on it — unpaid expenses + wages (the
                                 breakdown is on the project page). Only when there is any. */}
@@ -1310,7 +1342,7 @@ export default function ProjectsClient({
                         )}
                       </td>
                     ) : null}
-                    <td className="px-4 py-4">{openTasks === null ? "-" : openTasks}</td>
+                    <td className="px-4 py-4">{openTasks === null ? "—" : openTasks}</td>
                     <td className="px-4 py-4">
                       {currentStatus === "quote" ? (
                         <Button
@@ -1379,18 +1411,40 @@ export default function ProjectsClient({
                           className="h-9 w-9 rounded-xl p-0"
                           iconOnly
                         />
-                        <EditButton
-                          onClick={() => void openEditProject(row)}
-                          disabled={editLoadingId === getString(row, "id")}
-                          label={currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"}
-                        />
-                        <DeleteProjectButton
-                          projectId={id}
-                          projectName={projectDisplayName(row)}
-                          triggerLabel={currentStatus === "quote" ? "מחיקת הצעת מחיר" : "מחיקת פרויקט"}
-                          onDeleted={() => removeProject(id)}
-                          onRestore={() => restoreProject(row, projects.indexOf(row))}
-                        />
+                        {/* Edit and delete behind a ⋮ at the row's end — a big list
+                            keeps its rows quiet, and both are on the project's own
+                            page too (owner, 2026-10-11: big lists swipe on the phone,
+                            ⋮ on the computer; the project ledger's menu). */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild disabled={editLoadingId === id}>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="ms-auto shrink-0 text-muted-foreground hover:text-foreground"
+                              title="פעולות"
+                              aria-label="פעולות"
+                            >
+                              <MoreIcon />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem onClick={() => void openEditProject(row)}>
+                              <EditIcon className="me-2 h-4 w-4" />
+                              {currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setDeleteTarget(row);
+                                setDeleteOpen(true);
+                              }}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <DeleteIcon className="me-2 h-4 w-4" />
+                              מחיקה
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </td>
                   </tr>
@@ -1460,20 +1514,46 @@ export default function ProjectsClient({
                     onOpenChange={(next) => setSwipedRow(next ? id : null)}
                   >
                     <div
-                      className="block cursor-pointer p-4"
+                      className={cn("block cursor-pointer", LIST_CARD_BODY)}
                       {...rowNavigateProps(router, detailHref, { prefetch: true, onNavigate: () => openProject(row) })}
                     >
-                      <div className="space-y-3">
-                        {/* Glance line — the two statuses, nothing else. Tighter and
-                            lighter than a standalone badge: on a card they're a caption,
-                            not a headline. */}
+                      <div className="space-y-2.5">
+                        {/* Name first, the orders cards' order (owner, 2026-10-11:
+                            "name first" — the status line used to sit on top).
+                            Start-aligned, not centred: a list wants one vertical edge
+                            to scan down. */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className={LIST_CARD_NAME}>{projectDisplayName(row)}</div>
+                            {/* The number as plain text — tapping it opens the project
+                                like the rest of the card. As a call link under the name
+                                it took the taps meant for the project (owner, 2026-10-11);
+                                the call button in the corner dials instead. */}
+                            <div className={cn("mt-0.5", LIST_CARD_META)}>
+                              {clientDisplayName(row)}
+                              {clientPhone(row) ? (
+                                <>
+                                  {" · "}
+                                  <span dir="ltr">{clientPhone(row)}</span>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                          {/* The far corner, away from the name: the one control that
+                              calls the customer (owner, 2026-10-11). */}
+                          {clientPhone(row) ? (
+                            <CallIconButton phone={clientPhone(row)!} name={clientDisplayName(row)} className="shrink-0" />
+                          ) : null}
+                        </div>
+
+                        {/* The two statuses under it — a caption, not a headline. */}
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                           <ProjectStatusPicker
                             projectId={id}
                             status={currentStatus}
                             canEdit
                             variant="badge"
-                            badgeClassName={CARD_BADGE}
+                            badgeClassName={LIST_CARD_BADGE}
                             devicePage={listSource ? "projects" : undefined}
                             onChanged={(next) =>
                               setProjects((prev) =>
@@ -1481,39 +1561,15 @@ export default function ProjectsClient({
                               )
                             }
                           />
-                          <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), CARD_BADGE)}>
+                          <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), LIST_CARD_BADGE)}>
                             {paymentStatusLabel(paymentStatus)}
                           </Badge>
-                          {/* The top corner, away from the name: the one control that
-                              calls the customer (owner, 2026-10-11). */}
-                          {clientPhone(row) ? (
-                            <CallIconButton phone={clientPhone(row)!} name={clientDisplayName(row)} className="ms-auto" />
-                          ) : null}
                         </div>
                         <PaymentDueCaption
                           lateAmount={lateAmount}
                           expectedAmount={expectedAmount}
                           canSeeMoney={canSeeMoney}
                         />
-
-                        {/* Start-aligned, not centred: a list wants one vertical edge to
-                            scan down. Centring every card turns the column into tiles. */}
-                        <div>
-                          <div className="text-base font-semibold leading-snug">{projectDisplayName(row)}</div>
-                          {/* The number as plain text — tapping it opens the project
-                              like the rest of the card. As a call link under the name
-                              it took the taps meant for the project (owner, 2026-10-11);
-                              the call button in the top corner dials instead. */}
-                          <div className="mt-0.5 text-xs text-muted-foreground">
-                            {clientDisplayName(row)}
-                            {clientPhone(row) ? (
-                              <>
-                                {" · "}
-                                <span dir="ltr">{clientPhone(row)}</span>
-                              </>
-                            ) : null}
-                          </div>
-                        </div>
 
                         {/* Hidden entirely when the project has no tasks — an empty bar
                             says nothing and just adds a row to every card. */}
@@ -1540,34 +1596,34 @@ export default function ProjectsClient({
                           <div className="flex flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-2">
                             {canSeeMoney ? (
                               <div className="whitespace-nowrap">
-                                <div className="text-[0.588rem] text-muted-foreground">רווח</div>
+                                <div className="text-[0.647rem] text-muted-foreground">רווח</div>
                                 <div
-                                  className={`text-[0.765rem] font-semibold ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
+                                  className={`text-xs font-semibold ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
                                 >
                                   {/* Its own left-to-right run, so a loss reads "₪-500". */}
-                                  {profit === null ? "-" : <span dir="ltr">{formatMoneyRounded(profit)}</span>}
+                                  {profit === null ? "—" : <span dir="ltr">{formatMoneyRounded(profit)}</span>}
                                 </div>
                               </div>
                             ) : null}
                             {canSeeMoney ? (
                               <div className="whitespace-nowrap">
-                                <div className="text-[0.588rem] text-muted-foreground">מחיר</div>
-                                <div className="text-[0.765rem] font-semibold">
-                                  {actualPrice === null ? "-" : formatMoneyRounded(actualPrice)}
+                                <div className="text-[0.647rem] text-muted-foreground">מחיר</div>
+                                <div className="text-xs font-semibold">
+                                  {actualPrice === null ? "—" : formatMoneyRounded(actualPrice)}
                                 </div>
                               </div>
                             ) : null}
                             {canSeeMoney && currentStatus !== "quote" && weOweValue(row) > 0.009 ? (
                               <div className="whitespace-nowrap">
-                                <div className="text-[0.588rem] text-muted-foreground">הוצאות שלא שולמו</div>
-                                <div className="text-[0.765rem] font-semibold text-warning-strong">
+                                <div className="text-[0.647rem] text-muted-foreground">הוצאות שלא שולמו</div>
+                                <div className="text-xs font-semibold text-warning-strong">
                                   {formatMoneyRounded(weOweValue(row))}
                                 </div>
                               </div>
                             ) : null}
                             <div className="whitespace-nowrap">
-                              <div className="text-[0.588rem] text-muted-foreground">התחלה</div>
-                              <div className="text-[0.765rem] font-semibold">{startDate}</div>
+                              <div className="text-[0.647rem] text-muted-foreground">התחלה</div>
+                              <div className="text-xs font-semibold">{startDate}</div>
                             </div>
                           </div>
                         </div>
@@ -1581,6 +1637,18 @@ export default function ProjectsClient({
           </>
         }
       />
+      )}
+      {deleteTarget ? (
+        <DeleteProjectButton
+          hideTrigger
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          projectId={getString(deleteTarget, "id") ?? ""}
+          projectName={projectDisplayName(deleteTarget)}
+          onDeleted={() => removeProject(getString(deleteTarget, "id") ?? "")}
+          onRestore={() => restoreProject(deleteTarget, projects.indexOf(deleteTarget))}
+        />
+      ) : null}
       </div>
 
       {rows.length > 0 ? (
@@ -1616,14 +1684,13 @@ export default function ProjectsClient({
         error={approveQuoteError || undefined}
       >
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">מחיר מוסכם *</label>
+          <Field label="מחיר מוסכם" required>
             <CurrencyInput
               value={approveQuotePrice}
               onChange={(e) => setApproveQuotePrice(e.target.value)}
               placeholder="לדוגמה: 2300"
             />
-          </div>
+          </Field>
       </FormDialog>
 
       <Dialog

@@ -194,7 +194,7 @@ export function InlineCustomerEditor({
     <div className="space-y-3 rounded-md border bg-background/60 p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-medium text-muted-foreground">עריכת פרטי הלקוח</div>
-        <span className="text-[0.588rem] text-muted-foreground">שמירה אוטומטית ביציאה מהשדה</span>
+        <span className="text-[0.647rem] text-muted-foreground">שמירה אוטומטית ביציאה מהשדה</span>
       </div>
       {renderField("name")}
       <AdaptiveGrid variant="formTwo">

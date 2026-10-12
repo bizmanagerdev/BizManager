@@ -1,23 +1,19 @@
 "use client";
 
-import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Button } from "@/components/ui/button";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
-import { CommentIcon, CopyIcon, DeliveryIcon, DocumentIcon, HistoryIcon, OrderIcon, PaymentIcon, ReceiptIcon } from "@/components/ui/icons";
+import { CommentIcon, DeliveryIcon, DocumentIcon, HistoryIcon, OrderIcon, PaymentIcon, ReceiptIcon } from "@/components/ui/icons";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
-import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
 import OrderRemindersSection from "@/app/(app)/sales/orders/[id]/OrderRemindersSection";
 import DeliveryImagesCard from "@/app/(app)/sales/orders/[id]/DeliveryImagesCard";
-import { SectionCard } from "@/components/ui/section-card";
-import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
+import { SECTION_ICON_CLASS, SectionCard, SectionCount } from "@/components/ui/section-card";
+import { EmptyState } from "@/components/ui/empty-state";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
 import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
 import OrderCommentsThread from "@/app/(app)/sales/orders/[id]/OrderCommentsThread";
-import OrderShareActions from "@/app/(app)/sales/orders/[id]/OrderShareActions";
 import OrderHeaderMenu from "@/app/(app)/sales/orders/[id]/OrderHeaderMenu";
 import OrderPageHeading from "@/app/(app)/sales/orders/[id]/OrderPageHeading";
 import { CustomerContactCard } from "@/components/customers/CustomerContactCard";
@@ -67,8 +63,9 @@ function formatDate(value: string | null) {
   return formatShortDate(value);
 }
 
+// A missing value is "—", as everywhere (owner, 2026-10-11).
 function formatDateTime(value: string | null) {
-  return formatShortDateTime(value, "-");
+  return formatShortDateTime(value, "—");
 }
 
 function paymentInsertedByLabel(
@@ -148,7 +145,7 @@ export default function OrderPageView({
   const orderLevelMorningDocuments = morningDocuments.filter((document) => !document.payment_id);
 
   const customerName =
-    getString(customer ?? {}, "name") ?? getString(customer ?? {}, "name_for_invoice") ?? customerId ?? "-";
+    getString(customer ?? {}, "name") ?? getString(customer ?? {}, "name_for_invoice") ?? customerId ?? "—";
   const customerNameForInvoiceRaw = getString(customer ?? {}, "name_for_invoice");
   const customerNameForInvoice =
     customerNameForInvoiceRaw && customerNameForInvoiceRaw !== customerName ? customerNameForInvoiceRaw : null;
@@ -292,39 +289,29 @@ export default function OrderPageView({
 
   const orderActivity = extras?.activity ?? [];
   const isAdmin = viewer.role === "admin";
-
-  // The handful of things you do to an order. Rendered twice: inline in the
-  // desktop heading, and — on the phone — as a פעולות section at the foot of the
-  // page, the same shape the project page uses.
   const canLogCommunication = viewer.role === "admin" || viewer.role === "office";
-  const orderActionButtons = (
-    <>
-      <Button asChild size="sm" variant="outline" className="h-9">
-        <Link href={`/sales/orders/new?duplicate=${id}`} title="שכפול הזמנה">
-          <CopyIcon className="h-4 w-4" />
-          <span>שכפול</span>
-        </Link>
-      </Button>
-      <OrderShareActions order={orderShareData} />
-      <OrderEditDialog orderId={id} />
-      {canLogCommunication ? (
-        <LogCommunicationButton entityType="order" entityId={id} customerId={customerId} defaultTopic="sales" className="h-9" />
-      ) : null}
-    </>
-  );
 
   return (
     <div className="space-y-3">
+      {/* The things you do to an order: on desktop the edit pencil and a ⋮ in
+          the heading (owner, 2026-10-11: the project page's row); on the phone
+          the same actions become the ⋮ beside the back arrow, and the order's
+          number + customer go into the top bar — OrderHeaderMenu registers it
+          from here, though the heading itself only shows from lg. */}
       <OrderPageHeading
         customerId={customerId}
         customerName={customerName}
         customerDisplayName={customerDisplayName}
         actions={
           order ? (
-            <>
-              {orderActionButtons}
-              <DeleteOrderButton orderId={id} />
-            </>
+            <OrderHeaderMenu
+              orderId={id}
+              customerId={customerId ?? undefined}
+              customerName={customerDisplayName}
+              share={orderShareData}
+              canManage={canLogCommunication}
+              remindersSectionId={REMINDERS_SECTION_ID}
+            />
           ) : null
         }
       />
@@ -510,17 +497,16 @@ export default function OrderPageView({
             </div>
 
             <div className="space-y-3 lg:order-1 lg:col-span-2">
+              {/* Section icons grey and a section's count the dashboard's grey
+                  pill, on every page (owner, 2026-10-11: these were outlined
+                  "N פריטים / N רשומות" pills). */}
               <SectionCard
-                icon={<OrderIcon className="h-4 w-4" />}
+                icon={<OrderIcon className={SECTION_ICON_CLASS} />}
                 title="פריטים"
-                aside={
-                  <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                    {orderItems.length} פריטים
-                  </span>
-                }
+                aside={<SectionCount count={orderItems.length} />}
               >
                 {orderItems.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">לא נמצאו פריטים להזמנה זו.</p>
+                  <EmptyState dense>לא נמצאו פריטים להזמנה זו.</EmptyState>
                 ) : (
                   <>
                     <div className="divide-y divide-border/60">
@@ -615,15 +601,13 @@ export default function OrderPageView({
               ) : null}
 
               <SectionCard
-                icon={<PaymentIcon className="h-4 w-4" />}
+                icon={<PaymentIcon className={SECTION_ICON_CLASS} />}
                 title="תשלומים"
                 aside={
                   canManagePayments && !needsPaymentAction && !needsPricingAction ? (
                     <OrderPaymentDialog orderId={id} totalAmount={totalAmount} paidAmount={totalPaid} devicePage="orders" />
                   ) : (
-                    <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                      {payments.length} רשומות
-                    </span>
+                    <SectionCount count={payments.length} />
                   )
                 }
               >
@@ -637,13 +621,11 @@ export default function OrderPageView({
               </SectionCard>
 
               <SectionCard
-                icon={<ReceiptIcon className="h-4 w-4" />}
+                icon={<ReceiptIcon className={SECTION_ICON_CLASS} />}
                 title="מסמכים"
                 aside={
                   orderLevelMorningDocuments.length > 0 ? (
-                    <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                      {orderLevelMorningDocuments.length} מסמכים
-                    </span>
+                    <SectionCount count={orderLevelMorningDocuments.length} />
                   ) : null
                 }
               >
@@ -662,21 +644,15 @@ export default function OrderPageView({
                 )}
               </SectionCard>
 
-              <SectionCard icon={<CommentIcon className="h-4 w-4" />} title="הערות ותגובות">
+              <SectionCard icon={<CommentIcon className={SECTION_ICON_CLASS} />} title="הערות ותגובות">
                 <OrderCommentsThread orderId={id} initialNotes={orderNotes} authorColors={core.commentAuthorColors} />
               </SectionCard>
 
               {isAdmin ? (
                 <SectionCard
-                  icon={<HistoryIcon className="h-4 w-4" />}
+                  icon={<HistoryIcon className={SECTION_ICON_CLASS} />}
                   title="היסטוריית פעילות"
-                  aside={
-                    orderActivity.length > 0 ? (
-                      <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                        {orderActivity.length} רשומות
-                      </span>
-                    ) : null
-                  }
+                  aside={orderActivity.length > 0 ? <SectionCount count={orderActivity.length} /> : null}
                 >
                   {extras ? <EntityActivityTimeline items={orderActivity} /> : <PendingBlock className="h-20" />}
                 </SectionCard>
@@ -684,19 +660,6 @@ export default function OrderPageView({
             </div>
           </div>
         </section>
-      ) : null}
-
-      {/* Phone: the order's number + customer go into the top bar, and these
-          same actions become the ⋮ beside the back arrow. Renders no row. */}
-      {order ? (
-        <OrderHeaderMenu
-          orderId={id}
-          customerId={customerId ?? undefined}
-          customerName={customerDisplayName}
-          share={orderShareData}
-          canManage={canLogCommunication}
-          remindersSectionId={REMINDERS_SECTION_ID}
-        />
       ) : null}
     </div>
   );

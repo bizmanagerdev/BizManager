@@ -6,6 +6,9 @@ import { updateDocumentTag } from "@/lib/documents/updateDocumentTag";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -21,10 +24,10 @@ import {
   ArrowUpIcon,
   ChartIcon,
   CheckIcon,
-  ChecklistIcon,
   ChevronDownIcon,
   DocumentIcon,
   PaymentIcon,
+  TaskIcon,
   UploadIcon,
 } from "@/components/ui/icons";
 import {
@@ -1158,7 +1161,7 @@ export default function ProjectTabsClient({
     <CollapsibleSection
       collapsible={false}
       title="סיכום כספי"
-      icon={<ChartIcon className="h-4 w-4 text-primary" />}
+      icon={<ChartIcon className={SECTION_ICON_CLASS} />}
     >
       {/* Line after line, the way the money actually builds up: base → what was
           re-charged → the resulting price → what it cost. */}
@@ -1167,11 +1170,14 @@ export default function ProjectTabsClient({
           <dt className="text-muted-foreground">מחיר בסיס שסוכם</dt>
           <dd className="flex items-center gap-2 font-semibold">
             <LtrInline>{formatIls(displayedBasePrice)}</LtrInline>
+            {/* Small to look at, a finger's size to tap: the ::before reaches
+                past its 28px to 44 (owner, 2026-10-11: tap targets ≥ 44px on
+                the phone; CallIconButton's way). */}
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className="relative h-7 px-2 text-xs before:absolute before:-inset-2 before:content-['']"
               onClick={() => setUpdateBasePriceOpen(true)}
             >
               עדכון
@@ -1606,8 +1612,13 @@ export default function ProjectTabsClient({
   // header where there's width, and as a row above the list on a phone.
   const movementActions = (
     <>
+                {/* Both of a section's "+" buttons wear the less-important
+                    look — the page's main move is the top card's "רישום תשלום"
+                    (owner: "all main buttons are bold secondary, all buttons
+                    less important like this"). */}
                 <Button
                   type="button"
+                  variant="soft"
                   size="sm"
                   className="h-auto min-h-8 whitespace-normal px-2 py-1.5 text-xs"
                   onClick={() => {
@@ -1620,7 +1631,7 @@ export default function ProjectTabsClient({
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="soft"
                   size="sm"
                   className="h-auto min-h-8 whitespace-normal px-2 py-1.5 text-xs"
                   onClick={() => {
@@ -1793,9 +1804,9 @@ export default function ProjectTabsClient({
             title={
               <span className="flex items-center gap-1.5">
                 תנועות
-                <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs font-normal text-muted-foreground">
-                  {movements.length}
-                </span>
+                {/* The dashboard's grey count pill (owner, 2026-10-11: one look
+                    for a section's count — it was outlined here). */}
+                <SectionCount count={movements.length} />
               </span>
             }
             // @container: lets this section's own children (the action row,
@@ -1856,7 +1867,9 @@ export default function ProjectTabsClient({
         <CollapsibleSection
           defaultOpen={totalTasks > 0}
           title="משימות"
-          icon={<ChecklistIcon className="h-4 w-4 text-primary" />}
+          // The app's task glyph — the menu's, the tabs', the quick-create's —
+          // grey like every section icon (owner, 2026-10-11).
+          icon={<TaskIcon className={SECTION_ICON_CLASS} />}
           summary={
             totalTasks > 0 ? (
               <span className="text-muted-foreground">
@@ -1917,7 +1930,7 @@ export default function ProjectTabsClient({
               </CardHeader>
               <CardContent className="space-y-4">
                 {paymentsUi.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">אין תשלומים להצגה.</div>
+                  <EmptyState dense>אין תשלומים להצגה.</EmptyState>
                 ) : (
                   paymentsUi.map((payment) => {
                     const amount = toNumber(payment.amount_total);
@@ -1973,8 +1986,7 @@ export default function ProjectTabsClient({
         submitDisabled={uploadDocsFiles.length === 0}
       >
           <div className="space-y-4">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
+            <Field label="קטגוריה" hint="רשות">
               <NativeSelect
                 value={uploadDocsCategory}
                 onChange={(e) => setUploadDocsCategory(e.target.value)}
@@ -1995,18 +2007,17 @@ export default function ProjectTabsClient({
                   </optgroup>
                 ) : null}
               </NativeSelect>
-          </div>
+            </Field>
 
-            <div className="space-y-1">
-              <div className="text-sm font-medium">קבצים</div>
+            <Field label="קבצים" required>
               <div className="flex items-center justify-between gap-2">
                 <FileUploadActions
                   files={uploadDocsFiles}
                   accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
                   multiple
                   onFilesSelected={setUploadDocsFiles}
-                  chooseLabel="בחר קבצים/תמונות"
-                  takePhotoLabel="צלם תמונה"
+                  chooseLabel="בחירת קבצים/תמונות"
+                  takePhotoLabel="צילום תמונה"
                 />
                 <div className="text-xs text-muted-foreground">{uploadDocsFiles.length} קבצים</div>
               </div>
@@ -2022,7 +2033,7 @@ export default function ProjectTabsClient({
               {uploadDocsFiles.length === 0 ? (
                 <div className="text-xs text-destructive">בחר לפחות קובץ אחד</div>
               ) : null}
-            </div>
+            </Field>
           </div>
 
       </FormDialog>
@@ -2036,15 +2047,14 @@ export default function ProjectTabsClient({
             setEditTagValue("");
           }
         }}
-        title="ערוך קטגוריה"
+        title="עריכת קטגוריה"
         description="עדכון קטגוריה למסמך (documents.document_type)."
         size="formMd"
         onSubmit={saveEditTag}
         submitLabel="שמירה"
 
       >
-          <div className="space-y-2">
-            <div className="text-sm font-medium">קטגוריה</div>
+          <Field label="קטגוריה">
             <NativeSelect
               value={editTagValue}
               onChange={(e) => setEditTagValue(e.target.value)}
@@ -2061,7 +2071,7 @@ export default function ProjectTabsClient({
                 </option>
               ) : null}
             </NativeSelect>
-          </div>
+          </Field>
 
       </FormDialog>
 
@@ -2116,8 +2126,7 @@ export default function ProjectTabsClient({
         error={updateBasePriceError || undefined}
       >
 
-          <div className="space-y-2">
-            <div className="text-sm font-medium">מחיר בסיס *</div>
+          <Field label="מחיר בסיס" required>
             <CurrencyInput
               inputMode="numeric"
               value={updateBasePriceValue}
@@ -2136,7 +2145,7 @@ export default function ProjectTabsClient({
                 {formatIls(Math.max(updateBasePriceNumber + (billedExpensesTotal ?? 0), paymentsTotal))}
               </div>
             ) : null}
-          </div>
+          </Field>
       </FormDialog>
 
       <ExpenseDialog
@@ -2272,10 +2281,10 @@ export default function ProjectTabsClient({
           key={documentsPending ? "documents-pending" : "documents"}
           defaultOpen={projectDocuments.length > 0}
           title="מסמכים"
-          icon={<DocumentIcon className="h-4 w-4 text-primary" />}
-          summary={
-            documentsPending ? null : <span className="text-muted-foreground">{projectDocuments.length} קבצים</span>
-          }
+          icon={<DocumentIcon className={SECTION_ICON_CLASS} />}
+          // The count as every section's count, the grey pill (owner,
+          // 2026-10-11) — it was plain grey "N קבצים".
+          summary={documentsPending ? null : <SectionCount count={projectDocuments.length} />}
           contentClassName="text-sm space-y-3"
         >
           {projectDocumentsError ? (
@@ -2285,7 +2294,7 @@ export default function ProjectTabsClient({
           {documentsPending ? (
             <div className="h-20 animate-pulse rounded-2xl bg-muted/40" aria-busy="true" />
           ) : filteredProjectDocuments.length === 0 ? (
-            <p className="text-muted-foreground">אין מסמכים להצגה.</p>
+            <EmptyState dense>אין מסמכים להצגה.</EmptyState>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {filteredProjectDocuments.map((d) => {
@@ -2311,18 +2320,18 @@ export default function ProjectTabsClient({
                         <DocumentIcon className="h-6 w-6 text-muted-foreground" />
                       )}
                       {extension ? (
-                        <span className="absolute bottom-1 start-1 rounded bg-foreground/70 px-1 text-[0.625rem] uppercase text-white">
+                        <span className="absolute bottom-1 start-1 rounded bg-foreground/70 px-1 text-[0.647rem] uppercase text-white">
                           {extension}
                         </span>
                       ) : null}
                     </a>
                     <div className="space-y-1 p-2">
                       <div className="break-words text-xs font-medium">{name}</div>
-                      <div className="text-[0.6875rem] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         <LtrInline>{d.uploaded_at ? formatDate(d.uploaded_at) : "—"}</LtrInline>
                       </div>
                       {d.document_type ? (
-                        <span className="inline-block rounded-full border border-border/70 bg-background px-1.5 py-0 text-[0.625rem] text-muted-foreground">
+                        <span className="inline-block rounded-full border border-border/70 bg-background px-1.5 py-0 text-[0.647rem] text-muted-foreground">
                           {d.document_type}
                         </span>
                       ) : null}
@@ -2349,9 +2358,9 @@ export default function ProjectTabsClient({
 
           <Button
             type="button"
-            variant="outline"
+            variant="soft"
             size="sm"
-            className="w-full border-dashed"
+            className="w-full"
             disabled={docsUploading}
             onClick={() => setUploadDocsOpen(true)}
           >

@@ -653,7 +653,7 @@ describe("quantities", () => {
       expect(saves.upload).not.toHaveBeenCalled();
 
       await act(async () => {
-        fireEvent.click(within(ask).getByRole("button", { name: "סגור בכל זאת" }));
+        fireEvent.click(within(ask).getByRole("button", { name: "סגירה בכל זאת" }));
       });
       expect(sentPayload().items[0].quantity_delivered).toBe(2);
     });
@@ -1344,7 +1344,7 @@ describe("delivery details", () => {
       const getCurrentPosition = vi.fn();
       Object.defineProperty(window.navigator, "geolocation", { configurable: true, value: { getCurrentPosition } });
       await toArrival();
-      fireEvent.click(screen.getByRole("button", { name: "שמור את המיקום שאני נמצא בו" }));
+      fireEvent.click(screen.getByRole("button", { name: "שמירת המיקום שאני נמצא בו" }));
 
       expect(screen.getByRole("button", { name: "מאתר..." })).toBeDisabled();
       expect(getCurrentPosition).toHaveBeenCalledTimes(1);
@@ -1360,7 +1360,7 @@ describe("delivery details", () => {
       });
       await toArrival();
       expect(screen.getByText("לא נשמרה נקודה")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "שמור את המיקום שאני נמצא בו" }));
+      fireEvent.click(screen.getByRole("button", { name: "שמירת המיקום שאני נמצא בו" }));
       expect(screen.getByText("נקודה נשמרה: 31.76830, 35.21370")).toBeInTheDocument();
 
       await next("לאשר את האספקה?");
@@ -1381,7 +1381,7 @@ describe("delivery details", () => {
         },
       });
       await toArrival();
-      fireEvent.click(screen.getByRole("button", { name: "שמור את המיקום שאני נמצא בו" }));
+      fireEvent.click(screen.getByRole("button", { name: "שמירת המיקום שאני נמצא בו" }));
       expect(screen.getByText("הגישה למיקום נחסמה. אפשרו מיקום לאתר בהגדרות הדפדפן.")).toBeInTheDocument();
     });
 
@@ -1394,14 +1394,14 @@ describe("delivery details", () => {
         },
       });
       await toArrival();
-      fireEvent.click(screen.getByRole("button", { name: "שמור את המיקום שאני נמצא בו" }));
+      fireEvent.click(screen.getByRole("button", { name: "שמירת המיקום שאני נמצא בו" }));
       expect(screen.getByText("לא הצלחנו לקבוע את המיקום.")).toBeInTheDocument();
     });
 
     it("a device without location says so", async () => {
       Object.defineProperty(window.navigator, "geolocation", { configurable: true, value: undefined });
       await toArrival();
-      fireEvent.click(screen.getByRole("button", { name: "שמור את המיקום שאני נמצא בו" }));
+      fireEvent.click(screen.getByRole("button", { name: "שמירת המיקום שאני נמצא בו" }));
       expect(screen.getByText("המכשיר הזה לא תומך באיתור מיקום.")).toBeInTheDocument();
     });
   });

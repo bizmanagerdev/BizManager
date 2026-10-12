@@ -44,6 +44,7 @@ import { appendDictatedLines, parseTaskLines } from "@/components/tasks/taskLine
 import { StatusBadge } from "@/components/ui/status-badge";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { CountBadge } from "@/components/ui/count-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
@@ -418,7 +419,10 @@ const TaskCard = memo(function TaskCard({
           {displaySubject}
         </div>
         {!overview && task.priority && SHOWN_PRIORITIES.has(task.priority) ? (
-          <StatusBadge value={task.priority} type="priority" className="shrink-0 text-[0.72em]" locale={locale} />
+          // 0.74em of the card's 0.875rem: the app's smallest step, 0.647rem, at
+          // the normal zoom — in em so the magnifier still scales it (owner,
+          // 2026-10-11: small text in two sizes only).
+          <StatusBadge value={task.priority} type="priority" className="shrink-0 text-[0.74em]" locale={locale} />
         ) : null}
         {!overview && task.members.length > 0 ? (
           <div className="flex shrink-0 -space-x-1.5">
@@ -661,12 +665,14 @@ function BoardColumn({
           {/* The list sits on bg-muted, so its count takes the card colour. */}
           <CountBadge count={tasks.length} className="bg-background" />
         </div>
-        {/* Always-visible add at the top of the list. */}
+        {/* Always-visible add at the top of the list. A 20px glyph, a finger's
+            size to tap: the ::before reaches past it to 44px (owner,
+            2026-10-11: tap targets ≥ 44px on the phone). */}
         <button
           type="button"
           onClick={() => setAdding("top")}
           aria-label={t(tasksDict, locale, "addCardLabel")}
-          className="shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+          className="relative shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors before:absolute before:-inset-3 before:content-[''] hover:bg-background hover:text-foreground"
         >
           <AddIcon className="h-4 w-4" />
         </button>
@@ -702,8 +708,12 @@ function BoardColumn({
           ))}
         </SortableContext>
 
+        {/* The app's one empty box, its small size (owner, 2026-10-11: "empty
+            lists: one look"). */}
         {tasks.length === 0 && adding === null ? (
-          <p className="px-1 py-2 text-xs text-muted-foreground">{t(tasksDict, locale, "emptyColumnText")}</p>
+          <EmptyState dense className="text-xs">
+            {t(tasksDict, locale, "emptyColumnText")}
+          </EmptyState>
         ) : null}
       </div>
 

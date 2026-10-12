@@ -10,7 +10,8 @@ import ProjectPageHeading, { projectTypeLabel } from "@/app/(app)/projects/[id]/
 import ProjectRemindersSection from "@/app/(app)/projects/[id]/ProjectRemindersSection";
 import { ProjectBodySkeleton } from "@/app/(app)/projects/[id]/ProjectPageSkeleton";
 import type { ProjectShareData } from "@/app/(app)/projects/[id]/ProjectShareActions";
-import { ArrowLeftIcon, ClipboardIcon, DeliveryIcon, HistoryIcon, HomeIcon, LocationIcon, NoteIcon } from "@/components/ui/icons";
+import { ArrowLeftIcon, ClipboardIcon, DeliveryIcon, HistoryIcon, NoteIcon, WazeIcon } from "@/components/ui/icons";
+import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
 import { AddressLink } from "@/components/ui/address-link";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { ProjectStatusPicker } from "@/components/projects/ProjectStatusPicker";
@@ -307,13 +308,16 @@ export default function ProjectPageView({
   // something to say — otherwise the head row is just לקוח + תשלום.
   const hasRoute = projectType === "moving" && Boolean(moveOrigin || moveDestination);
   const hasItems = projectType === "moving" && itemsToMove.length > 0;
-  // Desktop headline: the route on one line, from → to, each behind its own glyph.
+  // Desktop headline: the route on one line, from → to. Each address opens
+  // Waze, so each wears the Waze mark, as every tappable address in the app
+  // does (owner, 2026-10-11 — a house and a pin here said nothing about the
+  // tap); the tile's colour still tells the start from the end.
   const routeHeadline = hasRoute ? (
     <span className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-base font-bold leading-snug">
       {moveOrigin ? (
         <AddressLink address={moveOrigin} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
-            <HomeIcon className="h-3.5 w-3.5" />
+            <WazeIcon className="h-3.5 w-3.5" />
           </span>
           <span className="min-w-0">{moveOrigin}</span>
         </AddressLink>
@@ -322,7 +326,7 @@ export default function ProjectPageView({
       {moveDestination ? (
         <AddressLink address={moveDestination} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
-            <LocationIcon className="h-3.5 w-3.5" />
+            <WazeIcon className="h-3.5 w-3.5" />
           </span>
           <span className="min-w-0">{moveDestination}</span>
         </AddressLink>
@@ -410,16 +414,17 @@ export default function ProjectPageView({
         }
       >
         <div className="space-y-3">
-          {/* Phone keeps the stacked route rows; on desktop the route moved up into the headline. */}
+          {/* Phone keeps the stacked route rows; on desktop the route moved up into the headline.
+              The Waze mark on each, as on the headline. */}
           {hasRoute ? (
             <div className="space-y-2 lg:hidden">
               {moveOrigin ? (
                 <AddressLink address={moveOrigin} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
-                    <HomeIcon className="h-3.5 w-3.5" />
+                    <WazeIcon className="h-3.5 w-3.5" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[0.6875rem] text-muted-foreground">מוצא</span>
+                    <span className="block text-xs text-muted-foreground">מוצא</span>
                     <span className="block font-medium">{moveOrigin}</span>
                   </span>
                 </AddressLink>
@@ -427,10 +432,10 @@ export default function ProjectPageView({
               {moveDestination ? (
                 <AddressLink address={moveDestination} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
-                    <LocationIcon className="h-3.5 w-3.5" />
+                    <WazeIcon className="h-3.5 w-3.5" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[0.6875rem] text-muted-foreground">יעד</span>
+                    <span className="block text-xs text-muted-foreground">יעד</span>
                     <span className="block font-medium">{moveDestination}</span>
                   </span>
                 </AddressLink>
@@ -564,10 +569,9 @@ export default function ProjectPageView({
               <CollapsibleSection
                 defaultOpen
                 title="היסטוריית פעילות"
-                icon={<HistoryIcon className="h-4 w-4 text-primary" />}
-                summary={
-                  projectActivity.length > 0 ? <span className="text-muted-foreground">{projectActivity.length} רשומות</span> : null
-                }
+                icon={<HistoryIcon className={SECTION_ICON_CLASS} />}
+                // Grey icon, grey count pill — every section's (owner, 2026-10-11).
+                summary={projectActivity.length > 0 ? <SectionCount count={projectActivity.length} /> : null}
               >
                 {extras ? (
                   <EntityActivityTimeline items={projectActivity} previewCount={5} />

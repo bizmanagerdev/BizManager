@@ -2,7 +2,18 @@
 
 import type { ReactNode } from "react";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
-import { ChartIcon, ChecklistIcon, ClipboardIcon, DeliveryIcon, DocumentIcon, HistoryIcon, PaymentIcon, UserIcon } from "@/components/ui/icons";
+import {
+  ChartIcon,
+  ClipboardIcon,
+  DeliveryIcon,
+  DocumentIcon,
+  HistoryIcon,
+  NotificationIcon,
+  PaymentIcon,
+  TaskIcon,
+  UserIcon,
+} from "@/components/ui/icons";
+import { SECTION_ICON_CLASS } from "@/components/ui/section-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 
@@ -39,9 +50,10 @@ export function ProjectMobileHeaderSkeleton() {
   return (
     <div className="md:hidden">
       <div className="-mx-3 -mt-4 flex flex-nowrap items-center justify-between gap-2 px-3 pb-0 pt-3">
+        {/* The chips' own height: a text-xs line, py-0.5 and the border. */}
         <div className="flex shrink-0 items-center gap-1.5">
-          <Skeleton className="h-[1.4rem] w-14 rounded-full" />
-          <Skeleton className="h-[1.4rem] w-12 rounded-full" />
+          <Skeleton className="h-[calc(1.25rem+2px)] w-14 rounded-full" />
+          <Skeleton className="h-[calc(1.25rem+2px)] w-12 rounded-full" />
         </div>
         <Skeleton className="h-3.5 w-28" />
       </div>
@@ -86,7 +98,7 @@ const STATUS_CARD = (
 // The page's own section box, as on the page (a CollapsibleSection that never
 // folds, since 2026-10-11) — so the header's height is the real one.
 const SUMMARY_SECTION = (
-  <CollapsibleSection collapsible={false} title="סיכום כספי" icon={<ChartIcon className="h-4 w-4 text-primary" />}>
+  <CollapsibleSection collapsible={false} title="סיכום כספי" icon={<ChartIcon className={SECTION_ICON_CLASS} />}>
     <div className="divide-y">
       {[0, 1, 2, 3, 4, 5].map((i) => (
         <div key={i} className="flex h-[2.25rem] items-center justify-between gap-3">
@@ -150,9 +162,12 @@ export function ProjectBodySkeleton() {
         <div className="order-1 min-w-0 space-y-3 lg:order-none">
           <div className="lg:hidden">{SUMMARY_SECTION}</div>
           <CollapsibleSection collapsible={false} defaultOpen title="תנועות">
+            {/* The computer's table header (the orders table's grey one, since
+                2026-10-11), and its rows at that table's height. */}
+            <Skeleton className="mb-1 hidden h-11 w-full rounded-none lg:block" />
             <div className="space-y-1">
               {[0, 1, 2].map((i) => (
-                <div key={i} className="flex h-10 items-center justify-between gap-3">
+                <div key={i} className="flex h-10 items-center justify-between gap-3 lg:h-[3.25rem]">
                   <div className="space-y-1.5">
                     <Skeleton className="h-4 w-32" />
                     <Line className="w-20" />
@@ -162,18 +177,20 @@ export function ProjectBodySkeleton() {
               ))}
             </div>
           </CollapsibleSection>
-          <CollapsibleSection title="משימות" icon={<ChecklistIcon className="h-4 w-4 text-primary" />}>
+          <CollapsibleSection title="משימות" icon={<TaskIcon className={SECTION_ICON_CLASS} />}>
             {null}
           </CollapsibleSection>
-          <CollapsibleSection title="תזכורות">{null}</CollapsibleSection>
+          <CollapsibleSection title="תזכורות" icon={<NotificationIcon className={SECTION_ICON_CLASS} />}>
+            {null}
+          </CollapsibleSection>
         </div>
         <aside className="order-2 mt-3 space-y-3 lg:order-none lg:mt-0">
           <div className="hidden lg:block">{STATUS_CARD}</div>
           <div className="hidden lg:block">{SUMMARY_SECTION}</div>
-          <CollapsibleSection title="מסמכים" icon={<DocumentIcon className="h-4 w-4 text-primary" />}>
+          <CollapsibleSection title="מסמכים" icon={<DocumentIcon className={SECTION_ICON_CLASS} />}>
             {null}
           </CollapsibleSection>
-          <CollapsibleSection defaultOpen title="היסטוריית פעילות" icon={<HistoryIcon className="h-4 w-4 text-primary" />}>
+          <CollapsibleSection defaultOpen title="היסטוריית פעילות" icon={<HistoryIcon className={SECTION_ICON_CLASS} />}>
             <div className="space-y-3">
               {[0, 1, 2, 3, 4].map((i) => (
                 <div key={i} className="space-y-1.5">

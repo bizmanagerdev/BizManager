@@ -15,9 +15,9 @@ import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { combinedCustomerName, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 // ₪ first, as on the screen (owner, 2026-10-11: money is written the
-// dashboard's way) — the shared slip and its text too.
+// dashboard's way) — the shared slip and its text too. A missing value is "—".
 function formatCurrency(value: number | null) {
-  if (value === null) return "-";
+  if (value === null) return "—";
   return formatMoney(value);
 }
 
@@ -315,7 +315,7 @@ export default function DeliveryShareActions({
           {
             duration: 10000,
             action: {
-              label: "פתח וואטסאפ ווב",
+              label: "פתיחת וואטסאפ ווב",
               onClick: () => window.open("https://web.whatsapp.com/", "_blank", "noopener"),
             },
           }

@@ -34,6 +34,9 @@ import { CardInstallmentsField } from "@/components/financial/CardInstallmentsFi
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { FinancialAttachment } from "@/lib/payments";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
 import { formatShortDate } from "@/lib/date";
 import { formatMoney } from "@/lib/money";
 
@@ -110,7 +113,7 @@ function PaymentFilesLine({ payment, checksLink }: { payment: PaymentItem; check
             target="_blank"
             rel="noreferrer"
             title={file.file_name ?? "קובץ"}
-            className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[0.6875rem] text-secondary hover:bg-accent"
+            className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-xs text-secondary hover:bg-accent"
           >
             <AttachIcon className="h-3 w-3" />
             קובץ
@@ -298,9 +301,10 @@ export function EditPaymentDialog({
       error={error || undefined}
     >
 
+        {/* The app's one label-over-input, Field, the required ones with its
+            red "*" (owner, 2026-10-11). */}
         <div className="grid gap-3">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">סוג פעולה</label>
+          <Field label="סוג פעולה">
             <NativeSelect
               value={entryType}
               onChange={(e) => setEntryType(e.target.value === "refund" ? "refund" : "payment")}
@@ -308,11 +312,10 @@ export function EditPaymentDialog({
               <option value="payment">תשלום</option>
               <option value="refund">החזר</option>
             </NativeSelect>
-          </div>
+          </Field>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">סכום *</label>
+            <Field label="סכום" required>
               <CurrencyInput
                 type="number"
                 min="0"
@@ -321,15 +324,13 @@ export function EditPaymentDialog({
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
               />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">תאריך תשלום *</label>
+            </Field>
+            <Field label="תאריך תשלום" required>
               <DateInput value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
-            </div>
+            </Field>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium">אמצעי תשלום *</label>
+          <Field label="אמצעי תשלום" required>
             <NativeSelect
               value={paymentMethod}
               onChange={(e) => {
@@ -345,7 +346,7 @@ export function EditPaymentDialog({
                 </option>
               ))}
             </NativeSelect>
-          </div>
+          </Field>
 
           <AccountSelect
             required
@@ -363,19 +364,17 @@ export function EditPaymentDialog({
               disabled={submitting}
             />
           ) : paymentMethod ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">
-                {paymentMethod === "check"
-                  ? "תאריך פירעון *"
-                  : "תאריך פירעון צפוי (אופציונלי)"}
-              </label>
+            <Field
+              label={paymentMethod === "check" ? "תאריך פירעון" : "תאריך פירעון צפוי (אופציונלי)"}
+              required={paymentMethod === "check"}
+            >
               <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               {paymentMethod !== "check" ? (
                 <p className="text-[0.647rem] text-muted-foreground">
                   לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                 </p>
               ) : null}
-            </div>
+            </Field>
           ) : null}
 
           {paymentMethod === "check" ? (
@@ -392,22 +391,20 @@ export function EditPaymentDialog({
           ) : null}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">מספר אסמכתא</label>
+            <Field label="מספר אסמכתא">
               <Input
                 value={referenceNumber}
                 onChange={(e) => setReferenceNumber(e.target.value)}
                 placeholder="אופציונלי"
               />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">הערות</label>
+            </Field>
+            <Field label="הערות">
               <Input
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="אופציונלי"
               />
-            </div>
+            </Field>
           </div>
 
           <div className="rounded-md border p-3 text-sm">
@@ -440,9 +437,10 @@ export function OrderPaymentActionsClient({
   const router = useRouter();
   const [items, setItems] = useState(payments);
   const [editingPayment, setEditingPayment] = useState<PaymentItem | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // The payment whose bin was pressed — asked about in the app's one confirm
+  // dialog (owner, 2026-10-11: every delete asks through ConfirmDialog; this
+  // was an inline "אשר מחיקה / ביטול" pair beside the bin).
+  const [pendingDelete, setPendingDelete] = useState<PaymentItem | null>(null);
   const [collectingId, setCollectingId] = useState<string | null>(null);
   const [, startRefreshTransition] = useTransition();
 
@@ -460,12 +458,9 @@ export function OrderPaymentActionsClient({
   }
 
   async function deletePayment(paymentId: string) {
-    setDeleteError(null);
     const snapshot = items;
     // Optimistic: remove the row immediately.
     setItems((prev) => prev.filter((p) => p.id !== paymentId));
-    setDeletingId(null);
-    setDeleteSubmitting(true);
     try {
       const result = await offlineFetch(
         "/api/orders/payments/delete",
@@ -481,8 +476,6 @@ export function OrderPaymentActionsClient({
     } catch (err) {
       setItems(snapshot); // rollback
       toast.error("מחיקת התשלום נכשלה", { description: toHebrewError(err, "") });
-    } finally {
-      setDeleteSubmitting(false);
     }
   }
 
@@ -519,7 +512,8 @@ export function OrderPaymentActionsClient({
   const totalPaid = items.reduce((s, p) => s + p.amount_total, 0);
 
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground">עדיין לא הוזנו תשלומים להזמנה זו.</p>;
+    // The app's one empty look, the dense box inside a card (owner, 2026-10-11).
+    return <EmptyState dense>עדיין לא הוזנו תשלומים להזמנה זו.</EmptyState>;
   }
 
   return (
@@ -527,7 +521,6 @@ export function OrderPaymentActionsClient({
       <div className="space-y-2">
         {items.map((payment, index) => {
           const isRefund = payment.amount_total < 0;
-          const isDeleting = deletingId === payment.id;
           const collectionChip = paymentCollectionChip(payment);
           const isPending =
             typeof payment.payment_status === "string" &&
@@ -557,51 +550,26 @@ export function OrderPaymentActionsClient({
                   ) : null}
                 </div>
 
+                {/* A short list inside the page: its pencil and bin stay in
+                    view (owner, 2026-10-11). */}
                 {canManage ? (
                   <div className="flex shrink-0 items-center gap-1">
                     {isPending && !isRefund ? (
+                      // 32px to look at, 44px to tap: the ::before reaches past
+                      // its edges, as the call button does (contact-link.tsx).
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-8 text-xs"
+                        className="relative h-8 text-xs before:absolute before:-inset-y-1.5 before:inset-x-0 before:content-['']"
                         onClick={() => void markCollected(payment.id, true)}
                         disabled={isCollecting}
                       >
-                        {isCollecting ? "מסמן..." : "סמן כנגבה"}
+                        {isCollecting ? "מסמן..." : "סימון כנגבה"}
                       </Button>
                     ) : null}
                     <EditButton onClick={() => setEditingPayment(payment)} label="עריכה" />
-                    {isDeleting ? (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => void deletePayment(payment.id)}
-                          disabled={deleteSubmitting}
-                        >
-                          {deleteSubmitting ? "מוחק..." : "אשר מחיקה"}
-                        </Button>
-                        {/* Grey, like every cancel (owner, 2026-10-11). */}
-                        <Button
-                          type="button"
-                          variant="muted"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => {
-                            setDeletingId(null);
-                            setDeleteError(null);
-                          }}
-                          disabled={deleteSubmitting}
-                        >
-                          ביטול
-                        </Button>
-                      </div>
-                    ) : (
-                      <DeleteButton label="מחיקת תשלום" onClick={() => setDeletingId(payment.id)} />
-                    )}
+                    <DeleteButton label="מחיקת תשלום" onClick={() => setPendingDelete(payment)} />
                   </div>
                 ) : null}
               </div>
@@ -622,10 +590,6 @@ export function OrderPaymentActionsClient({
               ) : null}
               {payment.insertedByLabel ? (
                 <div className="mt-1 text-muted-foreground">{payment.insertedByLabel}</div>
-              ) : null}
-
-              {deleteError && isDeleting ? (
-                <div className="mt-2 text-xs text-destructive">{deleteError}</div>
               ) : null}
 
               {!isRefund && payment.id && customerId ? (
@@ -659,6 +623,31 @@ export function OrderPaymentActionsClient({
           }}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDelete(null);
+        }}
+        destructive
+        title="מחיקת תשלום"
+        description={
+          pendingDelete
+            ? `למחוק את ${pendingDelete.amount_total < 0 ? "ההחזר" : "התשלום"} של ${formatCurrency(
+                Math.abs(pendingDelete.amount_total)
+              )}${pendingDelete.payment_date ? ` מתאריך ${formatDate(pendingDelete.payment_date)}` : ""}? לא ניתן לשחזר.`
+            : undefined
+        }
+        confirmLabel="מחיקה"
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          const paymentId = pendingDelete.id;
+          // The row leaves at once (deletePayment is optimistic), so the
+          // dialog closes with it rather than waiting on the server.
+          setPendingDelete(null);
+          void deletePayment(paymentId);
+        }}
+      />
     </>
   );
 }

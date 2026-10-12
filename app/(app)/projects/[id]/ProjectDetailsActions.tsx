@@ -14,11 +14,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
 import { NativeSelect } from "@/components/ui/native-select";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -246,6 +246,8 @@ export default function ProjectDetailsActions({
   const [existingDocuments, setExistingDocuments] = useState<ProjectDocument[]>(projectDocuments);
   const [documentActionError, setDocumentActionError] = useState<string | null>(projectDocumentsError);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  // The file whose bin was tapped, waiting for the confirm.
+  const [documentToDelete, setDocumentToDelete] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     setExistingDocuments(projectDocuments);
@@ -388,6 +390,29 @@ export default function ProjectDetailsActions({
   const asMenu = layout === "menu";
   const shareHref = projectShareHref(share);
 
+  // שיתוף and הדפסה as two items of the ⋮ itself, as the order page lists
+  // them (owner, 2026-10-11) — they sat one level down, in a "שיתוף / הדפסה"
+  // submenu, a tap more than anything beside them.
+  const shareAndPrintItems = useMemo(
+    () => (
+      <>
+        {shareHref ? (
+          <DropdownMenuItem asChild className="gap-2">
+            <a href={shareHref} target="_blank" rel="noreferrer">
+              <ShareIcon className="h-4 w-4" />
+              <span>שיתוף</span>
+            </a>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem className="gap-2" onSelect={() => printProjectSheet(share)}>
+          <PrintIcon className="h-4 w-4" />
+          <span>הדפסה</span>
+        </DropdownMenuItem>
+      </>
+    ),
+    [share, shareHref]
+  );
+
   // Phone: the same actions as the desktop row, but as the top bar's ⋮ — the
   // page itself has no room for a button row above the fold. The dialogs stay
   // mounted below (outside the menu), so closing the menu can't unmount them.
@@ -403,26 +428,7 @@ export default function ProjectDetailsActions({
               </Link>
             </DropdownMenuItem>
           )}
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="gap-2">
-              <ShareIcon className="h-4 w-4" />
-              <span>שיתוף / הדפסה</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              {shareHref ? (
-                <DropdownMenuItem asChild className="gap-2">
-                  <a href={shareHref} target="_blank" rel="noreferrer">
-                    <ShareIcon className="h-4 w-4" />
-                    <span>שיתוף</span>
-                  </a>
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem className="gap-2" onSelect={() => printProjectSheet(share)}>
-                <PrintIcon className="h-4 w-4" />
-                <span>הדפסה</span>
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+          {shareAndPrintItems}
           <DropdownMenuItem className="gap-2" onSelect={() => setEditOpen(true)}>
             <EditIcon className="h-4 w-4" />
             <span>עריכה</span>
@@ -443,7 +449,7 @@ export default function ProjectDetailsActions({
           </DropdownMenuItem>
         </HeaderActionsMenu>
       ) : null,
-    [asMenu, project.id, project.status, share, shareHref]
+    [asMenu, project.id, project.status, shareAndPrintItems]
   );
   useSetHeaderAction(headerMenu);
 
@@ -488,26 +494,7 @@ export default function ProjectDetailsActions({
                   </Link>
                 </DropdownMenuItem>
               )}
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="gap-2">
-                  <ShareIcon className="h-4 w-4" />
-                  <span>שיתוף / הדפסה</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  {shareHref ? (
-                    <DropdownMenuItem asChild className="gap-2">
-                      <a href={shareHref} target="_blank" rel="noreferrer">
-                        <ShareIcon className="h-4 w-4" />
-                        <span>שיתוף</span>
-                      </a>
-                    </DropdownMenuItem>
-                  ) : null}
-                  <DropdownMenuItem className="gap-2" onSelect={() => printProjectSheet(share)}>
-                    <PrintIcon className="h-4 w-4" />
-                    <span>הדפסה</span>
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+              {shareAndPrintItems}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="gap-2 text-destructive focus:text-destructive"
@@ -548,13 +535,13 @@ export default function ProjectDetailsActions({
         submitDisabled={deletingDocumentId !== null}
         error={documentActionError || editError || undefined}
       >
+            {/* The shared label-over-input, its "*" in red (owner, 2026-10-11:
+                every form the same Field). */}
             <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">שם פרויקט *</label>
+              <Field label="שם פרויקט" required>
                 <Input value={editName} onChange={(event) => setEditName(event.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">לקוח *</label>
+              </Field>
+              <Field label="לקוח" required>
                 <CustomerPicker
                   placeholder="בחירת לקוח..."
                   value={
@@ -568,12 +555,11 @@ export default function ProjectDetailsActions({
                   }
                   onChange={(customer) => setEditCustomerId(customer?.id ?? "")}
                 />
-              </div>
+              </Field>
             </AdaptiveGrid>
 
             <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">סוג פרויקט *</label>
+              <Field label="סוג פרויקט" required>
                 <NativeSelect
                   value={editProjectType}
                   onChange={(event) => setEditProjectType(event.target.value)}
@@ -584,9 +570,8 @@ export default function ProjectDetailsActions({
                     </option>
                   ))}
                 </NativeSelect>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">סטטוס *</label>
+              </Field>
+              <Field label="סטטוס" required>
                 <NativeSelect
                   value={editStatus}
                   onChange={(event) => setEditStatus(event.target.value)}
@@ -597,11 +582,10 @@ export default function ProjectDetailsActions({
                     </option>
                   ))}
                 </NativeSelect>
-              </div>
+              </Field>
             </AdaptiveGrid>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
+            <Field label="מחיר בסיס מוסכם">
               <CurrencyInput
                 value={editNoCharge ? "0" : editAgreedBasePrice}
                 onChange={(event) => setEditAgreedBasePrice(event.target.value)}
@@ -639,21 +623,18 @@ export default function ProjectDetailsActions({
                 כשמסומן — היעד הוא הסכום כולל מע״מ וכל תשלום נזקף במלואו. כשלא — המחיר הוא נטו ותשלום
                 רשמי מנכה מע״מ.
               </div>
-            </div>
+            </Field>
 
             <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך התחלה</label>
+              <Field label="תאריך התחלה">
                 <DateInput value={editStartDate} onChange={(event) => setEditStartDate(event.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך סיום</label>
+              </Field>
+              <Field label="תאריך סיום">
                 <DateInput value={editEndDate} onChange={(event) => setEditEndDate(event.target.value)} />
-              </div>
+              </Field>
             </AdaptiveGrid>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">מנהל פרויקט</label>
+            <Field label="מנהל פרויקט">
               <NativeSelect
                 value={editProjectManagerId}
                 onChange={(event) => setEditProjectManagerId(event.target.value)}
@@ -665,7 +646,7 @@ export default function ProjectDetailsActions({
                   </option>
                 ))}
               </NativeSelect>
-            </div>
+            </Field>
 
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -676,8 +657,7 @@ export default function ProjectDetailsActions({
               <span>חיוב הוצאות בנפרד</span>
             </label>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">הערות</label>
+            <Field label="הערות">
               <div className="relative">
                 <Textarea
                   value={editNotes}
@@ -690,11 +670,10 @@ export default function ProjectDetailsActions({
                   className="absolute bottom-1 end-1 h-8 w-8"
                 />
               </div>
-            </div>
+            </Field>
 
             {isMovingProjectType(editProjectType) ? (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">כתובות ההובלה</label>
+              <Field label="כתובות ההובלה" className="space-y-2">
                 <AdaptiveGrid variant="formTwo">
                   <MovingEndpointFields
                     title="מוצא (מאיפה)"
@@ -709,12 +688,11 @@ export default function ProjectDetailsActions({
                     disabled={editSubmitting}
                   />
                 </AdaptiveGrid>
-              </div>
+              </Field>
             ) : null}
 
             {isMovingProjectType(editProjectType) ? (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">פריטים להעברה</label>
+              <Field label="פריטים להעברה">
                 <div className="relative">
                   <Textarea
                     value={editItemsToMove}
@@ -729,11 +707,10 @@ export default function ProjectDetailsActions({
                   />
                 </div>
                 <div className="text-xs text-muted-foreground">אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.</div>
-              </div>
+              </Field>
             ) : null}
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">קבצים קיימים</label>
+            <Field label="קבצים קיימים" className="space-y-2">
               {existingDocuments.length > 0 ? (
                 <div className="space-y-2 rounded-lg border border-border/70 p-3">
                   {existingDocuments.map((document) => {
@@ -760,15 +737,17 @@ export default function ProjectDetailsActions({
                           {document.url ? (
                             <Button type="button" variant="outline" size="sm" asChild>
                               <Link href={document.url} target="_blank" rel="noreferrer">
-                                פתח
+                                פתיחה
                               </Link>
                             </Button>
                           ) : null}
+                          {/* Asks first, as every delete does (owner, 2026-10-11)
+                              — it used to delete the file on the tap. */}
                           <DeleteButton
                             label="מחיקת מסמך"
                             disabled={editSubmitting}
                             loading={deletingDocumentId === document.document_id}
-                            onClick={() => void deleteProjectDocument(document.document_id)}
+                            onClick={() => setDocumentToDelete({ id: document.document_id, name: displayName })}
                           />
                         </div>
                       </div>
@@ -776,18 +755,17 @@ export default function ProjectDetailsActions({
                   })}
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground">עדיין אין קבצים שמצורפים לפרויקט.</div>
+                <EmptyState dense>עדיין אין קבצים שמצורפים לפרויקט.</EmptyState>
               )}
-            </div>
+            </Field>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">תמונות / מסמכים חדשים</label>
+            <Field label="תמונות / מסמכים חדשים" className="space-y-2">
               <div className="flex items-center gap-2">
                 <FileUploadActions
                   files={attachmentFiles}
                   multiple
                   onFilesSelected={setAttachmentFiles}
-                  chooseLabel={attachmentFiles.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                  chooseLabel={attachmentFiles.length > 0 ? "הוספת קבצים" : "העלאת קבצים"}
                   chooseVariant="outline"
                   size="sm"
                 />
@@ -802,9 +780,25 @@ export default function ProjectDetailsActions({
               {attachmentFiles.length === 0 ? (
                 <div className="text-xs text-muted-foreground">אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.</div>
               ) : null}
-            </div>
+            </Field>
 
       </FormDialog>
+
+      <ConfirmDialog
+        open={documentToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setDocumentToDelete(null);
+        }}
+        destructive
+        title="מחיקת מסמך"
+        description={`למחוק את ${documentToDelete?.name ?? "הקובץ"}?`}
+        confirmLabel="מחיקה"
+        onConfirm={() => {
+          const id = documentToDelete?.id;
+          setDocumentToDelete(null);
+          if (id) void deleteProjectDocument(id);
+        }}
+      />
     </>
   );
 }

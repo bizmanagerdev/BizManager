@@ -1,15 +1,36 @@
 "use client";
 
-// Phone: the order's name/number goes into the top bar, and everything you can
-// do to the order goes into the ⋮ beside the back arrow. The page keeps the
-// breadcrumb + inline action row for desktop only.
+// Everything you can do to the order, in two shapes over one set of dialogs.
+// Phone: the order's name/number goes into the top bar, and the actions into
+// the ⋮ beside the back arrow. Desktop: what this renders — the edit pencil
+// and a ⋮ holding the rest, the project page's row (owner, 2026-10-11: it was
+// five worded outline buttons; ProjectDetailsActions.tsx). Placed in the
+// page's desktop heading (OrderPageHeading), which only shows from lg; the
+// phone's ⋮ is registered from here all the same.
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { CopyIcon, DeleteIcon, EditIcon, NotificationIcon, PhoneIcon, PrintIcon, ShareIcon } from "@/components/ui/icons";
+import {
+  CopyIcon,
+  DeleteIcon,
+  EditIcon,
+  MoreIcon,
+  NotificationIcon,
+  PhoneIcon,
+  PrintIcon,
+  ShareIcon,
+} from "@/components/ui/icons";
 import { HeaderActionsMenu } from "@/components/layout/HeaderActionsMenu";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
-import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EditButton } from "@/components/ui/icon-button";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
@@ -41,9 +62,13 @@ export default function OrderHeaderMenu({
 
   const shareHref = orderShareHref(share);
 
-  const headerMenu = useMemo(
-    () => (
-      <HeaderActionsMenu>
+  // The items both ⋮ menus hold. Share and print stay two items of their own,
+  // never nested (owner, 2026-10-11). The phone's menu also carries עריכה —
+  // the pencil is desktop only — and תזכורת, a jump to the reminders section
+  // that the desktop sees beside it.
+  const menuItems = useCallback(
+    (phone: boolean): ReactNode => (
+      <>
         <DropdownMenuItem asChild className="gap-2">
           <Link href={`/sales/orders/new?duplicate=${orderId}`}>
             <CopyIcon className="h-4 w-4" />
@@ -62,23 +87,25 @@ export default function OrderHeaderMenu({
           <PrintIcon className="h-4 w-4" />
           <span>הדפסה</span>
         </DropdownMenuItem>
-        <DropdownMenuItem className="gap-2" onSelect={() => setEditOpen(true)}>
-          <EditIcon className="h-4 w-4" />
-          <span>עריכה</span>
-        </DropdownMenuItem>
+        {phone ? (
+          <DropdownMenuItem className="gap-2" onSelect={() => setEditOpen(true)}>
+            <EditIcon className="h-4 w-4" />
+            <span>עריכה</span>
+          </DropdownMenuItem>
+        ) : null}
         {canManage ? (
-          <>
-            <DropdownMenuItem className="gap-2" onSelect={() => setLogOpen(true)}>
-              <PhoneIcon className="h-4 w-4" />
-              <span>תיעוד שיחה</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="gap-2">
-              <a href={`#${remindersSectionId}`}>
-                <NotificationIcon className="h-4 w-4" />
-                <span>תזכורת</span>
-              </a>
-            </DropdownMenuItem>
-          </>
+          <DropdownMenuItem className="gap-2" onSelect={() => setLogOpen(true)}>
+            <PhoneIcon className="h-4 w-4" />
+            <span>תיעוד שיחה</span>
+          </DropdownMenuItem>
+        ) : null}
+        {canManage && phone ? (
+          <DropdownMenuItem asChild className="gap-2">
+            <a href={`#${remindersSectionId}`}>
+              <NotificationIcon className="h-4 w-4" />
+              <span>תזכורת</span>
+            </a>
+          </DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -88,17 +115,45 @@ export default function OrderHeaderMenu({
           <DeleteIcon className="h-4 w-4" />
           <span>מחיקת הזמנה</span>
         </DropdownMenuItem>
-      </HeaderActionsMenu>
+      </>
     ),
     [canManage, orderId, remindersSectionId, share, shareHref]
   );
+
+  const headerMenu = useMemo(() => <HeaderActionsMenu>{menuItems(true)}</HeaderActionsMenu>, [menuItems]);
 
   // Just "הזמנה" over the customer's name — the id is a lookup key, not a heading.
   useSetPageTitle("הזמנה", customerName, headerMenu);
 
   return (
     <>
-      {/* Trigger-less: the ⋮ above opens these. */}
+      <div className="flex items-center gap-2">
+        <EditButton onClick={() => setEditOpen(true)} label="עריכת הזמנה" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-muted-foreground hover:text-foreground"
+              title="פעולות נוספות"
+              aria-label="פעולות נוספות"
+            >
+              <MoreIcon className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-44"
+            // Let the dialog an item just opened keep the focus.
+            onCloseAutoFocus={(event) => event.preventDefault()}
+          >
+            {menuItems(false)}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Trigger-less: the pencil and the two ⋮ menus open these. */}
       <OrderEditDialog orderId={orderId} hideTrigger open={editOpen} onOpenChange={setEditOpen} />
       {canManage ? (
         <LogCommunicationButton

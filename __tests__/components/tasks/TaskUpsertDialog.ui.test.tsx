@@ -238,38 +238,36 @@ describe("TaskCommentsPanel", () => {
   const mine: CommentItem = { id: "c1", author_id: "me", author_name: "אני", body: "שלי", created_at: "2026-10-09T08:00:00Z" };
   const theirs: CommentItem = { id: "c2", author_id: "other", author_name: "אחר", body: "שלו", created_at: "2026-10-09T08:05:00Z" };
 
-  /** The comment's ⋮ menu, opened. */
-  function openMenu(index = 0) {
-    fireEvent.click(screen.getAllByRole("button", { name: "פעולות לתגובה" })[index]);
-  }
-
-  it("offers edit and delete, behind the corner menu, only on the comments this person may change", () => {
+  // A short list inside the card: the pencil and the bin in sight on each
+  // comment this person may change (owner, 2026-10-11 — they were behind a ⋮).
+  it("shows the pencil and the bin, in sight, only on the comments this person may change", () => {
     render(
       <TaskCommentsPanel {...baseProps} comments={[mine, theirs]} canChangeComment={(c) => c.author_id === "me"} />
     );
-    expect(screen.getAllByRole("button", { name: "פעולות לתגובה" })).toHaveLength(1);
-    expect(screen.queryByRole("menuitem", { name: "עריכת תגובה" })).not.toBeInTheDocument();
-    openMenu();
-    expect(screen.getByRole("menuitem", { name: "עריכת תגובה" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "מחיקת תגובה" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "עריכת תגובה" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "מחיקת תגובה" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "פעולות לתגובה" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
   });
 
   it("edits a comment in place and closes the box once it's saved", async () => {
     const onEditComment = vi.fn(async () => true);
     render(<TaskCommentsPanel {...baseProps} comments={[mine]} canChangeComment={() => true} onEditComment={onEditComment} />);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "עריכת תגובה" }));
+    fireEvent.click(screen.getByRole("button", { name: "עריכת תגובה" }));
+    // The box has its own ביטול / שמירה — the pencil and the bin step aside.
+    expect(screen.queryByRole("button", { name: "עריכת תגובה" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "מחיקת תגובה" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByDisplayValue("שלי"), { target: { value: "  שלי, מתוקן  " } });
     fireEvent.click(screen.getByRole("button", { name: "שמירה" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "שמירה" })).not.toBeInTheDocument());
     expect(onEditComment).toHaveBeenCalledWith(mine, "שלי, מתוקן");
+    expect(screen.getByRole("button", { name: "עריכת תגובה" })).toBeInTheDocument();
   });
 
   it("keeps the box open when the edit wasn't saved", async () => {
     const onEditComment = vi.fn(async () => false);
     render(<TaskCommentsPanel {...baseProps} comments={[mine]} canChangeComment={() => true} onEditComment={onEditComment} />);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "עריכת תגובה" }));
+    fireEvent.click(screen.getByRole("button", { name: "עריכת תגובה" }));
     fireEvent.change(screen.getByDisplayValue("שלי"), { target: { value: "חדש" } });
     fireEvent.click(screen.getByRole("button", { name: "שמירה" }));
     await waitFor(() => expect(onEditComment).toHaveBeenCalled());
@@ -279,8 +277,7 @@ describe("TaskCommentsPanel", () => {
   it("hands the comment to delete to the dialog's confirm", () => {
     const onDeleteComment = vi.fn();
     render(<TaskCommentsPanel {...baseProps} comments={[mine]} canChangeComment={() => true} onDeleteComment={onDeleteComment} />);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "מחיקת תגובה" }));
+    fireEvent.click(screen.getByRole("button", { name: "מחיקת תגובה" }));
     expect(onDeleteComment).toHaveBeenCalledWith(mine);
   });
 

@@ -7,9 +7,10 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, DeleteIcon, EditIcon, LocationIcon, MoreIcon, NotificationIcon } from "@/components/ui/icons";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, LocationIcon, NotificationIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -169,22 +170,22 @@ export function TaskDomainSection({
 }) {
   return (
     <div className="space-y-3">
-      <div className="space-y-1">
-        <div className="text-sm font-medium">{t(tasksDict, locale, "businessDomainLabel")}</div>
+      {/* The plain label-over-input pairs are the shared Field (owner,
+          2026-10-11); the card's own headings with a glyph stay its own. */}
+      <Field label={t(tasksDict, locale, "businessDomainLabel")}>
         <DomainSelect
           domains={allowedDomains}
           value={effectiveDomain}
           onChange={(value) => onDomainChange(value as ExpenseBusinessDomain | "")}
         />
-      </div>
+      </Field>
 
       {effectiveDomain === "general_business" && tagsReady ? (
         <TagPicker value={tagIds} onChange={onTagIdsChange} />
       ) : null}
 
       {showTargetPicker && derivedTargetType === "project" ? (
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{t(tasksDict, locale, "chooseProjectLabel")}</div>
+        <Field label={t(tasksDict, locale, "chooseProjectLabel")}>
           <ProjectPicker
             projects={projects}
             value={projectId}
@@ -192,12 +193,11 @@ export function TaskDomainSection({
             emptyLabel={t(tasksDict, locale, "chooseProjectOption")}
             allowClear={false}
           />
-        </div>
+        </Field>
       ) : null}
 
       {showTargetPicker && derivedTargetType === "property" ? (
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{t(tasksDict, locale, "choosePropertyLabel")}</div>
+        <Field label={t(tasksDict, locale, "choosePropertyLabel")}>
           <NativeSelect
             value={propertyId}
             onChange={(e) => onPropertyIdChange(e.target.value)}
@@ -209,15 +209,14 @@ export function TaskDomainSection({
               </option>
             ))}
           </NativeSelect>
-        </div>
+        </Field>
       ) : null}
 
       {/* Customer link — independent of the project/property target. A follow-up can
           point at a customer even when there's no order/project yet (e.g. a prospect).
           Only shown where the caller supplies the customer list. */}
       {customers.length > 0 ? (
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{t(tasksDict, locale, "linkedCustomerLabel")}</div>
+        <Field label={t(tasksDict, locale, "linkedCustomerLabel")}>
           <SearchableSelect
             options={customers.map((c) => ({ value: c.id, label: c.label }))}
             value={customerId}
@@ -229,7 +228,7 @@ export function TaskDomainSection({
             maxHeightClassName="max-h-56"
             searchThreshold={0}
           />
-        </div>
+        </Field>
       ) : null}
     </div>
   );
@@ -251,10 +250,9 @@ export function TaskDatesSection({
   return (
     <div>
       <AdaptiveGrid variant="formTwo">
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{t(tasksDict, locale, "dueDateLabel")}</div>
+        <Field label={t(tasksDict, locale, "dueDateLabel")}>
           <DateInput value={dueDate} onChange={(e) => onDueDateChange(e.target.value)} />
-        </div>
+        </Field>
         <div className="space-y-1">
           <div className="flex items-center gap-1 text-sm font-medium">
             <ClockIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -294,8 +292,7 @@ export function TaskPeopleSection({
 }) {
   return (
     <div className="space-y-3">
-      <div className="space-y-1">
-        <div className="text-sm font-medium">{t(tasksDict, locale, "assignedLabel")}</div>
+      <Field label={t(tasksDict, locale, "assignedLabel")}>
         <NativeSelect
           value={assignedUserId}
           onChange={(e) => onAssignedChange(e.target.value)}
@@ -307,7 +304,7 @@ export function TaskPeopleSection({
             </option>
           ))}
         </NativeSelect>
-      </div>
+      </Field>
 
       {canAddSelf ? (
         <label className="flex items-center gap-2 text-sm">
@@ -430,17 +427,15 @@ export function TaskLocationSection({
             ))}
           </NativeSelect>
         </div>
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{t(tasksDict, locale, "addressLabel")}</div>
+        <Field label={t(tasksDict, locale, "addressLabel")}>
           <Input value={address} onChange={(e) => onAddressChange(e.target.value)} />
-        </div>
+        </Field>
       </AdaptiveGrid>
 
       {cityOther ? (
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{t(tasksDict, locale, "cityFreeTextLabel")}</div>
+        <Field label={t(tasksDict, locale, "cityFreeTextLabel")}>
           <Input value={city} onChange={(e) => setCity(e.target.value)} />
-        </div>
+        </Field>
       ) : null}
     </div>
   );
@@ -544,8 +539,9 @@ export function TaskAttachmentsSection({
           notifyOnAdd={false}
         />
       </div>
+      {/* Empty lists in this card: the app's one empty box (owner, 2026-10-11). */}
       {attachments.length === 0 ? (
-        <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "noAttachmentsLabel")}</div>
+        <EmptyState dense>{t(tasksDict, locale, "noAttachmentsLabel")}</EmptyState>
       ) : (
         <div className="space-y-1.5">
           {attachments.map((attachment) => (
@@ -569,7 +565,7 @@ export function TaskAttachmentsSection({
                     className="h-9 w-9 shrink-0 rounded object-cover"
                   />
                 ) : (
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-[0.588rem] text-muted-foreground">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-[0.647rem] text-muted-foreground">
                     {attachment.kind === "video" ? t(tasksDict, locale, "videoWord") : t(tasksDict, locale, "fileWord")}
                   </span>
                 )}
@@ -619,8 +615,7 @@ export function TaskLabelsSection({
   return (
     <div>
       <AdaptiveGrid variant="formTwo">
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{t(tasksDict, locale, "priorityLabel")}</div>
+        <Field label={t(tasksDict, locale, "priorityLabel")}>
           <NativeSelect
             value={priority}
             onChange={(e) => onPriorityChange(e.target.value as TaskPriority)}
@@ -631,9 +626,8 @@ export function TaskLabelsSection({
               </option>
             ))}
           </NativeSelect>
-        </div>
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{t(tasksDict, locale, "statusFieldLabel")}</div>
+        </Field>
+        <Field label={t(tasksDict, locale, "statusFieldLabel")}>
           <NativeSelect
             value={status}
             onChange={(e) => onStatusChange(e.target.value as TaskStatus)}
@@ -644,7 +638,7 @@ export function TaskLabelsSection({
               </option>
             ))}
           </NativeSelect>
-        </div>
+        </Field>
       </AdaptiveGrid>
     </div>
   );
@@ -696,14 +690,12 @@ export function TaskRemindersStagingSection({
         <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "remindersCanAddNowNote")}</div>
       )}
       <AdaptiveGrid variant="formTwo">
-        <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "reminderTimeLabel")}</div>
+        <Field label={t(tasksDict, locale, "reminderTimeLabel")} size="xs">
           <DateTimeInput value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "reminderNoteLabel")}</div>
+        </Field>
+        <Field label={t(tasksDict, locale, "reminderNoteLabel")} size="xs">
           <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
-        </div>
+        </Field>
       </AdaptiveGrid>
       <div className="flex justify-end">
         <Button type="button" size="sm" variant="secondary" disabled={!reminderAt} onClick={onStage}>
@@ -746,7 +738,7 @@ export function TaskRemindersPanel({
   return (
       <section className="space-y-2">
         {reminders.filter((r) => r.status === "pending").length === 0 ? (
-          <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "noPendingRemindersLabel")}</div>
+          <EmptyState dense>{t(tasksDict, locale, "noPendingRemindersLabel")}</EmptyState>
         ) : (
           <div className="space-y-1.5">
             {reminders
@@ -780,14 +772,12 @@ export function TaskRemindersPanel({
           </div>
         )}
         <AdaptiveGrid variant="formTwo">
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "reminderTimeLabel")}</div>
+          <Field label={t(tasksDict, locale, "reminderTimeLabel")} size="xs">
             <DateTimeInput value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "reminderNoteLabel")}</div>
+          </Field>
+          <Field label={t(tasksDict, locale, "reminderNoteLabel")} size="xs">
             <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
-          </div>
+          </Field>
         </AdaptiveGrid>
         <div className="flex justify-end gap-1.5">
           {/* Grey, never the look of the save beside it (owner, 2026-10-11:
@@ -862,7 +852,7 @@ export function TaskCommentsPanel({
   return (
       <section className="space-y-2">
         {comments.length === 0 && legacyNotes.length === 0 ? (
-          <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "noCommentsLabel")}</div>
+          <EmptyState dense>{t(tasksDict, locale, "noCommentsLabel")}</EmptyState>
         ) : (
           <div className="space-y-2">
             {/* Legacy comments stored in tasks.notes (read-only history). */}
@@ -889,53 +879,25 @@ export function TaskCommentsPanel({
                         {wasEdited(comment) ? ` · ${t(tasksDict, locale, "commentEditedWord")}` : ""}
                       </span>
                     </div>
-                    {/* Edit / delete behind the corner's ⋮ (owner, 2026-10-09: not
-                        straight on the comment). It stays while the comment is
-                        being edited: a menu whose button is gone mid-close
-                        leaves Radix's page lock behind. */}
-                    {canChangeComment(comment) ? (
-                      <DropdownMenu modal={false}>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="-me-2 -mt-1 h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-                            aria-label={t(tasksDict, locale, "commentActionsLabel")}
-                            title={t(tasksDict, locale, "commentActionsLabel")}
-                          >
-                            <MoreIcon className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="end"
-                          className="w-36"
-                          // Picking "edit": the cursor stays in the edit box
-                          // rather than going back to the ⋮.
-                          onCloseAutoFocus={(event) => {
-                            if (editingId !== comment.id) return;
-                            event.preventDefault();
-                            document.getElementById(`comment-edit-${comment.id}`)?.focus();
+                    {/* A short list inside the card: the pencil and the bin in
+                        sight, as every short list in a page (owner, 2026-10-11 —
+                        they sat behind a ⋮ since 2026-10-09). The bin asks first
+                        (the dialog's confirm). Put away while this comment is
+                        being edited: its own box has ביטול and שמירה. */}
+                    {canChangeComment(comment) && editingId !== comment.id ? (
+                      <div className="-me-1 -mt-1 flex shrink-0 gap-1">
+                        <EditButton
+                          label={t(tasksDict, locale, "editCommentLabel")}
+                          onClick={() => {
+                            setEditingId(comment.id);
+                            setEditDraft(comment.body);
                           }}
-                        >
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setEditingId(comment.id);
-                              setEditDraft(comment.body);
-                            }}
-                          >
-                            <EditIcon className="me-2 h-4 w-4" />
-                            {t(tasksDict, locale, "editCommentLabel")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => onDeleteComment(comment)}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <DeleteIcon className="me-2 h-4 w-4" />
-                            {t(tasksDict, locale, "deleteCommentLabel")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                        />
+                        <DeleteButton
+                          label={t(tasksDict, locale, "deleteCommentLabel")}
+                          onClick={() => onDeleteComment(comment)}
+                        />
+                      </div>
                     ) : null}
                   </div>
                   {editingId === comment.id ? (

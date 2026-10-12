@@ -41,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import { MetaRow } from "@/components/ui/meta-row";
@@ -105,7 +106,7 @@ function CategoryChip({ label }: { label: string }) {
       className={cn(
         "block text-[0.8125rem] font-medium text-secondary",
         "@[24em]:inline-flex @[24em]:items-center @[24em]:rounded-full @[24em]:border @[24em]:border-border",
-        "@[24em]:bg-muted @[24em]:px-1.5 @[24em]:py-0 @[24em]:text-[0.6875rem] @[24em]:text-muted-foreground"
+        "@[24em]:bg-muted @[24em]:px-1.5 @[24em]:py-0 @[24em]:text-xs @[24em]:text-muted-foreground"
       )}
     >
       {label}
@@ -120,7 +121,7 @@ function BilledMark({ amount, className }: { amount: number; className?: string 
   return (
     <span className={cn("inline-flex items-center gap-1 text-secondary", className)}>
       <CheckIcon className="h-3 w-3" />
-      <span className="whitespace-nowrap text-[0.6875rem] font-medium">
+      <span className="whitespace-nowrap text-xs font-medium">
         לחיוב לקוח <LtrInline>{formatIls(amount)}</LtrInline>
       </span>
     </span>
@@ -164,7 +165,7 @@ function Attachments({ attachments, label = "קובץ" }: { attachments: Financi
           target="_blank"
           rel="noreferrer"
           title={attachment.file_name ?? label}
-          className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[0.6875rem] text-secondary hover:bg-accent"
+          className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-xs text-secondary hover:bg-accent"
         >
           <AttachIcon className="h-3 w-3" />
           {withUrl.length > 1 ? `${label} ${index + 1}` : label}
@@ -419,8 +420,16 @@ export function sortMovements(movements: Movement[], sortBy: LedgerSortBy, direc
   return sorted;
 }
 
-const TH = "px-2 py-1.5 text-start text-xs font-medium text-muted-foreground";
-const TD = "px-2 py-2 align-top";
+// The orders table's density and header — every table on the computer reads
+// the same (owner, 2026-10-11: "tables one density"). This one was the
+// tightest, with a white header in small text. The chevron and ⋮ gutters keep
+// a narrow padding: they hold one glyph, not a value.
+const TH = "px-4 py-3 text-start font-medium";
+const TD = "px-4 py-4 align-top";
+const GUTTER = "px-2 py-4 align-top";
+// The ⋮'s 32px box centred on the first line of text beside it (py-4 + a
+// 20px line), so it doesn't make every row taller than its values.
+const ACTIONS_CELL = "px-2 py-2.5 align-top text-center";
 
 export default function ProjectMovements({
   movements,
@@ -472,7 +481,8 @@ export default function ProjectMovements({
   const { groups, other } = useMemo(() => groupMovements(sorted, groupBy), [sorted, groupBy]);
 
   if (movements.length === 0) {
-    return <p className="text-muted-foreground">אין תנועות להצגה.</p>;
+    // The app's one empty box (owner, 2026-10-11: "empty lists: one look").
+    return <EmptyState dense>אין תנועות להצגה.</EmptyState>;
   }
 
   function desktopRow(movement: Movement) {
@@ -492,7 +502,7 @@ export default function ProjectMovements({
             open ? "bg-muted/10" : "border-b border-border/70"
           )}
         >
-          <td className={TD}>
+          <td className={GUTTER}>
             {expandable ? (
               <button
                 type="button"
@@ -539,7 +549,7 @@ export default function ProjectMovements({
           <td className={TD + " whitespace-nowrap font-semibold tabular-nums"}>
             <AmountCell movement={movement} side="out" />
           </td>
-          <td className={TD}>
+          <td className={ACTIONS_CELL}>
             <RowActions movement={movement} />
           </td>
         </tr>
@@ -564,7 +574,7 @@ export default function ProjectMovements({
         onClick={() => toggleGroup(group.id)}
         aria-expanded={open}
       >
-        <td className={TD}>
+        <td className={GUTTER}>
           <ChevronDownIcon className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
         </td>
         <td className={TD + " font-semibold"} colSpan={5}>
@@ -577,7 +587,7 @@ export default function ProjectMovements({
         <td className={TD + " whitespace-nowrap font-semibold tabular-nums text-destructive"}>
           {group.totalOut > 0 ? <LtrInline>{formatIls(group.totalOut)}</LtrInline> : "—"}
         </td>
-        <td className={TD} />
+        <td className={GUTTER} />
       </tr>
     );
   }
@@ -741,9 +751,9 @@ export default function ProjectMovements({
           buttons above it happen to be at a given text scale. */}
       <div className="hidden max-h-[min(32rem,55dvh)] min-h-0 flex-1 overflow-y-auto lg:block">
         <table className="w-full border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-card">
-            <tr className="border-b">
-              <th className="w-8 px-2 py-1.5" />
+          <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
+            <tr className="border-b border-border/70">
+              <th className="w-8 px-2 py-3" />
               <th className={TH}>תאריך</th>
               <th className={TH}>תיאור</th>
               <th className={TH}>סטטוס</th>
@@ -751,7 +761,7 @@ export default function ProjectMovements({
               <th className={TH}>לחיוב לקוח</th>
               <th className={TH}>הכנסה</th>
               <th className={TH}>הוצאה</th>
-              <th className={TH + " w-16 text-center"}>פעולות</th>
+              <th className="w-16 px-2 py-3 text-center font-medium">פעולות</th>
             </tr>
           </thead>
           <tbody>
@@ -785,7 +795,7 @@ export default function ProjectMovements({
               <td className={TD + " whitespace-nowrap tabular-nums text-destructive"}>
                 <LtrInline>{formatIls(totals.out)}</LtrInline>
               </td>
-              <td className={TD} />
+              <td className={GUTTER} />
             </tr>
           </tfoot>
         </table>

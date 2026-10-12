@@ -121,9 +121,12 @@ export default function ProjectsCalendar({
 
     return (
       <>
-        {/* Holiday name (truncated) */}
+        {/* Holiday name (truncated). In rem, so it grows with the text-size
+            setting like the rest of the cell (owner, 2026-10-11) — 9px at the
+            default size, as it was: the app's smallest step (0.647rem) made a
+            day with a holiday, dots and a count taller than the cell. */}
         {holiday ? (
-          <span className="max-w-full truncate text-[9px] leading-tight text-primary/80">
+          <span className="max-w-full truncate text-[0.529rem] leading-tight text-primary/80">
             {holiday}
           </span>
         ) : null}
@@ -137,9 +140,9 @@ export default function ProjectsCalendar({
           </div>
         )}
 
-        {/* Overflow count */}
+        {/* Overflow count — 10px at the default size, in rem for the same reason. */}
         {dayEntries.length > 0 && (
-          <span className="text-[10px] leading-none text-muted-foreground">
+          <span className="text-[0.588rem] leading-none text-muted-foreground">
             {dayEntries.length}
           </span>
         )}
@@ -161,7 +164,7 @@ export default function ProjectsCalendar({
             <li key={`${entry.kind}-${entry.id}`} className="flex items-center gap-1.5 text-xs">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${entryKindDot(entry.kind)}`} />
               <span className="min-w-0 flex-1">{entry.title}</span>
-              <span className="shrink-0 text-[0.588rem] text-muted-foreground">{entryKindLabel(entry.kind)}</span>
+              <span className="shrink-0 text-[0.647rem] text-muted-foreground">{entryKindLabel(entry.kind)}</span>
             </li>
           ))}
         </ul>

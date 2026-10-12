@@ -3,6 +3,7 @@
 import { cloneElement, useCallback, useMemo, useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { CountBadge } from "@/components/ui/count-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { SpinnerIcon, WarehouseIcon } from "@/components/ui/icons";
@@ -111,7 +112,9 @@ export default function PickingListDialog({
       {trigger ? (
         cloneElement(trigger, { onClick: openDialog })
       ) : (
-        <Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={openDialog}>
+        // Soft: a helper beside the deliveries, not the page's main act
+        // (owner, 2026-10-11: less important actions wear the soft style (dashed outline)).
+        <Button type="button" variant="soft" size="sm" className="gap-1.5" onClick={openDialog}>
           <WarehouseIcon className="h-4 w-4" />
           <span>רשימת ליקוט</span>
         </Button>
@@ -175,11 +178,10 @@ export default function PickingListDialog({
             </Button>
           </div>
         ) : !source || source.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">אין כרגע משלוחים פתוחים.</p>
+          // The app's one empty look (owner, 2026-10-11).
+          <EmptyState>אין כרגע משלוחים פתוחים.</EmptyState>
         ) : products.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">
-            אין פריטים לליקוט עבור הערים שנבחרו.
-          </p>
+          <EmptyState>אין פריטים לליקוט עבור הערים שנבחרו.</EmptyState>
         ) : (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">

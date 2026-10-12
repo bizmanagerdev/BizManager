@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, PhoneIcon, SearchIcon } from "@/components/ui/icons";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useLocalListPager } from "@/components/powersync/LocalListPager";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
@@ -22,16 +22,22 @@ import LogCommunicationButton from "@/components/communications/LogCommunication
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { CallIconButton } from "@/components/ui/contact-link";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LIST_CARD_BADGE, LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
+import RowActionsMenu from "@/app/(app)/sales/RowActionsMenu";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getOrderStatusColor } from "@/lib/ui/status-colors";
@@ -234,7 +240,8 @@ function OrderProductList({
         const partiallyDone = delivered > 0 && delivered < product.quantity;
         return (
           <li key={`${product.name}-${idx}`}>
-            {product.quantity > 0 ? `${product.quantity}× ` : ""}
+            {/* "×2", the order page's way (owner, 2026-10-11: one way to write a quantity). */}
+            {product.quantity > 0 ? `×${product.quantity} ` : ""}
             {product.name}
             {partiallyDone ? (
               <span className="text-warning-soft-foreground"> · נמסר {delivered}</span>
@@ -267,9 +274,10 @@ function getNumber(row: Row, keys: string[]) {
   return null;
 }
 
-// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts.
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts. A missing
+// value is "—", as everywhere (owner, 2026-10-11).
 function formatCurrency(value: number | null) {
-  if (value === null) return "-";
+  if (value === null) return "—";
   return formatMoney(value);
 }
 
@@ -370,6 +378,10 @@ function shouldShowPaymentAction(row: OrderView) {
 // nothing. Anything else (בוטלה, בטיפול, במשלוח…) is worth flagging and still shows.
 const EXPECTED_STATUS_BY_VIEW = { open: "draft", closed: "delivered" } as const;
 
+// Stable for useUndoOverlay: a deleted order leaves the list at once, while
+// its undo window is still open.
+const orderViewId = (row: OrderView) => row.id;
+
 export default function SalesOrdersClient({
   orders,
   initialHasMore = false,
@@ -425,8 +437,22 @@ export default function SalesOrdersClient({
     showRouteOpening(<OrderPageOpening id={preview.id} preview={preview} />);
   };
   const [paymentSnapshot] = useState(() => new Map<string, number>());
-  // One shared reminder dialog for the whole list; a row's bell button sets its target.
+  // One shared reminder / call-log / delete dialog for the whole list; a row's
+  // ⋮ sets its target.
   const [reminderTarget, setReminderTarget] = useState<{ id: string; customerId: string; label: string } | null>(null);
+  const [logTarget, setLogTarget] = useState<{ id: string; customerId: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  const editOrder = (row: OrderView) => {
+    // The page's device version: the order form opens right here, from the
+    // phone's copy — at once, with no signal too.
+    if (fromDevice) {
+      setEditOrderId(row.id);
+      return;
+    }
+    emitNavigationStart();
+    router.push(`/sales/orders/${row.id}/edit`);
+  };
 
   // Fetch-from-DB-as-you-scroll: accumulate order pages and pull the next one
   // from the server when the bottom comes into view (no "next page" button).
@@ -697,18 +723,19 @@ export default function SalesOrdersClient({
 
     return mappedOrders.filter((row): row is OrderView => row !== null);
   }, [effectiveOrders, paymentSnapshot]);
+  const visibleOrderRows = useUndoOverlay(orderRows, orderViewId, "order");
 
   // Online, the server already filtered by the `q` / `payment_status` URL params
   // across the full dataset. Offline, filter the cached list in memory so search
   // still works with no signal (same fields as the placeholder).
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!offline || !q) return orderRows;
-    return orderRows.filter((row) =>
+    if (!offline || !q) return visibleOrderRows;
+    return visibleOrderRows.filter((row) =>
       [row.customerName, row.customerBranchName, row.customerNameForInvoice, row.customerPhone, row.customerEmail, row.customerCity]
         .some((field) => (field ?? "").toLowerCase().includes(q))
     );
-  }, [offline, query, orderRows]);
+  }, [offline, query, visibleOrderRows]);
 
   // Names the page in the mobile top bar, with the count as the subtitle.
   useSetPageTitle(tabLabel, `${totalCount ?? filteredRows.length} הזמנות`);
@@ -743,12 +770,13 @@ export default function SalesOrdersClient({
           </div>
         ) : null}
         <div className="relative">
-          <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          {/* On the start side, logical, as every search (owner, 2026-10-11). */}
+          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="חיפוש..."
-            className="h-11 pr-10"
+            className="h-11 ps-9"
           />
         </div>
       </div>
@@ -756,31 +784,24 @@ export default function SalesOrdersClient({
       {/* The header subtitle carries this count on mobile. */}
       <div className="hidden text-sm text-muted-foreground xl:block">נמצאו {totalCount ?? filteredRows.length} הזמנות</div>
 
+      {/* An empty list has the app's one look (owner, 2026-10-11). */}
       {filteredRows.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-3 py-6 text-sm text-muted-foreground">
-            {showPaymentStatusFilter && paymentFilter !== "all" ? (
-              <>
-                <div>
-                  אין הזמנות סגורות עם סטטוס תשלום &quot;
-                  {PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label}
-                  &quot;.
-                </div>
-                {/* Grey, like every clear / cancel (owner, 2026-10-11). */}
-                <Button
-                  type="button"
-                  variant="muted"
-                  size="sm"
-                  onClick={() => setPaymentFilter("all")}
-                >
-                  נקה סינון
-                </Button>
-              </>
-            ) : (
-              <div>לא נמצאו הזמנות לפי החיפוש.</div>
-            )}
-          </CardContent>
-        </Card>
+        showPaymentStatusFilter && paymentFilter !== "all" ? (
+          <EmptyState
+            action={
+              // Grey, like every clear / cancel (owner, 2026-10-11).
+              <Button type="button" variant="muted" size="sm" onClick={() => setPaymentFilter("all")}>
+                נקה סינון
+              </Button>
+            }
+          >
+            אין הזמנות סגורות עם סטטוס תשלום &quot;
+            {PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label}
+            &quot;.
+          </EmptyState>
+        ) : (
+          <EmptyState>לא נמצאו הזמנות לפי החיפוש.</EmptyState>
+        )
       ) : (
         <div className="relative">
           {isFilterPending ? <FilterLoaderOverlay /> : null}
@@ -895,13 +916,13 @@ export default function SalesOrdersClient({
                               <CallIconButton phone={row.customerPhone} name={row.customerName} />
                             </div>
                           ) : (
-                            <div className="mt-1 text-muted-foreground">-</div>
+                            <div className="mt-1 text-muted-foreground">—</div>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-4">
                         <div>
-                          <div>{row.customerCity ?? "-"}</div>
+                          <div>{row.customerCity ?? "—"}</div>
                           <div className="mt-1 text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
                         </div>
                       </td>
@@ -909,14 +930,14 @@ export default function SalesOrdersClient({
                         {row.products.length > 0 ? (
                           <OrderProductList products={row.products} className="max-w-[12rem]" />
                         ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-4 py-4">
                         {row.comments.length > 0 ? (
                           <OrderCommentPreview comments={row.comments} className="max-w-[16rem]" />
                         ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-4 py-4">
@@ -948,7 +969,7 @@ export default function SalesOrdersClient({
                             {orderCollectionStatusLabel(row.collectionStatus)}
                           </Badge>
                           {row.pendingMethods.includes("check") ? (
-                            <Badge variant="info" className="gap-1 text-[0.588rem]">
+                            <Badge variant="info" className="gap-1 text-[0.647rem]">
                               צ׳ק{row.pendingCheckNumber ? ` מס׳ ${row.pendingCheckNumber}` : ""}
                             </Badge>
                           ) : null}
@@ -962,35 +983,16 @@ export default function SalesOrdersClient({
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <Button asChild size="sm" onClick={() => emitNavigationStart()}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* The less important of the two — the row itself opens
+                              the order — so the soft look, and the row's real act
+                              beside it stays the bold one (owner: "all main
+                              buttons are bold secondary, all buttons less
+                              important like this"). Two bold blues per row
+                              competed. */}
+                          <Button asChild size="sm" variant="soft" onClick={() => emitNavigationStart()}>
                             <Link href={`/sales/orders/${row.id}`}>צפייה בהזמנה</Link>
                           </Button>
-                          {canRemind ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-9 w-9 p-0"
-                              title="תזכורת להזמנה"
-                              aria-label="תזכורת להזמנה"
-                              onClick={() =>
-                                setReminderTarget({ id: row.id, customerId: row.customerId, label: combinedCustomerName(row) })
-                              }
-                            >
-                              <NotificationIcon className="h-4 w-4 text-warning" />
-                            </Button>
-                          ) : null}
-                          {canRemind ? (
-                            <LogCommunicationButton
-                              entityType="order"
-                              entityId={row.id}
-                              customerId={row.customerId}
-                              defaultTopic="sales"
-                              iconOnly
-                              className="h-9 w-9 p-0"
-                            />
-                          ) : null}
                           {isActiveOrder(row.status) ? (
                             <OrderConfirmDialog orderId={row.id} />
                           ) : shouldShowPaymentAction(row) ? (
@@ -1001,6 +1003,37 @@ export default function SalesOrdersClient({
                               devicePage={fromDevice ? "sales" : undefined}
                             />
                           ) : null}
+                          {/* The rest waits behind a ⋮ at the row's end — edit and
+                              delete, and the reminder bell and call log that were
+                              icon buttons of their own here (owner, 2026-10-11: a
+                              big list's row actions sit in a ⋮ on the computer).
+                              The row's own act, beside it, stays as it was. */}
+                          <RowActionsMenu onEdit={() => editOrder(row)} onDelete={() => setDeleteTarget(row.id)}>
+                            {canRemind ? (
+                              <>
+                                <DropdownMenuItem
+                                  className="gap-2"
+                                  onSelect={() =>
+                                    setReminderTarget({
+                                      id: row.id,
+                                      customerId: row.customerId,
+                                      label: combinedCustomerName(row),
+                                    })
+                                  }
+                                >
+                                  <NotificationIcon className="h-4 w-4" />
+                                  <span>תזכורת</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="gap-2"
+                                  onSelect={() => setLogTarget({ id: row.id, customerId: row.customerId })}
+                                >
+                                  <PhoneIcon className="h-4 w-4" />
+                                  <span>תיעוד שיחה</span>
+                                </DropdownMenuItem>
+                              </>
+                            ) : null}
+                          </RowActionsMenu>
                         </div>
                       </td>
                     </tr>
@@ -1061,16 +1094,7 @@ export default function SalesOrdersClient({
                         label: "עריכה",
                         icon: <EditIcon className="h-5 w-5" />,
                         className: "bg-secondary-2",
-                        onSelect: () => {
-                          // The page's device version: the order form opens right
-                          // here, from the phone's copy — at once, with no signal too.
-                          if (fromDevice) {
-                            setEditOrderId(row.id);
-                            return;
-                          }
-                          emitNavigationStart();
-                          router.push(`/sales/orders/${row.id}/edit`);
-                        },
+                        onSelect: () => editOrder(row),
                       },
                     ];
 
@@ -1087,7 +1111,10 @@ export default function SalesOrdersClient({
                         onOpenChange={(next) => setSwipedRow(next ? row.id : null)}
                       >
                         <div
-                          className="cursor-pointer divide-y divide-border/60 p-3 [&>*]:py-2 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
+                          className={cn(
+                            "cursor-pointer divide-y divide-border/60 [&>*]:py-2 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0",
+                            LIST_CARD_BODY
+                          )}
                           {...rowNavigateProps(router, `/sales/orders/${row.id}`, { prefetch: true, onNavigate: () => openOrder(row) })}
                         >
                           {/* Compact card. Two rules:
@@ -1101,20 +1128,22 @@ export default function SalesOrdersClient({
                           {/* Top line: WHO on the leading (right) edge — it's what you
                               scan the list by — and WHEN tucked small into the far
                               corner. The date is reference, not headline, so it takes
-                              the smallest type on the card. */}
+                              the smallest type on the card. The name, the line under
+                              it and the pills are every list card's
+                              (components/ui/list-card.ts; owner, 2026-10-11). */}
                           <div className="flex items-baseline justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <div className="text-sm font-bold leading-snug">{row.customerName}</div>
+                              <div className={LIST_CARD_NAME}>{row.customerName}</div>
                               {row.customerBranchName ? (
-                                <div className="text-xs leading-snug text-muted-foreground">סניף: {row.customerBranchName}</div>
+                                <div className={cn(LIST_CARD_META, "leading-snug")}>סניף: {row.customerBranchName}</div>
                               ) : null}
                               {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
-                                <div className="text-xs leading-snug text-muted-foreground">
+                                <div className={cn(LIST_CARD_META, "leading-snug")}>
                                   לחשבונית: {row.customerNameForInvoice}
                                 </div>
                               ) : null}
                               {row.customerPhone || row.customerCity ? (
-                                <div className="text-xs text-muted-foreground">
+                                <div className={LIST_CARD_META}>
                                   {/* Plain text — tapping it opens the order like the rest
                                       of the card. As a call link right under the name it took
                                       the taps meant for the order (owner, 2026-10-11); the
@@ -1128,7 +1157,7 @@ export default function SalesOrdersClient({
                             {/* The far corner: the date, and under it the one control
                                 that calls the customer. */}
                             <div className="flex shrink-0 flex-col items-end gap-1.5">
-                              <span className="text-[0.588rem] leading-4 text-muted-foreground">
+                              <span className="text-[0.647rem] leading-4 text-muted-foreground">
                                 {formatOrderDate(row.orderDate)}
                               </span>
                               {row.customerPhone ? <CallIconButton phone={row.customerPhone} name={row.customerName} /> : null}
@@ -1144,12 +1173,12 @@ export default function SalesOrdersClient({
                                 <StatusBadge
                                   value={row.status}
                                   type="order"
-                                  className={`${orderStatusBadgeClasses(row.status)} px-2 py-0 text-[0.647rem]`}
+                                  className={cn(orderStatusBadgeClasses(row.status), LIST_CARD_BADGE)}
                                 />
                               ) : null}
                               {row.outOfStock ? (
                                 <>
-                                  <Badge className={`${outOfStockBadgeClasses} px-2 py-0 text-[0.647rem]`}>חוסר במלאי</Badge>
+                                  <Badge className={cn(outOfStockBadgeClasses, LIST_CARD_BADGE)}>חוסר במלאי</Badge>
                                   {row.outOfStockItems.length > 0 ? (
                                     <span className="text-[0.647rem] font-medium text-destructive-soft-foreground">
                                       {row.outOfStockItems.join(", ")}
@@ -1176,15 +1205,15 @@ export default function SalesOrdersClient({
                             {/* Paid-or-not sits WITH the figure it describes — pushed to
                                 the far edge it read as unrelated to the amount. */}
                             {isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance) ? (
-                              <Badge className={`${prepaymentBadgeClasses} px-2 py-0 text-[0.647rem]`}>
+                              <Badge className={cn(prepaymentBadgeClasses, LIST_CARD_BADGE)}>
                                 {PREPAYMENT_UNPAID_LABEL}
                               </Badge>
                             ) : null}
-                            <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0 text-[0.647rem]`}>
+                            <Badge className={cn(collectionStatusClasses(row.collectionStatus), LIST_CARD_BADGE)}>
                               {orderCollectionStatusLabel(row.collectionStatus)}
                             </Badge>
                             {row.pendingMethods.includes("check") ? (
-                              <Badge variant="info" className="px-2 py-0 text-[0.647rem]">
+                              <Badge variant="info" className={LIST_CARD_BADGE}>
                                 צ׳ק{row.pendingCheckNumber ? ` ${row.pendingCheckNumber}` : ""}
                               </Badge>
                             ) : null}
@@ -1243,6 +1272,34 @@ export default function SalesOrdersClient({
           open={reminderTarget !== null}
           onOpenChange={(next) => {
             if (!next) setReminderTarget(null);
+          }}
+        />
+      ) : null}
+
+      {logTarget ? (
+        <LogCommunicationButton
+          entityType="order"
+          entityId={logTarget.id}
+          customerId={logTarget.customerId}
+          defaultTopic="sales"
+          hideTrigger
+          open
+          onOpenChange={(next) => {
+            if (!next) setLogTarget(null);
+          }}
+        />
+      ) : null}
+
+      {/* Asks through the app's one confirm dialog; the row leaves the list at
+          once (its undo window still open) — no trip to another page. */}
+      {deleteTarget ? (
+        <DeleteOrderButton
+          orderId={deleteTarget}
+          hideTrigger
+          open
+          redirectTo={null}
+          onOpenChange={(next) => {
+            if (!next) setDeleteTarget(null);
           }}
         />
       ) : null}

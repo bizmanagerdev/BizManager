@@ -20,6 +20,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { DateInput } from "@/components/ui/date-input";
 import { StepWizardDialog } from "@/components/ui/step-wizard";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
@@ -876,9 +878,7 @@ export default function OrderConfirmDialog({
       case "items":
         return (
           <div className="space-y-2">
-            {lines.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין פריטים בהזמנה זו.</p>
-            ) : null}
+            {lines.length === 0 ? <EmptyState dense>אין פריטים בהזמנה זו.</EmptyState> : null}
             {deliveryLines.map(({ line, already, remaining, now, shortfall }, index) => (
               <div
                 key={`${line.product_id}-${index}`}
@@ -899,8 +899,7 @@ export default function OrderConfirmDialog({
                     </p>
                   ) : null}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">נמסר כעת</label>
+                <Field label="נמסר כעת" size="xs">
                   <Input
                     type="number"
                     min="0"
@@ -910,7 +909,7 @@ export default function OrderConfirmDialog({
                     disabled={remaining <= 0}
                     onChange={(e) => setDeliveredNow(index, e.target.value)}
                   />
-                </div>
+                </Field>
               </div>
             ))}
             {!isFullyDelivered && totalDeliveredNow > 0 ? (
@@ -939,7 +938,7 @@ export default function OrderConfirmDialog({
                 </p>
               ) : null}
               {!productSearching && productQuery.trim() && productResults.length === 0 ? (
-                <p className="text-xs text-muted-foreground">לא נמצאו מוצרים.</p>
+                <EmptyState dense>לא נמצאו מוצרים.</EmptyState>
               ) : null}
               {productResults.length > 0 ? (
                 <div className="max-h-48 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/70 bg-background/70">
@@ -1053,17 +1052,17 @@ export default function OrderConfirmDialog({
           </div>
         );
       }
+      // Field, the app's one label-over-input; what the step can't go on
+      // without carries its red "*" (owner, 2026-10-11: it was missing here).
       case "paymentDate":
         return (
-          <div className="mx-auto max-w-xs space-y-1">
-            <label className="text-sm font-medium">תאריך תשלום</label>
+          <Field label="תאריך תשלום" required className="mx-auto max-w-xs">
             <DateInput value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
-          </div>
+          </Field>
         );
       case "paymentMethod":
         return (
-          <div className="mx-auto max-w-xs space-y-1">
-            <label className="text-sm font-medium">אמצעי תשלום</label>
+          <Field label="אמצעי תשלום" required className="mx-auto max-w-xs">
             <NativeSelect
               value={paymentMethod}
               onChange={(e) => {
@@ -1089,7 +1088,7 @@ export default function OrderConfirmDialog({
                 />
               </div>
             ) : null}
-          </div>
+          </Field>
         );
       case "paymentAccount":
         return (
@@ -1107,17 +1106,15 @@ export default function OrderConfirmDialog({
         );
       case "reference":
         return (
-          <div className="mx-auto max-w-xs space-y-1">
-            <label className="text-sm font-medium">אסמכתא</label>
+          <Field label="אסמכתא" className="mx-auto max-w-xs">
             <Input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="אופציונלי" />
-          </div>
+          </Field>
         );
       case "paymentNotes":
         return (
-          <div className="mx-auto max-w-xs space-y-1">
-            <label className="text-sm font-medium">הערת תשלום</label>
+          <Field label="הערת תשלום" className="mx-auto max-w-xs">
             <Input value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="אופציונלי" />
-          </div>
+          </Field>
         );
       case "refund":
         return (
@@ -1132,12 +1129,10 @@ export default function OrderConfirmDialog({
             {recordRefund ? (
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">תאריך החזר</label>
+                  <Field label="תאריך החזר" required>
                     <DateInput value={refundDate} onChange={(e) => setRefundDate(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">אמצעי החזר</label>
+                  </Field>
+                  <Field label="אמצעי החזר" required>
                     <NativeSelect
                       value={refundMethod}
                       onChange={(e) => {
@@ -1153,7 +1148,7 @@ export default function OrderConfirmDialog({
                         </option>
                       ))}
                     </NativeSelect>
-                  </div>
+                  </Field>
                   <AccountSelect
                     required
                     value={refundAccountId}
@@ -1165,22 +1160,20 @@ export default function OrderConfirmDialog({
                   />
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">אסמכתא להחזר</label>
+                  <Field label="אסמכתא להחזר">
                     <Input
                       value={refundReferenceNumber}
                       onChange={(e) => setRefundReferenceNumber(e.target.value)}
                       placeholder="אופציונלי"
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">הערת החזר</label>
+                  </Field>
+                  <Field label="הערת החזר">
                     <Input
                       value={refundNotes}
                       onChange={(e) => setRefundNotes(e.target.value)}
                       placeholder="למשל: הוחזר עקב שינוי בכמויות"
                     />
-                  </div>
+                  </Field>
                 </div>
               </>
             ) : (
@@ -1193,10 +1186,9 @@ export default function OrderConfirmDialog({
         const dateMismatch = Boolean(requestedDate && requestedDate !== deliveryDate);
         return (
           <div className="mx-auto max-w-xs space-y-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">תאריך אספקה</label>
+            <Field label="תאריך אספקה">
               <DateInput value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
-            </div>
+            </Field>
             {requestedDate ? (
               <p className="text-xs text-muted-foreground">
                 תאריך למשלוח: <span className="font-medium text-foreground">{formatDate(requestedDate)}</span>
@@ -1219,18 +1211,17 @@ export default function OrderConfirmDialog({
       case "images":
         return (
           <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">העלאת תמונה</label>
+            <Field label="העלאת תמונה">
               <FileUploadActions
                 files={deliveryImages}
                 accept="image/*"
                 multiple
                 onFilesSelected={setDeliveryImages}
-                chooseLabel="בחר תמונות"
+                chooseLabel="בחירת תמונות"
                 className="flex-wrap"
               />
               <p className="text-xs text-muted-foreground">אפשר לצרף הוכחת אספקה חדשה בלי למחוק תמונות קיימות.</p>
-            </div>
+            </Field>
             {(serverImages ?? data.deliveryImages ?? []).length > 0 ? (
               <div className="space-y-2">
                 <div className="text-sm font-medium">תמונות קיימות</div>
@@ -1264,8 +1255,7 @@ export default function OrderConfirmDialog({
         );
       case "comments":
         return (
-          <div className="space-y-1">
-            <label className="text-sm font-medium">הערות אספקה</label>
+          <Field label="הערות אספקה">
             <div className="relative">
               <Textarea
                 value={deliveryNotes}
@@ -1280,7 +1270,7 @@ export default function OrderConfirmDialog({
               />
             </div>
             <p className="text-xs text-muted-foreground">נשמר על ההזמנה הזו בלבד.</p>
-          </div>
+          </Field>
         );
       // Its own step on purpose: the delivery notes describe THIS delivery, while
       // these describe the PLACE. Saving them on the customer is what lets the next
@@ -1289,20 +1279,21 @@ export default function OrderConfirmDialog({
       case "arrival":
         return (
           <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-3">
-            <label className="text-sm font-medium">הוראות הגעה</label>
-            <div className="relative">
-              <Textarea
-                value={arrivalInstructions}
-                onChange={(e) => setArrivalInstructions(e.target.value)}
-                rows={3}
-                placeholder="לדוגמה: לעקוף את הבניין מימין, שער כחול בחניון"
-                className="pe-11"
-              />
-              <DictateButton
-                onTranscript={(text) => setArrivalInstructions((prev) => appendDictatedText(prev, text))}
-                className="absolute bottom-1 end-1 h-8 w-8"
-              />
-            </div>
+            <Field label="הוראות הגעה">
+              <div className="relative">
+                <Textarea
+                  value={arrivalInstructions}
+                  onChange={(e) => setArrivalInstructions(e.target.value)}
+                  rows={3}
+                  placeholder="לדוגמה: לעקוף את הבניין מימין, שער כחול בחניון"
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setArrivalInstructions((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
+            </Field>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
@@ -1313,7 +1304,8 @@ export default function OrderConfirmDialog({
                 disabled={capturingPin}
               >
                 <LocationIcon className="h-4 w-4" />
-                {capturingPin ? "מאתר..." : "שמור את המיקום שאני נמצא בו"}
+                {/* A noun, as every button's label (owner, 2026-10-11). */}
+                {capturingPin ? "מאתר..." : "שמירת המיקום שאני נמצא בו"}
               </Button>
               <span className="text-xs text-muted-foreground">
                 {arrivalPin ? `נקודה נשמרה: ${formatPin(arrivalPin)}` : "לא נשמרה נקודה"}
@@ -1474,7 +1466,7 @@ export default function OrderConfirmDialog({
         destructive
         title="חוסר במלאי"
         description="יש פריט אחד או יותר שהכמות שנמסרת עולה על מה שנמצא במלאי כרגע. אישור בכל זאת עלול להשאיר מלאי שלילי. לסגור את האספקה בכל זאת?"
-        confirmLabel="סגור בכל זאת"
+        confirmLabel="סגירה בכל זאת"
         cancelLabel="לבדוק שוב"
         loading={submitting}
         onConfirm={() => {

@@ -4,9 +4,19 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
-import { DeleteIcon, EditIcon } from "@/components/ui/icons";
+import { DeleteIcon, EditIcon, MoreIcon } from "@/components/ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { DataTableShell } from "@/components/ui/data-table-shell";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
+import { LIST_CARD_BADGE, LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
 import { SwipeActions } from "@/components/ui/swipe-actions";
+import { cn } from "@/lib/utils";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
 import { deleteRecurringTaskTemplate } from "@/lib/recurring/deleteTemplate";
@@ -75,6 +85,20 @@ type FormState = {
   is_active: boolean;
   assignee_user_ids: string[];
 };
+
+/** The computer's table columns — loading.tsx draws the same ones. */
+const RECURRING_COLUMNS = [
+  "משימה קבועה",
+  "מקושר ל",
+  "דומיין",
+  "יצירה",
+  "יעד",
+  "משויכים",
+  "עדיפות",
+  "סטטוס",
+  "פעיל",
+  "פעולות",
+] as const;
 
 const PRIORITY_OPTIONS: TaskPriority[] = ["low", "medium", "high", "urgent"];
 const STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "blocked", "done", "cancelled"];
@@ -326,11 +350,10 @@ export default function RecurringTasksClient(props: Props) {
           </CardContent>
         </Card>
       ) : templates.length === 0 ? (
-        <Card>
-          <CardContent className="p-4 text-sm text-muted-foreground">
-            אין עדיין משימות קבועות. אפשר להתחיל ממשימה חודשית כמו חשמל, שכירות או משכורות.
-          </CardContent>
-        </Card>
+        // The app's one empty box (owner, 2026-10-11: "empty lists: one look").
+        <EmptyState>
+          אין עדיין משימות קבועות. אפשר להתחיל ממשימה חודשית כמו חשמל, שכירות או משכורות.
+        </EmptyState>
       ) : (
         <>
           <div className="space-y-2 md:hidden">
@@ -381,21 +404,23 @@ export default function RecurringTasksClient(props: Props) {
                     },
                   ]}
                 >
+                  {/* The list card's parts, as every phone list draws them (owner,
+                      2026-10-11): the name, the where line under it, the pills. */}
                   <button
                     type="button"
                     data-focus-id={template.id}
                     onClick={() => openEdit(template)}
-                    className="w-full space-y-2 p-3 text-right text-sm"
+                    className={cn("w-full space-y-2 text-right text-sm", LIST_CARD_BODY)}
                   >
-                    <div className="space-y-1">
-                      <div className="font-medium">{template.subject_template}</div>
-                      <div className="text-xs text-muted-foreground">
+                    <div className="space-y-0.5">
+                      <div className={LIST_CARD_NAME}>{template.subject_template}</div>
+                      <div className={LIST_CARD_META}>
                         {getBusinessDomainLabel(template.business_domain)} • {linkedLabel}
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge value={template.default_priority} type="priority" />
-                      <StatusBadge value={template.default_status} type="task" />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <StatusBadge value={template.default_priority} type="priority" className={LIST_CARD_BADGE} />
+                      <StatusBadge value={template.default_status} type="task" className={LIST_CARD_BADGE} />
                       {!template.is_active ? <span className="text-xs text-muted-foreground">לא פעיל</span> : null}
                     </div>
                     <div className="grid grid-cols-1 gap-1 text-xs text-muted-foreground">
@@ -421,23 +446,20 @@ export default function RecurringTasksClient(props: Props) {
             })}
           </div>
 
-          <div className="hidden max-h-[70vh] overflow-auto rounded-md border md:block">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-right font-medium">משימה קבועה</th>
-                  <th className="px-3 py-2 text-right font-medium">מקושר ל</th>
-                  <th className="px-3 py-2 text-right font-medium">דומיין</th>
-                  <th className="px-3 py-2 text-right font-medium">יצירה</th>
-                  <th className="px-3 py-2 text-right font-medium">יעד</th>
-                  <th className="px-3 py-2 text-right font-medium">משויכים</th>
-                  <th className="px-3 py-2 text-right font-medium">עדיפות</th>
-                  <th className="px-3 py-2 text-right font-medium">סטטוס</th>
-                  <th className="px-3 py-2 text-right font-medium">פעיל</th>
-                  <th className="px-3 py-2 text-right font-medium">פעולות</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
+          {/* The orders table's shell, density and header (owner, 2026-10-11:
+              "tables one density" — this one was tighter, in its own box). */}
+          <div className="hidden md:block">
+            <DataTableShell
+              header={
+                <>
+                  {RECURRING_COLUMNS.map((column) => (
+                    <th key={column} className="px-4 py-3 font-medium">
+                      {column}
+                    </th>
+                  ))}
+                </>
+              }
+            >
                 {templates.map((template) => {
                   const linkedLabel =
                     template.project_id
@@ -452,7 +474,7 @@ export default function RecurringTasksClient(props: Props) {
 
                   return (
                     <tr key={template.id} data-focus-id={template.id} className="hover:bg-muted/30 align-top">
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-4">
                         <div className="space-y-1">
                           <div className="font-medium">{template.subject_template}</div>
                           {template.description_template ? (
@@ -462,31 +484,55 @@ export default function RecurringTasksClient(props: Props) {
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-3 py-2">{linkedLabel}</td>
-                      <td className="px-3 py-2">{getBusinessDomainLabel(template.business_domain)}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">ביום {template.create_day_of_month}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">ביום {template.due_day_of_month}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-4">{linkedLabel}</td>
+                      <td className="px-4 py-4">{getBusinessDomainLabel(template.business_domain)}</td>
+                      <td className="px-4 py-4 whitespace-nowrap">ביום {template.create_day_of_month}</td>
+                      <td className="px-4 py-4 whitespace-nowrap">ביום {template.due_day_of_month}</td>
+                      <td className="px-4 py-4">
                         <div className="max-w-[220px] leading-snug">{assignees || "—"}</div>
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-4">
                         <StatusBadge value={template.default_priority} type="priority" />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-4">
                         <StatusBadge value={template.default_status} type="task" />
                       </td>
-                      <td className="px-3 py-2">{template.is_active ? "כן" : "לא"}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div className="flex gap-2">
-                          <EditButton onClick={() => openEdit(template)} />
-                          <DeleteButton onClick={() => setPendingDeleteId(template.id)} />
-                        </div>
+                      <td className="px-4 py-4">{template.is_active ? "כן" : "לא"}</td>
+                      {/* Edit and delete behind a ⋮, as every big list on the
+                          computer (owner, 2026-10-11) — the phone swipes. */}
+                      <td className="px-4 py-3">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground hover:text-foreground"
+                              title="פעולות"
+                              aria-label="פעולות"
+                            >
+                              <MoreIcon />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-36">
+                            <DropdownMenuItem onClick={() => openEdit(template)}>
+                              <EditIcon className="me-2 h-4 w-4" />
+                              עריכה
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setPendingDeleteId(template.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <DeleteIcon className="me-2 h-4 w-4" />
+                              מחיקה
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </td>
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
+            </DataTableShell>
           </div>
         </>
       )}
@@ -502,17 +548,17 @@ export default function RecurringTasksClient(props: Props) {
         busy={saving}
         submitDisabled={!canSave}
       >
-            <div className="space-y-1">
-              <div className="text-sm font-medium">דומיין *</div>
+            {/* The shared label-over-input, its "*" red (owner, 2026-10-11:
+                every form the same Field). */}
+            <Field label="דומיין" required>
               <DomainSelect
                 value={form.business_domain}
                 onChange={(value) => handleDomainChange(value as ExpenseBusinessDomain | "")}
               />
-            </div>
+            </Field>
 
             {requirement === "project" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">פרויקט *</div>
+              <Field label="פרויקט" required>
                 <ProjectPicker
                   projects={props.projects}
                   value={form.project_id}
@@ -520,12 +566,11 @@ export default function RecurringTasksClient(props: Props) {
                   emptyLabel="בחר פרויקט..."
                   allowClear={false}
                 />
-              </div>
+              </Field>
             ) : null}
 
             {requirement === "property" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">נכס *</div>
+              <Field label="נכס" required>
                 <NativeSelect
                   value={form.property_id}
                   onChange={(e) => updateForm("property_id", e.target.value)}
@@ -537,22 +582,20 @@ export default function RecurringTasksClient(props: Props) {
                     </option>
                   ))}
                 </NativeSelect>
-              </div>
+              </Field>
             ) : null}
 
             {form.business_domain ? (
               <>
-            <div className="space-y-1">
-              <div className="text-sm font-medium">כותרת תבנית *</div>
+            <Field label="כותרת תבנית" required>
               <Input
                 value={form.subject_template}
                 onChange={(e) => updateForm("subject_template", e.target.value)}
                 placeholder="למשל: תשלום משכורות - {{month_label}}"
               />
-            </div>
+            </Field>
 
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תיאור תבנית</div>
+            <Field label="תיאור תבנית">
               <div className="relative">
                 <Textarea
                   value={form.description_template}
@@ -567,11 +610,10 @@ export default function RecurringTasksClient(props: Props) {
                   className="absolute bottom-1 end-1 h-8 w-8"
                 />
               </div>
-            </div>
+            </Field>
 
             <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">יום יצירה בכל חודש *</div>
+              <Field label="יום יצירה בכל חודש" required>
                 <Input
                   type="number"
                   min={1}
@@ -579,9 +621,8 @@ export default function RecurringTasksClient(props: Props) {
                   value={String(form.create_day_of_month)}
                   onChange={(e) => updateForm("create_day_of_month", Number(e.target.value) || 1)}
                 />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">יום יעד בכל חודש *</div>
+              </Field>
+              <Field label="יום יעד בכל חודש" required>
                 <Input
                   type="number"
                   min={1}
@@ -589,23 +630,20 @@ export default function RecurringTasksClient(props: Props) {
                   value={String(form.due_day_of_month)}
                   onChange={(e) => updateForm("due_day_of_month", Number(e.target.value) || 1)}
                 />
-              </div>
+              </Field>
             </AdaptiveGrid>
 
             <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">מתחיל מ</div>
+              <Field label="מתחיל מ">
                 <DateInput value={form.start_date} onChange={(e) => updateForm("start_date", e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">עד</div>
+              </Field>
+              <Field label="עד">
                 <DateInput value={form.end_date} onChange={(e) => updateForm("end_date", e.target.value)} />
-              </div>
+              </Field>
             </AdaptiveGrid>
 
             <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">עדיפות ברירת מחדל</div>
+              <Field label="עדיפות ברירת מחדל">
                 <NativeSelect
                   value={form.default_priority}
                   onChange={(e) => updateForm("default_priority", e.target.value as TaskPriority)}
@@ -616,9 +654,8 @@ export default function RecurringTasksClient(props: Props) {
                     </option>
                   ))}
                 </NativeSelect>
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">סטטוס ברירת מחדל</div>
+              </Field>
+              <Field label="סטטוס ברירת מחדל">
                 <NativeSelect
                   value={form.default_status}
                   onChange={(e) => updateForm("default_status", e.target.value as TaskStatus)}
@@ -629,11 +666,10 @@ export default function RecurringTasksClient(props: Props) {
                     </option>
                   ))}
                 </NativeSelect>
-              </div>
+              </Field>
             </AdaptiveGrid>
 
-            <div className="space-y-2">
-              <div className="text-sm font-medium">משויכים *</div>
+            <Field label="משויכים" required className="space-y-2">
               <div className="max-h-52 space-y-2 overflow-y-auto rounded-md border p-3">
                 {props.users.map((user) => (
                   <label key={user.id} className="flex items-center gap-2 text-sm">
@@ -646,7 +682,7 @@ export default function RecurringTasksClient(props: Props) {
                   </label>
                 ))}
               </div>
-            </div>
+            </Field>
 
             <label className="flex items-center gap-2 text-sm">
               <input

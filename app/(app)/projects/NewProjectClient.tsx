@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
+import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
+import { EditButton, IconButton } from "@/components/ui/icon-button";
+import { Field } from "@/components/ui/field";
 import { StepWizard, WizardTitle, useStepFlow } from "@/components/ui/step-wizard";
 import { MetaRow } from "@/components/ui/meta-row";
 import { OptionRow, StepHeading } from "@/components/ui/option-row";
@@ -917,6 +919,10 @@ export default function NewProjectClient({
               <div className="space-y-3">
                 <div className="space-y-3">
                   <div className="relative">
+                    {/* The glass on the start side, as every search box in the app
+                        (owner, 2026-10-11) — it was on the left; the clear X keeps
+                        the far end. */}
+                    <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     {customerQuery ? (
                       <button
                         type="button"
@@ -926,9 +932,7 @@ export default function NewProjectClient({
                       >
                         <CloseIcon className="h-4 w-4" />
                       </button>
-                    ) : (
-                      <SearchIcon className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    )}
+                    ) : null}
                     <Input
                       value={customerQuery}
                       onChange={(e) => {
@@ -939,7 +943,7 @@ export default function NewProjectClient({
                       placeholder="חיפוש..."
                       aria-label="חיפוש לקוח"
                       data-no-enter-next
-                      className="pe-9"
+                      className="ps-9 pe-9"
                     />
                   </div>
                   {customerSearchLoading ? (
@@ -1042,18 +1046,23 @@ export default function NewProjectClient({
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-1.5">
                           <Badge variant="success">נבחר</Badge>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8 border-secondary bg-transparent text-secondary shadow-none hover:bg-secondary/10 hover:text-secondary"
-                            onClick={() => setEditingCustomer((v) => !v)}
-                            disabled={actionLocked}
-                            aria-label={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
-                            title={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
-                          >
-                            {editingCustomer ? <CloseIcon className="h-4 w-4" /> : <EditIcon className="h-4 w-4" />}
-                          </Button>
+                          {/* The app's one pencil (owner, 2026-10-11) — it was a
+                              hand-made copy of it; closing the edit is the grey X. */}
+                          {editingCustomer ? (
+                            <IconButton
+                              icon={CloseIcon}
+                              label="סגירת העריכה"
+                              variant="muted"
+                              onClick={() => setEditingCustomer(false)}
+                              disabled={actionLocked}
+                            />
+                          ) : (
+                            <EditButton
+                              label="עריכת פרטי הלקוח"
+                              onClick={() => setEditingCustomer(true)}
+                              disabled={actionLocked}
+                            />
+                          )}
                         </div>
                       </div>
 
@@ -1193,9 +1202,9 @@ export default function NewProjectClient({
       {show("dates") ? (
         <fieldset disabled={submitting} className="contents">
           <StepHeading compact={oneForm} title="מתי הפרויקט?" />
+          {/* The shared label-over-input (owner, 2026-10-11: every form the same Field). */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="space-y-1.5 text-sm">
-              <span className="font-medium">תאריך התחלה</span>
+            <Field label="תאריך התחלה">
               <DateInput
                 value={startDate}
                 onChange={(e) => {
@@ -1208,11 +1217,10 @@ export default function NewProjectClient({
                   if (computed) setDueDate(computed);
                 }}
               />
-            </label>
-            <label className="space-y-1.5 text-sm">
-              <span className="font-medium">תאריך סיום (אופציונלי)</span>
+            </Field>
+            <Field label="תאריך סיום" hint="רשות">
               <DateInput value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            </label>
+            </Field>
           </div>
         </fieldset>
       ) : null}
@@ -1279,8 +1287,7 @@ export default function NewProjectClient({
               <MovingEndpointFields title="מוצא (מאיפה)" value={origin} onChange={setOrigin} />
               <MovingEndpointFields title="יעד (לאן)" value={destination} onChange={setDestination} />
             </div>
-            <div className="space-y-1.5 text-sm">
-              <span className="font-medium">פריטים להעברה</span>
+            <Field label="פריטים להעברה">
               <div className="relative">
                 <Textarea
                   value={itemsToMove}
@@ -1295,7 +1302,7 @@ export default function NewProjectClient({
                 />
               </div>
               <p className="text-xs text-muted-foreground">אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.</p>
-            </div>
+            </Field>
           </div>
         </fieldset>
       ) : null}
@@ -1320,7 +1327,7 @@ export default function NewProjectClient({
                 files={attachmentFiles}
                 multiple
                 onFilesSelected={setAttachmentFiles}
-                chooseLabel={attachmentFiles.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                chooseLabel={attachmentFiles.length > 0 ? "הוספת קבצים" : "העלאת קבצים"}
                 chooseVariant="outline"
                 size="sm"
               />

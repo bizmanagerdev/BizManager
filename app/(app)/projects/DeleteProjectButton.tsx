@@ -89,7 +89,8 @@ export default function DeleteProjectButton({
         destructive
         title="מחיקת פרויקט"
         description={`למחוק את ${label}?`}
-        confirmLabel="מחק פרויקט"
+        // A noun, as every delete confirm says it (owner, 2026-10-11: one wording).
+        confirmLabel="מחיקה"
         onConfirm={onDelete}
       />
     </div>

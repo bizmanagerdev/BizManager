@@ -8,7 +8,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChecklistIcon, CheckboxUncheckedIcon } from "@/components/ui/icons";
+import { CheckboxUncheckedIcon, TaskIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
@@ -182,7 +182,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
   if (initialTasks.length === 0) {
     return (
       <QuietCard
-        icon={ChecklistIcon}
+        icon={TaskIcon}
         title={t(dashboardDict, locale, "myTasksCardTitle")}
         note={t(dashboardDict, locale, "myTasksEmptyNote")}
         href="/tasks"
@@ -203,7 +203,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
-      <DashboardCardHeader icon={ChecklistIcon} title={t(dashboardDict, locale, "myTasksCardTitle")} count={tasks.length} />
+      <DashboardCardHeader icon={TaskIcon} title={t(dashboardDict, locale, "myTasksCardTitle")} count={tasks.length} />
 
       {/* BELOW the header, not inside it. As the header's `action` the strip
           wrapped onto its own line and dragged the header's rule down with it,
@@ -297,7 +297,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                       {priority || dueLabel(task) || task.project_name ? (
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                           {priority ? (
-                            <StatusBadge value={priority} type="priority" locale={locale} className="shrink-0 text-[0.588rem]" />
+                            <StatusBadge value={priority} type="priority" locale={locale} className="shrink-0 text-[0.647rem]" />
                           ) : null}
                           {dueLabel(task) ? (
                             <span

@@ -5,6 +5,8 @@ import { useMemo, useState, useTransition } from "react";
 import { devicePaymentSaves } from "@/lib/payments/device-payment-saves";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { AddIcon } from "@/components/ui/icons";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
@@ -257,14 +259,19 @@ export default function OrderPaymentDialog({
 
   return (
     <>
+      {/* "+ תשלום" in the soft style (dashed outline), the new-order form's button too (owner,
+          2026-10-11: a less important action; it was an outline "עדכון
+          תשלום"). A caller's buttonClassName still dresses it as its page's
+          main button, or as a swipe tile. */}
       <Button
         type="button"
         size="sm"
-        variant="outline"
+        variant="soft"
         className={buttonClassName ?? "w-full sm:w-auto"}
         onClick={() => setOpen(true)}
       >
-        עדכון תשלום
+        <AddIcon />
+        תשלום
       </Button>
 
       <FormDialog
@@ -306,8 +313,10 @@ export default function OrderPaymentDialog({
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">סוג פעולה</label>
+            {/* The app's one label-over-input, Field, the required ones with
+                its red "*" — the same size as the new-order form's payment
+                fields (owner, 2026-10-11). */}
+            <Field label="סוג פעולה">
               <NativeSelect
                 value={entryType}
                 onChange={(e) => setEntryType(e.target.value === "refund" ? "refund" : "payment")}
@@ -315,11 +324,10 @@ export default function OrderPaymentDialog({
                 <option value="payment">תשלום</option>
                 <option value="refund">החזר</option>
               </NativeSelect>
-            </div>
+            </Field>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">{entryType === "refund" ? "סכום החזר *" : "סכום תשלום *"}</label>
+              <Field label={entryType === "refund" ? "סכום החזר" : "סכום תשלום"} required>
                 <CurrencyInput
                   type="number"
                   min="0"
@@ -328,15 +336,13 @@ export default function OrderPaymentDialog({
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
                 />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">{entryType === "refund" ? "תאריך החזר *" : "תאריך תשלום *"}</label>
+              </Field>
+              <Field label={entryType === "refund" ? "תאריך החזר" : "תאריך תשלום"} required>
                 <DateInput value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
-              </div>
+              </Field>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">{entryType === "refund" ? "אמצעי החזר *" : "אמצעי תשלום *"}</label>
+            <Field label={entryType === "refund" ? "אמצעי החזר" : "אמצעי תשלום"} required>
               <NativeSelect
                 value={paymentMethod}
                 onChange={(e) => {
@@ -352,7 +358,7 @@ export default function OrderPaymentDialog({
                   </option>
                 ))}
               </NativeSelect>
-            </div>
+            </Field>
 
             <AccountSelect
               required
@@ -373,19 +379,17 @@ export default function OrderPaymentDialog({
                 disabled={submitting}
               />
             ) : paymentMethod ? (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">
-                  {paymentMethod === "check"
-                    ? "תאריך פירעון *"
-                    : "תאריך פירעון צפוי (אופציונלי)"}
-                </label>
+              <Field
+                label={paymentMethod === "check" ? "תאריך פירעון" : "תאריך פירעון צפוי (אופציונלי)"}
+                required={paymentMethod === "check"}
+              >
                 <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                 {paymentMethod !== "check" ? (
                   <p className="text-[0.647rem] text-muted-foreground">
                     לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                   </p>
                 ) : null}
-              </div>
+              </Field>
             ) : null}
 
             {paymentMethod === "check" ? (
@@ -399,18 +403,16 @@ export default function OrderPaymentDialog({
             ) : null}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">{entryType === "refund" ? "מספר אסמכתא להחזר" : "מספר אסמכתא"}</label>
+              <Field label={entryType === "refund" ? "מספר אסמכתא להחזר" : "מספר אסמכתא"}>
                 <Input
                   value={referenceNumber}
                   onChange={(e) => setReferenceNumber(e.target.value)}
                   placeholder="אופציונלי"
                 />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">{entryType === "refund" ? "הערות להחזר" : "הערות"}</label>
+              </Field>
+              <Field label={entryType === "refund" ? "הערות להחזר" : "הערות"}>
                 <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="אופציונלי" />
-              </div>
+              </Field>
             </div>
 
             <div className="rounded-md border p-3 text-sm">

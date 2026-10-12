@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { CashIcon, ChevronDownIcon, CommentIcon, LocationIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
-import { Button } from "@/components/ui/button";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { formatMoney } from "@/lib/money";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
@@ -16,6 +15,9 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
 import { CallGlyph, CallIconButton, ContactTapZone } from "@/components/ui/contact-link";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LIST_CARD_BADGE, LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
+import { cn } from "@/lib/utils";
 
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
@@ -137,9 +139,10 @@ function remainingDeliveryItems(items: DeliveryOrderItem[]) {
     .filter((item) => item.remaining > 0);
 }
 
-// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts.
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts. A missing
+// value is "—", as everywhere (owner, 2026-10-11).
 function formatCurrency(value: number | null) {
-  if (value === null) return "-";
+  if (value === null) return "—";
   return formatMoney(value);
 }
 
@@ -152,9 +155,11 @@ function RequestedDeliveryDateBadge({ date }: { date: string | null }) {
   const urgencyClass = dueUrgencyChipClass(getDueUrgency(date));
   return (
     <span
-      className={`rounded-full border px-2 py-0.5 text-[0.647rem] font-medium ${
+      className={cn(
+        "rounded-full border",
+        LIST_CARD_BADGE,
         urgencyClass || "border-border bg-muted/40 text-muted-foreground"
-      }`}
+      )}
     >
       תאריך למשלוח: {formatShortDate(date)}
     </span>
@@ -194,9 +199,7 @@ function DeliveryComments({ notes, className = "" }: { notes: string | null; cla
 const lowStockBadgeClasses = getStatusColorClasses("danger");
 function LowStockBadge({ outOfStock }: { outOfStock: boolean }) {
   if (!outOfStock) return null;
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[0.647rem] font-medium ${lowStockBadgeClasses}`}>חוסר במלאי</span>
-  );
+  return <span className={cn("rounded-full", LIST_CARD_BADGE, lowStockBadgeClasses)}>חוסר במלאי</span>;
 }
 
 export default function SalesDeliveriesQueue({
@@ -345,13 +348,20 @@ export default function SalesDeliveriesQueue({
                 {label}
               </Link>
             ))}
-            {/* Its icon only here — with the label it no longer fit beside the pills. */}
+            {/* Its icon only here — with the label it no longer fit beside the
+                pills. The dashboard card's plain icon, no fill of its own
+                (owner, 2026-10-11: it was a filled square here). */}
             <div className="shrink-0">
               <PickingListDialog
                 trigger={
-                  <Button type="button" variant="secondary" size="icon" className="h-8 w-8" aria-label="רשימת ליקוט" title="רשימת ליקוט">
+                  <button
+                    type="button"
+                    aria-label="רשימת ליקוט"
+                    title="רשימת ליקוט"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary hover:bg-secondary/10"
+                  >
                     <WarehouseIcon className="h-4 w-4" />
-                  </Button>
+                  </button>
                 }
               />
             </div>
@@ -385,14 +395,17 @@ export default function SalesDeliveriesQueue({
         </span>
       </div>
 
+      {/* An empty list has the app's one look (owner, 2026-10-11). */}
       {deliveriesByRegion.length === 0 ? (
-        <p className="text-sm text-muted-foreground">אין כרגע הזמנות מקובצות למשלוחים.</p>
+        <EmptyState>אין כרגע הזמנות מקובצות למשלוחים.</EmptyState>
       ) : (
         <ResponsiveDataView
           breakpoint="xl"
           desktop={
             // A column table per region, stacked south → center → north.
-            // Mobile keeps the richer stop cards below.
+            // Mobile keeps the richer stop cards below. DataTableShell's frame
+            // and head, by hand for the per-region bodies, and the orders
+            // table's px-4 py-4 cells (owner, 2026-10-11: one table density).
             <Card className="overflow-hidden border-border/70 shadow-sm">
               <div className="max-h-[75vh] overflow-auto">
                 <table className="w-full text-sm">
@@ -451,7 +464,7 @@ export default function SalesDeliveriesQueue({
                               className={`align-top ${canOpenOrder ? "cursor-pointer hover:bg-muted/20 focus-visible:bg-muted/20" : ""} ${unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""}`}
                               {...(canOpenOrder ? rowNavigateProps(router, `/sales/orders/${delivery.id}`) : {})}
                             >
-                              <td className="px-4 py-3">
+                              <td className="px-4 py-4">
                                 <div className="font-medium">{combinedCustomerName(group)}</div>
                                 {/* The number as text and the app's one call look beside
                                     it, the green phone (owner, 2026-10-11: "make them
@@ -465,7 +478,7 @@ export default function SalesDeliveriesQueue({
                                   </div>
                                 ) : null}
                               </td>
-                              <td className="whitespace-nowrap px-4 py-3">
+                              <td className="whitespace-nowrap px-4 py-4">
                                 <span className="inline-flex items-center gap-1.5">
                                   {/* The city's colour (lib/deliveries/city-colours.ts) — just the
                                       dot here: at a desk nobody is driving the run. */}
@@ -473,7 +486,7 @@ export default function SalesDeliveriesQueue({
                                   {city}
                                 </span>
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="px-4 py-4">
                                 <div className="flex items-center gap-2">
                                   {groupPin ? (
                                     <a
@@ -497,13 +510,13 @@ export default function SalesDeliveriesQueue({
                                       <WazeIcon className="h-3.5 w-3.5" />
                                     </AddressLink>
                                   ) : null}
-                                  <span className="min-w-0">{displayAddress || "-"}</span>
+                                  <span className="min-w-0">{displayAddress || "—"}</span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="px-4 py-4">
                                 <div className="flex flex-wrap items-center gap-1 text-xs">
                                   {partiallyDelivered ? (
-                                    <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-[0.647rem] font-semibold text-warning-soft-foreground">
+                                    <span className={cn("rounded-full border border-warning bg-warning-soft text-warning-soft-foreground", LIST_CARD_BADGE, "font-semibold")}>
                                       יתרת אספקה
                                     </span>
                                   ) : null}
@@ -544,7 +557,7 @@ export default function SalesDeliveriesQueue({
                                 </div>
                                 <DeliveryComments notes={delivery.notes} className="mt-2" />
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="px-4 py-4">
                                 <div className="space-y-1">
                                   <div className="font-semibold">{formatCurrency(delivery.totalAmount)}</div>
                                   <div className="flex flex-wrap gap-1">
@@ -571,7 +584,7 @@ export default function SalesDeliveriesQueue({
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="px-4 py-4">
                                 <div className="flex items-center gap-2">
                                   <DeliveryShareActions
                                     delivery={delivery}
@@ -638,10 +651,12 @@ export default function SalesDeliveriesQueue({
                                         (lib/deliveries/city-colours.ts), so a driver sees where
                                         one city's stops end. */}
                                     <span aria-hidden className="absolute inset-y-0 start-0 w-1.5" style={{ backgroundColor: cityColour(city) }} />
-                                    {/* WHERE leads — on a delivery run the address is what
-                                        you act on; the customer is how you confirm it. Waze
-                                        sits opposite as the one navigation affordance. */}
-                                    <div className="flex items-start gap-3 p-3">
+                                    {/* The customer leads and the address is the line
+                                        under it, as on every list card (owner, 2026-10-11:
+                                        "name first"; components/ui/list-card.ts) — the stop
+                                        led with the address before. Waze sits opposite as
+                                        the one navigation affordance. */}
+                                    <div className={cn("flex items-start gap-3", LIST_CARD_BODY)}>
                                       {/* A saved pin beats the address string — it's what
                                           stops Waze dropping the driver at the wrong
                                           entrance or the far side of a divided road. */}
@@ -653,7 +668,7 @@ export default function SalesDeliveriesQueue({
                                           className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline"
                                         >
                                           <WazeIcon className="h-4 w-4" />
-                                          <span className="text-[0.588rem] font-semibold leading-none">נקודה</span>
+                                          <span className="text-[0.647rem] font-semibold leading-none">נקודה</span>
                                         </a>
                                       ) : displayAddress ? (
                                         <AddressLink
@@ -665,14 +680,10 @@ export default function SalesDeliveriesQueue({
                                         </AddressLink>
                                       ) : null}
                                       <div className="min-w-0 flex-1">
-                                        <div className="text-sm font-bold leading-snug">
-                                          {group.address || combinedCustomerName(group)}
-                                        </div>
-                                        {displayAddress ? (
-                                          <div className="text-xs text-muted-foreground">{combinedCustomerName(group)}</div>
-                                        ) : null}
+                                        <div className={LIST_CARD_NAME}>{combinedCustomerName(group)}</div>
+                                        {displayAddress ? <div className={LIST_CARD_META}>{displayAddress}</div> : null}
                                         {hasMultipleOrders ? (
-                                          <span className="mt-1 inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[0.647rem] font-medium text-muted-foreground">
+                                          <span className={cn("mt-1 inline-flex rounded-full border border-border bg-muted/50 text-muted-foreground", LIST_CARD_BADGE)}>
                                             {group.orders.length} משלוחים
                                           </span>
                                         ) : null}
@@ -760,21 +771,27 @@ export default function SalesDeliveriesQueue({
                                           <LowStockBadge outOfStock={delivery.outOfStock} />
                                           {/* Pay-ahead customer, still owing: do NOT hand over
                                               the goods before it's paid. */}
+                                          {/* Every list card's pill (LIST_CARD_BADGE); the
+                                              ones that warn keep their heavier weight. */}
                                           {unpaidPrepayment ? (
-                                            <span
-                                              className={`rounded-full px-2 py-0.5 text-[0.647rem] font-semibold ${prepaymentBadgeClasses}`}
-                                            >
+                                            <span className={cn("rounded-full", LIST_CARD_BADGE, "font-semibold", prepaymentBadgeClasses)}>
                                               תשלום מראש — לא נגבה
                                             </span>
                                           ) : null}
                                           <span
-                                            className={`rounded-full border px-2 py-0.5 text-[0.647rem] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
+                                            className={cn("rounded-full border", LIST_CARD_BADGE, paymentStatusClasses(delivery.paymentStatus))}
                                           >
                                             {getPaymentStatusLabel(delivery.paymentStatus)}
                                           </span>
                                           {/* The one thing the driver must not miss. */}
                                           {delivery.collectOnDelivery ? (
-                                            <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.647rem] font-semibold text-warning-soft-foreground">
+                                            <span
+                                              className={cn(
+                                                "inline-flex items-center gap-1 rounded-full bg-warning-soft text-warning-soft-foreground",
+                                                LIST_CARD_BADGE,
+                                                "font-semibold"
+                                              )}
+                                            >
                                               <CashIcon className="h-3.5 w-3.5 shrink-0" />
                                               גבייה במסירה
                                             </span>
@@ -794,7 +811,7 @@ export default function SalesDeliveriesQueue({
                                             {/* The remaining-delivery flag lives WITH the products —
                                                 that's what it qualifies (what's still owed). */}
                                             {partiallyDelivered ? (
-                                              <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-[0.647rem] font-semibold text-warning-soft-foreground">
+                                              <span className={cn("rounded-full border border-warning bg-warning-soft text-warning-soft-foreground", LIST_CARD_BADGE, "font-semibold")}>
                                                 יתרת אספקה
                                               </span>
                                             ) : null}

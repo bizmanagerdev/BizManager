@@ -13,6 +13,7 @@ import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { toHebrewError } from "@/lib/error-messages";
 import { parseOrderComments, type OrderComment } from "@/lib/orders/comments";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { EmptyState } from "@/components/ui/empty-state";
 
 /**
  * Attributed comment thread on the order page: post several timestamped comments
@@ -137,8 +138,9 @@ export default function OrderCommentsThread({
 
   return (
     <div className="space-y-3">
+      {/* The app's one empty look, the dense box inside a card (owner, 2026-10-11). */}
       {comments.length === 0 ? (
-        <p className="text-sm text-muted-foreground">אין תגובות להזמנה זו עדיין.</p>
+        <EmptyState dense>אין תגובות להזמנה זו עדיין.</EmptyState>
       ) : (
         <div className="space-y-2">
           {comments.map((comment, index) => (

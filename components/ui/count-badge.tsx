@@ -10,7 +10,9 @@ export function CountBadge({ count, active = false, className }: { count: number
   return (
     <span
       className={cn(
-        "inline-flex min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[0.588rem] font-semibold leading-4 tabular-nums",
+        // 0.647rem: one of the app's two small sizes (with text-xs) — it was
+        // 0.588rem, one of six near-duplicates (owner, 2026-10-11).
+        "inline-flex min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[0.647rem] font-semibold leading-4 tabular-nums",
         active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
         className
       )}

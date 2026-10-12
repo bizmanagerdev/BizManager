@@ -7,9 +7,10 @@
 import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
 import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { AddIcon } from "@/components/ui/icons";
+import { AddIcon, CheckboxCheckedIcon, CheckboxUncheckedIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { getTaskPriorityColor, getTaskPriorityLabel } from "@/lib/ui/status-colors";
@@ -154,19 +155,31 @@ export default function ProjectTasksMini({
       </div>
 
       {visible.length === 0 ? (
-        <p className="text-sm text-muted-foreground">אין משימות להצגה.</p>
+        // The app's one empty box (owner, 2026-10-11: "empty lists: one look").
+        <EmptyState dense>אין משימות להצגה.</EmptyState>
       ) : (
         <ul className="divide-y">
           {visible.map((row) => (
             <li key={row.id} className="flex items-start gap-2 py-2">
-              <input
-                type="checkbox"
-                checked={row.done}
+              {/* The square tick the dashboard and the board use (owner,
+                  2026-10-11: one look for "done") — it was the browser's own
+                  checkbox here. */}
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={row.done}
                 disabled={busyId === row.id}
-                onChange={(event) => void toggle(row.id, event.target.checked)}
+                onClick={() => void toggle(row.id, !row.done)}
                 aria-label={row.done ? "סימון כלא הושלמה" : "סימון כהושלמה"}
-                className="mt-1 h-4 w-4 shrink-0 accent-[rgb(var(--green-4))]"
-              />
+                title={row.done ? "סימון כלא הושלמה" : "סימון כהושלמה"}
+                className="relative mt-0.5 shrink-0 text-muted-foreground transition before:absolute before:-inset-2 before:content-[''] hover:text-success disabled:opacity-60"
+              >
+                {row.done ? (
+                  <CheckboxCheckedIcon className="h-4 w-4 text-success" />
+                ) : (
+                  <CheckboxUncheckedIcon className="h-4 w-4" />
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => setEditId(row.id)}
@@ -180,7 +193,7 @@ export default function ProjectTasksMini({
                 >
                   {row.subject}
                 </span>
-                <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
+                <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   {row.priority ? (
                     <span className={cn("rounded-full px-1.5 py-0", priorityPillClass(row.priority))}>
                       {getTaskPriorityLabel(row.priority)}
@@ -197,9 +210,9 @@ export default function ProjectTasksMini({
 
       <Button
         type="button"
-        variant="outline"
+        variant="soft"
         size="sm"
-        className="w-full border-dashed"
+        className="w-full"
         onClick={() => setCreateOpen(true)}
       >
         <AddIcon className="h-4 w-4" />

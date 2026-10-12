@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // The project page's task list speaks the tasks board's language (owner,
 // 2026-10-11): a priority looks and reads the same here as on /tasks — urgent
@@ -8,7 +8,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 // בינונית / נמוכה" — and its filter chips are the app's blue toggles.
 
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
-vi.mock("@/lib/tasks/device-task-saves", () => ({ saveTaskStatus: vi.fn() }));
+const saves = vi.hoisted(() => ({ saveTaskStatus: vi.fn() }));
+vi.mock("@/lib/tasks/device-task-saves", () => saves);
 
 import ProjectTasksMini from "@/app/(app)/projects/[id]/ProjectTasksMini";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
@@ -58,5 +59,34 @@ describe("ProjectTasksMini", () => {
     expect(open).toHaveClass("bg-secondary", "text-secondary-foreground");
     expect(all).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByText("משימה ד")).not.toBeInTheDocument();
+  });
+
+  // "Done" looks the same everywhere (owner, 2026-10-11): the square tick the
+  // dashboard and the board use, not the browser's own checkbox.
+  it("each task's done is the square tick; a tap marks it done at once and saves it", async () => {
+    saves.saveTaskStatus.mockResolvedValue({ ok: true, queued: false, onDevice: true });
+    const { container } = render(
+      <ProjectTasksMini projectId="p1" projectType="moving" tasks={TASKS} users={[]} onChange={() => {}} />
+    );
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+    const ticks = screen.getAllByRole("checkbox");
+    expect(ticks).toHaveLength(4);
+    const open = screen.getAllByRole("checkbox", { name: "סימון כהושלמה" })[0]!;
+    expect(open).toHaveAttribute("aria-checked", "false");
+    expect(open.querySelector("svg")).toHaveClass("lucide-square");
+    const done = screen.getByRole("checkbox", { name: "סימון כלא הושלמה" });
+    expect(done).toHaveAttribute("aria-checked", "true");
+    expect(done.querySelector("svg")).toHaveClass("lucide-square-check-big", "text-success");
+
+    fireEvent.click(open);
+    expect(open).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(saves.saveTaskStatus).toHaveBeenCalledWith("t1", "done", "עדכון סטטוס משימה"));
+  });
+
+  it("a filter with nothing in it shows the app's empty box", () => {
+    renderList();
+    fireEvent.click(screen.getByRole("button", { name: "הושלמו 1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "סימון כלא הושלמה" }));
+    expect(screen.getByText("אין משימות להצגה.").closest(".border-dashed")).not.toBeNull();
   });
 });

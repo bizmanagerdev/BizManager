@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
@@ -42,29 +44,32 @@ export function MovingEndpointFields({
   onChange: (next: MovingEndpointValue) => void;
   disabled?: boolean;
 }) {
+  const id = useId();
+  // The shared Field in its small panel size (owner, 2026-10-11: every form
+  // the same label-over-input), each label still tied to its input.
   return (
     <div className="space-y-2 rounded-xl border border-border/70 bg-background/60 p-3">
       <div className="text-sm font-medium">{title}</div>
-      <label className="block space-y-1">
-        <span className="text-xs text-muted-foreground">כתובת</span>
+      <Field label="כתובת" size="xs" htmlFor={`${id}-address`}>
         <Input
+          id={`${id}-address`}
           value={value.address}
           disabled={disabled}
           onChange={(e) => onChange({ ...value, address: e.target.value })}
         />
-      </label>
+      </Field>
       <div className="grid grid-cols-2 gap-2">
-        <label className="block space-y-1">
-          <span className="text-xs text-muted-foreground">קומה</span>
+        <Field label="קומה" size="xs" htmlFor={`${id}-floor`}>
           <Input
+            id={`${id}-floor`}
             value={value.floor}
             disabled={disabled}
             onChange={(e) => onChange({ ...value, floor: e.target.value })}
           />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-xs text-muted-foreground">מעלית</span>
-          <NativeSelect 
+        </Field>
+        <Field label="מעלית" size="xs" htmlFor={`${id}-elevator`}>
+          <NativeSelect
+            id={`${id}-elevator`}
             value={value.hasElevator}
             disabled={disabled}
             onChange={(e) => onChange({ ...value, hasElevator: e.target.value as Elevator })}
@@ -73,7 +78,7 @@ export function MovingEndpointFields({
             <option value="yes">יש מעלית</option>
             <option value="no">אין מעלית</option>
           </NativeSelect>
-        </label>
+        </Field>
       </div>
     </div>
   );

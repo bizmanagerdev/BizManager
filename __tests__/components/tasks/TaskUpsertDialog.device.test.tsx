@@ -110,6 +110,29 @@ describe("the task form, opened from the device copy", () => {
     expect(vi.mocked(fetch).mock.calls.map((c) => c[0])).toContain("/api/tasks/get");
   });
 
+  // "Done" looks the same everywhere (owner, 2026-10-11): the board's and the
+  // dashboard's square tick in the card's header too — it drew a circle.
+  it("the header's done control is the square tick", async () => {
+    render(
+      <TaskUpsertDialog
+        open
+        onOpenChange={() => {}}
+        mode="edit"
+        taskId="t1"
+        users={[{ id: "u1", label: "אני" }]}
+        projects={[]}
+        properties={[]}
+        customers={[]}
+        currentUserId="u1"
+        locale="he"
+      />
+    );
+    await act(async () => {});
+    const tick = screen.getByRole("button", { name: "סימון כבוצע" });
+    expect(tick.querySelector("svg")).toHaveClass("lucide-square");
+    expect(tick.querySelector("svg")).not.toHaveClass("lucide-circle");
+  });
+
   it("an edit made straight away is saved — just the edit, the tags untouched (no device saves: the server)", async () => {
     render(
       <TaskUpsertDialog

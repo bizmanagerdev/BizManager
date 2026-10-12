@@ -1,7 +1,5 @@
 "use client";
 
-import { PrintIcon, ShareIcon } from "@/components/ui/icons";
-import { Button } from "@/components/ui/button";
 import { whatsappHref } from "@/lib/whatsapp";
 import { formatMoney } from "@/lib/money";
 
@@ -121,42 +119,14 @@ export function orderShareHref(order: OrderShareData) {
   return whatsappHref(order.customerPhone, buildShareText(order));
 }
 
-/** Open the printable order sheet in its own window. */
+/**
+ * Open the printable order sheet in its own window. The share and print
+ * buttons themselves live in the order page's ⋮ (OrderHeaderMenu) — they were
+ * worded outline buttons of their own here (owner, 2026-10-11).
+ */
 export function printOrderSheet(order: OrderShareData) {
   const win = window.open("", "_blank", "width=800,height=900");
   if (!win) return;
   win.document.write(buildPrintHtml(order));
   win.document.close();
-}
-
-export default function OrderShareActions({ order }: { order: OrderShareData }) {
-  const waHref = orderShareHref(order);
-
-  function handlePrint() {
-    printOrderSheet(order);
-  }
-
-  return (
-    <>
-      {waHref ? (
-        <Button asChild size="sm" variant="outline" className="h-9">
-          <a href={waHref} target="_blank" rel="noreferrer" title="שיתוף ללקוח בוואטסאפ">
-            <ShareIcon className="h-4 w-4" />
-            <span>שיתוף</span>
-          </a>
-        </Button>
-      ) : null}
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="h-9"
-        onClick={handlePrint}
-        title="הדפסה / PDF"
-      >
-        <PrintIcon className="h-4 w-4" />
-        <span>הדפסה</span>
-      </Button>
-    </>
-  );
 }

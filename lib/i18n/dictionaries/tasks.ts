@@ -326,7 +326,7 @@ export const tasksDict: Dictionary<TasksKey> = {
     splitAskDescription: "ליצור משימה נפרדת לכל שורה, או משימה אחת?",
     oneTaskButton: "משימה אחת",
     creatingEllipsis: "יוצר…",
-    createCountPrefix: "צור",
+    createCountPrefix: "יצירת",
     splitAskFooterNote: "כל המשימות יקבלו את אותו אחראי, תאריך ושאר הפרטים שמילאת.",
     confirmDeleteAttachmentPrefix: "למחוק את הקובץ",
     confirmDeleteAttachmentSuffix: "? הקובץ יוסר לצמיתות.",

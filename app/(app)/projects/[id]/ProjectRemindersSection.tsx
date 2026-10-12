@@ -8,6 +8,7 @@ import { useCallback, useState } from "react";
 import { AddIcon, NotificationIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
 import EntityReminders from "@/components/reminders/EntityReminders";
 
 export default function ProjectRemindersSection({
@@ -31,17 +32,22 @@ export default function ProjectRemindersSection({
     <CollapsibleSection
       id={id}
       openWhenEmptyKnown={count === null ? undefined : count > 0}
-      summary={count && count > 0 ? <span className="text-muted-foreground">{count}</span> : null}
+      // Every section's count and icon: the grey pill, the grey glyph (owner,
+      // 2026-10-11 — the count was plain grey text, the icon navy).
+      summary={count && count > 0 ? <SectionCount count={count} /> : null}
       title="תזכורות"
-      icon={<NotificationIcon className="h-4 w-4 text-primary" />}
+      icon={<NotificationIcon className={SECTION_ICON_CLASS} />}
       contentClassName="space-y-3"
       action={
         canManage ? (
+          // A section's "+" is a less important action: the soft style (dashed outline), not the
+          // page's bold main button (owner, 2026-10-11). The ::before takes its
+          // 32px to 44 to tap.
           <Button
             type="button"
-            variant="default"
+            variant="soft"
             size="sm"
-            className="h-8 w-8 p-0"
+            className="relative h-8 w-8 p-0 before:absolute before:-inset-1.5 before:content-['']"
             aria-label="הוספת תזכורת"
             title="הוספת תזכורת"
             onClick={() => setAddOpen(true)}

@@ -15,6 +15,7 @@ export default function DeleteOrderButton({
   hideTrigger = false,
   open: openProp,
   onOpenChange,
+  redirectTo = "/sales",
 }: {
   orderId: string;
   className?: string;
@@ -23,6 +24,9 @@ export default function DeleteOrderButton({
   /** Control the confirm dialog from outside (pairs with hideTrigger). */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Where to go once it's deleted; null stays put — the orders list, whose
+   *  row hides itself (useUndoOverlay, scope "order"). */
+  redirectTo?: string | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -35,8 +39,10 @@ export default function DeleteOrderButton({
 
   function onDelete() {
     setConfirmOpen(false);
-    emitNavigationStart();
-    router.push("/sales");
+    if (redirectTo) {
+      emitNavigationStart();
+      router.push(redirectTo);
+    }
     // Nothing here — cascade to payments/documents/inventory movements — runs
     // until this actually commits, so undo is completely safe even for the
     // heaviest-cascade delete in the app.
@@ -58,8 +64,10 @@ export default function DeleteOrderButton({
     });
   }
 
+  // A fragment: trigger-less, it leaves nothing in place — no empty box taking
+  // a gap in its caller's row of buttons.
   return (
-    <div className="space-y-1">
+    <>
       {hideTrigger ? null : (
         <DeleteButton label="מחיקת הזמנה" className={className} onClick={() => setConfirmOpen(true)} />
       )}
@@ -73,6 +81,6 @@ export default function DeleteOrderButton({
         destructive
         onConfirm={onDelete}
       />
-    </div>
+    </>
   );
 }

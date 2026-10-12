@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { IconComponent } from "@/components/ui/icons";
+import { SectionCount } from "@/components/ui/section-card";
 import { cn } from "@/lib/utils";
 
 /**
@@ -79,11 +80,7 @@ export default function DashboardCardHeader({
             the name it read as part of it ("המשימות שלי 7"), and at the far end
             it reads as the card's tally. */}
         <div className="flex shrink-0 items-center gap-2">
-          {count != null && count > 0 ? (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-muted-foreground">
-              {count}
-            </span>
-          ) : null}
+          {count != null && count > 0 ? <SectionCount count={count} /> : null}
           {action ? <div className={nowrap ? "shrink-0" : "min-w-0"}>{action}</div> : null}
         </div>
       </div>

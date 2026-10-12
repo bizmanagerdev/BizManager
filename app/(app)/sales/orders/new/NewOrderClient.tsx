@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
-import { DeleteButton } from "@/components/ui/icon-button";
+import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
+import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
+import { Field } from "@/components/ui/field";
+import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
 import { MetaRow } from "@/components/ui/meta-row";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
@@ -1165,7 +1167,7 @@ export default function NewOrderClient({
         destructive
         title="לקוח בתשלום מראש"
         description={`${selectedCustomer?.name ?? "הלקוח"} מסומן לתשלום מראש ונשארה יתרה לתשלום. ההזמנה תיווצר ותסומן באדום עד לגבייה — אין לספק לפני התשלום. ליצור בכל זאת?`}
-        confirmLabel="צור בכל זאת"
+        confirmLabel="יצירה בכל זאת"
         cancelLabel="חזרה לתשלום"
         loading={submitting}
         onConfirm={() => {
@@ -1215,7 +1217,7 @@ export default function NewOrderClient({
         footerCenter={
           lines.length > 0 ? (
             <div className="order-first w-full text-center leading-tight sm:order-none sm:w-auto sm:text-end">
-              <div className="whitespace-nowrap text-[0.588rem] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="whitespace-nowrap text-[0.647rem] font-medium uppercase tracking-wide text-muted-foreground">
                 {effectiveOrderDiscount > 0 ? "סכום לתשלום" : "סכום ביניים"}
               </div>
               <div className="whitespace-nowrap text-base font-bold text-foreground">
@@ -1279,6 +1281,10 @@ export default function NewOrderClient({
               {/* Search + list — no Card: the results are already boxed rows. */}
               <div className="min-w-0 space-y-3">
                   <div className="relative">
+                    {/* The search glyph on the start side, as every search
+                        (owner, 2026-10-11: it sat at the end here); the ✕ that
+                        clears it at the end. */}
+                    <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     {customerQuery ? (
                       <button
                         type="button"
@@ -1291,9 +1297,7 @@ export default function NewOrderClient({
                       >
                         <CloseIcon className="h-4 w-4" />
                       </button>
-                    ) : (
-                      <SearchIcon className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    )}
+                    ) : null}
                     <Input
                       value={customerQuery}
                       onChange={(e) => {
@@ -1304,7 +1308,7 @@ export default function NewOrderClient({
                       placeholder="חיפוש..."
                       aria-label="חיפוש לקוח"
                       data-no-enter-next
-                      className="pe-9"
+                      className="ps-9 pe-9"
                     />
                   </div>
                   {customerSearchLoading ? (
@@ -1378,19 +1382,25 @@ export default function NewOrderClient({
                       );
                     })}
 
+                    {/* The app's one empty look, with its obvious next step
+                        (owner, 2026-10-11). */}
                     {filteredCustomers.length === 0 ? (
-                      <div className="space-y-2 rounded-xl border border-dashed p-4 text-sm">
-                        <p className="text-muted-foreground">לא נמצאו לקוחות לחיפוש הזה.</p>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setCustomerTab("new")}
-                          disabled={actionLocked}
-                        >
-                          <AddUserIcon className="h-4 w-4" /> הוספת לקוח חדש
-                        </Button>
-                      </div>
+                      <EmptyState
+                        dense
+                        action={
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setCustomerTab("new")}
+                            disabled={actionLocked}
+                          >
+                            <AddUserIcon className="h-4 w-4" /> הוספת לקוח חדש
+                          </Button>
+                        }
+                      >
+                        לא נמצאו לקוחות לחיפוש הזה.
+                      </EmptyState>
                     ) : null}
                   </div>
               </div>
@@ -1419,20 +1429,25 @@ export default function NewOrderClient({
                           {selectedCustomer.requiresPrepayment ? (
                             <Badge variant="warning">תשלום מראש</Badge>
                           ) : null}
-                          {/* Open, it closes the form without saving — grey then,
-                              like every cancel (owner, 2026-10-11). */}
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant={editingCustomer ? "muted" : "secondary"}
-                            className="h-8 w-8"
-                            onClick={() => setEditingCustomer((v) => !v)}
-                            disabled={actionLocked}
-                            aria-label={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
-                            title={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
-                          >
-                            {editingCustomer ? <CloseIcon className="h-4 w-4" /> : <EditIcon className="h-4 w-4" />}
-                          </Button>
+                          {/* The app's one outline pencil (owner, 2026-10-11: it
+                              was a filled sky square). Open, it closes the form
+                              without saving — a grey ✕ then, like every cancel,
+                              the same square so nothing shifts. */}
+                          {editingCustomer ? (
+                            <IconButton
+                              icon={CloseIcon}
+                              variant="muted"
+                              label="סגירת העריכה"
+                              onClick={() => setEditingCustomer(false)}
+                              disabled={actionLocked}
+                            />
+                          ) : (
+                            <EditButton
+                              label="עריכת פרטי הלקוח"
+                              onClick={() => setEditingCustomer(true)}
+                              disabled={actionLocked}
+                            />
+                          )}
                         </div>
                       </div>
 
@@ -1540,14 +1555,15 @@ export default function NewOrderClient({
               phone: the search box and every product card are that much wider. */}
           <div className="space-y-3">
               <div className="relative">
-                <SearchIcon className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                {/* On the start side, as every search (owner, 2026-10-11). */}
+                <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={productQuery}
                   onChange={(e) => setProductQuery(e.target.value)}
                   placeholder="חיפוש..."
                   aria-label="חיפוש מוצר"
                   data-no-enter-next
-                  className="pe-9"
+                  className="ps-9"
                 />
               </div>
               {productSearchLoading ? <p className="text-xs text-muted-foreground">מחפש מוצרים...</p> : null}
@@ -1616,9 +1632,7 @@ export default function NewOrderClient({
                     );
                   })}
                 </div>
-                {filteredProducts.length === 0 ? (
-                  <p className="p-4 text-center text-sm text-muted-foreground">לא נמצאו מוצרים.</p>
-                ) : null}
+                {filteredProducts.length === 0 ? <EmptyState dense>לא נמצאו מוצרים.</EmptyState> : null}
               </div>
           </div>
 
@@ -1628,16 +1642,18 @@ export default function NewOrderClient({
             <div className={cn(lines.length > 0 && "lg:absolute lg:inset-0")}>
             {/* Above the cart card, not inside it — adding a free line is an
                 action on the cart, not one of its rows. */}
+            {/* An add button, less important than the step's own move: the
+                soft style (owner, 2026-10-11). */}
             <div className="mb-3 lg:shrink-0">
               <Button
                 type="button"
                 size="sm"
-                variant="secondary"
+                variant="soft"
                 onClick={addCustomLine}
                 disabled={actionLocked}
                 className="w-full sm:w-auto"
               >
-                <AddIcon className="me-1 h-3.5 w-3.5" /> שורה חופשית
+                <AddIcon /> שורה חופשית
               </Button>
             </div>
 
@@ -1649,17 +1665,17 @@ export default function NewOrderClient({
                 lines.length > 0 && "lg:flex lg:h-full lg:flex-col"
               )}
             >
+            {/* A section header: its icon grey and its count the grey pill, as
+                on every page (owner, 2026-10-11). */}
             <div className="flex flex-row items-center justify-between gap-2 lg:shrink-0">
               <h3 className="flex items-center gap-2 text-base font-semibold">
-                <OrderIcon className="h-5 w-5 text-primary" /> פריטי הזמנה
+                <OrderIcon className={SECTION_ICON_CLASS} /> פריטי הזמנה
               </h3>
-              <Badge variant="info">{totalUnits}</Badge>
+              <SectionCount count={totalUnits} />
             </div>
             <div className={cn("space-y-3", lines.length > 0 && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
               {lines.length === 0 ? (
-                <p className="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">
-                  עדיין לא נוספו מוצרים. הקליקו על מוצר כדי להוסיף.
-                </p>
+                <EmptyState dense>עדיין לא נוספו מוצרים. הקליקו על מוצר כדי להוסיף.</EmptyState>
               ) : (
                 <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
                   {/* Items scroll on their own so the discount + totals stay visible */}
@@ -1697,10 +1713,13 @@ export default function NewOrderClient({
                           </p>
                         ) : null}
                         <div className="flex items-center justify-between gap-2">
+                          {/* 28px to look at, 44px to tap: the ::before reaches
+                              8px past each edge, as the call button does
+                              (contact-link.tsx; owner, 2026-10-11). */}
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
-                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border/70 transition hover:bg-muted disabled:opacity-50"
+                              className="relative flex h-7 w-7 items-center justify-center rounded-lg border border-border/70 transition before:absolute before:-inset-2 before:content-[''] hover:bg-muted disabled:opacity-50"
                               onClick={() => decrementLine(index)}
                               disabled={actionLocked || line.quantity_ordered <= 1}
                               aria-label={`הפחתת כמות של ${line.product_name}`}
@@ -1710,7 +1729,7 @@ export default function NewOrderClient({
                             <span className="min-w-8 text-center text-sm font-semibold">{line.quantity_ordered}</span>
                             <button
                               type="button"
-                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border/70 transition hover:bg-muted"
+                              className="relative flex h-7 w-7 items-center justify-center rounded-lg border border-border/70 transition before:absolute before:-inset-2 before:content-[''] hover:bg-muted"
                               onClick={() => incrementLine(index)}
                               disabled={actionLocked}
                               aria-label={`הגדלת כמות של ${line.product_name}`}
@@ -1972,9 +1991,11 @@ export default function NewOrderClient({
         <>
           <StepHeading compact={oneForm} title="תשלומים" sub="אפשר לפצל לכמה תשלומים ובכמה אמצעים שונים" />
           <div className="space-y-4">
+            {/* "+ תשלום" in the soft style (dashed outline), the order page's button too (owner,
+                2026-10-11: it was a filled sky button here). */}
             <div className="flex justify-end">
-              <Button type="button" variant="secondary" size="sm" onClick={addPaymentDraft} disabled={actionLocked}>
-                <AddIcon className="h-4 w-4" /> תשלום
+              <Button type="button" variant="soft" size="sm" onClick={addPaymentDraft} disabled={actionLocked}>
+                <AddIcon /> תשלום
               </Button>
             </div>
 
@@ -1998,11 +2019,10 @@ export default function NewOrderClient({
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">אסמכתא</div>
-                        <div>{payment.reference_number || "-"}</div>
+                        <div>{payment.reference_number || "—"}</div>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">הערות</label>
+                    <Field label="הערות">
                       <Input
                         value={existingPaymentNotes[payment.id] ?? ""}
                         disabled={actionLocked}
@@ -2011,7 +2031,7 @@ export default function NewOrderClient({
                         }
                         placeholder="אופציונלי"
                       />
-                    </div>
+                    </Field>
                   </div>
                 ))}
               </div>
@@ -2030,9 +2050,11 @@ export default function NewOrderClient({
                   <DeleteButton onClick={() => removePaymentDraft(index)} disabled={actionLocked} label="הסרת תשלום" />
                 </div>
 
+                {/* Field, the size of the payment dialogs' (owner, 2026-10-11:
+                    these were small grey labels here), the required ones with
+                    its red "*". */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">סכום *</label>
+                  <Field label="סכום" required>
                     <CurrencyInput
                       type="number"
                       min="0"
@@ -2042,20 +2064,18 @@ export default function NewOrderClient({
                       onChange={(e) => updatePaymentDraft(index, { amount_total: e.target.value })}
                       placeholder="0.00"
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">תאריך *</label>
+                  </Field>
+                  <Field label="תאריך" required>
                     <DateInput
                       value={payment.payment_date}
                       disabled={actionLocked}
                       onChange={(e) => updatePaymentDraft(index, { payment_date: e.target.value })}
                     />
-                  </div>
+                  </Field>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
+                  <Field label="אמצעי תשלום" required>
                     <NativeSelect
                       value={payment.payment_method}
                       disabled={actionLocked}
@@ -2075,7 +2095,7 @@ export default function NewOrderClient({
                         </option>
                       ))}
                     </NativeSelect>
-                  </div>
+                  </Field>
                   <AccountSelect
                     required
                     value={payment.account_id}
@@ -2103,13 +2123,12 @@ export default function NewOrderClient({
                       amount={Number(payment.amount_total) || 0}
                       paymentDate={payment.payment_date}
                       disabled={actionLocked}
-                      labelClassName="text-xs text-muted-foreground"
                     />
                   ) : (
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">
-                      {payment.payment_method === "check" ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}
-                    </label>
+                  <Field
+                    label={payment.payment_method === "check" ? "תאריך פירעון" : "תאריך פירעון צפוי (אופציונלי)"}
+                    required={payment.payment_method === "check"}
+                  >
                     <DateInput
                       value={payment.due_date}
                       disabled={actionLocked}
@@ -2120,7 +2139,7 @@ export default function NewOrderClient({
                         לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                       </p>
                     ) : null}
-                  </div>
+                  </Field>
                   )}
                 </div>
 
@@ -2137,24 +2156,22 @@ export default function NewOrderClient({
                 <details className="rounded-xl border border-dashed p-3" open={Boolean(payment.reference_number || payment.notes)}>
                   <summary className="cursor-pointer text-xs font-medium text-muted-foreground">פרטי תשלום נוספים</summary>
                   <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">מספר אסמכתא</label>
+                    <Field label="מספר אסמכתא">
                       <Input
                         value={payment.reference_number}
                         disabled={actionLocked}
                         onChange={(e) => updatePaymentDraft(index, { reference_number: e.target.value })}
                         placeholder="אופציונלי"
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">הערות לתשלום</label>
+                    </Field>
+                    <Field label="הערות לתשלום">
                       <Input
                         value={payment.notes}
                         disabled={actionLocked}
                         onChange={(e) => updatePaymentDraft(index, { notes: e.target.value })}
                         placeholder="אופציונלי"
                       />
-                    </div>
+                    </Field>
                   </div>
                 </details>
               </div>
@@ -2247,14 +2264,15 @@ export default function NewOrderClient({
               onEdit={() => goToStep("customer")}
               editDisabled={actionLocked}
             >
-                <SummaryRow label="שם" value={selectedCustomer?.name || "-"} />
+                {/* A missing value is "—", as everywhere (owner, 2026-10-11). */}
+                <SummaryRow label="שם" value={selectedCustomer?.name || "—"} />
                 {branchId && selectedCustomer?.branches?.find((b) => b.id === branchId) ? (
                   <SummaryRow label="סניף" value={selectedCustomer.branches.find((b) => b.id === branchId)!.name} />
                 ) : null}
                 {selectedCustomer?.contacts?.[0]?.full_name ? (
                   <SummaryRow label="איש קשר" value={selectedCustomer.contacts[0].full_name} />
                 ) : null}
-                <SummaryRow label="טלפון" value={selectedCustomer?.phone || "-"} />
+                <SummaryRow label="טלפון" value={selectedCustomer?.phone || "—"} />
                 {selectedCustomer?.email ? <SummaryRow label="אימייל" value={selectedCustomer.email} /> : null}
                 <SummaryRow
                   label="כתובת"
@@ -2268,7 +2286,7 @@ export default function NewOrderClient({
                         {selectedCustomer?.address || selectedCustomer?.city}
                       </AddressLink>
                     ) : (
-                      "-"
+                      "—"
                     )
                   }
                 />
@@ -2296,7 +2314,8 @@ export default function NewOrderClient({
                       key={`${line.product_id}-${index}`}
                       label={
                         <span>
-                          {`${line.quantity_ordered}× ${line.product_name}`}
+                          {/* "×2", the order page's way (owner, 2026-10-11). */}
+                          {`×${line.quantity_ordered} ${line.product_name}`}
                           {shortfall ? (
                             <span className="mt-0.5 block text-xs font-medium text-destructive-soft-foreground">
                               חסר במלאי — במלאי {available}
@@ -2354,7 +2373,7 @@ export default function NewOrderClient({
                 <SummaryRow label="חשבונית" value={needsInvoice ? "צריך חשבונית" : "לא צריך חשבונית"} />
                 <SummaryRow label="גבייה" value={collectOnDelivery ? "הנהג גובה תשלום במסירה" : "תשלום למשרד"} />
                 <SummaryRow label="צורת תשלום" value={termsLabel(paymentTerms)} />
-                {paymentTerms !== "immediate" ? <SummaryRow label="תאריך פירעון" value={dueDate || "-"} /> : null}
+                {paymentTerms !== "immediate" ? <SummaryRow label="תאריך פירעון" value={dueDate || "—"} /> : null}
                 <SummaryRow label="סטטוס תשלום" value={paymentStatusLabel(paymentStatus)} />
                 <SummaryRow label="שולם / יוזן" value={formatCurrency(combinedPaidTotal)} />
                 <SummaryRow label="יתרה אחרי שמירה" value={formatCurrency(remainingBalance)} />

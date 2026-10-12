@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AddIcon, ClockIcon, NotificationIcon, NotificationOffIcon, ReminderIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminders/ReminderFormDialog";
 import { toHebrewError } from "@/lib/error-messages";
 import { EditButton } from "@/components/ui/icon-button";
@@ -138,7 +139,8 @@ export default function EntityReminders({
       ) : null}
 
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">אין תזכורות פתוחות.</p>
+        // The app's one empty-list look (owner, 2026-10-11).
+        <EmptyState dense>אין תזכורות פתוחות.</EmptyState>
       ) : (
         <ul className="space-y-2">
           {items.map((r) => {

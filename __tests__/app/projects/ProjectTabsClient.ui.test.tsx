@@ -757,12 +757,24 @@ describe("ProjectTabsClient — תנועות ledger", () => {
   it("an error loading the money rows is stated above the list; no rows → an empty state and no share buttons", () => {
     render(<ProjectTabsClient {...props({ payments: [], expenses: [], moneyError: "timeout" })} />);
     expect(screen.getByText("שגיאה בטעינת תנועות: timeout")).toBeInTheDocument();
-    expect(screen.getByText("אין תנועות להצגה.")).toBeInTheDocument();
+    // The app's one empty box (owner, 2026-10-11), not a plain line.
+    expect(screen.getByText("אין תנועות להצגה.").closest(".border-dashed")).not.toBeNull();
     expect(screen.queryByTitle("שיתוף כל התנועות — נכנס ויוצא (PDF)")).not.toBeInTheDocument();
     expect(screen.queryByTitle("שיתוף לחיוב לקוח (PDF)")).not.toBeInTheDocument();
-    // Adding stays possible.
-    expect(screen.getAllByRole("button", { name: "הוצאה" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: "הכנסה" }).length).toBeGreaterThan(0);
+    // Adding stays possible: "+ הוצאה" and "+ הכנסה" are a section's "+"
+    // buttons, both the less-important look — white, dashed outline — a step
+    // below the page's main "רישום תשלום" (owner, 2026-10-11).
+    const expenseButtons = screen.getAllByRole("button", { name: "הוצאה" });
+    const incomeButtons = screen.getAllByRole("button", { name: "הכנסה" });
+    expect(expenseButtons.length).toBeGreaterThan(0);
+    expect(incomeButtons.length).toBeGreaterThan(0);
+    for (const button of [...expenseButtons, ...incomeButtons]) {
+      expect(button).toHaveClass("border-dashed", "bg-background", "text-secondary");
+      expect(button).not.toHaveClass("bg-secondary");
+    }
+    // The section's count: the grey pill every section wears.
+    const ledgerTitle = screen.getByText("תנועות").closest("span")!;
+    expect(within(ledgerTitle).getByText("0")).toHaveClass("rounded-full", "bg-muted");
   });
 
   it("a monthly salary on the project is money out dated to its pay day, not editable here", () => {
@@ -1154,6 +1166,9 @@ describe("ProjectTabsClient — money cards", () => {
 
   it("updating the base price: validates, shows the resulting price, and saves through the undo window", async () => {
     render(<ProjectTabsClient {...props()} />);
+    // 28px to look at, 44 to tap: a ::before reaches past its edge (owner,
+    // 2026-10-11: tap targets ≥ 44px on the phone).
+    expect(screen.getAllByRole("button", { name: "עדכון" })[0]).toHaveClass("h-7", "relative", "before:absolute", "before:-inset-2");
     fireEvent.click(screen.getAllByRole("button", { name: "עדכון" })[0]!);
     const dialog = await screen.findByRole("dialog");
     const input = within(dialog).getByPlaceholderText("לדוגמה: 12000");
@@ -1254,6 +1269,11 @@ describe("ProjectTabsClient — tasks section", () => {
     const header = screen.getByText("משימות").closest("button")!;
     expect(header).toHaveAttribute("aria-expanded", "true");
     expect(clean(header.textContent)).toBe("משימות1/3·33%");
+    // The app's task glyph (the menu's, the tabs'), grey like every section
+    // icon (owner, 2026-10-11) — it was a navy checklist.
+    const icon = header.querySelector("svg")!;
+    expect(icon).toHaveClass("lucide-list-todo", "text-muted-foreground");
+    expect(icon).not.toHaveClass("lucide-list-checks");
     const list = screen.getByRole("list", { name: "משימות הפרויקט" });
     expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "לתאם חשמלאי",
@@ -1315,7 +1335,12 @@ describe("ProjectTabsClient — documents section", () => {
     render(<ProjectTabsClient {...props({ projectDocuments: DOCS })} />);
     const header = screen.getByText("מסמכים").closest("button")!;
     expect(header).toHaveAttribute("aria-expanded", "true");
-    expect(within(header).getByText("2 קבצים")).toBeInTheDocument();
+    // The count as every section's count — the grey pill — and the icon grey
+    // (owner, 2026-10-11; it was plain "2 קבצים" and a navy icon).
+    expect(within(header).getByText("2")).toHaveClass("rounded-full", "bg-muted", "text-muted-foreground");
+    expect(header.textContent).not.toMatch(/קבצים/);
+    expect(header.querySelector("svg")).toHaveClass("text-muted-foreground");
+    expect(header.querySelector("svg")).not.toHaveClass("text-primary");
     expect(screen.getByText("חוזה עבודה").closest("div.overflow-hidden")?.querySelector("a")).toHaveAttribute(
       "href",
       "https://files.example.test/contract.pdf"
@@ -1330,12 +1355,13 @@ describe("ProjectTabsClient — documents section", () => {
     expect(within(legacy).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["חוזה"]);
   });
 
-  it("empty: folded, '0 קבצים', and an empty-state line; a load error is stated", () => {
+  it("empty: folded, a 0 count, and the app's empty box; a load error is stated", () => {
     render(<ProjectTabsClient {...props({ projectDocumentsError: "denied" })} />);
     const header = screen.getByText("מסמכים").closest("button")!;
     expect(header).toHaveAttribute("aria-expanded", "false");
-    expect(within(header).getByText("0 קבצים")).toBeInTheDocument();
-    expect(screen.getByText("אין מסמכים להצגה.")).toBeInTheDocument();
+    expect(within(header).getByText("0")).toHaveClass("rounded-full", "bg-muted");
+    // The shared EmptyState's dashed box, not a plain line (owner, 2026-10-11).
+    expect(screen.getByText("אין מסמכים להצגה.").closest(".border-dashed")).not.toBeNull();
     expect(screen.getByText("שגיאה בטעינת מסמכים: denied")).toBeInTheDocument();
   });
 
@@ -1384,7 +1410,8 @@ describe("ProjectTabsClient — documents section", () => {
     render(<ProjectTabsClient {...props({ projectDocuments: DOCS })} />);
     fireEvent.click(screen.getAllByRole("button", { name: "עריכת קטגוריה" })[0]!);
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("ערוך קטגוריה")).toBeInTheDocument();
+    // A noun, as every title and button (owner, 2026-10-11: one wording).
+    expect(within(dialog).getByText("עריכת קטגוריה")).toBeInTheDocument();
     const select = within(dialog).getByRole("combobox");
     // "חוזה" isn't on the controlled list — it stays pickable, marked as current.
     expect(select).toHaveValue("חוזה");
