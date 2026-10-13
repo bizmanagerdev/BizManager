@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { DateInput } from "@/components/ui/date-input";
+import { WizardStepper, type WizardStepDef } from "@/components/ui/step-wizard";
+import { CheckIcon, UploadIcon } from "@/components/ui/icons";
+import { PanelTitle, STATUS_CHIP as chip } from "@/components/financial/statement-ui";
 import {
   norm,
   parseAmount,
@@ -28,6 +31,7 @@ import {
   type KnownCard,
 } from "@/lib/financial/cardImport";
 import { extractPdfLines } from "@/lib/financial/pdfStatement";
+import ImportNotes from "./ImportNotes";
 
 type Option = { id: string; name: string };
 type Sheet = { name: string; rows: string[][] };
@@ -56,6 +60,9 @@ type CardGroup = {
 };
 
 const NEW_CARD = "__new__";
+
+type ImportStep = "upload" | "map" | "review";
+const STEP_LABELS: Record<ImportStep, string> = { upload: "קובץ", map: "עמודות", review: "בדיקה ושמירה" };
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Lines with no card, or only the generic "כרטיס אשראי", share the "" group, which
@@ -188,7 +195,7 @@ export default function CardImportClient({
   knownCards: KnownCard[];
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<"upload" | "map" | "review">("upload");
+  const [step, setStep] = useState<ImportStep>("upload");
   const [source, setSource] = useState<"excel" | "pdf">("excel");
   const [fileName, setFileName] = useState<string>("");
   const [fileError, setFileError] = useState<string | null>(null);
@@ -223,6 +230,8 @@ export default function CardImportClient({
   const [bankDates, setBankDates] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentSheet = sheets[sheetIndex];
   const headerCells = currentSheet?.rows[headerRow] ?? [];
@@ -549,7 +558,6 @@ export default function CardImportClient({
     setStep("review");
   }
 
-  const includedCount = rows.filter((r) => r.include).length;
   // Show the original שיוך value as a reference only when the sheet had that column.
   const showAssignmentRef = rows.some((r) => r.assignmentRaw);
   const refundCount = rows.filter((r) => r.amount < 0 && r.include).length;
@@ -663,364 +671,470 @@ export default function CardImportClient({
     setPdfNotice(null);
   }
 
+  // ── The page ────────────────────────────────────────────────────────────────
+  // Built like the statement page it leads to: a header with the file's name, then
+  // one card with the step bar and the panel of the step on screen (one main button
+  // each), and the lines under it. A PDF has no columns step.
+  const stepIds: ImportStep[] = source === "pdf" ? ["upload", "review"] : ["upload", "map", "review"];
+  const stepDefs: WizardStepDef<ImportStep>[] = stepIds.map((n) => ({ n, label: STEP_LABELS[n] }));
+  const fileLoaded = sheets.length > 0 || rows.length > 0;
+  const stepDone = (n: ImportStep) =>
+    n === "upload" ? fileLoaded : n === "map" ? source === "excel" && step === "review" && rows.length > 0 : false;
+  const canOpenStep = (n: ImportStep) =>
+    !saving && (n === "upload" || (n === "map" ? source === "excel" && sheets.length > 0 : rows.length > 0));
+  const excludedCount = rows.filter((r) => !r.include).length;
+  const purchasesToRecord = rows.filter((r) => r.include && r.amount > 0).length;
+  const totalMatches = statementTotal !== null && Math.round(statementTotal * 100) === linesAgorot;
+
+  // The bank date the file itself gives a card's lines (the one most of them carry).
+  function fileBankDate(key: string): string {
+    const counts = new Map<string, number>();
+    for (const r of rows) if (r.card === key && r.expenseDate) counts.set(r.expenseDate, (counts.get(r.expenseDate) ?? 0) + 1);
+    let best = "";
+    let bestCount = 0;
+    for (const [d, c] of counts) if (c > bestCount) [best, bestCount] = [d, c];
+    return best;
+  }
+
+  function groupComplete(g: CardGroup): boolean {
+    const label = groupLabel(g.key);
+    if (!isRealCardLabel(label)) return false;
+    if (!g.key && noCardPick === NEW_CARD && !/\d{4}/.test(label)) return false;
+    return !g.needsDate || ISO_DATE.test(groupBankDate(g));
+  }
+
+  // Which field a file column is mapped to, for the preview's column heads.
+  const mappedField = (ci: number): string | null =>
+    ci === colAmount
+      ? "סכום"
+      : ci === colDate
+        ? "תאריך חיוב"
+        : ci === colTxnDate
+          ? "תאריך עסקה"
+          : ci === colMerchant
+            ? "בית עסק"
+            : ci === colCard
+              ? "כרטיס"
+              : ci === colAssignment
+                ? "שיוך"
+                : null;
+
+  const headerLine = fileName
+    ? [
+        source === "pdf" ? "PDF" : "Excel/CSV",
+        rows.length > 0 ? `${rows.length} שורות` : null,
+        rows.length > 0 ? (cardGroups.length === 1 ? "כרטיס אחד" : `${cardGroups.length} כרטיסים`) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "פירוט חדש. אחרי השמירה ממשיכים בעמוד הפירוט: שיוך, חיוב בבנק וסיום.";
+
   return (
     <div className="space-y-4 text-right" dir="rtl">
-      {/* Wraps: on a phone the two buttons beside the heading ran off the
-          screen's edge ("חזרה לפיננסי" was cut off). */}
+      {/* Wraps: on a phone the buttons beside the heading must not run off the edge. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 flex-1 basis-64">
-          <h1 className="text-lg font-semibold">העלאת פירוט אשראי</h1>
-          <p className="text-sm text-muted-foreground">
-            העלאת Excel/CSV/PDF ושמירת הפירוט. שיוך התחומים העסקיים ויצירת ההוצאות נעשים אחר כך בעמוד הפירוט.
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold">{fileName || "העלאת פירוט אשראי"}</h1>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span>{headerLine}</span>
+            {fileName ? <span className={chip.warn}>טרם נשמר</span> : null}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {fileName ? (
+            <Button variant="outline" size="sm" onClick={reset} disabled={saving}>
+              קובץ אחר
+            </Button>
+          ) : null}
           <Button asChild variant="outline" size="sm">
-            <Link href="/financial/statements">פירוטים שנשמרו</Link>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/financial">חזרה לפיננסי</Link>
+            <Link href="/financial/statements">חזרה לרשימה</Link>
           </Button>
         </div>
       </div>
 
-      {/* STEP 1 — UPLOAD */}
-      {step === "upload" ? (
-        <Card>
-          <CardContent className="space-y-3 py-6">
-            <label className="text-sm font-medium">בחר/י קובץ Excel, CSV או PDF</label>
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv,.pdf"
-              disabled={pdfBusy}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void onFile(file);
-              }}
-              className="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-primary-foreground hover:file:opacity-90 disabled:opacity-50"
-            />
-            {fileError ? <p className="text-sm text-destructive">{fileError}</p> : null}
+      <Card>
+        <CardContent className="space-y-4 py-4">
+          <WizardStepper
+            steps={stepDefs}
+            current={step}
+            canClick={canOpenStep}
+            onStepClick={setStep}
+            isDone={stepDone}
+            className="mx-auto max-w-md"
+          />
 
-            {/* PDF status / smart-extraction fallback */}
-            {source === "pdf" && (pdfBusy || pdfNotice) ? (
-              <div className="space-y-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                <div className="text-muted-foreground">קובץ: {fileName}</div>
-                {pdfBusy ? (
-                  <div className="text-muted-foreground">מעבד את ה-PDF…</div>
-                ) : (
-                  <>
-                    {pdfNotice ? <div className="text-warning-soft-foreground">{pdfNotice}</div> : null}
-                    {smartExtractEnabled && pdfFile ? (
-                      <Button size="sm" onClick={() => void runSmartExtract()} disabled={pdfBusy}>
-                        חילוץ חכם (AI)
-                      </Button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            ) : null}
-
-            <p className="text-xs text-muted-foreground">
-              Excel/CSV: קובץ עם כמה כרטיסים נתמך — כל כרטיס מזוהה לפי שורת הכותרת שלו או לפי עמודת כרטיס, וכל שורה
-              מקבלת את שם הכרטיס כקטגוריה. אם קיימת עמודת &quot;שיוך&quot;, היא תישמר כעמודת ייחוס וגם תמלא מראש את הבחירה.
-              {" "}PDF: ננסה לקרוא את הדף ישירות
-              {smartExtractEnabled ? ", ובמקרה הצורך נציע חילוץ חכם (הקובץ יישלח לשירות AI חיצוני)." : " (חילוץ חכם אינו מוגדר בשרת)."}
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {/* STEP 2 — MAP COLUMNS */}
-      {step === "map" && currentSheet ? (
-        <Card>
-          <CardContent className="space-y-4 py-5">
-            <div className="text-sm text-muted-foreground">קובץ: {fileName}</div>
-            {presetApplied ? (
-              <div className="rounded-md border bg-info-soft/15 px-3 py-1.5 text-xs text-info-soft-foreground">
-                המיפוי מולא אוטומטית לפי קובץ קודם מאותו מבנה (ניתן לשנות).
-              </div>
-            ) : null}
-
-            {sheets.length > 1 ? (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">גיליון</label>
-                <NativeSelect dense
-                  value={sheetIndex}
-                  onChange={(e) => selectSheet(Number(e.target.value))} className="max-w-xs"
-                >
-                  {sheets.map((s, i) => (
-                    <option key={i} value={i}>
-                      {s.name}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">שורת כותרת</label>
+          {step === "upload" ? (
+            <div className="space-y-3">
+              <PanelTitle
+                title="קובץ"
+                hint="הפירוט של החודש מחברת האשראי או מהבנק. הכרטיסים, התאריכים והסכומים נקראים ממנו לבד."
+              />
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file && !pdfBusy) void onFile(file);
+                }}
+                className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors ${
+                  dragOver ? "border-primary bg-primary/5" : "border-border bg-muted/20"
+                }`}
+              >
+                <UploadIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
+                <p className="text-sm font-medium">גררו את הקובץ לכאן, או</p>
+                <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={pdfBusy}>
+                  {pdfBusy ? "קורא את הקובץ..." : "בחירת קובץ"}
+                </Button>
+                <p className="text-xs text-muted-foreground">קובץ Excel, CSV או PDF</p>
                 <input
-                  type="text"
-                  inputMode="numeric"
-                  min={1}
-                  value={headerRow + 1}
-                  onChange={(e) => setHeaderRow(Math.max(0, (Number(e.target.value.replace(/[^\d]/g, "")) || 1) - 1))}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv,.pdf"
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-label="בחירת קובץ פירוט"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    // Cleared so picking the same file again still reads it.
+                    e.target.value = "";
+                    if (file) void onFile(file);
+                  }}
                 />
               </div>
-              <ColumnSelect label="עמודת סכום (חיוב) *" value={colAmount} onChange={setColAmount} headerCells={headerCells} columnCount={columnCount} />
-              <ColumnSelect label="עמודת תאריך חיוב (אם יש)" value={colDate} onChange={setColDate} headerCells={headerCells} columnCount={columnCount} optional />
-              <ColumnSelect label="עמודת תאריך עסקה" value={colTxnDate} onChange={setColTxnDate} headerCells={headerCells} columnCount={columnCount} optional />
-              <ColumnSelect label="עמודת שם בית עסק" value={colMerchant} onChange={setColMerchant} headerCells={headerCells} columnCount={columnCount} optional />
-              <ColumnSelect label="עמודת כרטיס" value={colCard} onChange={setColCard} headerCells={headerCells} columnCount={columnCount} optional />
-              <ColumnSelect label="עמודת שיוך (ייחוס + מילוי מראש)" value={colAssignment} onChange={setColAssignment} headerCells={headerCells} columnCount={columnCount} optional />
-            </div>
-            {colDate < 0 && colTxnDate >= 0 ? (
-              <p className="text-xs text-muted-foreground">
-                בקובץ אין תאריך חיוב — את תאריך החיוב בבנק בוחרים בשלב הבא, לכל כרטיס.
-              </p>
-            ) : null}
+              {fileName && fileLoaded ? (
+                <p className="text-xs text-muted-foreground">הקובץ הנוכחי: {fileName}. בחירת קובץ אחר תחליף אותו.</p>
+              ) : null}
+              {fileError ? <p className="text-sm text-destructive">{fileError}</p> : null}
 
-            <div className="max-h-56 overflow-auto rounded-md border">
-              <table className="w-full text-xs">
-                <tbody>
-                  {currentSheet.rows.slice(headerRow, headerRow + 6).map((r, ri) => (
-                    <tr key={ri} className={ri === 0 ? "sticky top-0 bg-muted font-medium" : "border-t"}>
-                      {Array.from({ length: columnCount }).map((_, ci) => (
-                        <td key={ci} className="whitespace-nowrap px-2 py-1">
-                          {String(r[ci] ?? "")}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={buildReview} disabled={!mappingReady}>
-                המשך לתצוגה מקדימה
-              </Button>
-              <Button variant="outline" onClick={reset}>
-                החלפת קובץ
-              </Button>
-            </div>
-            {!mappingReady ? (
-              <p className="text-xs text-muted-foreground">יש לבחור עמודת סכום ולפחות עמודת תאריך אחת (חיוב או עסקה).</p>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {/* STEP 3 — PREVIEW & SAVE */}
-      {step === "review" ? (
-        <div className="space-y-3">
-          {rows.length === 0 ? (
-            <Card>
-              <CardContent className="space-y-3 py-6 text-sm">
-                <div className="text-muted-foreground">
-                  {source === "pdf" ? "לא זוהו עסקאות בקובץ." : "לא נמצאו שורות תקינות (תאריך + סכום) לפי המיפוי שנבחר."}
+              {/* PDF status / smart-extraction fallback */}
+              {source === "pdf" && (pdfBusy || pdfNotice) ? (
+                <div className="space-y-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  <div className="text-muted-foreground">קובץ: {fileName}</div>
+                  {pdfBusy ? (
+                    <div className="text-muted-foreground">מעבד את ה-PDF…</div>
+                  ) : (
+                    <>
+                      {pdfNotice ? <div className="text-warning-soft-foreground">{pdfNotice}</div> : null}
+                      {smartExtractEnabled && pdfFile ? (
+                        <Button size="sm" onClick={() => void runSmartExtract()} disabled={pdfBusy}>
+                          חילוץ חכם (AI)
+                        </Button>
+                      ) : null}
+                    </>
+                  )}
                 </div>
-                <Button variant="outline" onClick={() => (source === "pdf" ? reset() : setStep("map"))}>
-                  {source === "pdf" ? "החלפת קובץ" : "חזרה למיפוי עמודות"}
+              ) : null}
+
+              <ImportNotes smartExtractEnabled={smartExtractEnabled} />
+            </div>
+          ) : step === "map" && currentSheet ? (
+            <div className="space-y-3">
+              <PanelTitle
+                title="עמודות"
+                hint="זיהינו את העמודות לפי הכותרות בקובץ. בדקו שכל עמודה נכונה — הקובץ הבא באותו מבנה יתמלא לבד."
+              />
+              {presetApplied ? <span className={chip.info}>מולא לפי קובץ קודם מאותו מבנה</span> : null}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {sheets.length > 1 ? (
+                  <Field size="xs" label="גיליון">
+                    <NativeSelect dense value={sheetIndex} onChange={(e) => selectSheet(Number(e.target.value))}>
+                      {sheets.map((s, i) => (
+                        <option key={i} value={i}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                ) : null}
+                <Field size="xs" label="שורת הכותרות">
+                  <Input
+                    inputMode="numeric"
+                    value={headerRow + 1}
+                    onChange={(e) => setHeaderRow(Math.max(0, (Number(e.target.value.replace(/[^\d]/g, "")) || 1) - 1))}
+                    className="h-9"
+                  />
+                </Field>
+                <ColumnSelect label="סכום החיוב *" value={colAmount} onChange={setColAmount} headerCells={headerCells} columnCount={columnCount} />
+                <ColumnSelect label="תאריך חיוב (אם יש)" value={colDate} onChange={setColDate} headerCells={headerCells} columnCount={columnCount} optional />
+                <ColumnSelect label="תאריך עסקה" value={colTxnDate} onChange={setColTxnDate} headerCells={headerCells} columnCount={columnCount} optional />
+                <ColumnSelect label="בית עסק" value={colMerchant} onChange={setColMerchant} headerCells={headerCells} columnCount={columnCount} optional />
+                <ColumnSelect label="כרטיס" value={colCard} onChange={setColCard} headerCells={headerCells} columnCount={columnCount} optional />
+                <ColumnSelect label="שיוך (ממלא מראש)" value={colAssignment} onChange={setColAssignment} headerCells={headerCells} columnCount={columnCount} optional />
+              </div>
+              {colDate < 0 && colTxnDate >= 0 ? (
+                <p className="text-xs text-muted-foreground">בקובץ אין תאריך חיוב — את תאריך החיוב בבנק בוחרים בשלב הבא, לכל כרטיס.</p>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+                {mappingReady ? (
+                  <span />
+                ) : (
+                  <span className="text-xs text-destructive">יש לבחור את עמודת הסכום ולפחות עמודת תאריך אחת (חיוב או עסקה).</span>
+                )}
+                <Button size="sm" onClick={buildReview} disabled={!mappingReady}>
+                  המשך לבדיקה
                 </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ) : (
-            <>
-              <Card>
-                <CardContent className="space-y-2 py-3">
-                  <div className="text-sm font-medium">כרטיסים בקובץ (שם הכרטיס = קטגוריה)</div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="space-y-3">
+              <PanelTitle
+                title="בדיקה ושמירה"
+                hint="לכל כרטיס צריך שם עם 4 ספרות ותאריך חיוב בבנק. השיוך לתחומים נעשה אחרי השמירה, בעמוד הפירוט."
+              />
+              {rows.length === 0 ? (
+                <div className="space-y-2 text-sm">
+                  <p className="text-muted-foreground">
+                    {source === "pdf" ? "לא זוהו עסקאות בקובץ." : "לא נמצאו שורות תקינות (תאריך + סכום) לפי העמודות שנבחרו."}
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => (source === "pdf" ? reset() : setStep("map"))}>
+                    {source === "pdf" ? "קובץ אחר" : "חזרה לעמודות"}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-2 text-sm">
+                    <span className={chip.plain}>{rows.length} שורות</span>
+                    <span className={chip.info}>{purchasesToRecord} לרישום כהוצאה</span>
+                    {refundCount > 0 ? <span className={chip.info}>{refundCount} זיכויים יירשמו כהכנסה</span> : null}
+                    {excludedCount > 0 ? <span className={chip.plain}>{excludedCount} לא לתיעוד</span> : null}
+                    {statementTotal !== null ? (
+                      totalMatches ? (
+                        <span className={chip.ok}>תואם לסה״כ בקובץ ({formatCurrency(statementTotal)})</span>
+                      ) : (
+                        <span className={chip.warn}>לא תואם לסה״כ בקובץ</span>
+                      )
+                    ) : null}
+                    {skippedCount > 0 ? <span className={chip.warn}>{skippedCount} שורות לא נקראו</span> : null}
+                  </div>
+                  {statementTotal !== null && !totalMatches ? (
+                    <p className="rounded-md border border-warning-soft-foreground/40 bg-warning-soft/30 px-3 py-2 text-xs">
+                      בקובץ כתוב {formatCurrency(statementTotal)}, השורות מסתכמות ב־{formatCurrency(linesAgorot / 100)} — כנראה שורות
+                      לא נקראו. כדאי לבדוק בשלב “עמודות”.
+                    </p>
+                  ) : null}
+                  {skippedCount > 0 ? (
+                    <p className="rounded-md border border-warning-soft-foreground/40 bg-warning-soft/30 px-3 py-2 text-xs">
+                      {skippedCount} שורות בקובץ לא נקראו (תאריך או סכום לא תקין לפי העמודות שנבחרו). אם הקובץ אמור להכיל עוד
+                      שורות — בדקו את שלב “עמודות”.
+                    </p>
+                  ) : null}
+
+                  <div className="space-y-2">
                     {cardGroups.map((g) => {
                       const label = groupLabel(g.key);
                       const chargeDay = chargeDayFor(g.key);
+                      const complete = groupComplete(g);
                       const customLacksDigits =
                         !g.key && noCardPick === NEW_CARD && noCardCustom.trim() !== "" && !/\d{4}/.test(noCardCustom);
                       return (
                         <div
                           key={g.key || "__none__"}
-                          className={
-                            g.key
-                              ? "space-y-2 rounded-md border p-2"
-                              : "space-y-2 rounded-md border border-warning/40 bg-warning-soft/20 p-2"
-                          }
+                          className={`rounded-md border px-3 py-2 ${
+                            complete
+                              ? "border-success-soft-foreground/40 bg-success-soft/15"
+                              : !g.key
+                                ? "border-warning-soft-foreground/40 bg-warning-soft/20"
+                                : ""
+                          }`}
                         >
-                          {g.key ? (
-                            <Input
-                              value={cardLabels[g.key] ?? g.key}
-                              onChange={(e) => setCardLabels((prev) => ({ ...prev, [g.key]: e.target.value }))}
-                              aria-label="שם הכרטיס"
-                              className="h-8 text-sm"
-                            />
-                          ) : (
-                            <>
-                              <div className="text-sm font-medium text-warning-soft-foreground">
-                                {g.count} שורות בלי כרטיס — לאיזה כרטיס הן שייכות?
-                              </div>
-                              <NativeSelect
-                                dense
-                                value={noCardPick}
-                                onChange={(e) => setNoCardPick(e.target.value)}
-                                aria-label="כרטיס לשורות בלי כרטיס"
-                              >
-                                <option value="">— בחר/י כרטיס —</option>
-                                {knownCards.map((c) => (
-                                  <option key={c.label} value={c.label}>
-                                    {c.accountName ? `${c.label} · ${c.accountName}` : c.label}
-                                  </option>
-                                ))}
-                                <option value={NEW_CARD}>כרטיס חדש…</option>
-                              </NativeSelect>
-                              {noCardPick === NEW_CARD ? (
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1 basis-56 space-y-1.5">
+                              {g.key ? (
                                 <Input
-                                  value={noCardCustom}
-                                  onChange={(e) => setNoCardCustom(e.target.value)}
-                                  placeholder="למשל: ויזה כאל זהב 9557"
-                                  aria-label="שם הכרטיס החדש"
-                                  className="h-8 text-sm"
+                                  value={cardLabels[g.key] ?? g.key}
+                                  onChange={(e) => setCardLabels((prev) => ({ ...prev, [g.key]: e.target.value }))}
+                                  aria-label="שם הכרטיס"
+                                  className="h-8 max-w-xs text-sm font-medium"
                                 />
+                              ) : (
+                                <>
+                                  <div className="text-sm font-medium text-warning-soft-foreground">
+                                    {g.count} שורות בלי כרטיס — לאיזה כרטיס הן שייכות?
+                                  </div>
+                                  <NativeSelect
+                                    dense
+                                    value={noCardPick}
+                                    onChange={(e) => setNoCardPick(e.target.value)}
+                                    aria-label="כרטיס לשורות בלי כרטיס"
+                                    className="max-w-xs"
+                                  >
+                                    <option value="">— בחר/י כרטיס —</option>
+                                    {knownCards.map((c) => (
+                                      <option key={c.label} value={c.label}>
+                                        {c.accountName ? `${c.label} · ${c.accountName}` : c.label}
+                                      </option>
+                                    ))}
+                                    <option value={NEW_CARD}>כרטיס חדש…</option>
+                                  </NativeSelect>
+                                  {noCardPick === NEW_CARD ? (
+                                    <Input
+                                      value={noCardCustom}
+                                      onChange={(e) => setNoCardCustom(e.target.value)}
+                                      placeholder="למשל: ויזה כאל זהב 9557"
+                                      aria-label="שם הכרטיס החדש"
+                                      className="h-8 max-w-xs text-sm"
+                                    />
+                                  ) : null}
+                                  {customLacksDigits ? (
+                                    <p className="text-xs text-destructive">יש לכלול את 4 הספרות של הכרטיס.</p>
+                                  ) : null}
+                                </>
+                              )}
+                              <div className="text-xs text-muted-foreground">
+                                {g.count} שורות · {formatCurrency(g.totalAgorot / 100)}
+                              </div>
+                            </div>
+                            <div className="shrink-0">
+                              {g.needsDate ? (
+                                <Field label="תאריך החיוב בבנק" required size="xs">
+                                  <DateInput
+                                    value={groupBankDate(g)}
+                                    onChange={(e) => setBankDates((prev) => ({ ...prev, [g.key]: e.target.value }))}
+                                    aria-label={`תאריך החיוב בבנק${label ? ` של ${label}` : ""}`}
+                                    className="h-8 text-sm"
+                                  />
+                                  {chargeDay ? (
+                                    <p className="text-xs text-muted-foreground">לפי החיוב הקודם של הכרטיס: ב־{chargeDay} לחודש</p>
+                                  ) : null}
+                                </Field>
+                              ) : fileBankDate(g.key) ? (
+                                <span className={chip.ok}>חיוב בבנק {formatIsoDisplay(fileBankDate(g.key))} (מהקובץ)</span>
                               ) : null}
-                              {customLacksDigits ? (
-                                <p className="text-xs text-destructive">יש לכלול את 4 הספרות של הכרטיס.</p>
-                              ) : null}
-                            </>
-                          )}
-                          <div className="text-xs text-muted-foreground">
-                            {g.count} שורות · {formatCurrency(g.totalAgorot / 100)}
+                            </div>
                           </div>
-                          {g.needsDate ? (
-                            <Field label="תאריך החיוב בבנק" required size="xs">
-                              <DateInput
-                                value={groupBankDate(g)}
-                                onChange={(e) => setBankDates((prev) => ({ ...prev, [g.key]: e.target.value }))}
-                                aria-label={`תאריך החיוב בבנק${label ? ` של ${label}` : ""}`}
-                                className="h-8 text-sm"
-                              />
-                              {chargeDay ? (
-                                <p className="text-xs text-muted-foreground">
-                                  לפי החיוב הקודם של הכרטיס: ב־{chargeDay} לחודש
-                                </p>
-                              ) : null}
-                            </Field>
-                          ) : null}
                         </div>
                       );
                     })}
                   </div>
-                </CardContent>
-              </Card>
 
-              {skippedCount > 0 ? (
-                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  אזהרה: {skippedCount} שורות בקובץ לא נקראו (תאריך או סכום לא תקין במיפוי הנוכחי). אם הקובץ אמור להכיל יותר שורות — חזור/י למיפוי עמודות ובדוק/י שהעמודות נבחרו נכון.
-                </div>
-              ) : null}
-              {statementTotal !== null ? (
-                Math.round(statementTotal * 100) === linesAgorot ? (
-                  <div className="rounded-md border bg-success-soft/20 px-3 py-1.5 text-sm text-success-soft-foreground">
-                    תואם לסה״כ בקובץ ({formatCurrency(statementTotal)})
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+                    {missing.length > 0 ? (
+                      <p className="text-sm">
+                        <span className="font-medium">עוד חסר: </span>
+                        <span className="text-destructive">{missing.join(" · ")}</span>
+                      </p>
+                    ) : (
+                      <p className="text-sm text-success-soft-foreground">
+                        <CheckIcon className="inline h-4 w-4 align-text-bottom" /> הכל מוכן לשמירה.
+                      </p>
+                    )}
+                    <Button size="sm" onClick={() => void doSave()} disabled={saving || missing.length > 0}>
+                      {saving ? "שומר..." : `שמירת פירוט אשראי (${rows.length} שורות)`}
+                    </Button>
                   </div>
-                ) : (
-                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    בקובץ כתוב {formatCurrency(statementTotal)}, השורות מסתכמות ב־{formatCurrency(linesAgorot / 100)} — כנראה
-                    שורות לא נקראו. חזור/י למיפוי עמודות.
-                  </div>
-                )
-              ) : null}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm text-muted-foreground">
-                  נמצאו {rows.length} שורות · {includedCount} מסומנות לרישום
-                  {refundCount > 0 ? ` · ${refundCount} זיכויים יירשמו כהכנסה` : ""}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  כל השורות יישמרו בפירוט. שיוך התחומים ויצירת ההוצאות נעשים בעמוד הפירוט לאחר השמירה.
-                </div>
-              </div>
-
-              <Card className="overflow-hidden">
-                <div className="max-h-[60vh] overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
-                      <tr className="text-right">
-                        <th className="px-2 py-2 font-medium">תאריך</th>
-                        <th className="px-2 py-2 font-medium">בית עסק</th>
-                        <th className="px-2 py-2 font-medium">סכום</th>
-                        <th className="px-2 py-2 font-medium">קטגוריה</th>
-                        {showAssignmentRef ? <th className="px-2 py-2 font-medium">שיוך מקורי</th> : null}
-                        <th className="px-2 py-2 font-medium">לרישום?</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {rows.map((row, index) => {
-                        const bankDate = rowBankDate(row);
-                        return (
-                          <tr key={index} className={row.include ? "" : "opacity-60"}>
-                            <td className="whitespace-nowrap px-2 py-2">
-                              {/* The date saved as the bank charge date; the purchase date under it. */}
-                              <div>{bankDate ? formatIsoDisplay(bankDate) : "—"}</div>
-                              {row.txnDate ? (
-                                <div className="text-xs text-muted-foreground">עסקה {formatIsoDisplay(row.txnDate)}</div>
-                              ) : null}
-                            </td>
-                            <td className="px-2 py-2">{row.description}</td>
-                            <td className="whitespace-nowrap px-2 py-2 font-medium">
-                              <span className={row.amount < 0 ? "text-success-soft-foreground" : ""}>
-                                {formatCurrency(row.amount)}
-                              </span>
-                              {row.amount < 0 ? (
-                                <span
-                                  title="זיכוי/החזר — יירשם כהכנסה בתחום שלו"
-                                  className="ms-1 inline-block rounded bg-success-soft px-1 py-0.5 text-[0.588rem] font-medium text-success-soft-foreground"
-                                >
-                                  זיכוי
-                                </span>
-                              ) : null}
-                            </td>
-                            <td className="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">
-                              {groupLabel(row.card) || "—"}
-                            </td>
-                            {showAssignmentRef ? (
-                              <td className="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">{row.assignmentRaw || "—"}</td>
-                            ) : null}
-                            <td className="px-2 py-2">
-                              <input
-                                type="checkbox"
-                                checked={row.include}
-                                onChange={(e) =>
-                                  setRows((prev) => prev.map((r, i) => (i === index ? { ...r, include: e.target.checked } : r)))
-                                }
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-
-              {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
-              {missing.length > 0 ? (
-                <p className="text-xs text-muted-foreground">לפני השמירה חסר: {missing.join(" · ")}</p>
-              ) : null}
-
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => void doSave()} disabled={saving || missing.length > 0}>
-                  {saving ? "שומר..." : `שמירת פירוט אשראי (${rows.length} שורות)`}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => (source === "pdf" ? reset() : setStep("map"))}
-                  disabled={saving}
-                >
-                  {source === "pdf" ? "החלפת קובץ" : "חזרה למיפוי"}
-                </Button>
-              </div>
-            </>
+                  {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
+                </>
+              )}
+            </div>
           )}
-        </div>
+        </CardContent>
+      </Card>
+
+      {/* The file itself under the columns step, its head marked with what each column was read as. */}
+      {step === "map" && currentSheet ? (
+        <Card className="overflow-hidden">
+          <div className="border-b px-3 py-2 text-xs text-muted-foreground">תחילת הקובץ, מהשורה {headerRow + 1}</div>
+          <div className="max-h-72 overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted text-muted-foreground">
+                <tr className="text-right">
+                  {Array.from({ length: columnCount }).map((_, ci) => {
+                    const field = mappedField(ci);
+                    return (
+                      <th key={ci} className="whitespace-nowrap px-3 py-2 align-top font-medium">
+                        <div>
+                          {colLetter(ci)} · {String(headerCells[ci] ?? "").trim() || "(ריק)"}
+                        </div>
+                        {field ? <span className={chip.info}>{field}</span> : null}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {currentSheet.rows.slice(headerRow + 1, headerRow + 9).map((r, ri) => (
+                  <tr key={ri}>
+                    {Array.from({ length: columnCount }).map((_, ci) => (
+                      <td key={ci} className="whitespace-nowrap px-3 py-2">
+                        {String(r[ci] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* The lines, as the statement page will show them. */}
+      {step === "review" && rows.length > 0 ? (
+        <Card className="overflow-hidden">
+          <div className="max-h-[60vh] overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
+                <tr className="text-right">
+                  <th className="px-3 py-2 font-medium">סטטוס</th>
+                  <th className="px-3 py-2 font-medium">תאריך</th>
+                  <th className="px-3 py-2 font-medium">בית עסק</th>
+                  <th className="px-3 py-2 font-medium">סכום</th>
+                  <th className="px-3 py-2 font-medium">כרטיס</th>
+                  {showAssignmentRef ? <th className="px-3 py-2 font-medium">שיוך מקורי</th> : null}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {rows.map((row, index) => {
+                  const bankDate = rowBankDate(row);
+                  const isRefund = row.amount < 0;
+                  return (
+                    <tr key={index} className={`align-top ${row.include ? "" : "opacity-50"}`}>
+                      <td className="px-3 py-2">
+                        <div className="space-y-1">
+                          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={row.include}
+                              onChange={(e) =>
+                                setRows((prev) => prev.map((r, i) => (i === index ? { ...r, include: e.target.checked } : r)))
+                              }
+                            />
+                            {isRefund ? "להכנסה" : "להוצאה"}
+                          </label>
+                          {isRefund ? (
+                            <span
+                              title="זיכוי/החזר — יירשם כהכנסה בתחום שלו"
+                              className="inline-block rounded bg-info-soft px-1.5 py-0.5 text-[0.647rem] font-medium text-info-soft-foreground"
+                            >
+                              זיכוי
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {/* The date saved as the bank charge date; the purchase date under it. */}
+                        <div>{bankDate ? formatIsoDisplay(bankDate) : "—"}</div>
+                        {row.txnDate ? <div className="text-xs text-muted-foreground">עסקה {formatIsoDisplay(row.txnDate)}</div> : null}
+                      </td>
+                      <td className="px-3 py-2">{row.description}</td>
+                      <td className={`whitespace-nowrap px-3 py-2 font-medium ${isRefund ? "text-success-soft-foreground" : ""}`}>
+                        {formatCurrency(row.amount)}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{groupLabel(row.card) || "—"}</td>
+                      {showAssignmentRef ? (
+                        <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">{row.assignmentRaw || "—"}</td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : null}
     </div>
   );
@@ -1042,12 +1156,8 @@ function ColumnSelect({
   optional?: boolean;
 }) {
   return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      <NativeSelect dense
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      >
+    <Field size="xs" label={label}>
+      <NativeSelect dense value={value} onChange={(e) => onChange(Number(e.target.value))}>
         <option value={-1}>{optional ? "— ללא —" : "— בחר —"}</option>
         {Array.from({ length: columnCount }).map((_, ci) => (
           <option key={ci} value={ci}>
@@ -1055,6 +1165,6 @@ function ColumnSelect({
           </option>
         ))}
       </NativeSelect>
-    </div>
+    </Field>
   );
 }

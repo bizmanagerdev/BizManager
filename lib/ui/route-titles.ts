@@ -31,7 +31,7 @@ const ROUTE_TITLES: Array<[string, string]> = [
   ["/financial/reports", "דוחות"],
   ["/financial/loans", "חובות"],
   ["/financial/taxes", "מע״מ ומסים"],
-  ["/financial/import", "ייבוא חיובים"],
+  ["/financial/import", "כרטיסי אשראי"],
   ["/financial/bank", "חשבונות"],
   ["/financial", "תזרים"],
   ["/payroll/workers", "כרטיס עובד"],

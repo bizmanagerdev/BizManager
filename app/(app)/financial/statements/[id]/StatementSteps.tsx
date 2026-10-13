@@ -7,6 +7,7 @@ import { WizardStepper, type WizardStepDef } from "@/components/ui/step-wizard";
 import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
 import { CheckIcon, LinkIcon } from "@/components/ui/icons";
 import type { CardSummary, StatementSteps as Steps } from "@/lib/financial/cardStatementMath";
+import { PanelTitle, STATUS_CHIP as chip } from "@/components/financial/statement-ui";
 
 // The statement page's three steps — שיוך והוצאות → חיוב בבנק → סיום — as a
 // step bar with one panel under it for the step on screen. Before this the
@@ -29,13 +30,6 @@ function formatIsoDisplay(iso: string): string {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[3]}/${m[2]}/${m[1].slice(-2)}` : iso || "—";
 }
-
-const chip = {
-  ok: "rounded bg-success-soft px-1.5 py-0.5 text-xs font-medium text-success-soft-foreground",
-  warn: "rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground",
-  info: "rounded bg-info-soft px-1.5 py-0.5 text-xs font-medium text-info-soft-foreground",
-  plain: "rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground",
-};
 
 /** The step a statement opens on: the first one still open. */
 export function firstOpenStep(steps: Steps, markedDone: boolean): StatementStepId {
@@ -125,15 +119,6 @@ export function StatementSteps({
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function PanelTitle({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div>
-      <h2 className="text-sm font-semibold">{title}</h2>
-      <p className="text-xs text-muted-foreground">{hint}</p>
-    </div>
   );
 }
 
