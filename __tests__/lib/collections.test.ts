@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { computeSourceCollection } from "@/lib/collections";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { computeSourceCollection, getPaymentsDueToday } from "@/lib/collections";
 
 const TODAY = "2026-06-02";
 
@@ -75,5 +76,40 @@ describe("computeSourceCollection", () => {
     const r = run({ referenceDate: "2026-04-01", dueDate: "2026-04-01", blockOverdue: true });
     expect(r.status).toBe("unpaid");
     expect(r.late).toBe(0);
+  });
+});
+
+// The server and the phone read rows in different orders: the board's
+// "collections today" listed the same three checks differently on each
+// (Sentry, 2026-10-13). Largest first, then by id — whatever order they come in.
+describe("getPaymentsDueToday", () => {
+  function fakeSupabase(payments: Record<string, unknown>[]) {
+    return {
+      from(table: string) {
+        const result = { data: table === "payments" ? payments : [], error: null };
+        const builder = {
+          select: () => builder,
+          eq: () => builder,
+          in: () => builder,
+          then: (resolve: (v: typeof result) => unknown, reject?: (e: unknown) => unknown) =>
+            Promise.resolve(result).then(resolve, reject),
+        };
+        return builder;
+      },
+    } as unknown as SupabaseClient;
+  }
+  const pay = (id: string, amount: number) => ({ id, amount_total: amount, due_date: TODAY, payment_method: "check" });
+
+  it("lists the largest first, the same whichever order the rows were read in", async () => {
+    const rows = [pay("95c2", 2800), pay("9fb8", 5500), pay("f872", 3300)];
+    const server = await getPaymentsDueToday(fakeSupabase(rows), TODAY);
+    const phone = await getPaymentsDueToday(fakeSupabase([...rows].reverse()), TODAY);
+    expect(server.map((p) => p.amount)).toEqual([5500, 3300, 2800]);
+    expect(phone).toEqual(server);
+  });
+
+  it("equal amounts come out by id", async () => {
+    const got = await getPaymentsDueToday(fakeSupabase([pay("b", 1000), pay("a", 1000)]), TODAY);
+    expect(got.map((p) => p.id)).toEqual(["a", "b"]);
   });
 });

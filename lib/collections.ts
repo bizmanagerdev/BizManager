@@ -1116,28 +1116,33 @@ export async function getPaymentsDueToday(
     }
   }
 
-  return rows.map((row) => {
-    const orderId = str(row, "order_id");
-    const projectId = str(row, "project_id");
-    const customerId = orderId
-      ? customerByOrder.get(orderId) ?? null
-      : projectId
-        ? customerByProject.get(projectId) ?? null
-        : null;
-    const cust = customerId ? customerById.get(customerId) : null;
-    return {
-      id: str(row, "id") ?? "",
-      amount: toNum(row.amount_total),
-      due_date: str(row, "due_date"),
-      payment_method: str(row, "payment_method"),
-      check_number: str(row, "check_number"),
-      customer_id: customerId,
-      customer_name: cust?.name ?? "לקוח",
-      customer_phone: cust?.phone ?? null,
-      source_type: orderId ? "order" : projectId ? "project" : null,
-      source_id: orderId ?? projectId ?? null,
-    };
-  });
+  // Largest first, then by id (unique), like the board's payments card: the
+  // query has no order, and the server and the phone read rows in different
+  // orders — the same checks came out differently on each (Sentry, 2026-10-13).
+  return rows
+    .map((row): PaymentDueToday => {
+      const orderId = str(row, "order_id");
+      const projectId = str(row, "project_id");
+      const customerId = orderId
+        ? customerByOrder.get(orderId) ?? null
+        : projectId
+          ? customerByProject.get(projectId) ?? null
+          : null;
+      const cust = customerId ? customerById.get(customerId) : null;
+      return {
+        id: str(row, "id") ?? "",
+        amount: toNum(row.amount_total),
+        due_date: str(row, "due_date"),
+        payment_method: str(row, "payment_method"),
+        check_number: str(row, "check_number"),
+        customer_id: customerId,
+        customer_name: cust?.name ?? "לקוח",
+        customer_phone: cust?.phone ?? null,
+        source_type: orderId ? "order" : projectId ? "project" : null,
+        source_id: orderId ?? projectId ?? null,
+      };
+    })
+    .sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id));
 }
 
 // ── The dashboard's גבייה card ───────────────────────────────────────────────
