@@ -19,14 +19,17 @@ export default function CardsPageClient({
   // on the server, so the box never jumps open or shut after the page appears.
   const anyOpen = statements.some((s) => s.marked_done !== true);
   return (
-    <Tabs defaultValue="monthly" dir="rtl" className="space-y-4">
+    // The statements list first and by default — it's where the monthly work happens, and
+    // "back" from a statement lands here (owner, 2026-10-13: back brought him to the
+    // monthly totals).
+    <Tabs defaultValue="statements" dir="rtl" className="space-y-4">
       {/* Wraps: the two buttons beside the tabs ran off a phone's edge at a
           bigger text size ("חזרה לפיננסי" was cut off). */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <TabsList variant="underline">
-            <TabsTrigger value="monthly"><CalendarIcon className="h-4 w-4 shrink-0" />סיכום חודשי</TabsTrigger>
             <TabsTrigger value="statements"><DocumentIcon className="h-4 w-4 shrink-0" />פירוטים שהועלו</TabsTrigger>
+            <TabsTrigger value="monthly"><CalendarIcon className="h-4 w-4 shrink-0" />סיכום חודשי</TabsTrigger>
           </TabsList>
         </div>
         <div className="flex flex-wrap items-center gap-2">
