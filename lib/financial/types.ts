@@ -129,6 +129,8 @@ export type WorkerDebtItemRow = {
   payment_status: string | null;
   business_domain?: string | null;
   property_id?: string | null;
+  /** The item's full pay (a payslip's gross) — what its area split is worked out on. */
+  earned_amount?: number | string | null;
 };
 
 export type AttendanceSessionFinanceRow = {
@@ -221,6 +223,14 @@ export type FinancialEntry = {
   // Set on worker wage entries (worker_owed / worker_payment) so consumers can
   // relate an entry back to a worker (e.g. de-duping projected salaries).
   workerUserId?: string | null;
+  /**
+   * How a wage entry divides between business areas, when its payslip was worked
+   * in more than one (an hourly payslip split by its shifts — lib/financial/laborSplit).
+   * Shares add up to 1. The entry stays ONE line in the ledger, the payments card
+   * and the calendar; everything that adds up by area divides it by these shares
+   * (expandByDomain in entries.ts).
+   */
+  domainSplit?: Array<{ businessDomain: ExpenseBusinessDomain; share: number }>;
   expenseId?: string | null;
   expenseCategory?: string | null;
   expenseDescriptionRaw?: string | null;

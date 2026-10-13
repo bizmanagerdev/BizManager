@@ -333,10 +333,35 @@ export function summarizeEntries(entries: FinancialEntry[]): FinancialSummary {
   return summary;
 }
 
+/**
+ * Entries as each business area sees them: a wage entry whose payslip was worked
+ * in several areas (FinancialEntry.domainSplit) becomes one piece per area, its
+ * amount divided by the shares. Every total "by area" goes through this, so the
+ * ledger keeps one line per payment while the areas each carry their part
+ * (owner, 2026-10-13: an hourly worker's project hours belong to the project).
+ */
+export function expandByDomain(entries: FinancialEntry[]): FinancialEntry[] {
+  if (!entries.some((entry) => entry.domainSplit && entry.domainSplit.length > 0)) return entries;
+  return entries.flatMap((entry) => {
+    const split = entry.domainSplit;
+    if (!split || split.length === 0) return [entry];
+    return split.map((part) => ({
+      ...entry,
+      id: `${entry.id}#${part.businessDomain}`,
+      amount: entry.amount * part.share,
+      signedAmount: entry.signedAmount * part.share,
+      businessDomain: part.businessDomain,
+      domainName: getBusinessDomainLabel(part.businessDomain),
+      expensePaidAmount: entry.expensePaidAmount != null ? entry.expensePaidAmount * part.share : entry.expensePaidAmount,
+      domainSplit: undefined,
+    }));
+  });
+}
+
 export function buildDomainGroups(entries: FinancialEntry[], referenceDate: string): FinancialDomainGroup[] {
   const groups = new Map<string, FinancialDomainGroup>();
 
-  entries.forEach((entry) => {
+  expandByDomain(entries).forEach((entry) => {
     const key = entry.businessDomain ?? "__unassigned__";
     const current = groups.get(key) ?? {
       domain: entry.businessDomain,
@@ -369,9 +394,9 @@ export function buildDomainGroups(entries: FinancialEntry[], referenceDate: stri
 
 // Domains that are personal/off-books rather than core business activity — as TWO
 // independently toggleable groups (owner request, 2026-08-20): בית/צדקה (personal
-// life, off by default) and ניהול נכסים (its own separate "bucket"; on by default
-// since 2026-10-13 — rent is part of the monthly cycle). Each group has its own
-// checkbox in the Reports control row.
+// life) and ניהול נכסים (its own separate "bucket"), both off by default. Each
+// group has its own checkbox in the Reports control row, and when ticked it is
+// counted by the same rule as every other area.
 const HOME_CHARITY_DOMAINS: ReadonlySet<string> = new Set(["home", "charity"]);
 const PROPERTY_PERSONAL_DOMAINS: ReadonlySet<string> = new Set(["property_management"]);
 
@@ -440,7 +465,7 @@ export function aggregateProfitLoss(
   const to = options.to || null;
   const rows = new Map<string, ProfitLossDomainRow>();
 
-  for (const entry of entries) {
+  for (const entry of expandByDomain(entries)) {
     const card = cardSaleInPeriod(entry, from, to);
     if (card) {
       if (!card.cash && !card.accrual) continue;
@@ -547,7 +572,7 @@ export function aggregateProfitLossProof(
     (map[key] ??= []).push(item);
   };
 
-  for (const entry of entries) {
+  for (const entry of expandByDomain(entries)) {
     const card = cardSaleInPeriod(entry, from, to);
     if (card) {
       if (!card.cash && !card.accrual) continue;
@@ -623,7 +648,7 @@ export function aggregateExpenseCategories(
     row.accrualExpense += accrual;
   };
 
-  for (const entry of entries) {
+  for (const entry of expandByDomain(entries)) {
     if (entry.type !== "outflow") continue;
     if (from && entry.flowDate < from) continue;
     if (to && entry.flowDate > to) continue;
@@ -1182,11 +1207,21 @@ export function buildLoanEntries(loans: Loan[], referenceDate: string): Financia
   return entries;
 }
 
+/** Payslip id → its area shares (lib/financial/laborSplit buildPayslipDomainShares). */
+export type PayslipDomainShares = Map<string, Array<{ domain: string; share: number }>>;
+
+function toDomainSplit(shares: Array<{ domain: string; share: number }> | undefined): FinancialEntry["domainSplit"] {
+  if (!shares || shares.length === 0) return undefined;
+  return shares.map((part) => ({ businessDomain: normalizeDomain(part.domain) ?? "general_business", share: part.share }));
+}
+
 export function buildWorkerPaymentEntries(args: {
   allocations: WorkerPaymentAllocationRow[];
   workerPaymentById: Map<string, WorkerPaymentRow>;
   sessionsById: Map<string, AttendanceSessionFinanceRow>;
   payslipMetaById: Map<string, { businessDomain: string | null; projectId: string | null; propertyId: string | null }>;
+  /** An hourly payslip's area shares — a payment on it divides the same way. */
+  payslipDomainShares?: PayslipDomainShares;
   projectsById: Map<string, ProjectRow>;
   propertiesById: Map<string, PropertyRow>;
   propertyCustomersById: Map<string, Set<string>>;
@@ -1195,7 +1230,7 @@ export function buildWorkerPaymentEntries(args: {
   customerProjectSet: Set<string>;
   referenceDate: string;
 }): FinancialEntry[] {
-  const { allocations, workerPaymentById, sessionsById, payslipMetaById, projectsById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
+  const { allocations, workerPaymentById, sessionsById, payslipMetaById, payslipDomainShares, projectsById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
 
   return allocations.flatMap((allocation) => {
     if (!allocation.id || !allocation.worker_payment_id) return [];
@@ -1214,6 +1249,7 @@ export function buildWorkerPaymentEntries(args: {
     // A payslip tied to a project books the whole salary as that project's expense;
     // otherwise it stays general_business (שוטף).
     const payslipMeta = !session && allocation.payslip_id ? payslipMetaById.get(allocation.payslip_id) ?? null : null;
+    const domainSplit = !session && allocation.payslip_id ? toDomainSplit(payslipDomainShares?.get(allocation.payslip_id)) : undefined;
 
     const businessDomain = session?.business_domain
       ? normalizeDomain(session.business_domain)
@@ -1275,6 +1311,7 @@ export function buildWorkerPaymentEntries(args: {
         typeof workerPayment.recorded_by === "string" ? recordedByNames[workerPayment.recorded_by] ?? "" : ""]
         .join(" ").toLowerCase(),
       workerUserId: workerPayment.user_id?.trim() || session?.user_id?.trim() || null,
+      ...(domainSplit ? { domainSplit } : {}),
     }];
   });
 }
@@ -1282,6 +1319,8 @@ export function buildWorkerPaymentEntries(args: {
 export function buildWorkerOwedEntries(args: {
   debtItems: WorkerDebtItemRow[];
   sessionsById: Map<string, AttendanceSessionFinanceRow>;
+  /** An hourly payslip's area shares — what's still owed on it divides the same way. */
+  payslipDomainShares?: PayslipDomainShares;
   projectsById: Map<string, ProjectRow>;
   propertiesById: Map<string, PropertyRow>;
   propertyCustomersById: Map<string, Set<string>>;
@@ -1290,13 +1329,15 @@ export function buildWorkerOwedEntries(args: {
   customerProjectSet: Set<string>;
   referenceDate: string;
 }): FinancialEntry[] {
-  const { debtItems, sessionsById, projectsById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
+  const { debtItems, sessionsById, payslipDomainShares, projectsById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
 
   return debtItems.flatMap((item, index) => {
     const amount = Math.max(0, toNumber(item.owed_amount));
     if (!(amount > 0)) return [];
 
     const sourceType = item.source_type?.trim().toLowerCase() ?? "";
+    const domainSplit =
+      sourceType === "payslip" && item.source_id ? toDomainSplit(payslipDomainShares?.get(item.source_id)) : undefined;
     const session =
       sourceType === "session" && item.source_id
         ? sessionsById.get(item.source_id) ?? null
@@ -1371,6 +1412,7 @@ export function buildWorkerOwedEntries(args: {
       searchText: [description, source.label, reference, workerName ?? "", getBusinessDomainLabel(businessDomain)]
         .join(" ").toLowerCase(),
       workerUserId: workerId || null,
+      ...(domainSplit ? { domainSplit } : {}),
     } as FinancialEntry];
   });
 }

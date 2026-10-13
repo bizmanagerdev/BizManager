@@ -113,14 +113,21 @@ describe("buildEarnedRevenueByMonth — expenses & other income", () => {
     expect(report.months[0].byDomain.sales.expense).toBe(250);
   });
 
-  it("ignores expenses in personal/unknown domains", () => {
+  it("books בית/צדקה/נכסים by the same rule as every area (owner, 2026-10-13) and ignores unknown domains", () => {
     const report = build({
       expenses: [
         { date: "2024-05-01", amount: 250, domain: "home" },
-        { date: "2024-05-01", amount: 250, domain: "charity" },
+        { date: "2024-05-01", amount: 100, domain: "charity" },
+        { date: "2024-05-01", amount: 900, domain: "property_management" },
+        { date: "2024-05-01", amount: 77, domain: "not_a_domain" },
       ],
+      income: [{ date: "2024-05-01", amount: 4000, domain: "property_management" }],
     });
-    expect(report.months).toHaveLength(0);
+    expect(report.months[0].byDomain.home.expense).toBe(250);
+    expect(report.months[0].byDomain.charity.expense).toBe(100);
+    expect(report.months[0].byDomain.property_management).toMatchObject({ income: 4000, expense: 900, net: 3100 });
+    expect(report.domains.map((d) => d.key)).toEqual(["property_management", "home", "charity"]);
+    expect(report.totals.grand.expense).toBe(1250);
   });
 
   it("books other-domain income (spaceit/general/property) but not order/project domains", () => {

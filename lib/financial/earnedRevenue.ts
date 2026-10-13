@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { loadEarnedLaborItems } from "@/lib/financial/laborSplit";
+import { israelDateKey } from "@/lib/timezone";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Earned (booked) revenue, expenses and net per month, per business domain.
@@ -12,25 +13,36 @@ import { loadEarnedLaborItems } from "@/lib/financial/laborSplit";
 //     • מכירות (orders)        — whole order total in its order_date month.
 //     • פרויקטים (projects)     — gross customer price split EVENLY across every
 //                                month the project spans (start → end).
-//     • שוטף / ספייסיט         — collected income payments tagged to that domain,
-//                                by payment date (these have no booking event).
-//   EXPENSES (all business domains) — by expense_date (incurred), every expense,
+//     • שוטף / ספייסיט / ניהול נכסים / בית / צדקה — every income payment tagged to
+//                                that domain, in the month of its payment date,
+//                                received OR still expected (rent for a month counts
+//                                in that month even if the tenant hasn't paid yet);
+//                                only a bounced payment is left out.
+//   EXPENSES (every domain) — by expense_date (incurred), every expense, paid or not,
 //                                PLUS worker labor cost (incurred) by the work
 //                                month, so payroll shows here exactly as it does
 //                                in the cash P&L (both tabs count wages).
 //   NET = income − expenses, per domain and per month.
-// Amounts are GROSS (incl. VAT). Personal/off-books domains (בית/צדקה/ניהול
-// נכסים — see PERSONAL_DOMAINS in lib/financial/entries.ts) are excluded here
-// entirely; when the owner toggles "כולל בית, צדקה ונכסים" on, those domains
-// are spliced in from the CASH figures instead (ProfitLossPanel/BottomLinePanel),
-// since they have no "earned/booked" concept of their own.
+// Amounts are GROSS (incl. VAT). בית/צדקה and ניהול נכסים are counted by the
+// same rule as every other area (owner, 2026-10-13: "if it's owed I want to see
+// it; if it was paid I also want to see it") — whether they're SHOWN is up to
+// their two checkboxes (includePersonalRow in lib/financial/entries.ts).
 // ════════════════════════════════════════════════════════════════════════════
 
-// Fixed display order; only domains with activity are returned.
-const BUSINESS_DOMAIN_ORDER = ["sales", "logistics_projects", "general_business", "spaceit"] as const;
-const BUSINESS_DOMAINS = new Set<string>(BUSINESS_DOMAIN_ORDER);
+// Fixed display order; only domains with activity are returned. The personal
+// ones come last; the report screens show them only when their checkbox is on.
+const DOMAIN_ORDER = [
+  "sales",
+  "logistics_projects",
+  "general_business",
+  "spaceit",
+  "property_management",
+  "home",
+  "charity",
+] as const;
+const KNOWN_DOMAINS = new Set<string>(DOMAIN_ORDER);
 // Domains whose income comes from standalone payments (not orders/projects).
-const OTHER_INCOME_DOMAINS = new Set<string>(["general_business", "spaceit"]);
+const OTHER_INCOME_DOMAINS = new Set<string>(["general_business", "spaceit", "property_management", "home", "charity"]);
 
 const EXCLUDED_ORDER_STATUSES = new Set(["cancelled", "בוטלה"]);
 const EXCLUDED_PROJECT_STATUSES = new Set(["quote", "cancelled", "בוטל", "בוטלה"]);
@@ -158,7 +170,7 @@ export function buildEarnedRevenueByMonth(
 
   for (const expense of expenses) {
     if (!expense.date) continue;
-    if (!BUSINESS_DOMAINS.has(expense.domain)) continue; // skip personal/unknown domains
+    if (!KNOWN_DOMAINS.has(expense.domain)) continue; // skip unknown domains
     cell(monthKey(expense.date), expense.domain).expense += expense.amount;
   }
 
@@ -177,7 +189,7 @@ export function buildEarnedRevenueByMonth(
       if (c.count || c.income || c.expense) activeDomains.add(domain);
     }
   }
-  const domains = BUSINESS_DOMAIN_ORDER.filter((d) => activeDomains.has(d)).map((key) => ({
+  const domains = DOMAIN_ORDER.filter((d) => activeDomains.has(d)).map((key) => ({
     key,
     label: getBusinessDomainLabel(key),
   }));
@@ -260,7 +272,7 @@ export async function loadEarnedRevenueByMonth(
         .range(lo, hi)
     ),
     fetchAllPaged<Row>((lo, hi) =>
-      supabase.from("payments").select("payment_date,amount_total,business_domain,payment_status").range(lo, hi)
+      supabase.from("payments").select("payment_date,amount_total,business_domain,payment_status,order_id,project_id").range(lo, hi)
     ),
     // Worker payroll — EARNED/incurred basis: each worker's cost lands in the month
     // the work BELONGS to (period_month), not the month it was paid. So a June salary
@@ -316,13 +328,19 @@ export async function loadEarnedRevenueByMonth(
     });
   }
 
-  // Other-domain income = collected payments tagged to a non-order/project domain.
+  // Other-domain income = payments tagged to a non-order/project domain, received
+  // or still expected, in the month of their payment date (a bounced one is left
+  // out). Payments on an order or project are already inside its total. Expected
+  // money for a month still to come (next months' post-dated rent) waits for it.
+  const thisMonth = israelDateKey().slice(0, 7);
   const otherIncome: EarnedIncomeInput[] = paymentRows
     .filter((row) => {
       const domain = str(row.business_domain) ?? "";
       if (!OTHER_INCOME_DOMAINS.has(domain)) return false;
+      if (str(row.order_id) || str(row.project_id)) return false;
       const status = (str(row.payment_status) ?? "").trim().toLowerCase();
-      return status !== "pending" && status !== "rejected"; // collected only
+      if (status === "rejected") return false;
+      return status !== "pending" || (str(row.payment_date) ?? "").slice(0, 7) <= thisMonth;
     })
     .map((row) => ({
       date: str(row.payment_date),

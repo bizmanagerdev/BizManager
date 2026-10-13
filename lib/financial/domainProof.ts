@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { loadEarnedLaborItems } from "@/lib/financial/laborSplit";
+import { israelDateKey } from "@/lib/timezone";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Per-DOMAIN transaction proof (everything EXCEPT projects, which has its own
@@ -8,14 +9,15 @@ import { loadEarnedLaborItems } from "@/lib/financial/laborSplit";
 // items that make up its earned income and expenses for the period — so the
 // domain number is provable line-by-line, exactly like the project detail.
 //   INCOME  • מכירות (sales)  → each order, in its order-date month (whole order).
-//           • שוטף/ספייסיט/נכסים → collected payments tagged to that domain, by date.
+//           • שוטף/ספייסיט/נכסים/בית/צדקה → payments tagged to that domain, by date,
+//             received or still expected (a bounced one is left out).
 //   EXPENSES (every domain) → each expense (card by purchase date) + one grouped
 //           "שכר עובדים {month}" line for worker labor earned that month.
 // Mirrors lib/financial/earnedRevenue so the totals match the domain row.
 // ════════════════════════════════════════════════════════════════════════════
 
 const PROJECTS_DOMAIN = "logistics_projects";
-const OTHER_INCOME_DOMAINS = new Set(["general_business", "spaceit", "property_management"]);
+const OTHER_INCOME_DOMAINS = new Set(["general_business", "spaceit", "property_management", "home", "charity"]);
 const EXCLUDED_ORDER_STATUSES = new Set(["cancelled", "בוטלה"]);
 
 export type DomainProofItem = { date: string | null; label: string; amount: number };
@@ -54,6 +56,7 @@ export async function loadDomainProof(
     !!month && (!fromMonth || month >= fromMonth) && (!toMonth || month <= toMonth);
 
   const map: DomainProofMap = {};
+  const thisMonth = israelDateKey().slice(0, 7);
   const bucket = (domain: string) => {
     let b = map[domain];
     if (!b) {
@@ -68,7 +71,10 @@ export async function loadDomainProof(
       supabase.from("order_overview_view").select("order_id,order_date,total_amount,status,customer_name").range(lo, hi)
     ),
     fetchAllPaged<Row>((lo, hi) =>
-      supabase.from("payments").select("payment_date,amount_total,business_domain,payment_status,notes,reference_number").range(lo, hi)
+      supabase
+        .from("payments")
+        .select("payment_date,amount_total,business_domain,payment_status,notes,reference_number,order_id,project_id")
+        .range(lo, hi)
     ),
     fetchAllPaged<Row>((lo, hi) =>
       supabase
@@ -92,18 +98,25 @@ export async function loadDomainProof(
     b.incomeTotal += amount;
   }
 
-  // Other-domain income = collected payments tagged to that domain.
+  // Other-domain income = payments tagged to that domain, received or still
+  // expected (same rule as lib/financial/earnedRevenue). Order/project payments
+  // are inside those totals already.
   for (const p of paymentRows) {
     const domain = str(p.business_domain) ?? "";
     if (!OTHER_INCOME_DOMAINS.has(domain)) continue;
+    if (str(p.order_id) || str(p.project_id)) continue;
     const status = (str(p.payment_status) ?? "").trim().toLowerCase();
-    if (status === "pending" || status === "rejected") continue;
+    if (status === "rejected") continue;
+    const expected = status === "pending";
+    // Expected money for a month still to come waits for it (as in earnedRevenue).
+    if (expected && (str(p.payment_date) ?? "").slice(0, 7) > thisMonth) continue;
     const date = str(p.payment_date);
     if (!inPeriod(mk(date))) continue;
     const amount = toNum(p.amount_total);
     if (amount === 0) continue;
     const b = bucket(domain);
-    b.income.push({ date, label: str(p.notes)?.trim() || str(p.reference_number)?.trim() || "תקבול", amount });
+    const label = str(p.notes)?.trim() || str(p.reference_number)?.trim() || "תקבול";
+    b.income.push({ date, label: expected ? `${label} (צפוי)` : label, amount });
     b.incomeTotal += amount;
   }
 

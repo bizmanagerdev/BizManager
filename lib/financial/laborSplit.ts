@@ -2,8 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 // ════════════════════════════════════════════════════════════════════════════
-// Worker labour for the "הרווחתי" (earned) reports: each shekel of pay lands in
-// the business area — and project — it was WORKED for, in the month it belongs to.
+// Worker pay by the business area — and project — it was WORKED for.
 //
 // Owner, 2026-10-13: "if a worker works for a project, even if his payslip is
 // under שוטף, the money is going out of the project … an hourly worker who
@@ -15,25 +14,23 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 //     area and project.
 //   • Hourly payslip workers — the payslip is split by the shifts behind it:
 //     each shift's cost to that shift's area/project; whatever the payslip adds
-//     on top (bonuses, manual adjustment), and hours worked for בית/צדקה or
-//     ניהול נכסים (see SPLIT_TO_DOMAINS), stay with the salary agreement.
+//     on top (bonuses, manual adjustment) stays with the salary agreement.
 //   • Monthly ("global") workers — the whole payslip to the agreement's area, or
 //     the project it's tied to. The app doesn't let them log shifts
 //     (payrollWorkerTypeAllowsSessions), so there is nothing to split by.
 //
+// One rule for both report bases:
+//   • "הרווחתי" — loadEarnedLaborItems feeds the area totals (earnedRevenue), the
+//     per-project breakdown and the per-area proof, in the month worked.
+//   • "נכנס בפועל" / the dashboard chart — buildPayslipDomainShares gives each
+//     paid or owed payslip its area shares (FinancialEntry.domainSplit).
+// בית/צדקה and ניהול נכסים are shown in the earned reports from the cash
+// figures, so their share moves in both at once and follows their checkboxes.
 // The project page already charges those shifts to the project (labor_cost in
-// project_financials_view), so the reports and the project pages now agree.
-// One loader for all three earned reports — the domain totals (earnedRevenue),
-// the per-project breakdown and the per-domain proof — so they can't drift apart.
+// project_financials_view), so the reports and the project pages agree.
 // ════════════════════════════════════════════════════════════════════════════
 
 const DEFAULT_DOMAIN = "general_business";
-// The areas the earned reports show (BUSINESS_DOMAIN_ORDER in earnedRevenue).
-// בית/צדקה and ניהול נכסים come into those reports from the CASH figures, where
-// a payslip is paid under its agreement's area — so hours an hourly payslip
-// worker spent on them stay in the agreement's area here too. Moving them would
-// make that pay vanish from every row.
-const SPLIT_TO_DOMAINS = new Set(["sales", "logistics_projects", "general_business", "spaceit"]);
 
 export type EarnedLaborItem = {
   userId: string | null;
@@ -107,19 +104,16 @@ function toNum(v: unknown) {
 }
 
 /**
- * Turn worker_debt_items_view rows + the payslip workers' shifts into earned
- * labour items. Pure, so the split is testable without a database.
- * A shift belongs to the payslip of its clock_in month in UTC — the same month the
- * payslip generator and session_effective_payment_view use.
+ * Shifts by worker and month. A shift belongs to the payslip of its clock_in
+ * month in UTC — the same month the payslip generator and
+ * session_effective_payment_view use.
  */
-export function buildEarnedLaborItems(debtRows: Row[], payslipShiftRows: Row[]): EarnedLaborItem[] {
+function indexShiftsByUserMonth(shiftRows: Row[]) {
   const shiftsByUserMonth = new Map<string, PayslipShift[]>();
-  for (const row of payslipShiftRows) {
+  for (const row of shiftRows) {
     const userId = str(row.user_id);
     const clockIn = str(row.clock_in);
     if (!userId || !clockIn) continue;
-    const shiftDomain = str(row.business_domain);
-    if (shiftDomain && !SPLIT_TO_DOMAINS.has(shiftDomain)) continue;
     const key = `${userId}|${clockIn.slice(0, 7)}`;
     const list = shiftsByUserMonth.get(key) ?? [];
     list.push({
@@ -130,6 +124,48 @@ export function buildEarnedLaborItems(debtRows: Row[], payslipShiftRows: Row[]):
     });
     shiftsByUserMonth.set(key, list);
   }
+  return shiftsByUserMonth;
+}
+
+const isPayslipRow = (row: Row) => (str(row.source_type) ?? "").toLowerCase() === "payslip";
+
+/**
+ * Each payslip's area shares (payslip id → shares adding up to 1), for the cash
+ * reports: a payment or an open balance on that payslip divides the same way.
+ * Only payslips worked in more than their agreement's area get an entry. Pure.
+ */
+export function buildPayslipDomainShares(
+  debtRows: Row[],
+  shiftRows: Row[]
+): Map<string, Array<{ domain: string; share: number }>> {
+  const shiftsByUserMonth = indexShiftsByUserMonth(shiftRows);
+  const sharesById = new Map<string, Array<{ domain: string; share: number }>>();
+  for (const row of debtRows) {
+    if (!isPayslipRow(row)) continue;
+    const payslipId = str(row.source_id);
+    const userId = str(row.user_id);
+    const month = str(row.period_month);
+    const amount = Math.abs(toNum(row.earned_amount));
+    if (!payslipId || !userId || !month || !(amount > 0)) continue;
+    const domain = str(row.business_domain) ?? DEFAULT_DOMAIN;
+    const parts = splitPayslipByShifts({ amount, domain, projectId: str(row.project_id) }, shiftsByUserMonth.get(`${userId}|${month}`) ?? []);
+    const byDomain = new Map<string, number>();
+    for (const part of parts) byDomain.set(part.domain, (byDomain.get(part.domain) ?? 0) + part.amount);
+    if (byDomain.size === 1 && byDomain.has(domain)) continue;
+    sharesById.set(
+      payslipId,
+      Array.from(byDomain, ([partDomain, partAmount]) => ({ domain: partDomain, share: partAmount / amount }))
+    );
+  }
+  return sharesById;
+}
+
+/**
+ * Turn worker_debt_items_view rows + the payslip workers' shifts into earned
+ * labour items. Pure, so the split is testable without a database.
+ */
+export function buildEarnedLaborItems(debtRows: Row[], payslipShiftRows: Row[]): EarnedLaborItem[] {
+  const shiftsByUserMonth = indexShiftsByUserMonth(payslipShiftRows);
 
   const items: EarnedLaborItem[] = [];
   for (const row of debtRows) {
@@ -140,7 +176,7 @@ export function buildEarnedLaborItems(debtRows: Row[], payslipShiftRows: Row[]):
     const domain = str(row.business_domain) ?? DEFAULT_DOMAIN;
     const projectId = str(row.project_id);
     const date = str(row.source_date);
-    if ((str(row.source_type) ?? "").toLowerCase() !== "payslip") {
+    if (!isPayslipRow(row)) {
       items.push({ userId, projectId, domain, month, date, amount });
       continue;
     }
@@ -170,7 +206,7 @@ export async function loadEarnedLaborItems(supabase: SupabaseClient): Promise<Ea
   const payslipUserIds = Array.from(
     new Set(
       debtRows
-        .filter((row) => (str(row.source_type) ?? "").toLowerCase() === "payslip")
+        .filter(isPayslipRow)
         .map((row) => str(row.user_id))
         .filter((id): id is string => Boolean(id))
     )

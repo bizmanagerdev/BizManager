@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aggregateExpenseCategories, aggregateProfitLoss, includePersonalRow } from "@/lib/financial/entries";
+import { aggregateExpenseCategories, aggregateProfitLoss, expandByDomain, includePersonalRow } from "@/lib/financial/entries";
 import type { FinancialEntry } from "@/lib/financial/types";
 
 // aggregateProfitLoss is a pure reducer over already-built FinancialEntry rows.
@@ -220,5 +220,41 @@ describe("aggregateExpenseCategories — split by domain (owner, 2026-10-13)", (
       makeEntry({ type: "outflow", origin: "expense", stage: "pending", businessDomain: "property_management", expenseCategory: "שיפוץ", amount: 1000, expensePaidAmount: 250 }),
     ]);
     expect(rows).toEqual([{ category: "שיפוץ", domain: "property_management", cashExpense: 250, accrualExpense: 1000 }]);
+  });
+});
+
+describe("a wage payment worked in several areas (owner, 2026-10-13)", () => {
+  const wage = () =>
+    makeEntry({
+      id: "worker-payment-allocation:a1",
+      type: "outflow",
+      origin: "worker_payment",
+      businessDomain: "general_business",
+      domainName: "שוטף",
+      amount: 1000,
+      signedAmount: -1000,
+      domainSplit: [
+        { businessDomain: "logistics_projects", share: 0.7 },
+        { businessDomain: "general_business", share: 0.3 },
+      ],
+    });
+
+  it("counts each area's share in the P&L and the category table", () => {
+    const rows = aggregateProfitLoss([wage()]);
+    const byDomain = Object.fromEntries(rows.map((r) => [r.domain, r.cashExpense]));
+    expect(byDomain.logistics_projects).toBeCloseTo(700);
+    expect(byDomain.general_business).toBeCloseTo(300);
+    const categories = aggregateExpenseCategories([wage()]);
+    expect(categories.find((r) => r.domain === "logistics_projects")?.cashExpense).toBeCloseTo(700);
+  });
+
+  it("stays one entry until something adds up by area", () => {
+    const entries = [wage(), makeEntry({ type: "outflow", origin: "expense", amount: 50, signedAmount: -50 })];
+    const expanded = expandByDomain(entries);
+    expect(expanded).toHaveLength(3);
+    expect(expanded.reduce((s, e) => s + e.amount, 0)).toBeCloseTo(1050);
+    expect(new Set(expanded.map((e) => e.id)).size).toBe(3);
+    expect(expanded.every((e) => !e.domainSplit)).toBe(true);
+    expect(expandByDomain([entries[1]])).toEqual([entries[1]]);
   });
 });

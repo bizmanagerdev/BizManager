@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import type { EarnedDomainCell, EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
+import { includePersonalRow } from "@/lib/financial/entries";
 
 const currencyFormatter = new Intl.NumberFormat("he-IL", {
   style: "currency",
@@ -53,12 +54,20 @@ function sumCells(cells: EarnedDomainCell[]): EarnedDomainCell {
 export default function EarnedRevenuePanel({
   report,
   selectedDomains,
+  includeHomeCharity,
+  includeProperties,
 }: {
   report: EarnedRevenueReport;
   /** Global domain chips (empty = all), chosen in the report control row. */
   selectedDomains: string[];
+  /** The "כולל בית וצדקה" / "כולל ניהול נכסים" checkboxes. */
+  includeHomeCharity: boolean;
+  includeProperties: boolean;
 }) {
-  const { domains } = report;
+  const domains = useMemo(
+    () => report.domains.filter((d) => includePersonalRow(d.key, { includeHomeCharity, includeProperties })),
+    [report.domains, includeHomeCharity, includeProperties]
+  );
 
   const activeDomainKeys = useMemo(() => {
     const set = new Set(selectedDomains);
@@ -108,10 +117,10 @@ export default function EarnedRevenuePanel({
           </CardTitle>
           <CardDescription className="text-right">
             הכנסה לפי ביצוע ולא לפי גבייה — נספרת בחודש שבו נוצרה, בלי קשר אם הכסף כבר ביד.
-            הזמנות לפי תאריך ההזמנה; פרויקטים מחולקים שווה בשווה על חודשי הפרויקט; שאר התחומים לפי
-            תקבולים/הוצאות באותו חודש. הוצאות אשראי לפי תאריך הקנייה. שכר עובדים נספר לפי חודש העבודה
-            (גם אם שולם בחודש שאחרי) — משכורות כלליות לפי שוטף, ופרויקט־ייעודי לפי הפרויקט. סכומים כולל מע״מ.
-            תחומים אישיים/נפרדים (בית/צדקה/ניהול נכסים) אינם נכללים.
+            הזמנות לפי תאריך ההזמנה; פרויקטים מחולקים שווה בשווה על חודשי הפרויקט; שאר ההכנסות (שוטף,
+            שכירות, בית) בחודש שלהן — גם אם עוד לא נגבו. הוצאות לפי התאריך שלהן, גם אם עוד לא שולמו;
+            אשראי לפי תאריך הקנייה. שכר עובדים נספר לפי חודש העבודה, בתחום שבו עבדו. סכומים כולל מע״מ.
+            בית/צדקה וניהול נכסים — רק כשהם מסומנים למעלה.
           </CardDescription>
         </CardHeader>
         <CardContent>

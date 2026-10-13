@@ -21,7 +21,9 @@ import {
   scanWorkerPaymentRows,
   fetchRecurringTemplateMeta,
 } from "./db";
+import { buildPayslipDomainShares } from "./laborSplit";
 import {
+  expandByDomain,
   aggregateProfitLoss,
   aggregateProfitLossProof,
   aggregateExpenseCategories,
@@ -186,6 +188,12 @@ export async function loadFinancialEntries(
       propertyId: row.property_id ?? null,
     });
   }
+  // An hourly payslip worked in several areas: what's paid or owed on it divides
+  // by its shifts, so the areas carry their own wages (lib/financial/laborSplit).
+  const payslipDomainShares = buildPayslipDomainShares(
+    workerPaymentsResult.workerDebtItemRows,
+    workerPaymentsResult.attendanceSessionRows
+  );
   const projectIds = uniqueStrings([
     ...projectRows.map((row) => row.id),
     ...paymentLinks.map((row) => row.projectId),
@@ -276,11 +284,13 @@ export async function loadFinancialEntries(
     workerPaymentById,
     sessionsById: workerPaymentsResult.sessionsById,
     payslipMetaById,
+    payslipDomainShares,
     ...sharedArgs,
   });
   const workerOwedEntries = buildWorkerOwedEntries({
     debtItems: workerPaymentsResult.workerDebtItemRows,
     sessionsById: workerPaymentsResult.sessionsById,
+    payslipDomainShares,
     ...sharedArgs,
   });
   const projectReceivableEntries = buildProjectReceivableEntries({
@@ -333,7 +343,8 @@ export async function loadDomainCashBreakdown(
 ): Promise<DomainCashPoint[]> {
   const entries = preloadedEntries ?? (await loadFinancialEntries(supabase, { from })).entries;
   const byDomain = new Map<string, DomainCashPoint>();
-  for (const entry of entries) {
+  // Wages split by area where the payslip was worked in several (expandByDomain).
+  for (const entry of expandByDomain(entries)) {
     if (entry.stage !== "posted") continue; // real cash only
     if (entry.flowDate < from || entry.flowDate > to) continue;
     // Loan principal/repayments are financing cash, not business income or
@@ -392,7 +403,10 @@ export async function getFinancialPageData(
   const query = normalizeText(filters.q);
   // Entries scoped by the domain filter only — used by the P&L / trend / forecast
   // reports, which (unlike the ledger) must keep both inflow+outflow and all stages.
-  const domainEntries = domain ? entries.filter((entry) => entry.businessDomain === domain) : entries;
+  // With a domain chosen, a wage payment worked in several areas counts only its
+  // share in that area (expandByDomain); with none, every entry stays whole.
+  const domainScopedBase = domain ? expandByDomain(entries) : entries;
+  const domainEntries = domain ? domainScopedBase.filter((entry) => entry.businessDomain === domain) : entries;
 
   const domainOptions = Array.from(
     new Set(entries.map((entry) => entry.businessDomain).filter((value): value is ExpenseBusinessDomain => Boolean(value)))
@@ -411,7 +425,7 @@ export async function getFinancialPageData(
     : [];
   sourceOptions.sort((left, right) => left.label.localeCompare(right.label, "he"));
 
-  const filteredEntries = entries.filter((entry) =>
+  const filteredEntries = domainScopedBase.filter((entry) =>
     matchesEntryFilters(entry, { from, to, domain, sourceId, type, stage, query, referenceDate })
   );
   const forecastEndIso = to || addDaysToIso(referenceDate, 30);

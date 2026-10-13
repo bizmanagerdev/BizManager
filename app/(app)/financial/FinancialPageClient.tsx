@@ -272,9 +272,9 @@ export default function FinancialPageClient({
   const [reportBasis, setReportBasis] = useState<"cash" | "earned">("earned");
   const [includeOpen, setIncludeOpen] = useState(false);
   const [includeHomeCharity, setIncludeHomeCharity] = useState(false);
-  // On by default: rent and property costs are part of the monthly cycle
-  // (owner, 2026-10-13: "yes, turn it on by default").
-  const [includeProperties, setIncludeProperties] = useState(true);
+  // Off by default, like בית וצדקה (owner, 2026-10-13: "I don't want the property
+  // management checkbox to be ticked by default").
+  const [includeProperties, setIncludeProperties] = useState(false);
   // Global domain chips (empty = all) — live in the report control row and filter
   // the by-domain views (לפי תחום / חודשי) across every tab, not just one panel.
   const [selectedReportDomains, setSelectedReportDomains] = useState<string[]>([]);
@@ -1479,7 +1479,12 @@ export default function FinancialPageClient({
         <TabsContent value="monthly" className="space-y-4">
           {reportBasis === "earned" ? (
             earnedRevenue ? (
-              <EarnedRevenuePanel report={earnedRevenue} selectedDomains={selectedReportDomains} />
+              <EarnedRevenuePanel
+                report={earnedRevenue}
+                selectedDomains={selectedReportDomains}
+                includeHomeCharity={includeHomeCharity}
+                includeProperties={includeProperties}
+              />
             ) : (
               <EmptyState>
                 אין נתוני הכנסה להצגה.

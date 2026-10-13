@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEarnedLaborItems, splitPayslipByShifts } from "@/lib/financial/laborSplit";
+import { buildEarnedLaborItems, buildPayslipDomainShares, splitPayslipByShifts } from "@/lib/financial/laborSplit";
 
 // Owner, 2026-10-13: pay goes where it was worked. An hourly payslip is split by
 // its shifts; a monthly ("global") payslip stays whole on its agreement.
@@ -61,7 +61,7 @@ describe("buildEarnedLaborItems", () => {
   const shifts = [
     { user_id: "h1", clock_in: "2026-09-02T05:00:00+00:00", labor_cost: 700, business_domain: "logistics_projects", project_id: "p1" },
     { user_id: "h1", clock_in: "2026-09-03T05:00:00+00:00", labor_cost: 250, business_domain: "sales", project_id: null },
-    // hours for בית: the earned reports take בית from cash, so it stays in שוטף
+    // hours for בית move to בית (shown when "כולל בית וצדקה" is ticked)
     { user_id: "h1", clock_in: "2026-09-04T05:00:00+00:00", labor_cost: 30, business_domain: "home", project_id: null },
     // August shift: belongs to August's payslip, not September's
     { user_id: "h1", clock_in: "2026-08-31T05:00:00+00:00", labor_cost: 999, business_domain: "home", project_id: null },
@@ -72,8 +72,9 @@ describe("buildEarnedLaborItems", () => {
     const h1 = items.filter((i) => i.userId === "h1");
     expect(h1.find((i) => i.projectId === "p1")).toMatchObject({ domain: "logistics_projects", amount: 700, month: "2026-09", date: "2026-09-02" });
     expect(h1.find((i) => i.domain === "sales")).toMatchObject({ amount: 250 });
-    expect(h1.find((i) => i.domain === "general_business")).toMatchObject({ amount: 50, date: "2026-09-01" });
-    expect(h1.some((i) => i.domain === "home")).toBe(false);
+    expect(h1.find((i) => i.domain === "home")).toMatchObject({ amount: 30, date: "2026-09-04" });
+    expect(h1.find((i) => i.domain === "general_business")).toMatchObject({ amount: 20, date: "2026-09-01" });
+    expect(h1.some((i) => i.amount === 999)).toBe(false);
     expect(sum(h1)).toBe(1000);
 
     expect(items.find((i) => i.userId === "c1")).toMatchObject({ projectId: "p2", domain: "logistics_projects", amount: 400 });
@@ -81,5 +82,36 @@ describe("buildEarnedLaborItems", () => {
       { userId: "m1", projectId: "tovel", domain: "logistics_projects", month: "2026-09", date: "2026-09-01", amount: 8000 },
     ]);
     expect(sum(items)).toBe(9400);
+  });
+});
+
+describe("buildPayslipDomainShares — the cash reports divide a payslip the same way", () => {
+  it("gives an hourly payslip its area shares, adding up to 1", () => {
+    const shares = buildPayslipDomainShares(
+      [{ source_type: "payslip", source_id: "ps1", user_id: "h1", period_month: "2026-09", business_domain: "general_business", earned_amount: 1000 }],
+      [
+        { user_id: "h1", clock_in: "2026-09-02T05:00:00+00:00", labor_cost: 600, business_domain: "logistics_projects", project_id: "p1" },
+        { user_id: "h1", clock_in: "2026-09-03T05:00:00+00:00", labor_cost: 100, business_domain: "logistics_projects", project_id: "p2" },
+        { user_id: "h1", clock_in: "2026-09-04T05:00:00+00:00", labor_cost: 200, business_domain: "home", project_id: null },
+      ]
+    );
+    const parts = shares.get("ps1") ?? [];
+    expect(Object.fromEntries(parts.map((p) => [p.domain, p.share]))).toEqual({
+      logistics_projects: 0.7,
+      home: 0.2,
+      general_business: 0.1,
+    });
+  });
+
+  it("leaves out payslips worked only in their own area (a monthly worker, or no shifts)", () => {
+    const shares = buildPayslipDomainShares(
+      [
+        { source_type: "payslip", source_id: "m1", user_id: "m", period_month: "2026-09", business_domain: "logistics_projects", project_id: "tovel", earned_amount: 8000 },
+        { source_type: "payslip", source_id: "g1", user_id: "g", period_month: "2026-09", business_domain: "general_business", earned_amount: 500 },
+        { source_type: "session", source_id: "s1", user_id: "c", period_month: "2026-09", business_domain: "sales", earned_amount: 300 },
+      ],
+      [{ user_id: "g", clock_in: "2026-09-02T05:00:00+00:00", labor_cost: 500, business_domain: "general_business", project_id: null }]
+    );
+    expect(shares.size).toBe(0);
   });
 });

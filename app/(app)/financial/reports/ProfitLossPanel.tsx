@@ -13,7 +13,7 @@ import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
 import type { DomainProofMap } from "@/lib/financial/domainProof";
 import { getBusinessDomainLabel } from "@/lib/expenses";
-import { includePersonalRow } from "@/lib/financial/entries";
+import { includePersonalRow, isPersonalDomain } from "@/lib/financial/entries";
 
 // cash = money in/out this period; accrual = + open debts; earned = booked to the
 // month made. Chosen globally (top control row) and passed in as a prop.
@@ -97,19 +97,23 @@ export default function ProfitLossPanel({
   }, [selectedDomains]);
 
   // Normalize every domain to {domain, domainName, isPersonal, revenue, expense}
-  // for the active basis. Earned pulls from the earned report (business + שוטף);
-  // personal/off-books (home/charity/property_management) always uses actual
-  // cash figures and only when toggled on.
+  // for the active basis. Earned pulls every domain from the earned report — the
+  // personal ones (home/charity/property_management) too, by the same rule as the
+  // rest — and shows those only when their toggle is on.
   const normalizedRows = useMemo(() => {
     if (isEarned && earned) {
-      const biz = earned.domains.map((d) => {
-        const c = earned.totals.byDomain[d.key];
-        return { domain: d.key, domainName: d.label, isPersonal: false, revenue: c?.income ?? 0, expense: c?.expense ?? 0 };
-      });
-      const personal = rows
-        .filter((r) => r.isPersonal && includePersonalRow(r.domain, { includeHomeCharity, includeProperties }))
-        .map((r) => ({ domain: r.domain, domainName: r.domainName, isPersonal: true, revenue: r.cashRevenue, expense: r.cashExpense }));
-      return [...biz, ...personal];
+      return earned.domains
+        .filter((d) => includePersonalRow(d.key, { includeHomeCharity, includeProperties }))
+        .map((d) => {
+          const c = earned.totals.byDomain[d.key];
+          return {
+            domain: d.key,
+            domainName: d.label,
+            isPersonal: isPersonalDomain(d.key),
+            revenue: c?.income ?? 0,
+            expense: c?.expense ?? 0,
+          };
+        });
     }
     return rows
       .filter((r) => !r.isPersonal || includePersonalRow(r.domain, { includeHomeCharity, includeProperties }))

@@ -10,7 +10,7 @@ import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { DomainProofMap, DomainProofItem } from "@/lib/financial/domainProof";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
 import type { ProfitLossProofMap } from "@/lib/financial";
-import { isPropertyPersonalDomain } from "@/lib/financial/entries";
+import { isPersonalDomain, isPropertyPersonalDomain } from "@/lib/financial/entries";
 
 // "cash"    = money that actually moved this period (came in / went out).
 // "earned"  = money I MADE this period — booked to the month the work/sale
@@ -63,9 +63,9 @@ type RowDetail = {
 /**
  * Reports → סקירה: a waterfall "x + y − z = ?" of the whole business.
  *   רווח מכל העסקים (מכירות + פרויקטים + הכנסות אחרות)
+ *     + ניהול נכסים (אופציונלי, בטוגל נפרד — חלק ממה שהרווחתי, גם כשהוא במינוס)
  *     − שוטף (תקורה כללית)
  *     − בית / צדקה (אישי, אופציונלי)
- *     − ניהול נכסים (אופציונלי, בטוגל נפרד)
  *     = מה שנשאר בסוף
  * Each stage shows its contribution and the running "כמה נשאר" after it.
  * Every row is CLICKABLE — it opens to the exact transactions behind the number
@@ -73,7 +73,7 @@ type RowDetail = {
  * always ties to the row: "הרווחתי" uses the earned proof (domainProof +
  * projectBreakdown); "נכנס בפועל"/"כולל פתוחים" use the cash/accrual line-item
  * proof (profitLossProof). Personal/off-books (home/charity/property_management)
- * rows are always cash-basis.
+ * rows follow the same basis, each group behind its own toggle.
  */
 export default function BottomLinePanel({
   rows,
@@ -104,31 +104,36 @@ export default function BottomLinePanel({
     });
 
   const groups = useMemo(() => {
-    // Personal/off-books rows are always actual (cash), from the P&L rows —
-    // split into two INDEPENDENT groups, each only counted when its own
-    // toggle is on: home/charity, and property_management.
-    const personalRows = (predicate: (domain: string | null) => boolean): Row[] =>
-      rows
-        .filter((r) => r.isPersonal && predicate(r.domain))
-        .map((r) => ({ name: r.domainName, net: r.cashRevenue - r.cashExpense, domain: r.domain ?? "" }))
-        .filter((r) => Math.round(r.net) !== 0);
-    const homeCharity: Row[] = includeHomeCharity ? personalRows((d) => !isPropertyPersonalDomain(d)) : [];
-    const properties: Row[] = includeProperties ? personalRows((d) => isPropertyPersonalDomain(d)) : [];
-
+    // Personal/off-books rows are split into two INDEPENDENT groups, each only
+    // counted when its own toggle is on: home/charity, and property_management.
+    // They follow the active basis like every other row (owner, 2026-10-13).
     if (basis === "earned" && earned) {
       const cell = (key: string) => earned.totals.byDomain[key];
+      const toRow = (d: { key: string; label: string }): Row => ({ name: d.label, net: cell(d.key)?.net ?? 0, domain: d.key });
       const business: Row[] = earned.domains
-        .filter((d) => d.key !== "general_business")
-        .map((d) => ({ name: d.label, net: cell(d.key)?.net ?? 0, domain: d.key }))
+        .filter((d) => d.key !== "general_business" && !isPersonalDomain(d.key))
+        .map(toRow)
         .filter((r) => Math.round(r.net) !== 0);
-      const overhead: Row[] = earned.domains
-        .filter((d) => d.key === "general_business")
-        .map((d) => ({ name: d.label, net: cell(d.key)?.net ?? 0, domain: d.key }));
+      const overhead: Row[] = earned.domains.filter((d) => d.key === "general_business").map(toRow);
+      const personal = (predicate: (domain: string) => boolean): Row[] =>
+        earned.domains
+          .filter((d) => isPersonalDomain(d.key) && predicate(d.key))
+          .map(toRow)
+          .filter((r) => Math.round(r.net) !== 0);
+      const homeCharity: Row[] = includeHomeCharity ? personal((d) => !isPropertyPersonalDomain(d)) : [];
+      const properties: Row[] = includeProperties ? personal((d) => isPropertyPersonalDomain(d)) : [];
       return { business, overhead, homeCharity, properties };
     }
 
     const net = (r: ProfitLossDomainRow) =>
       basis === "accrual" ? r.accrualRevenue - r.accrualExpense : r.cashRevenue - r.cashExpense;
+    const personalRows = (predicate: (domain: string | null) => boolean): Row[] =>
+      rows
+        .filter((r) => r.isPersonal && predicate(r.domain))
+        .map((r) => ({ name: r.domainName, net: net(r), domain: r.domain ?? "" }))
+        .filter((r) => Math.round(r.net) !== 0);
+    const homeCharity: Row[] = includeHomeCharity ? personalRows((d) => !isPropertyPersonalDomain(d)) : [];
+    const properties: Row[] = includeProperties ? personalRows((d) => isPropertyPersonalDomain(d)) : [];
     const business: Row[] = rows
       .filter((r) => !r.isPersonal && r.domain !== "general_business")
       .map((r) => ({ name: r.domainName, net: net(r), domain: r.domain ?? "" }))
@@ -139,9 +144,8 @@ export default function BottomLinePanel({
     return { business, overhead, homeCharity, properties };
   }, [basis, rows, earned, includeHomeCharity, includeProperties]);
 
-  // Detail for a row, resolved for the basis that row is displayed on. Business/
-  // overhead rows use the panel basis; personal rows are always cash (that's how
-  // their net is computed above). Earned → earned proof; cash/accrual → line-item
+  // Detail for a row, resolved for the panel basis (every row, personal ones too,
+  // is computed on it above). Earned → earned proof; cash/accrual → line-item
   // proof. Every path ties to the row because it mirrors the same aggregation.
   const detailFor = useMemo(() => {
     return (domain: string, effectiveBasis: Basis): RowDetail | null => {
@@ -196,12 +200,16 @@ export default function BottomLinePanel({
 
   const detailAvailable = basis === "earned" ? !!(domainProof || projectBreakdown) : !!profitLossProof;
 
+  // Order of the steps (owner, 2026-10-13): what the businesses made, then
+  // ניהול נכסים (when ticked — part of what I made, even while it's a minus),
+  // then שוטף comes off, then בית/צדקה.
   const businessTotal = groups.business.reduce((sum, r) => sum + r.net, 0);
-  const overheadTotal = groups.overhead.reduce((sum, r) => sum + r.net, 0);
-  const afterOverhead = businessTotal + overheadTotal;
-  const homeCharityTotal = groups.homeCharity.reduce((sum, r) => sum + r.net, 0);
   const propertiesTotal = groups.properties.reduce((sum, r) => sum + r.net, 0);
-  const finalLeft = afterOverhead + homeCharityTotal + propertiesTotal;
+  const afterProperties = businessTotal + propertiesTotal;
+  const overheadTotal = groups.overhead.reduce((sum, r) => sum + r.net, 0);
+  const afterOverhead = afterProperties + overheadTotal;
+  const homeCharityTotal = groups.homeCharity.reduce((sum, r) => sum + r.net, 0);
+  const finalLeft = afterOverhead + homeCharityTotal;
 
   const hasData =
     groups.business.length || groups.overhead.length || groups.homeCharity.length || groups.properties.length;
@@ -267,14 +275,13 @@ export default function BottomLinePanel({
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">
-                {/* Each step with its own sign: שוטף and בית/צדקה usually take
-                    money away, ניהול נכסים usually adds — "− נכסים -₪X" read
-                    as a double minus once property was on by default. */}
+                {/* The steps in the waterfall's order, each with its own sign
+                    (a minus property result reads "− נכסים ₪X", not "− נכסים -₪X"). */}
                 {`רווח מהעסקים ${formatCurrency(businessTotal)}`}
                 {[
+                  { label: "נכסים", value: propertiesTotal, show: groups.properties.length > 0 },
                   { label: "שוטף", value: overheadTotal, show: true },
                   { label: "בית/צדקה", value: homeCharityTotal, show: groups.homeCharity.length > 0 },
-                  { label: "נכסים", value: propertiesTotal, show: groups.properties.length > 0 },
                 ]
                   .filter((step) => step.show)
                   .map((step) => ` ${step.value < 0 ? "−" : "+"} ${step.label} ${formatCurrency(Math.abs(step.value))}`)
@@ -308,6 +315,17 @@ export default function BottomLinePanel({
                 {runningRow(basis === "earned" ? "סה״כ שהרווחתי" : "רווח מכל העסקים", businessTotal, "__biz_total__")}
               </div>
 
+              {groups.properties.length > 0 ? (
+                <div className="py-2">
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">ועוד ניהול נכסים</div>
+                  {groups.properties
+                    .slice()
+                    .sort((a, b) => b.net - a.net)
+                    .map((r, i) => line(r.name, r.net, `prop-${i}`, r.domain, basis))}
+                  {runningRow("סה״כ עם ניהול נכסים", afterProperties, "__after_properties__")}
+                </div>
+              ) : null}
+
               {groups.overhead.length > 0 ? (
                 <div className="py-2">
                   <div className="mb-1 text-xs font-medium text-muted-foreground">פחות תקורה כללית (שוטף)</div>
@@ -322,19 +340,7 @@ export default function BottomLinePanel({
                   {groups.homeCharity
                     .slice()
                     .sort((a, b) => a.net - b.net)
-                    .map((r, i) => line(r.name, r.net, `hc-${i}`, r.domain, "cash"))}
-                </div>
-              ) : null}
-
-              {groups.properties.length > 0 ? (
-                <div className="pt-2">
-                  <div className="mb-1 text-xs font-medium text-muted-foreground">
-                    {propertiesTotal >= 0 ? "ועוד ניהול נכסים" : "פחות ניהול נכסים"}
-                  </div>
-                  {groups.properties
-                    .slice()
-                    .sort((a, b) => a.net - b.net)
-                    .map((r, i) => line(r.name, r.net, `prop-${i}`, r.domain, "cash"))}
+                    .map((r, i) => line(r.name, r.net, `hc-${i}`, r.domain, basis))}
                 </div>
               ) : null}
 
