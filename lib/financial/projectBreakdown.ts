@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { monthKeysBetween } from "@/lib/financial/earnedRevenue";
+import { loadEarnedLaborItems } from "@/lib/financial/laborSplit";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Per-PROJECT breakdown for a period — the "prove it" detail behind the פרויקטים
@@ -72,7 +73,7 @@ export async function loadProjectPeriodBreakdown(
   const toMonth = to ? to.slice(0, 7) : null;
   const inPeriod = (month: string) => (!fromMonth || month >= fromMonth) && (!toMonth || month <= toMonth);
 
-  const [projectRows, financialRows, expenseRows, debtRows] = await Promise.all([
+  const [projectRows, financialRows, expenseRows, laborItems] = await Promise.all([
     fetchAllPaged<Row>((lo, hi) =>
       supabase.from("projects").select("id,name,start_date,end_date,created_at,status").range(lo, hi)
     ),
@@ -85,9 +86,9 @@ export async function loadProjectPeriodBreakdown(
         .select("project_id,business_domain,amount,expense_date,transaction_date,payment_method")
         .range(lo, hi)
     ),
-    fetchAllPaged<Row>((lo, hi) =>
-      supabase.from("worker_debt_items_view").select("project_id,business_domain,period_month,earned_amount").range(lo, hi)
-    ).catch(() => [] as Row[]),
+    // Labour by the project it was worked for — an hourly payslip worker's project
+    // shifts included (lib/financial/laborSplit), as on the project page.
+    loadEarnedLaborItems(supabase),
   ]);
 
   const finById = new Map<string, { price: number; expenses: number }>();
@@ -114,11 +115,10 @@ export async function loadProjectPeriodBreakdown(
     if (!month || !inPeriod(month)) continue;
     add(str(e.project_id), Math.abs(toNum(e.amount)));
   }
-  for (const d of debtRows) {
-    if (str(d.business_domain) !== PROJECTS_DOMAIN) continue;
-    const month = str(d.period_month);
-    if (!month || !inPeriod(month)) continue;
-    add(str(d.project_id), Math.abs(toNum(d.earned_amount)));
+  for (const item of laborItems) {
+    if (item.domain !== PROJECTS_DOMAIN) continue;
+    if (!item.month || !inPeriod(item.month)) continue;
+    add(item.projectId, item.amount);
   }
 
   const rows: ProjectBreakdownRow[] = [];

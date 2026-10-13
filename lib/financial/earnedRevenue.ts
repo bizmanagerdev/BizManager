@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
+import { loadEarnedLaborItems } from "@/lib/financial/laborSplit";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Earned (booked) revenue, expenses and net per month, per business domain.
@@ -242,7 +243,7 @@ export async function loadEarnedRevenueByMonth(
   supabase: SupabaseClient,
   { from, to }: { from?: string | null; to?: string | null } = {}
 ): Promise<EarnedRevenueReport> {
-  const [orderRows, projectRows, financialRows, expenseRows, paymentRows] = await Promise.all([
+  const [orderRows, projectRows, financialRows, expenseRows, paymentRows, laborItems] = await Promise.all([
     fetchAllPaged<Row>((lo, hi) =>
       supabase.from("order_overview_view").select("order_id,order_date,total_amount,status").range(lo, hi)
     ),
@@ -261,17 +262,13 @@ export async function loadEarnedRevenueByMonth(
     fetchAllPaged<Row>((lo, hi) =>
       supabase.from("payments").select("payment_date,amount_total,business_domain,payment_status").range(lo, hi)
     ),
+    // Worker payroll — EARNED/incurred basis: each worker's cost lands in the month
+    // the work BELONGS to (period_month), not the month it was paid. So a June salary
+    // paid on the 10th of July still counts in June — and in the area it was worked
+    // for (an hourly payslip split by its shifts; see lib/financial/laborSplit). The
+    // cash tab keeps counting wages when PAID.
+    loadEarnedLaborItems(supabase),
   ]);
-
-  // Worker payroll — EARNED/incurred basis: each worker's cost lands in the month
-  // the work BELONGS to (period_month), not the month it was paid. So a June salary
-  // paid on the 10th of July still counts in June. worker_debt_items_view gives the
-  // full incurred amount (earned_amount) + domain for BOTH hourly (labor_cost by
-  // clock_in month) and salaried (gross_salary by payroll month, project-linked when
-  // the agreement points at a project). The cash tab keeps counting wages when PAID.
-  const debtItemRows = await fetchAllPaged<Row>((lo, hi) =>
-    supabase.from("worker_debt_items_view").select("business_domain,period_month,earned_amount").range(lo, hi)
-  ).catch(() => [] as Row[]);
 
   const priceById = new Map<string, number>();
   for (const row of financialRows) {
@@ -307,19 +304,15 @@ export async function loadEarnedRevenueByMonth(
     };
   });
 
-  // Worker labor cost as an incurred expense, in the month it was earned. Both
-  // hourly (session) and salaried (payslip) rows carry period_month + earned_amount;
-  // salaried pay lands in general_business (שוטף) unless the salary agreement points
-  // at a project, in which case worker_debt_items_view already carries that domain.
-  for (const row of debtItemRows) {
-    const amount = Math.abs(toNum(row.earned_amount));
-    if (!(amount > 0)) continue;
-    const month = str(row.period_month);
+  // Worker labor cost as an incurred expense, in the month it was earned and the
+  // area it was worked for: contract shifts as they are, an hourly payslip split by
+  // its shifts, a monthly payslip whole on its agreement's area (or project).
+  for (const item of laborItems) {
     expenses.push({
-      // period_month is "YYYY-MM"; anchor to the 1st so it buckets into that month.
-      date: month ? `${month}-01` : null,
-      amount,
-      domain: str(row.business_domain) ?? "general_business",
+      // month is "YYYY-MM"; anchor to the 1st so it buckets into that month.
+      date: item.month ? `${item.month}-01` : null,
+      amount: item.amount,
+      domain: item.domain,
     });
   }
 

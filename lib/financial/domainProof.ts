@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
+import { loadEarnedLaborItems } from "@/lib/financial/laborSplit";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Per-DOMAIN transaction proof (everything EXCEPT projects, which has its own
@@ -62,7 +63,7 @@ export async function loadDomainProof(
     return b;
   };
 
-  const [orderRows, paymentRows, expenseRows, debtRows] = await Promise.all([
+  const [orderRows, paymentRows, expenseRows, laborItems] = await Promise.all([
     fetchAllPaged<Row>((lo, hi) =>
       supabase.from("order_overview_view").select("order_id,order_date,total_amount,status,customer_name").range(lo, hi)
     ),
@@ -75,9 +76,8 @@ export async function loadDomainProof(
         .select("expense_date,transaction_date,amount,business_domain,payment_method,description,category")
         .range(lo, hi)
     ),
-    fetchAllPaged<Row>((lo, hi) =>
-      supabase.from("worker_debt_items_view").select("user_id,source_date,business_domain,period_month,earned_amount").range(lo, hi)
-    ).catch(() => [] as Row[]),
+    // Same labour split as the domain totals (lib/financial/laborSplit).
+    loadEarnedLaborItems(supabase),
   ]);
 
   // Sales income = each order in its order-date month.
@@ -127,15 +127,15 @@ export async function loadDomainProof(
   // Sessions of the same worker in a month collapse into that worker's line; its
   // date is the latest work/pay date in the group (falls back to the month start).
   const laborByWorker = new Map<string, { domain: string; month: string; userId: string; amount: number; date: string | null }>();
-  for (const d of debtRows) {
-    const domain = str(d.business_domain) ?? "general_business";
+  for (const item of laborItems) {
+    const domain = item.domain;
     if (domain === PROJECTS_DOMAIN) continue;
-    const month = str(d.period_month);
+    const month = item.month;
     if (!month || !inPeriod(month)) continue;
-    const amount = Math.abs(toNum(d.earned_amount));
+    const amount = item.amount;
     if (amount === 0) continue;
-    const userId = str(d.user_id) ?? "__unknown__";
-    const sourceDate = str(d.source_date);
+    const userId = item.userId ?? "__unknown__";
+    const sourceDate = item.date;
     const key = `${domain}|${month}|${userId}`;
     const existing = laborByWorker.get(key);
     if (existing) {
