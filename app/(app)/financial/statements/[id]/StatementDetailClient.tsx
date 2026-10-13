@@ -16,16 +16,30 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
-import { ViewDialog } from "@/components/ui/view-dialog";
 import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
-import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { DocumentDownloadLink } from "@/components/ui/document-tile";
-import { CheckIcon, LinkIcon } from "@/components/ui/icons";
+import { CheckIcon, MoreIcon } from "@/components/ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { resolveSplit, type SplitPartDraft } from "@/lib/financial/statementSplit";
+import {
+  roundShekels,
+  statementRowMode,
+  summarizeStatement,
+  toAgorot,
+  type CardSummary,
+} from "@/lib/financial/cardStatementMath";
 import { StatementRowSplit, emptySplitPart } from "./StatementRowSplit";
+import { StatementSteps, StatusChip, firstOpenStep, type StatementStepId } from "./StatementSteps";
 import { israelDateKey } from "@/lib/timezone";
 
 type Option = { id: string; name: string };
@@ -49,10 +63,16 @@ export type StatementRowView = {
   notes: string;
   assignmentRaw: string;
   include: boolean;
-  // Income side — a row can also be recorded as a customer payment (independent of the expense).
+  // Income side — a purchase can also be recorded as a customer payment (independent of the
+  // expense); a refund line (negative amount) is recorded as income in its domain.
   incomePaymentId: string | null;
   incomeExists: boolean;
   incomeAmount: number;
+  /** The linked expense's own bank account — set when the line was matched to an
+   *  expense typed by hand with one, which leaves the bank on its own. */
+  expenseAccountId: string | null;
+  /** "לחיוב לקוח" — a project line the project's customer pays (project_expenses.billed_to_customer). */
+  billToCustomer: boolean;
 };
 
 // Payment methods offered for statement income (no check flow here — use the financial page for that).
@@ -122,12 +142,9 @@ function formatDateTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
 }
 
-type RowMode = "draft" | "created" | "deleted";
-function rowMode(row: StatementRowView): RowMode {
-  if (row.expenseExists) return "created";
-  if (row.expenseId) return "deleted"; // had an expense, since deleted
-  return "draft"; // never materialized — assignable here
-}
+// draft = not recorded yet (assignable here); created = a purchase has its expense, a
+// refund its income; deleted = that record was deleted since.
+const rowMode = statementRowMode;
 
 // A row whose original שיוך is an "X" (marked as not the cardholder's / not mine).
 function isXRow(assignmentRaw: string): boolean {
@@ -144,6 +161,8 @@ export default function StatementDetailClient({
   fileUrl,
   cardCharges: initialCardCharges,
   cardAccountDefaults,
+  accounts,
+  billToCustomerAvailable,
 }: {
   statement: Statement;
   rows: StatementRowView[];
@@ -156,6 +175,10 @@ export default function StatementDetailClient({
   /** Remembered card → account choice (card_key → account_id), for a card
    *  that hasn't been charged in THIS statement yet. */
   cardAccountDefaults: Record<string, string>;
+  /** Account names, for the bank step's "02/10/26 · מזרחי בית". */
+  accounts: Option[];
+  /** False until card_statement_rows.bill_to_customer exists in the database. */
+  billToCustomerAvailable: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -174,12 +197,9 @@ export default function StatementDetailClient({
   const [createNotice, setCreateNotice] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // The 3 supplementary panels (create expenses / charge card / income from
-  // card) open in a dialog on demand instead of sitting inline — 3 stacked
-  // cards pushed the actual row table too far down the page.
-  const [actionDialogOpen, setActionDialogOpen] = useState(false);
-  const [chargeListOpen, setChargeListOpen] = useState(false);
-  const [incomeListOpen, setIncomeListOpen] = useState(false);
+  // The step on screen. null = follow the work (the first step still open), so
+  // finishing one step moves the page on to the next by itself.
+  const [chosenStep, setChosenStep] = useState<StatementStepId | null>(null);
 
   const [markedDone, setMarkedDone] = useState(statement.markedDone);
   const [markingDone, setMarkingDone] = useState(false);
@@ -211,6 +231,11 @@ export default function StatementDetailClient({
   const [chargeSaving, setChargeSaving] = useState(false);
   const [chargeError, setChargeError] = useState<string | null>(null);
   const [chargeToDelete, setChargeToDelete] = useState<{ id: string; label: string } | null>(null);
+  // A card whose lines are also hand-typed expenses with their own bank account
+  // (counted twice in the bank balance), waiting for "העברה לחיוב הכרטיס" to be confirmed.
+  const [twiceCard, setTwiceCard] = useState<CardSummary | null>(null);
+  const [movingTwice, setMovingTwice] = useState(false);
+  const [moveTwiceError, setMoveTwiceError] = useState<string | null>(null);
   const [chargeDeleting, setChargeDeleting] = useState(false);
   const [chargeDeleteError, setChargeDeleteError] = useState<string | null>(null);
 
@@ -247,48 +272,60 @@ export default function StatementDetailClient({
     return [...map.entries()].map(([label, v]) => ({ label, ...v }));
   }, [rows]);
 
-  // Cards (by stable card identity, NOT category), for the "record the bank
-  // charge" section — grouped from EVERY row (unlike incomeCards' include-only
-  // filter): the amount the bank actually charges the card covers every line
-  // on the statement, refunds and X-marked rows included, regardless of
-  // whether it becomes a business expense. This is only a starting default —
-  // fully editable against the real bank statement number.
-  const cardGroups = useMemo(() => {
-    const map = new Map<string, { rowIds: string[]; netAmount: number; dateCounts: Map<string, number> }>();
-    for (const r of rows) {
-      const key = r.cardLabel || "כרטיס אשראי";
-      const cur = map.get(key) ?? { rowIds: [], netAmount: 0, dateCounts: new Map<string, number>() };
-      cur.rowIds.push(r.id);
-      cur.netAmount += r.amount;
-      const d = r.expenseDate;
-      if (d) cur.dateCounts.set(d, (cur.dateCounts.get(d) ?? 0) + 1);
-      map.set(key, cur);
-    }
-    return [...map.entries()].map(([label, v]) => {
-      // The billing date most of this card's rows share (typically all of them).
-      let chargeDate = "";
-      let bestCount = 0;
-      for (const [d, c] of v.dateCounts) {
-        if (c > bestCount) { bestCount = c; chargeDate = d; }
-      }
-      return { label, rowIds: v.rowIds, netAmount: v.netAmount, chargeDate };
-    });
-  }, [rows]);
+  // The statement's money per card and where it stands in its steps (see
+  // lib/financial/cardStatementMath.ts). Cards are grouped by the stable card
+  // identity, never the editable category, and from EVERY line: the bank takes
+  // refunds and "לא לתיעוד" lines with the rest.
+  const steps = useMemo(() => summarizeStatement(rows, cardCharges), [rows, cardCharges]);
+  const cardGroups = steps.cards;
+  const activeStep = chosenStep ?? firstOpenStep(steps, markedDone);
+  const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? "";
+  const chargeCard = chargeCardLabel ? cardGroups.find((c) => c.label === chargeCardLabel) ?? null : null;
 
   function chargeFor(label: string): CardChargeView | undefined {
     return cardCharges.find((c) => c.cardLabel === label);
   }
 
-  function openCharge(group: { label: string; netAmount: number; chargeDate: string }) {
-    const existing = chargeFor(group.label);
-    setChargeCardLabel(group.label);
+  // Pre-filled from the lines (in whole agorot) and the account this card used last
+  // time; the bank's real number is typed over it when it differs.
+  function openCharge(card: CardSummary) {
+    const existing = chargeFor(card.label);
+    setChargeCardLabel(card.label);
     setChargeForm({
-      accountId: existing?.accountId ?? cardAccountDefaults[norm(group.label)] ?? "",
-      amount: String(existing?.amount ?? (group.netAmount > 0 ? group.netAmount : "")),
-      chargeDate: existing?.chargeDate || group.chargeDate || todayIso,
+      accountId: existing?.accountId ?? cardAccountDefaults[norm(card.label)] ?? "",
+      amount: String(existing?.amount ?? (card.bill > 0 ? roundShekels(card.bill) : "")),
+      chargeDate: existing?.chargeDate || card.usualDate || todayIso,
       notes: existing?.notes ?? "",
     });
     setChargeError(null);
+  }
+
+  async function moveCountedTwice() {
+    if (!twiceCard || movingTwice) return;
+    setMovingTwice(true);
+    setMoveTwiceError(null);
+    try {
+      const res = await fetch("/api/expenses/statement-rows/move-to-card", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ statement_id: statement.id, expense_ids: twiceCard.countedTwiceExpenseIds }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setMoveTwiceError(toHebrewError(data.error, "העברת ההוצאות לחיוב הכרטיס נכשלה."));
+        return;
+      }
+      const moved = new Set(twiceCard.countedTwiceExpenseIds);
+      setRows((prev) => prev.map((r) => (r.expenseId && moved.has(r.expenseId) ? { ...r, expenseAccountId: null } : r)));
+      setTwiceCard(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch {
+      setMoveTwiceError("העברת ההוצאות לחיוב הכרטיס נכשלה.");
+    } finally {
+      setMovingTwice(false);
+    }
   }
 
   function patchCharge(patch: Partial<ChargeForm>) {
@@ -301,7 +338,7 @@ export default function StatementDetailClient({
       setChargeError("יש לבחור חשבון.");
       return;
     }
-    const amountNum = Number(chargeForm.amount);
+    const amountNum = roundShekels(Number(chargeForm.amount));
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setChargeError("יש להזין סכום תקין.");
       return;
@@ -337,6 +374,7 @@ export default function StatementDetailClient({
       setCardCharges((prev) => [...prev.filter((c) => c.cardLabel !== chargeCardLabel), saved]);
       setChargeCardLabel(null);
       setChargeForm(null);
+      setChosenStep(null);
       startTransition(() => {
         router.refresh();
       });
@@ -369,7 +407,8 @@ export default function StatementDetailClient({
     }
   }
 
-  function openMerge(group: { label: string; rowIds: string[] }) {
+  function openMerge(card: CardSummary) {
+    const group = { label: card.label, rowIds: rows.filter((r) => (r.cardLabel || "כרטיס אשראי") === card.label).map((r) => r.id) };
     setMergeGroup(group);
     setMergeTarget("");
     setMergeError(null);
@@ -513,7 +552,8 @@ export default function StatementDetailClient({
 
   // Flag not-yet-created rows that look like an existing expense (so they're not duplicated).
   async function checkDuplicates(list: StatementRowView[]) {
-    const candidates = list.filter((r) => !r.expenseExists && !r.expenseId);
+    // Purchases only: a refund becomes income, never an expense to double.
+    const candidates = list.filter((r) => r.amount > 0 && !r.expenseExists && !r.expenseId);
     const dates = candidates
       .flatMap((r) => [r.transactionDate, r.expenseDate])
       .filter(Boolean)
@@ -605,17 +645,18 @@ export default function StatementDetailClient({
     void saveRowInline(rowId, { businessDomain: domain, projectId: "", propertyId: "" });
   }
 
-  // Eligible for expense creation: a draft row that's included, assigned, and positive.
+  // Ready to record: a draft line that's ticked and has a domain — a purchase becomes
+  // an expense, a refund an income in its domain.
   const eligibleRows = useMemo(
     () =>
       rows.filter(
-        (r) => !r.expenseExists && !r.expenseId && r.include && isExpenseBusinessDomain(r.businessDomain) && r.amount > 0
+        (r) => rowMode(r) === "draft" && r.include && isExpenseBusinessDomain(r.businessDomain) && r.amount !== 0
       ),
     [rows]
   );
-  const createdLocal = rows.filter((r) => r.expenseExists).length;
+  const eligibleRefundCount = eligibleRows.filter((r) => r.amount < 0).length;
   const dupRowIds = useMemo(
-    () => rows.filter((r) => !r.expenseExists && !r.expenseId && dupByRowId[r.id]).map((r) => r.id),
+    () => rows.filter((r) => r.amount > 0 && rowMode(r) === "draft" && dupByRowId[r.id]).map((r) => r.id),
     [rows, dupByRowId]
   );
   const showAssignmentRef = rows.some((r) => r.assignmentRaw);
@@ -701,27 +742,15 @@ export default function StatementDetailClient({
 
   // Draft rows marked "X". The toggle unchecks them all (or re-checks if none are checked).
   const xDraftRows = useMemo(
-    () => rows.filter((r) => !r.expenseExists && !r.expenseId && isXRow(r.assignmentRaw)),
+    () => rows.filter((r) => rowMode(r) === "draft" && isXRow(r.assignmentRaw)),
     [rows]
   );
   const checkedXCount = xDraftRows.filter((r) => r.include).length;
   // Toggle is "on" (X rows excluded) when none of them are still checked.
   const xExcluded = xDraftRows.length > 0 && checkedXCount === 0;
 
-  // Progress buckets — shown in the summary bar so the user can see where they left off.
-  const progressCounts = useMemo(() => {
-    let created = 0, ready = 0, needsDomain = 0, excluded = 0;
-    for (const r of rows) {
-      const m = rowMode(r);
-      if (m === "created") { created++; continue; }
-      if (m === "deleted") continue;
-      if (!r.include) { excluded++; continue; }
-      if (r.businessDomain) ready++;
-      else needsDomain++;
-    }
-    return { created, ready, needsDomain, excluded };
-  }, [rows]);
-  const hasPending = progressCounts.ready > 0 || progressCounts.needsDomain > 0;
+  const pendingCount = steps.assign.ready + steps.assign.needsDomain;
+  const hasPending = pendingCount > 0;
 
   // Navigation guard — fires for browser refresh/close AND Next.js client-side link clicks.
   useEffect(() => {
@@ -795,6 +824,9 @@ export default function StatementDetailClient({
   async function toggleDone() {
     if (markingDone) return;
     const next = !markedDone;
+    // "סיום" waits for every line recorded and every card's bank charge; the
+    // panel names what's missing (owner, 2026-10-12: the August charge was skipped).
+    if (next && !steps.canFinish) return;
     setMarkingDone(true);
     setCreateError(null);
     try {
@@ -804,6 +836,7 @@ export default function StatementDetailClient({
         return;
       }
       setMarkedDone(next);
+      setChosenStep(null);
       // Invalidate the cached list route so the "בוצע" status shows there too.
       startTransition(() => {
         router.refresh();
@@ -828,6 +861,7 @@ export default function StatementDetailClient({
       });
       const data = (await res.json().catch(() => ({}))) as {
         created?: number;
+        refunds?: number;
         skipped?: number;
         errors?: { id: string; message: string }[];
         error?: string;
@@ -837,10 +871,11 @@ export default function StatementDetailClient({
         return;
       }
       const parts = [`נוצרו ${data.created ?? 0} הוצאות`];
+      if (data.refunds) parts.push(`${data.refunds} זיכויים נרשמו כהכנסה`);
       if (data.skipped) parts.push(`${data.skipped} דולגו`);
       if (data.errors && data.errors.length) parts.push(`${data.errors.length} שגיאות`);
       setCreateNotice(parts.join(" · "));
-      setActionDialogOpen(false);
+      setChosenStep(null);
       startTransition(() => {
         router.refresh();
       });
@@ -880,11 +915,14 @@ export default function StatementDetailClient({
       await saveSplit(draft, split);
       return;
     }
-    // A row that already created an expense must keep a valid domain (the expense needs one).
-    if (draft.expenseExists && !isExpenseBusinessDomain(draft.businessDomain)) {
+    // A recorded line must keep a valid domain (its expense or refund income needs one).
+    if (rowMode(draft) === "created" && !isExpenseBusinessDomain(draft.businessDomain)) {
       setError("יש לבחור תחום עסקי.");
       return;
     }
+    const isRefund = draft.amount < 0;
+    const onProject = draft.businessDomain === "logistics_projects" && !isRefund;
+    const billToCustomer = onProject && Boolean(draft.projectId) && draft.billToCustomer;
     setSaving(true);
     setError(null);
     try {
@@ -894,8 +932,9 @@ export default function StatementDetailClient({
         body: JSON.stringify({
           row_id: draft.id,
           business_domain: draft.businessDomain,
-          project_id: draft.businessDomain === "logistics_projects" ? draft.projectId || null : null,
-          property_id: draft.businessDomain === "property_management" ? draft.propertyId || null : null,
+          // A refund is recorded on its domain only — never as a project's or property's money.
+          project_id: onProject ? draft.projectId || null : null,
+          property_id: draft.businessDomain === "property_management" && !isRefund ? draft.propertyId || null : null,
           amount: draft.amount,
           category: draft.category,
           card_label: draft.cardLabel,
@@ -904,6 +943,7 @@ export default function StatementDetailClient({
           expense_date: draft.expenseDate,
           transaction_date: draft.transactionDate || null,
           include: draft.include,
+          ...(billToCustomerAvailable ? { bill_to_customer: billToCustomer } : null),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -913,8 +953,9 @@ export default function StatementDetailClient({
       }
       const normalized: StatementRowView = {
         ...draft,
-        projectId: draft.businessDomain === "logistics_projects" ? draft.projectId : "",
-        propertyId: draft.businessDomain === "property_management" ? draft.propertyId : "",
+        projectId: onProject ? draft.projectId : "",
+        propertyId: draft.businessDomain === "property_management" && !isRefund ? draft.propertyId : "",
+        billToCustomer,
       };
       setRows((prev) => prev.map((r) => (r.id === normalized.id ? normalized : r)));
       cancelEdit();
@@ -1008,6 +1049,8 @@ export default function StatementDetailClient({
         incomePaymentId: null,
         incomeExists: false,
         incomeAmount: 0,
+        expenseAccountId: null,
+        billToCustomer: false,
       }));
       setRows((prev) => prev.flatMap((r) => (r.id === current.id ? [original, ...added] : [r])));
       cancelEdit();
@@ -1023,22 +1066,15 @@ export default function StatementDetailClient({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">{statement.fileName || "פירוט אשראי"}</h1>
-          <p className="text-sm text-muted-foreground">
-            {formatDateTime(statement.createdAt)} · {statement.source === "pdf" ? "PDF" : "Excel/CSV"} ·{" "}
-            {createdLocal} מתוך {rows.length} הוצאות נוצרו
-            {markedDone ? (
-              <span className="ms-2 rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-soft-foreground">בוצע</span>
-            ) : createdLocal === 0 ? (
-              <span className="ms-2 rounded bg-warning-soft px-1.5 py-0.5 text-xs text-warning-soft-foreground">
-                ממתין לשיוך
-              </span>
-            ) : null}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span>
+              {formatDateTime(statement.createdAt)} · {statement.source === "pdf" ? "PDF" : "Excel/CSV"} · {rows.length} שורות ·{" "}
+              {cardGroups.length === 1 ? "כרטיס אחד" : `${cardGroups.length} כרטיסים`}
+            </span>
+            <StatusChip steps={steps} markedDone={markedDone} />
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant={markedDone ? "outline" : "secondary"} size="sm" onClick={() => void toggleDone()} disabled={markingDone}>
-            {markingDone ? "שומר..." : markedDone ? "בטל סימון בוצע" : "סמן כבוצע"}
-          </Button>
           {fileUrl ? (
             // It said הורדה and opened the file in a tab; now it saves it, under
             // its own name, on a computer and in the phone app (owner,
@@ -1048,6 +1084,27 @@ export default function StatementDetailClient({
                 הורדת הקובץ
               </DocumentDownloadLink>
             </Button>
+          ) : null}
+          {incomeCards.length > 0 ? (
+            // "The whole card is someone's payment for a job" — rare (the Eckstein card, now
+            // over), so it waits behind ⋯ instead of taking a button in the steps.
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" aria-label="פעולות נוספות">
+                  <MoreIcon className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  הכנסה מכרטיס — כשהקניות בכרטיס הן תשלום של מישהו עבור עבודה
+                </DropdownMenuLabel>
+                {incomeCards.map((card) => (
+                  <DropdownMenuItem key={card.label} onSelect={() => openCardIncome(card)}>
+                    {card.label} · {formatCurrency(card.sum)} ({card.rowIds.length})
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : null}
           <DeleteButton
             label="מחיקת פירוט"
@@ -1084,163 +1141,38 @@ export default function StatementDetailClient({
         ) : null}
       </div>
 
-      {/* Progress summary — shows where the user is holding at a glance */}
-      <div className="flex flex-wrap gap-3 text-sm">
-        <div className="flex items-center gap-1.5 rounded-md border bg-success-soft/20 px-3 py-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-success-soft-foreground/60" />
-          <span className="font-medium">{progressCounts.created}</span>
-          <span className="text-muted-foreground">נוצרו</span>
-        </div>
-        {progressCounts.ready > 0 ? (
-          <div className="flex items-center gap-1.5 rounded-md border bg-info-soft/20 px-3 py-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-info-soft-foreground/60" />
-            <span className="font-medium">{progressCounts.ready}</span>
-            <span className="text-muted-foreground">מוכנות ליצירה</span>
-          </div>
-        ) : null}
-        {progressCounts.needsDomain > 0 ? (
-          <div className="flex items-center gap-1.5 rounded-md border bg-warning-soft/20 px-3 py-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-warning-soft-foreground/60" />
-            <span className="font-medium">{progressCounts.needsDomain}</span>
-            <span className="text-muted-foreground">ממתינות לשיוך</span>
-          </div>
-        ) : null}
-        {progressCounts.excluded > 0 ? (
-          <div className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 opacity-60">
-            <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/40" />
-            <span className="font-medium">{progressCounts.excluded}</span>
-            <span className="text-muted-foreground">לא לתיעוד</span>
-          </div>
-        ) : null}
-      </div>
-
-      {/* The 3 supplementary actions live behind a button + dialog now, so the
-          row table isn't pushed down the page by 3 stacked cards. */}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => setActionDialogOpen(true)}>
-          יצירת הוצאות ({eligibleRows.length})
-        </Button>
-        {cardGroups.length > 0 ? (
-          <Button variant="outline" size="sm" onClick={() => setChargeListOpen(true)}>
-            חיוב כרטיס בחשבון{cardCharges.length > 0 ? ` (${cardCharges.length})` : ""}
-          </Button>
-        ) : null}
-        {incomeCards.length > 0 ? (
-          <Button variant="outline" size="sm" onClick={() => setIncomeListOpen(true)}>
-            הכנסה מכרטיס
-          </Button>
-        ) : null}
-      </div>
+      <StatementSteps
+        steps={steps}
+        markedDone={markedDone}
+        activeStep={activeStep}
+        onStepChange={setChosenStep}
+        assign={{
+          eligibleCount: eligibleRows.length,
+          refundCount: eligibleRefundCount,
+          creating,
+          busy: savingRowId !== null,
+          onCreate: () => void createExpenses(),
+          xToggle: xDraftRows.length > 0 ? { count: xDraftRows.length, excluded: xExcluded, onToggle: () => void toggleXRows() } : null,
+          duplicates: dupRowIds.length > 0 ? { count: dupRowIds.length, onUncheck: () => void uncheckDuplicates() } : null,
+        }}
+        bank={{
+          accountName,
+          onRecord: openCharge,
+          onDelete: (card) => {
+            const existing = chargeFor(card.label);
+            if (existing) setChargeToDelete({ id: existing.id, label: `${card.label} · ${formatCurrency(existing.amount)}` });
+          },
+          onMerge: openMerge,
+          onFixCountedTwice: (card) => {
+            setMoveTwiceError(null);
+            setTwiceCard(card);
+          },
+        }}
+        finish={{ busy: markingDone, onFinish: () => void toggleDone(), onReopen: () => void toggleDone() }}
+      />
       {createNotice ? <p className="text-sm text-success-soft-foreground">{createNotice}</p> : null}
       {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
       {rowError ? <p className="text-sm text-destructive">{rowError}</p> : null}
-
-      {/* Create expenses: assign hint + duplicate helpers + the create CTA */}
-      <ViewDialog
-        open={actionDialogOpen}
-        onOpenChange={setActionDialogOpen}
-        title="יצירת הוצאות"
-        description={'בחר/י תחום עסקי לכל שורה בטבלה למטה (עמודת "שיוך מקורי" מציגה את מה שסומן בקובץ), ואז צור/י את ההוצאות.'}
-      >
-        <div className="space-y-3">
-          {dupRowIds.length > 0 ? (
-            <p className="text-sm text-warning-soft-foreground">זוהו {dupRowIds.length} כפילויות אפשריות מול הוצאות קיימות.</p>
-          ) : null}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {xDraftRows.length > 0 ? (
-              <label className="flex items-center gap-2 text-sm" title="בטל את הסימון 'להוצאה' לכל שורות ה-X בבת אחת">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={xExcluded}
-                  onClick={() => void toggleXRows()}
-                  disabled={creating}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-                    xExcluded ? "bg-primary" : "bg-muted-foreground/30"
-                  }`}
-                >
-                  <span
-                    className={`absolute h-4 w-4 rounded-full bg-background shadow transition-all ${
-                      xExcluded ? "left-0.5" : "right-0.5"
-                    }`}
-                  />
-                </button>
-                <span>בטל סימון שורות X ({xDraftRows.length})</span>
-              </label>
-            ) : null}
-            {dupRowIds.length > 0 ? (
-              <Button variant="outline" size="sm" onClick={() => void uncheckDuplicates()} disabled={creating}>
-                אל תיצור הוצאה לכפילויות
-              </Button>
-            ) : null}
-          </div>
-          <Button
-            className="w-full"
-            onClick={() => void createExpenses()}
-            disabled={creating || savingRowId !== null || eligibleRows.length === 0}
-          >
-            {creating ? "יוצר..." : `צור הוצאות (${eligibleRows.length})`}
-          </Button>
-          {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
-        </div>
-      </ViewDialog>
-
-      {/* Charge the card's statement total onto a bank account — ONE lump sum
-          per card, matching the real bank statement, instead of every itemized
-          line. The itemized expenses above are unaffected (still per-domain). */}
-      <ViewDialog
-        open={chargeListOpen}
-        onOpenChange={setChargeListOpen}
-        title="חיוב כרטיס בחשבון"
-        description="רשום/י כמה הכרטיס חייב את חשבון הבנק בפועל — סכום אחד כולל, ולא כל שורה בנפרד. ברירת המחדל היא סכום כל שורות הכרטיס; אפשר לשנות אותו כדי שיתאים בדיוק לדף הבנק."
-      >
-        <div className="space-y-3">
-          {cardGroups.length > 1 ? (
-            <p className="text-xs text-muted-foreground">
-              אם שינוי קטגוריה בשורה יצר כאן בטעות כרטיס נוסף (שאינו קיים באמת) — לחצו על סמל המיזוג כדי לאחד אותו לתוך
-              הכרטיס האמיתי.
-            </p>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            {cardGroups.map((group) => {
-              const existing = chargeFor(group.label);
-              const mergeButton =
-                cardGroups.length > 1 ? (
-                  <IconButton
-                    icon={LinkIcon}
-                    label={`מיזוג "${group.label}" לתוך כרטיס אחר`}
-                    variant="ghost"
-                    onClick={() => openMerge(group)}
-                  />
-                ) : null;
-              return existing ? (
-                <div
-                  key={group.label}
-                  className="flex items-center gap-1.5 rounded-md border bg-success-soft/15 px-2 py-1 text-xs"
-                >
-                  <span className="font-medium">{group.label}</span>
-                  <span>· {formatCurrency(existing.amount)} · {formatIsoDisplay(existing.chargeDate)}</span>
-                  <EditButton label="עריכת חיוב" onClick={() => openCharge(group)} />
-                  <DeleteButton
-                    label="מחיקת חיוב"
-                    onClick={() =>
-                      setChargeToDelete({ id: existing.id, label: `${group.label} · ${formatCurrency(existing.amount)}` })
-                    }
-                  />
-                  {mergeButton}
-                </div>
-              ) : (
-                <div key={group.label} className="flex items-center gap-1">
-                  <Button variant="outline" size="sm" onClick={() => openCharge(group)}>
-                    {group.label} · {formatCurrency(group.netAmount)}
-                  </Button>
-                  {mergeButton}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </ViewDialog>
 
       {/* Merge a phantom card group (created by editing a row's category)
           into its real card — see reassignCardStatementRows() */}
@@ -1273,25 +1205,6 @@ export default function StatementDetailClient({
         ) : null}
       </FormDialog>
 
-      {/* Income from cards: when a card's charges are really someone's payment for a job */}
-      <ViewDialog
-        open={incomeListOpen}
-        onOpenChange={setIncomeListOpen}
-        title="צור הכנסה מכרטיס"
-        description={
-          'אם ההוצאות בכרטיס הן למעשה תשלום של מישהו עבור עבודה — צור/י הכנסה אחת לכל הכרטיס (תקבול מהלקוח), בנוסף להוצאות. ' +
-          'הסכום מחושב מהשורות המסומנות "להוצאה" (שורות X / "לא לתעד" שאינן מסומנות לא נכללות).'
-        }
-      >
-        <div className="flex flex-wrap gap-2">
-          {incomeCards.map((card) => (
-            <Button key={card.label} variant="outline" size="sm" onClick={() => openCardIncome(card)}>
-              {card.label} · {formatCurrency(card.sum)} ({card.rowIds.length})
-            </Button>
-          ))}
-        </div>
-      </ViewDialog>
-
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-auto">
@@ -1314,7 +1227,8 @@ export default function StatementDetailClient({
               <tbody className="divide-y">
                 {rows.map((row) => {
                   const mode = rowMode(row);
-                  const dup = mode === "draft" ? dupByRowId[row.id] : null;
+                  const isRefund = row.amount < 0;
+                  const dup = mode === "draft" && !isRefund ? dupByRowId[row.id] : null;
 
                   // Row background: dup check overrides domain-readiness colors.
                   let rowBg = "";
@@ -1329,7 +1243,15 @@ export default function StatementDetailClient({
                     <tr key={row.id} className={`align-top ${rowBg}`}>
                       {/* Status / include */}
                       <td className="px-3 py-2">
-                        {mode === "created" ? (
+                        {mode === "created" && isRefund ? (
+                          <Link
+                            href={`/financial?focus=${encodeURIComponent(`payment:${row.incomePaymentId}`)}`}
+                            title="הזיכוי נרשם כהכנסה בתחום שלו"
+                            className="whitespace-nowrap rounded bg-info-soft px-1.5 py-0.5 text-xs text-info-soft-foreground hover:underline"
+                          >
+                            זיכוי · הכנסה
+                          </Link>
+                        ) : mode === "created" ? (
                           row.expenseId ? (
                             <Link
                               href={`/financial?focus=${encodeURIComponent(`expense:${row.expenseId}`)}`}
@@ -1341,22 +1263,36 @@ export default function StatementDetailClient({
                             <span className="rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-soft-foreground">נוצרה</span>
                           )
                         ) : mode === "deleted" ? (
-                          <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs text-warning-soft-foreground">נמחקה</span>
+                          <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs text-warning-soft-foreground">
+                            {isRefund ? "ההכנסה נמחקה" : "נמחקה"}
+                          </span>
                         ) : (
-                          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <input
-                              type="checkbox"
-                              checked={row.include}
-                              disabled={savingRowId === row.id}
-                              onChange={(e) => void saveRowInline(row.id, { include: e.target.checked })}
-                            />
-                            להוצאה
-                          </label>
+                          <div className="space-y-1">
+                            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <input
+                                type="checkbox"
+                                checked={row.include}
+                                disabled={savingRowId === row.id}
+                                onChange={(e) => void saveRowInline(row.id, { include: e.target.checked })}
+                              />
+                              {isRefund ? "להכנסה" : "להוצאה"}
+                            </label>
+                            {isRefund ? (
+                              <span
+                                title="זיכוי — יירשם כהכנסה בתחום שלו, בתאריך החיוב של הכרטיס"
+                                className="inline-block rounded bg-info-soft px-1.5 py-0.5 text-[0.647rem] font-medium text-info-soft-foreground"
+                              >
+                                זיכוי
+                              </span>
+                            ) : null}
+                          </div>
                         )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">{formatIsoDisplay(row.expenseDate)}</td>
                       <td className="px-3 py-2">{row.description || "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-medium">{formatCurrency(row.amount)}</td>
+                      <td className={`whitespace-nowrap px-3 py-2 font-medium ${isRefund ? "text-success-soft-foreground" : ""}`}>
+                        {formatCurrency(row.amount)}
+                      </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{row.category || "—"}</td>
                       {showAssignmentRef ? (
                         <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">{row.assignmentRaw || "—"}</td>
@@ -1377,7 +1313,10 @@ export default function StatementDetailClient({
                       </td>
                       {/* Project / property */}
                       <td className="px-3 py-2">
-                        {mode === "draft" && row.businessDomain === "logistics_projects" ? (
+                        {isRefund ? (
+                          // A refund is income on its domain only — never a customer's payment.
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : mode === "draft" && row.businessDomain === "logistics_projects" ? (
                           <ProjectPicker
                             value={row.projectId}
                             disabled={savingRowId === row.id || !row.include}
@@ -1409,6 +1348,14 @@ export default function StatementDetailClient({
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
+                        {row.billToCustomer && row.projectId && !isRefund ? (
+                          <span
+                            title="הפרויקט מחייב את הלקוח על השורה הזו"
+                            className="mt-1 block w-fit rounded bg-warning-soft px-1.5 py-0.5 text-[0.647rem] font-medium text-warning-soft-foreground"
+                          >
+                            לחיוב לקוח
+                          </span>
+                        ) : null}
                       </td>
                       {showDupCol ? (
                         <td className="px-3 py-2">
@@ -1448,7 +1395,9 @@ export default function StatementDetailClient({
                       ) : null}
                       {/* Income */}
                       <td className="px-3 py-2">
-                        {row.incomeExists ? (
+                        {isRefund ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : row.incomeExists ? (
                           <span
                             title={`נרשמה הכנסה: ${formatCurrency(row.incomeAmount)}`}
                             className="inline-block rounded bg-info-soft px-1.5 py-0.5 text-xs font-medium text-info-soft-foreground"
@@ -1493,7 +1442,7 @@ export default function StatementDetailClient({
         }}
         title="לצאת מהפירוט?"
         description={
-          `יש ${progressCounts.ready + progressCounts.needsDomain} שורות שטרם נוצרו כהוצאות. ` +
+          `יש ${pendingCount} שורות שעוד לא נרשמו. ` +
           "הנתונים שמורים — תוכל/י לחזור בכל עת."
         }
         cancelLabel="המשך בפירוט"
@@ -1514,9 +1463,11 @@ export default function StatementDetailClient({
         }}
         title="עריכת שורה"
         description={
-          draft?.expenseExists
-            ? "העדכון יישמר בהוצאה המקושרת."
-            : "השורה עדיין לא הומרה להוצאה — העדכון יישמר בפירוט."
+          !draft || rowMode(draft) !== "created"
+            ? "השורה עוד לא נרשמה — העדכון יישמר בפירוט."
+            : draft.amount < 0
+              ? "העדכון יישמר גם בהכנסה של הזיכוי."
+              : "העדכון יישמר בהוצאה המקושרת."
         }
         onSubmit={() => void saveDialog()}
         submitLabel={split ? "פיצול ושמירה" : "שמירה"}
@@ -1574,7 +1525,7 @@ export default function StatementDetailClient({
               <Field size="xs" label="תחום עסקי">
                 <DomainSelect
                   value={draft.businessDomain}
-                  onChange={(value) => patchDraft({ businessDomain: value, projectId: "", propertyId: "" })}
+                  onChange={(value) => patchDraft({ businessDomain: value, projectId: "", propertyId: "", billToCustomer: false })}
                   placeholder="— בחר —"
                 />
                 {draft.amount > 0 ? (
@@ -1593,16 +1544,34 @@ export default function StatementDetailClient({
                 ) : null}
               </Field>
               )}
-              {split ? null : draft.businessDomain === "logistics_projects" ? (
+              {split ? null : draft.amount < 0 ? (
+                <p className="self-end text-xs text-muted-foreground">
+                  זיכוי נרשם כהכנסה בתחום בלבד, בתאריך החיוב של הכרטיס. הוא לא נכנס ליתרת הבנק ולא נרשם כתשלום של לקוח.
+                </p>
+              ) : draft.businessDomain === "logistics_projects" ? (
                 <Field size="xs" label="פרויקט">
                   <ProjectPicker
                     value={draft.projectId}
-                    onChange={(projectId) => patchDraft({ projectId })}
+                    onChange={(projectId) => patchDraft({ projectId, ...(projectId ? null : { billToCustomer: false }) })}
                     emptyLabel="— ללא פרויקט —"
                     searchPlaceholder="חיפוש פרויקט..."
                     className="h-9 rounded-md px-2"
                     projects={projects.map((p) => ({ id: p.id, label: p.name }))}
                   />
+                  {billToCustomerAvailable && draft.projectId ? (
+                    // The project rule the expense form already uses: a billed expense is
+                    // added to what the project's customer owes (project_expenses.billed_to_customer).
+                    <label className="mt-1.5 flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={draft.billToCustomer}
+                        onChange={(e) => patchDraft({ billToCustomer: e.target.checked })}
+                      />
+                      <span>
+                        לחיוב לקוח — המחיר של הפרויקט יגדל ב־{formatCurrency(Number.isFinite(draft.amount) ? draft.amount : 0)}
+                      </span>
+                    </label>
+                  ) : null}
                 </Field>
               ) : draft.businessDomain === "property_management" ? (
                 <Field size="xs" label="נכס">
@@ -1766,7 +1735,7 @@ export default function StatementDetailClient({
           }
         }}
         title={`חיוב כרטיס: ${chargeCardLabel ?? ""}`}
-        description="הסכום הכולל שהכרטיס חייב את חשבון הבנק — שורה אחת בחשבון, לא כל עסקה בנפרד."
+        description="כמה הבנק לקח בפועל על הכרטיס — שורה אחת בחשבון, לא כל קנייה בנפרד. השווה/י לדף הבנק."
         onSubmit={() => void submitCharge()}
         submitLabel="שמירה"
         busyLabel="שומר..."
@@ -1780,8 +1749,9 @@ export default function StatementDetailClient({
               value={chargeForm.accountId}
               onChange={(accountId) => patchCharge({ accountId })}
             />
+            {chargeCard ? <ChargeBreakdown card={chargeCard} typed={chargeForm.amount} /> : null}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field size="xs" label="סכום *">
+              <Field size="xs" label="הסכום שהבנק לקח *">
                 <CurrencyInput
                   type="number"
                   min="0"
@@ -1807,6 +1777,42 @@ export default function StatementDetailClient({
         ) : null}
       </FormDialog>
 
+      {/* Move hand-typed expenses that are also inside the card's charge into it */}
+      <ConfirmDialog
+        open={twiceCard !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTwiceCard(null);
+            setMoveTwiceError(null);
+          }
+        }}
+        title="העברה לחיוב הכרטיס"
+        description={
+          "ההוצאות האלה הוזנו עם חשבון בנק, ולכן יורדות מהחשבון בנפרד — וגם בתוך חיוב הכרטיס. " +
+          "אחרי ההעברה הן יירדו רק דרך חיוב הכרטיס. הסכום, התחום, התאריך והפרויקט שלהן לא משתנים."
+        }
+        confirmLabel="העברה"
+        loading={movingTwice}
+        error={moveTwiceError || undefined}
+        onConfirm={() => void moveCountedTwice()}
+      >
+        {twiceCard ? (
+          <ul className="space-y-1 text-sm">
+            {rows
+              .filter((r) => r.expenseId && twiceCard.countedTwiceExpenseIds.includes(r.expenseId))
+              .map((r) => (
+                <li key={r.id} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">
+                    {r.description || "—"}
+                    <span className="text-xs text-muted-foreground"> · {accountName(r.expenseAccountId ?? "") || "חשבון"}</span>
+                  </span>
+                  <span className="shrink-0 tabular-nums">{formatCurrency(r.amount)}</span>
+                </li>
+              ))}
+          </ul>
+        ) : null}
+      </ConfirmDialog>
+
       {/* Delete a recorded card charge */}
       <ConfirmDialog
         open={chargeToDelete !== null}
@@ -1830,4 +1836,59 @@ export default function StatementDetailClient({
   );
 }
 
-
+// What the bank should have taken for one card, worked out from its lines — shown
+// in the charge dialog so it can be compared with the bank statement.
+function ChargeBreakdown({ card, typed }: { card: CardSummary; typed: string }) {
+  const typedNum = Number(typed);
+  const diff =
+    typed.trim() && Number.isFinite(typedNum) ? (toAgorot(typedNum) - toAgorot(card.bill)) / 100 : null;
+  const line = "contents";
+  const ils2 = (n: number) =>
+    new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  return (
+    <div className="space-y-2 text-xs">
+      <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5 rounded-md border bg-muted/30 px-3 py-2">
+        <span>רכישות ({card.purchaseCount} שורות)</span>
+        <span className="text-left tabular-nums">{ils2(card.purchases)}</span>
+        {card.refundCount > 0 ? (
+          <div className={line}>
+            <span>פחות זיכויים ({card.refundCount} שורות)</span>
+            <span className="text-left tabular-nums">{ils2(-card.refunds)}</span>
+          </div>
+        ) : null}
+        <span className="border-t pt-1 font-semibold">מה שחברת האשראי גובה</span>
+        <span className="border-t pt-1 text-left font-semibold tabular-nums">{ils2(card.bill)}</span>
+      </div>
+      {card.leftOutCount > 0 ? (
+        <p className="text-muted-foreground">
+          כולל {card.leftOutCount === 1 ? "שורה אחת" : `${card.leftOutCount} שורות`} “לא לתיעוד” ({ils2(card.leftOut)}): הן לא
+          הוצאה שלנו, אבל הבנק גובה גם אותן.
+        </p>
+      ) : null}
+      {card.refundsLeftOutCount > 0 ? (
+        <p className="text-muted-foreground">
+          {card.refundsLeftOutCount === 1 ? "זיכוי אחד" : `${card.refundsLeftOutCount} זיכויים`} ({ils2(card.refundsLeftOut)})
+          לא מסומנים להכנסה: הבנק כבר הוריד אותם מהחיוב, אבל הם לא נרשמים. כדי לרשום אותם — סמנו “להכנסה” בשורה.
+        </p>
+      ) : null}
+      {card.countedTwice > 0 ? (
+        <p className="text-muted-foreground">
+          {formatCurrency(card.countedTwice)} מהשורות רשומות גם כהוצאה שיורדת מחשבון בנק בנפרד. אחרי שמירת החיוב אפשר להעביר אותן
+          לחיוב הכרטיס (“העברה לחיוב הכרטיס”), כדי שלא ייספרו פעמיים.
+        </p>
+      ) : null}
+      {card.bankDates.length > 1 ? (
+        <p className="text-muted-foreground">
+          לשורות של הכרטיס יש כמה תאריכי חיוב:{" "}
+          {card.bankDates.map((d) => `${formatIsoDisplay(d.date)} ${formatCurrency(d.amount)} (${d.count})`).join(" · ")}
+        </p>
+      ) : null}
+      {diff !== null && Math.abs(diff) >= 0.005 ? (
+        <p className="rounded-md border border-warning-soft-foreground/40 bg-warning-soft/30 px-3 py-2">
+          הבנק לקח {formatCurrency(Math.abs(diff))} {diff > 0 ? "יותר" : "פחות"} מהשורות ({formatCurrency(card.bill)}). אולי
+          חסרות שורות בקובץ או שהחיוב כולל משהו נוסף — כדאי לכתוב בהערה למה.
+        </p>
+      ) : null}
+    </div>
+  );
+}

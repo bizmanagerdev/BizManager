@@ -153,6 +153,8 @@ export function paymentMethodLabel(method: string | null | undefined) {
       return "עבודה";
     case "other":
       return "אחר";
+    case "card_refund":
+      return "זיכוי בכרטיס";
     default:
       return normalizePaymentMethodValue(method) || "-";
   }

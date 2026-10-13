@@ -17,6 +17,8 @@ import { supersededDocumentIds } from "@/lib/documents/expiry";
 import { UNLINKED_MONEY_GRACE_DAYS } from "@/lib/documents/moneyLink";
 import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
 import { israelDateKey } from "@/lib/timezone";
+import { fetchAllPagedResult } from "@/lib/supabase/paginate";
+import { summarizeStatement, type StatementMathCharge, type StatementMathRow } from "@/lib/financial/cardStatementMath";
 
 // ---------------------------------------------------------------------------
 // Reminders/Alerts unification — Phase 2: the system-rule engine.
@@ -1190,11 +1192,14 @@ const unprocessedItemsRule: SystemRule = {
   async evaluate(supabase) {
     const [statementsRes, pendingRowsRes, unclassifiedRes] = await Promise.all([
       supabase.from("card_statements").select("id,marked_done").range(0, 999).then((r) => r, () => ({ data: [] as Row[], error: null })),
+      // A ticked line still waiting: a purchase without its expense, or a refund without
+      // its income (a refund never gets an expense — it is recorded as income).
       supabase
         .from("card_statement_rows")
         .select("statement_id")
         .eq("include", true)
         .is("expense_id", null)
+        .or("amount.gt.0,income_payment_id.is.null")
         .range(0, 9999)
         .then((r) => r, () => ({ data: [] as Row[], error: null })),
       supabase
@@ -1226,6 +1231,101 @@ const unprocessedItemsRule: SystemRule = {
         audienceRole: "office",
       },
     ];
+  },
+};
+
+/**
+ * A credit-card statement still open whose card has no bank charge recorded —
+ * one reminder per statement, straight to it. Without that charge the payments
+ * calendar lists every purchase instead of one line per card, and the bank
+ * account never sees the card's money leave (owner, 2026-10-12: the August
+ * charge was skipped because nobody knew the step existed). Same money rules as
+ * the statement page (lib/financial/cardStatementMath.ts).
+ */
+const cardChargeMissingRule: SystemRule = {
+  key: "card_charge_missing",
+  label: "פירוט אשראי ממתין לחיוב בנק",
+  async evaluate(supabase) {
+    const { data: statementData, error: statementError } = await supabase
+      .from("card_statements")
+      .select("id,file_name,marked_done")
+      .range(0, 999);
+    if (statementError) throw new Error(`card_statements: ${statementError.message}`);
+    const open = ((statementData ?? []) as Row[]).filter((s) => getBoolean(s, "marked_done") !== true);
+    const openIds = open.map((s) => getString(s, "id")).filter((id): id is string => Boolean(id));
+    if (openIds.length === 0) return [];
+
+    const [rowsRes, chargesRes] = await Promise.all([
+      fetchAllPagedResult<Row>((from, to) =>
+        supabase
+          .from("card_statement_rows")
+          .select("id,statement_id,card_label,category,amount,include,expense_date,business_domain,expense_id,income_payment_id,expense:expenses(id,account_id)")
+          .in("statement_id", openIds)
+          .order("id")
+          .range(from, to)
+      ),
+      supabase.from("card_statement_charges").select("id,statement_id,card_label,amount,charge_date,account_id").in("statement_id", openIds),
+    ]);
+    if (rowsRes.error) throw new Error(`card_statement_rows: ${rowsRes.error.message}`);
+    if (chargesRes.error) throw new Error(`card_statement_charges: ${chargesRes.error.message}`);
+
+    const rowsByStatement = new Map<string, StatementMathRow[]>();
+    for (const r of rowsRes.data ?? []) {
+      const sid = getString(r, "statement_id");
+      if (!sid) continue;
+      const embed = r.expense as Row | Row[] | null | undefined;
+      const expense = (Array.isArray(embed) ? embed[0] : embed) ?? null;
+      const list = rowsByStatement.get(sid) ?? [];
+      list.push({
+        id: getString(r, "id") ?? "",
+        cardLabel: getString(r, "card_label") ?? getString(r, "category") ?? "",
+        amount: getNumber(r, "amount") ?? 0,
+        include: getBoolean(r, "include") !== false,
+        expenseDate: (getString(r, "expense_date") ?? "").slice(0, 10),
+        businessDomain: getString(r, "business_domain") ?? "",
+        expenseId: getString(r, "expense_id"),
+        expenseExists: Boolean(getString(r, "expense_id") && expense),
+        expenseAccountId: expense ? getString(expense, "account_id") : null,
+        incomePaymentId: getString(r, "income_payment_id"),
+        incomeExists: Boolean(getString(r, "income_payment_id")),
+      });
+      rowsByStatement.set(sid, list);
+    }
+    const chargesByStatement = new Map<string, StatementMathCharge[]>();
+    for (const c of (chargesRes.data ?? []) as Row[]) {
+      const sid = getString(c, "statement_id");
+      if (!sid) continue;
+      const list = chargesByStatement.get(sid) ?? [];
+      list.push({
+        id: getString(c, "id") ?? "",
+        cardLabel: getString(c, "card_label") ?? "",
+        amount: getNumber(c, "amount") ?? 0,
+        chargeDate: (getString(c, "charge_date") ?? "").slice(0, 10),
+        accountId: getString(c, "account_id") ?? "",
+      });
+      chargesByStatement.set(sid, list);
+    }
+
+    const items: SystemReminderItem[] = [];
+    for (const s of open) {
+      const id = getString(s, "id");
+      if (!id) continue;
+      const rows = rowsByStatement.get(id) ?? [];
+      if (rows.length === 0) continue;
+      const { bank } = summarizeStatement(rows, chargesByStatement.get(id) ?? []);
+      if (bank.missingCards.length === 0) continue;
+      const name = getString(s, "file_name") || "פירוט אשראי";
+      items.push({
+        key: id,
+        title: `פירוט אשראי ממתין לחיוב בנק: ${name}`,
+        content: `חסר חיוב בנק: ${bank.missingCards.join(", ")}`,
+        url: `/financial/statements/${id}`,
+        severity: "warning",
+        behavior: "silent",
+        audienceRole: "office",
+      });
+    }
+    return items;
   },
 };
 
@@ -1285,6 +1385,7 @@ export const SYSTEM_RULES: SystemRule[] = [
   // Silent summaries
   lowStockRule,
   unprocessedItemsRule,
+  cardChargeMissingRule,
 ];
 
 // --- the reconcile engine --------------------------------------------------

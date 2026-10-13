@@ -3,12 +3,18 @@ import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { roundShekels } from "@/lib/financial/cardStatementMath";
+import { CARD_REFUND_METHOD } from "@/lib/payments";
 
 // Edits a saved statement row.
 //  • If the row already created an expense → update the live expense (and its project link),
 //    then mirror the change onto the snapshot row. Domain/amount/date are required.
+//  • If the row is a refund already recorded as income → update that income (domain, amount,
+//    date) the same way, then the snapshot.
 //  • If the row has no expense yet (draft) → update only the snapshot row. Domain is optional
 //    so a partial assignment can be saved; an `include` toggle is also accepted.
+// `bill_to_customer` ("לחיוב לקוח", a project line) is sent only once the column exists
+// (migration 20261013120000) and only counts on a line with a project.
 // Admin/office only.
 export async function POST(req: Request) {
   try {
@@ -28,6 +34,7 @@ export async function POST(req: Request) {
        *  from `category`. Omit to leave the row's card identity untouched
        *  (an ordinary category edit must never move a row to another card). */
       card_label?: string | null;
+      bill_to_customer?: boolean;
     };
 
     const rowId = typeof body.row_id === "string" ? body.row_id.trim() : "";
@@ -39,12 +46,13 @@ export async function POST(req: Request) {
 
     const { data: row, error: rowError } = await supabase
       .from("card_statement_rows")
-      .select("id,expense_id")
+      .select("id,expense_id,income_payment_id,amount")
       .eq("id", rowId)
       .maybeSingle();
     if (rowError) return NextResponse.json({ error: toHebrewError(rowError.message) }, { status: 400 });
     if (!row?.id) return NextResponse.json({ error: "השורה לא נמצאה." }, { status: 404 });
     const expenseId = typeof row.expense_id === "string" ? row.expense_id : "";
+    const incomePaymentId = typeof row.income_payment_id === "string" ? row.income_payment_id : "";
 
     // Shared, normalized field values.
     const businessDomainRaw = typeof body.business_domain === "string" ? body.business_domain.trim() : "";
@@ -68,6 +76,46 @@ export async function POST(req: Request) {
     // from category, so an ordinary category edit can't move a row to
     // another (possibly phantom) card group.
     const cardLabel = typeof body.card_label === "string" && body.card_label.trim() ? body.card_label.trim() : null;
+    const billToCustomer = typeof body.bill_to_customer === "boolean" ? body.bill_to_customer && Boolean(projectId) : null;
+
+    // ── A refund already recorded as income: keep that income in step ─────────────────
+    if (!expenseId && incomePaymentId && Number(row.amount) < 0) {
+      if (!businessDomain) return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
+      if (!Number.isFinite(amount) || amount >= 0) {
+        return NextResponse.json({ error: "שורת זיכוי נשארת בסכום שלילי." }, { status: 400 });
+      }
+      if (!expenseDate) return NextResponse.json({ error: "חסר תאריך." }, { status: 400 });
+      const { data: payment } = await supabase
+        .from("payments")
+        .select("id,payment_method")
+        .eq("id", incomePaymentId)
+        .maybeSingle();
+      if (payment?.payment_method === CARD_REFUND_METHOD) {
+        const refund = roundShekels(-amount);
+        const { error: paymentError } = await supabase
+          .from("payments")
+          .update({ amount_total: refund, net_amount: refund, business_domain: businessDomain, payment_date: expenseDate })
+          .eq("id", incomePaymentId);
+        if (paymentError) return NextResponse.json({ error: toHebrewError(paymentError.message) }, { status: 400 });
+      }
+      const { error: snapError } = await supabase
+        .from("card_statement_rows")
+        .update({
+          amount,
+          category,
+          description,
+          notes,
+          expense_date: expenseDate,
+          transaction_date: transactionDate,
+          business_domain: businessDomain,
+          project_id: null,
+          property_id: null,
+          ...(cardLabel ? { card_label: cardLabel } : null),
+        })
+        .eq("id", rowId);
+      if (snapError) return NextResponse.json({ error: toHebrewError(snapError.message) }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
 
     // ── Draft row (no expense yet): update only the snapshot, domain optional ──────────
     if (!expenseId) {
@@ -84,6 +132,7 @@ export async function POST(req: Request) {
       if (Number.isFinite(amount)) snapshot.amount = amount;
       if (typeof body.include === "boolean") snapshot.include = body.include;
       if (cardLabel) snapshot.card_label = cardLabel;
+      if (billToCustomer !== null) snapshot.bill_to_customer = billToCustomer;
       const { error: snapError } = await supabase.from("card_statement_rows").update(snapshot).eq("id", rowId);
       if (snapError) return NextResponse.json({ error: toHebrewError(snapError.message) }, { status: 400 });
       return NextResponse.json({ ok: true });
@@ -126,9 +175,11 @@ export async function POST(req: Request) {
           project_id: projectId,
           expense_id: expenseId,
           included_in_base_price: false,
-          billed_to_customer: false,
+          billed_to_customer: billToCustomer === true,
           notes: null,
         });
+      } else if (billToCustomer !== null) {
+        await supabase.from("project_expenses").update({ billed_to_customer: billToCustomer }).eq("expense_id", expenseId);
       }
     } else if (currentProject) {
       await supabase.from("project_expenses").delete().eq("expense_id", expenseId);
@@ -148,6 +199,7 @@ export async function POST(req: Request) {
         project_id: projectId,
         property_id: propertyId,
         ...(cardLabel ? { card_label: cardLabel } : null),
+        ...(billToCustomer !== null ? { bill_to_customer: billToCustomer } : null),
       })
       .eq("id", rowId);
 

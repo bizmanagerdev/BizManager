@@ -29,6 +29,7 @@ type LiveExpense = {
   expense_date: string | null;
   transaction_date: string | null;
   notes: string | null;
+  account_id: string | null;
 };
 
 export default async function CardStatementDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -45,13 +46,21 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
     .maybeSingle();
   if (!statement?.id) notFound();
 
-  const [{ data: rowRows }, { data: projectRows }, { data: propertyRows }, { data: orderRows }, { data: chargeRows }, { data: mappingRows }] =
-    await Promise.all([
+  const [
+    { data: rowRows },
+    { data: projectRows },
+    { data: propertyRows },
+    { data: orderRows },
+    { data: chargeRows },
+    { data: mappingRows },
+    { data: accountRows },
+    billingResult,
+  ] = await Promise.all([
       supabase
         .from("card_statement_rows")
         .select(
           "id,expense_id,income_payment_id,expense_date,transaction_date,amount,description,category,card_label,business_domain,project_id,property_id,notes,assignment_raw,include," +
-            "expense:expenses(id,amount,category,description,business_domain,project_id,property_id,expense_date,transaction_date,notes)," +
+            "expense:expenses(id,amount,category,description,business_domain,project_id,property_id,expense_date,transaction_date,notes,account_id)," +
             "income_payment:payments(id,amount_total)"
         )
         .eq("statement_id", id)
@@ -72,7 +81,17 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
         .eq("statement_id", id),
       // Remembered card → account choice, for pre-filling a card that hasn't been charged yet.
       supabase.from("card_account_mappings").select("card_key,account_id"),
+      supabase.from("accounts").select("id,name"),
+      // "לחיוב לקוח" waits on its own column (migration 20261013120000). Asked apart from
+      // the rows so the page keeps working before that migration runs — the tick just hides.
+      supabase.from("card_statement_rows").select("id,bill_to_customer").eq("statement_id", id),
     ]);
+  const billToCustomerAvailable = !billingResult.error;
+  const billedDraftRows = new Set(
+    ((billingResult.data ?? []) as Array<{ id: string; bill_to_customer: boolean | null }>)
+      .filter((r) => r.bill_to_customer === true)
+      .map((r) => r.id)
+  );
 
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
     (r) => typeof r.id === "string" && typeof r.name === "string"
@@ -89,6 +108,20 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       const label = [custName || "הזמנה", date].filter(Boolean).join(" · ");
       return { id: String(r.id), name: label };
     });
+
+  // A recorded line's billing lives on its project link; a draft's on the row.
+  const liveExpenseIds = ((rowRows ?? []) as unknown as Array<{ expense_id: string | null }>)
+    .map((r) => r.expense_id)
+    .filter((v): v is string => typeof v === "string");
+  const { data: linkRows } =
+    billToCustomerAvailable && liveExpenseIds.length > 0
+      ? await supabase.from("project_expenses").select("expense_id,billed_to_customer").in("expense_id", liveExpenseIds)
+      : { data: [] };
+  const billedExpenses = new Set(
+    ((linkRows ?? []) as Array<{ expense_id: string; billed_to_customer: boolean | null }>)
+      .filter((l) => l.billed_to_customer === true)
+      .map((l) => l.expense_id)
+  );
 
   // Prefer the live expense (source of truth); fall back to the import snapshot.
   const rows: StatementRowView[] = ((rowRows ?? []) as unknown as Record<string, unknown>[]).map((r) => {
@@ -120,6 +153,8 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       incomePaymentId,
       incomeExists,
       incomeAmount: Number(incPay?.amount_total ?? 0),
+      expenseAccountId: expenseExists && typeof live?.account_id === "string" ? live.account_id : null,
+      billToCustomer: expenseExists ? billedExpenses.has(String(r.expense_id)) : billedDraftRows.has(String(r.id)),
     };
   });
 
@@ -167,6 +202,8 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
         fileUrl={fileUrl}
         cardCharges={cardCharges}
         cardAccountDefaults={cardAccountDefaults}
+        accounts={((accountRows ?? []) as Option[]).filter((a) => typeof a.id === "string" && typeof a.name === "string")}
+        billToCustomerAvailable={billToCustomerAvailable}
       />
     </AppShell>
   );

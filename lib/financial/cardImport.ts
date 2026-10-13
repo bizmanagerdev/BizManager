@@ -53,6 +53,13 @@ export const norm = (s: unknown) =>
 
 export const FALLBACK_CATEGORY = "כרטיס אשראי";
 
+// A card label that names a real card — not empty, and not the generic fallback
+// that used to be stamped on lines whose card was never found.
+export function isRealCardLabel(label: unknown): boolean {
+  const n = norm(label);
+  return n.length > 0 && n !== norm(FALLBACK_CATEGORY);
+}
+
 // Column-header phrase candidates, checked in order, for each parsed field.
 export const FIELD_TOKENS = {
   date: ["תאריך חיוב", "מועד חיוב", "תאריך החיוב", "תאריך"],
@@ -60,7 +67,12 @@ export const FIELD_TOKENS = {
   merchant: ["שם בית עסק", "שם בית העסק", "בית עסק", "בית העסק", "תיאור עסקה", "תיאור", "שם"],
   txnDate: ["תאריך עסקה", "תאריך העסקה", "מועד עסקה"],
   assignment: ["שיוך", "שיוך עסקי", "קטגוריה", "תחום"],
+  // A per-line card column (Mercantile's "כרטיס": "מאסטרכארד 7793"). Cal puts the
+  // card in section title rows instead — those are caught by extractCardName.
+  card: ["מספר כרטיס", "שם כרטיס", "כרטיס"],
 } as const;
+
+const BANK_DATE_TOKENS = ["תאריך חיוב", "מועד חיוב", "תאריך החיוב"] as const;
 
 export function findColumn(header: string[], tokens: readonly string[]): number {
   for (const token of tokens) {
@@ -68,6 +80,112 @@ export function findColumn(header: string[], tokens: readonly string[]): number 
     if (idx !== -1) return idx;
   }
   return -1;
+}
+
+// The bank charge-date column, or -1 when the file has none. The bare "תאריך" also
+// matches "תאריך עסקה" — files with only a purchase date (Mercantile, הלר בית) had
+// their purchase dates saved as the bank date — so it counts only when it found a
+// column other than the purchase-date one.
+export function findBankDateColumn(header: string[]): number {
+  const specific = findColumn(header, BANK_DATE_TOKENS);
+  if (specific !== -1) return specific;
+  const generic = findColumn(header, ["תאריך"]);
+  return generic !== findColumn(header, FIELD_TOKENS.txnDate) ? generic : -1;
+}
+
+/**
+ * The total the file itself states above its header (Mercantile: 'עסקאות באשראי -
+ * סה"כ חיוב: + ₪3104.9'), so the review can check that every line was read.
+ * null when there is none.
+ */
+export function findStatementTotal(rows: string[][], headerRow: number): number | null {
+  const end = Math.min(headerRow, rows.length);
+  for (let i = 0; i < end; i++) {
+    const text = (rows[i] ?? []).map((c) => String(c ?? "")).join(" ");
+    const label = text.match(/סה["״'׳]?כ\s*ל?ה?חיוב/);
+    if (!label || label.index === undefined) continue;
+    const rest = text.slice(label.index + label[0].length);
+    // The first amount after the label — a date ("10/09/2026") is not one.
+    for (const m of rest.matchAll(/([+\-−])?\s*₪?\s*([+\-−])?\s*(\d[\d,./]*)(-)?/g)) {
+      const token = m[3].replace(/\.$/, "");
+      if (token.includes("/") || (token.match(/\./g) ?? []).length > 1) continue;
+      const value = Number(token.replace(/,/g, ""));
+      if (!Number.isFinite(value)) continue;
+      const negative = [m[1], m[2], m[4]].some((s) => s === "-" || s === "−");
+      return Math.round((negative ? -value : value) * 100) / 100;
+    }
+  }
+  return null;
+}
+
+// The bank charge date to suggest for a card that is charged on `dayOfMonth`: the
+// first such day strictly after the latest purchase (a short month gets its last
+// day). "" when either input is unusable.
+export function nextChargeDate(latestPurchaseIso: string, dayOfMonth: number): string {
+  const m = String(latestPurchaseIso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m || !Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) return "";
+  let year = Number(m[1]);
+  let month = Number(m[2]);
+  const purchaseDay = Number(m[3]);
+  const dayIn = (y: number, mo: number) => Math.min(dayOfMonth, new Date(Date.UTC(y, mo, 0)).getUTCDate());
+  let day = dayIn(year, month);
+  if (day <= purchaseDay) {
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+    day = dayIn(year, month);
+  }
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// A card the business already has on record, offered when a file's lines name no card.
+export type KnownCard = {
+  label: string;
+  chargeDay: number | null; // day of month of its latest bank charge
+  accountName: string | null; // the bank account it's charged to
+};
+
+/**
+ * Every real card label on record (account mappings, statement charges, statement
+ * rows), one per norm(label), sorted. A card's charge day is the day of month of its
+ * latest recorded charge.
+ */
+export function buildKnownCards(input: {
+  mappings: { card_label: string | null; account_name?: string | null }[];
+  charges: { card_label: string | null; charge_date: string | null }[];
+  rowLabels: (string | null)[];
+}): KnownCard[] {
+  const byKey = new Map<string, KnownCard>();
+  const latestCharge = new Map<string, string>();
+  const add = (raw: string | null | undefined) => {
+    const label = String(raw ?? "").trim();
+    if (!isRealCardLabel(label)) return null;
+    const key = norm(label);
+    let card = byKey.get(key);
+    if (!card) {
+      card = { label, chargeDay: null, accountName: null };
+      byKey.set(key, card);
+    }
+    return card;
+  };
+  for (const m of input.mappings) {
+    const card = add(m.card_label);
+    if (card && m.account_name) card.accountName = m.account_name;
+  }
+  for (const c of input.charges) {
+    const card = add(c.card_label);
+    const date = String(c.charge_date ?? "").slice(0, 10);
+    if (!card || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const key = norm(card.label);
+    if (date > (latestCharge.get(key) ?? "")) {
+      latestCharge.set(key, date);
+      card.chargeDay = Number(date.slice(8, 10));
+    }
+  }
+  for (const label of input.rowLabels) add(label);
+  return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label, "he"));
 }
 
 // A card-section title row, e.g. "חשבון כרטיס: 176606 שם כרטיס: ויזה כאל זהב ארבע ספרות אחרונות 9557".

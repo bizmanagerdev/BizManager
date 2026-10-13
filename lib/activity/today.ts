@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isChildAuditTable } from "@/lib/audit";
 import { israelDayStart, israelHourOf, shiftDayKey } from "@/lib/activity/days";
+import { CARD_REFUND_METHOD } from "@/lib/payments";
 
 // "היום בעסק" — the activity page's picture of the day: the money that came in,
 // the orders opened, the tasks done, the hours worked, how busy each hour was,
@@ -28,6 +29,8 @@ export type DayLogRow = {
   status_to: string | null;
   status_from: string | null;
   amount: string | null;
+  /** A payment's method — a card refund (CARD_REFUND_METHOD) isn't money that came in. */
+  method?: string | null;
 };
 
 export type PersonShift = { clockIn: string; clockOut: string | null; minutes: number };
@@ -140,7 +143,7 @@ export function summarizeDayRows(
         else if (isUpdate(row.action) && row.status_to === "delivered" && row.status_from !== "delivered") person.deliveries += 1;
         break;
       case "payments":
-        if (created) {
+        if (created && row.method !== CARD_REFUND_METHOD) {
           person.payments += 1;
           const amount = Number(row.amount);
           if (Number.isFinite(amount)) person.paymentsTotal += amount;
@@ -193,7 +196,7 @@ async function loadDayLogRows(supabase: SupabaseClient, startIso: string): Promi
   for (let page = 0; page < 20; page += 1) {
     const { data, error } = await supabase
       .from("audit_logs")
-      .select("created_at,changed_by,table_name,action,status_to:new_data->>status,status_from:old_data->>status,amount:new_data->>amount_total")
+      .select("created_at,changed_by,table_name,action,status_to:new_data->>status,status_from:old_data->>status,amount:new_data->>amount_total,method:new_data->>payment_method")
       .gte("created_at", startIso)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
@@ -222,7 +225,8 @@ export async function loadActivityToday(
     // Recorded today — not dated today: a payment can be entered weeks ahead
     // with a future date (an expected transfer, a post-dated check), and that
     // isn't money that came in today. This is also what the feed shows.
-    supabase.from("payments").select("amount_total,payment_method").gte("created_at", startIso).lt("created_at", endIso).range(0, 999),
+    // A card statement's refund is recorded as income in its domain, but no money came in.
+    supabase.from("payments").select("amount_total,payment_method").gte("created_at", startIso).lt("created_at", endIso).neq("payment_method", CARD_REFUND_METHOD).range(0, 999),
     supabase.from("orders").select("total_amount").gte("created_at", startIso).lt("created_at", endIso).range(0, 999),
     supabase.from("tasks").select("id").gte("completed_at", startIso).lt("completed_at", endIso).in("status", ["done"]).range(0, 999),
     supabase.from("tasks").select("id").gte("due_date", startIso).lt("due_date", endIso).in("status", ["todo", "in_progress"]).range(0, 999),

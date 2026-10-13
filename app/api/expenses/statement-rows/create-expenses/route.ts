@@ -3,13 +3,23 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { norm } from "@/lib/financial/cardImport";
+import { roundShekels } from "@/lib/financial/cardStatementMath";
+import { buildPaymentInsert, CARD_REFUND_METHOD } from "@/lib/payments";
 
-// Materializes a saved statement's eligible rows into expenses. A row is eligible when
-// include=true, it has a valid business domain, a positive amount, and no expense yet
-// (expense_id is null). Mirrors app/api/expenses/create — payment_status=paid,
-// payment_method=credit_card, billing date in expense_date — then links project_expenses,
-// remembers each merchant's assignment, stamps the row's expense_id, and recomputes the
-// statement's created_count. Admin/office.
+// Materializes a saved statement's eligible rows. A row is eligible when include=true and
+// it has a valid business domain.
+//  • A purchase (positive, no expense yet) becomes an expense. Mirrors
+//    app/api/expenses/create — payment_status=paid, payment_method=credit_card, billing date
+//    in expense_date — then links project_expenses (billed to the project's customer when
+//    the line says "לחיוב לקוח"), remembers each merchant's assignment, stamps the row's
+//    expense_id, and recomputes the statement's created_count.
+//  • A refund (negative, no income yet) becomes an income in its domain (owner,
+//    2026-10-13: "the income to their domain is the right model"), dated on the card's
+//    bank date. It carries no account and no customer, order, project or property: the
+//    card's bank charge is already lower by the refund, so a bank account must not count
+//    it again, and it is a supplier's refund, never a customer paying. Its method
+//    (CARD_REFUND_METHOD) keeps it out of the Grow card deposits and "money in today".
+// Admin/office.
 const FALLBACK_CATEGORY = "כרטיס אשראי";
 const PLACEHOLDER = "ללא שם";
 
@@ -26,6 +36,8 @@ type RowRecord = {
   project_id: string | null;
   property_id: string | null;
   notes: string | null;
+  card_label: string | null;
+  income_payment_id: string | null;
 };
 
 export async function POST(req: Request) {
@@ -36,20 +48,30 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
-    const { supabase, profile } = access.value;
+    const { supabase, profile, user } = access.value;
 
     const { data: rowData, error: rowError } = await supabase
       .from("card_statement_rows")
       .select(
-        "id,expense_id,include,expense_date,transaction_date,amount,description,category,business_domain,project_id,property_id,notes"
+        "id,expense_id,include,expense_date,transaction_date,amount,description,category,business_domain,project_id,property_id,notes,card_label,income_payment_id"
       )
       .eq("statement_id", statementId)
       .is("expense_id", null);
     if (rowError) return NextResponse.json({ error: toHebrewError(rowError.message) }, { status: 400 });
 
+    // "לחיוב לקוח" lives in its own column (migration 20261013120000). Read apart so this
+    // route keeps working before that migration runs — every line then counts as not billed.
+    const { data: billingData } = await supabase
+      .from("card_statement_rows")
+      .select("id,bill_to_customer")
+      .eq("statement_id", statementId)
+      .eq("bill_to_customer", true);
+    const billedRowIds = new Set(((billingData ?? []) as Array<{ id: string }>).map((r) => r.id));
+
     const candidates = (rowData ?? []) as RowRecord[];
     const errors: { id: string; message: string }[] = [];
-    const eligible: { rowId: string; projectId: string | null; payload: Record<string, unknown> }[] = [];
+    const eligible: { rowId: string; projectId: string | null; billed: boolean; payload: Record<string, unknown> }[] = [];
+    const refunds: { rowId: string; payload: Record<string, unknown> }[] = [];
     let skipped = 0;
 
     for (const row of candidates) {
@@ -65,6 +87,32 @@ export async function POST(req: Request) {
       const amount = typeof row.amount === "number" ? row.amount : Number(row.amount);
       const expenseDate =
         typeof row.expense_date === "string" && row.expense_date.trim() ? row.expense_date.trim() : "";
+      if (Number.isFinite(amount) && amount < 0) {
+        if (row.income_payment_id) continue; // already recorded
+        if (!expenseDate) {
+          errors.push({ id: row.id, message: `חסר תאריך (${row.description ?? PLACEHOLDER})` });
+          continue;
+        }
+        const card = typeof row.card_label === "string" && row.card_label.trim() ? row.card_label.trim() : FALLBACK_CATEGORY;
+        const merchant = typeof row.description === "string" && row.description.trim() ? row.description.trim() : PLACEHOLDER;
+        refunds.push({
+          rowId: row.id,
+          payload: buildPaymentInsert({
+            amountTotal: roundShekels(-amount),
+            businessDomain,
+            accountId: null,
+            paymentDate: expenseDate,
+            paymentMethod: CARD_REFUND_METHOD,
+            projectId: null,
+            orderId: null,
+            propertyId: null,
+            referenceNumber: null,
+            notes: `זיכוי בכרטיס ${card}: ${merchant}`,
+            recordedBy: user.id,
+          }),
+        });
+        continue;
+      }
       if (!Number.isFinite(amount) || amount <= 0) {
         errors.push({ id: row.id, message: `סכום לא חוקי (${row.description ?? PLACEHOLDER})` });
         continue;
@@ -78,6 +126,7 @@ export async function POST(req: Request) {
       eligible.push({
         rowId: row.id,
         projectId,
+        billed: Boolean(projectId) && billedRowIds.has(row.id),
         payload: {
           expense_date: expenseDate,
           transaction_date:
@@ -101,8 +150,31 @@ export async function POST(req: Request) {
       });
     }
 
+    // Refunds first: they don't depend on the expenses, and a failure here leaves the
+    // purchases untouched for a retry.
+    let refundsCreated = 0;
+    if (refunds.length > 0) {
+      const { data: insertedPayments, error: paymentError } = await supabase
+        .from("payments")
+        .insert(refunds.map((r) => r.payload))
+        .select("id");
+      if (paymentError) {
+        errors.push({ id: "-", message: `רישום הזיכויים כהכנסה נכשל: ${toHebrewError(paymentError.message)}` });
+      } else {
+        const paymentIds = ((insertedPayments ?? []) as { id: string }[]).map((r) => r.id);
+        await Promise.all(
+          refunds.map((r, i) =>
+            paymentIds[i]
+              ? supabase.from("card_statement_rows").update({ income_payment_id: paymentIds[i] }).eq("id", r.rowId)
+              : Promise.resolve()
+          )
+        );
+        refundsCreated = paymentIds.length;
+      }
+    }
+
     if (eligible.length === 0) {
-      return NextResponse.json({ created: 0, skipped, errors });
+      return NextResponse.json({ created: 0, refunds: refundsCreated, skipped, errors });
     }
 
     // Single multi-row insert — RETURNING preserves input order, so insertedIds[i] maps to eligible[i].
@@ -129,13 +201,13 @@ export async function POST(req: Request) {
 
     // Link project-scoped expenses (mirrors app/api/expenses/create).
     const projectLinks = eligible
-      .map((e, i) => ({ projectId: e.projectId, expenseId: insertedIds[i] }))
-      .filter((x): x is { projectId: string; expenseId: string } => Boolean(x.projectId && x.expenseId))
+      .map((e, i) => ({ projectId: e.projectId, billed: e.billed, expenseId: insertedIds[i] }))
+      .filter((x): x is { projectId: string; billed: boolean; expenseId: string } => Boolean(x.projectId && x.expenseId))
       .map((x) => ({
         project_id: x.projectId,
         expense_id: x.expenseId,
         included_in_base_price: false,
-        billed_to_customer: false,
+        billed_to_customer: x.billed,
         notes: null,
       }));
     if (projectLinks.length > 0) {
@@ -187,7 +259,7 @@ export async function POST(req: Request) {
       .update({ created_count: count ?? insertedIds.length })
       .eq("id", statementId);
 
-    return NextResponse.json({ created: insertedIds.length, skipped, errors });
+    return NextResponse.json({ created: insertedIds.length, refunds: refundsCreated, skipped, errors });
   } catch (err: unknown) {
     const message = toHebrewError(err, "יצירת ההוצאות נכשלה.");
     return NextResponse.json({ error: message }, { status: 500 });

@@ -45,6 +45,16 @@ export const PAYMENT_SELECT =
 // Single source of truth for the payment-method dropdown, shared by both the
 // expense dialog and the order/project payment dialogs so they always match.
 // Values must stay in sync with paymentMethodLabel() in lib/orders/paymentStatus.
+/**
+ * A refund line on a credit-card statement, recorded as income in its domain
+ * (app/api/expenses/statement-rows/create-expenses). Never offered in a method
+ * picker. Deliberately not "credit_card": a credit_card payment with no account
+ * is read as a Grow deposit that lands in a bank account (lib/accounts.ts,
+ * lib/inflow-sources.ts), and the card's bank charge is already lower by the
+ * refund. "money in today" (lib/activity/today.ts) leaves it out too.
+ */
+export const CARD_REFUND_METHOD = "card_refund";
+
 export const PAYMENT_METHOD_OPTIONS = [
   { value: "cash", label: "מזומן" },
   { value: "bank_transfer", label: "העברה בנקאית" },

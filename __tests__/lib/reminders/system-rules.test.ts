@@ -33,7 +33,7 @@ function makeSupabase(responses: Record<string, TableResponse>) {
   const from = (table: string) => {
     const resp: TableResponse = responses[table] ?? { data: [], error: null };
     const builder: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "not", "lt", "lte", "gt", "gte", "in", "order", "range", "limit"]) {
+    for (const m of ["select", "eq", "not", "lt", "lte", "gt", "gte", "in", "or", "is", "order", "range", "limit"]) {
       builder[m] = () => builder;
     }
     builder.then = (onF: (v: TableResponse) => unknown, onR?: (e: unknown) => unknown) =>
@@ -402,5 +402,73 @@ describe("document_expiry", () => {
       ctx("2026-09-07")
     );
     expect(items).toEqual([]);
+  });
+});
+
+describe("card_charge_missing", () => {
+  const statements = [
+    { id: "s-open", file_name: "הלר בית 9.26.xlsx", marked_done: false },
+    { id: "s-done", file_name: "הלר בית 8.26.xlsx", marked_done: true },
+  ];
+  const line = (id: string, card: string, amount: number) => ({
+    id,
+    statement_id: "s-open",
+    card_label: card,
+    category: card,
+    amount,
+    include: true,
+    expense_date: "2026-10-02",
+    business_domain: "home",
+    expense_id: null,
+    income_payment_id: null,
+    expense: null,
+  });
+  const rows = [line("r1", "ויזה כאל זהב 9557", 100), line("r2", "ויזה כאל זהב 9828", 250.5), line("r3", "ויזה כאל זהב 9828", -0.5)];
+
+  it("one reminder per open statement, naming the cards with no bank charge", async () => {
+    const items = await rule("card_charge_missing").evaluate(
+      makeSupabase({
+        card_statements: { data: statements },
+        card_statement_rows: { data: rows },
+        card_statement_charges: {
+          data: [{ id: "c1", statement_id: "s-open", card_label: "ויזה כאל זהב 9557", amount: 100, charge_date: "2026-10-02", account_id: "a" }],
+        },
+      }),
+      ctx("2026-10-13")
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].key).toBe("s-open");
+    expect(items[0].title).toBe("פירוט אשראי ממתין לחיוב בנק: הלר בית 9.26.xlsx");
+    expect(items[0].content).toBe("חסר חיוב בנק: ויזה כאל זהב 9828");
+    expect(items[0].url).toBe("/financial/statements/s-open");
+  });
+
+  it("is quiet once every card is charged, and for statements marked done", async () => {
+    const items = await rule("card_charge_missing").evaluate(
+      makeSupabase({
+        card_statements: { data: statements },
+        card_statement_rows: { data: rows },
+        card_statement_charges: {
+          data: [
+            { id: "c1", statement_id: "s-open", card_label: "ויזה כאל זהב 9557", amount: 100, charge_date: "2026-10-02", account_id: "a" },
+            { id: "c2", statement_id: "s-open", card_label: "ויזה כאל זהב 9828", amount: 250, charge_date: "2026-10-02", account_id: "a" },
+          ],
+        },
+      }),
+      ctx("2026-10-13")
+    );
+    expect(items).toEqual([]);
+  });
+
+  it("throws on a read error instead of closing every reminder", async () => {
+    await expect(
+      rule("card_charge_missing").evaluate(
+        makeSupabase({
+          card_statements: { data: statements },
+          card_statement_rows: { data: null, error: { message: "timeout" } },
+        }),
+        ctx("2026-10-13")
+      )
+    ).rejects.toThrow(/card_statement_rows/);
   });
 });

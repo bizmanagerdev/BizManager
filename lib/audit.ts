@@ -1413,7 +1413,7 @@ const STATUS_VALUE_LABELS: Record<string, string> = {
   // payment methods
   cash: "מזומן", credit: "אשראי", credit_card: "אשראי", card: "אשראי",
   check: "צ׳ק", cheque: "צ׳ק", bank_transfer: "העברה בנקאית", transfer: "העברה",
-  bit: "ביט", paybox: "פייבוקס", other: "אחר",
+  bit: "ביט", paybox: "פייבוקס", other: "אחר", card_refund: "זיכוי בכרטיס",
   // booleans (needs_invoice, is_official, …)
   true: "כן", false: "לא",
 };

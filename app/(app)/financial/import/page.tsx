@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { isOpenAIConfigured } from "@/lib/openai/config";
-import type { MerchantMemory } from "@/lib/financial/cardImport";
+import { buildKnownCards, type MerchantMemory } from "@/lib/financial/cardImport";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { propertyDisplayName } from "@/lib/properties";
 import ImportSkeleton from "./ImportSkeleton";
 
@@ -25,13 +26,30 @@ export default async function ImportExpensesPage() {
     redirect("/no-access");
   }
 
-  const [{ data: projectRows }, { data: propertyRows }, { data: mappingRows }] = await Promise.all([
+  const [
+    { data: projectRows },
+    { data: propertyRows },
+    { data: mappingRows },
+    { data: cardMappingRows },
+    chargeRows,
+    statementRowCards,
+  ] = await Promise.all([
     supabase.from("projects").select("id,name").order("name", { ascending: true }),
     supabase.from("properties").select("id,name,address").order("address", { ascending: true }),
     // May not exist before the migration runs — errors are tolerated (data is null).
     supabase
       .from("expense_merchant_mappings")
       .select("merchant_key,business_domain,project_id,property_id"),
+    // The cards on record, offered in the review step for lines whose file names no
+    // card. Errors are tolerated — the import still works, just without suggestions.
+    supabase.from("card_account_mappings").select("card_label,account:accounts(name)"),
+    fetchAllPaged<{ card_label: string | null; charge_date: string | null }>((from, to) =>
+      supabase.from("card_statement_charges").select("card_label,charge_date").order("id").range(from, to)
+    ).catch(() => []),
+    // ~1,300 rows and growing: one answer stops at 1,000 rows without saying so.
+    fetchAllPaged<{ card_label: string | null }>((from, to) =>
+      supabase.from("card_statement_rows").select("card_label").order("id").range(from, to)
+    ).catch(() => []),
   ]);
 
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
@@ -57,6 +75,16 @@ export default async function ImportExpensesPage() {
     };
   }
 
+  type CardMappingRow = { card_label: string | null; account: { name: string | null } | { name: string | null }[] | null };
+  const knownCards = buildKnownCards({
+    mappings: ((cardMappingRows ?? []) as CardMappingRow[]).map((r) => ({
+      card_label: r.card_label,
+      account_name: (Array.isArray(r.account) ? r.account[0]?.name : r.account?.name) ?? null,
+    })),
+    charges: chargeRows,
+    rowLabels: statementRowCards.map((r) => r.card_label),
+  });
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <CardImportClient
@@ -64,6 +92,7 @@ export default async function ImportExpensesPage() {
         properties={properties}
         smartExtractEnabled={isOpenAIConfigured()}
         merchantMemory={merchantMemory}
+        knownCards={knownCards}
       />
     </AppShell>
   );

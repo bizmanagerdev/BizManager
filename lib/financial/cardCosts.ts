@@ -3,8 +3,12 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Per-credit-card cost, per month. Source of truth = the `expenses` table
-// (payment_method='credit_card'); the card identity is the expense `category`
-// (set to the card label on statement import, e.g. "ויזה כאל זהב 9557").
+// (payment_method='credit_card'). The card is the statement line's fixed card
+// (card_statement_rows.card_label) when the expense came from a statement — the
+// expense `category` can be retyped ("חלאקה ויזה כאל זהב 9557") and used to
+// split one card in two — and the category otherwise.
+// Refund lines recorded as income lower their card's month (they are part of
+// what the card really cost).
 // Bucketed by PURCHASE date (transaction_date) when present — more accurate for
 // "what did this card cost me" than the billing date — falling back to
 // expense_date (billing) when there's no transaction date.
@@ -58,22 +62,56 @@ export async function loadCardCostsByMonth(
     cardRows = await fetchAllPaged<Row>((lo, hi) =>
       supabase
         .from("expenses")
-        .select("amount,category,expense_date,transaction_date,payment_method,description")
+        .select("id,amount,category,expense_date,transaction_date,payment_method,description")
         .eq("payment_method", "credit_card")
+        .order("id")
         .range(lo, hi)
     );
   } catch {
     return { cards: [], months: [], totals: { byCard: {}, grand: 0 }, items: [] };
   }
 
+  // Statement lines: the fixed card of each line's expense, and the refunds recorded as
+  // income. Best-effort — without them the report falls back to the category, as before.
+  const cardOfExpense = new Map<string, string>();
+  let refundRows: Row[] = [];
+  try {
+    const lines = await fetchAllPaged<Row>((lo, hi) =>
+      supabase
+        .from("card_statement_rows")
+        .select("expense_id,income_payment_id,card_label,category,amount,expense_date,transaction_date,description,income_payment:payments(id)")
+        .or("expense_id.not.is.null,income_payment_id.not.is.null")
+        .order("id")
+        .range(lo, hi)
+    );
+    for (const line of lines) {
+      const label = str(line.card_label)?.trim() || str(line.category)?.trim() || "";
+      const expenseId = str(line.expense_id);
+      if (expenseId && label) cardOfExpense.set(expenseId, label);
+    }
+    refundRows = lines.filter((line) => {
+      const pay = line.income_payment as Row | Row[] | null | undefined;
+      const recorded = Array.isArray(pay) ? pay.length > 0 : Boolean(pay);
+      return recorded && num(line.amount) < 0;
+    });
+  } catch {
+    /* keep the category grouping */
+  }
+
   // month -> card -> total
   const acc = new Map<string, Map<string, number>>();
   const allItems: CardExpenseItem[] = [];
-  for (const row of cardRows) {
-    const card = str(row.category)?.trim() || FALLBACK_CARD;
-    const date = str(row.transaction_date) || str(row.expense_date);
+  const lines = [
+    ...cardRows.map((row) => ({ row, refund: false })),
+    ...refundRows.map((row) => ({ row, refund: true })),
+  ];
+  for (const { row, refund } of lines) {
+    const card =
+      (refund ? str(row.card_label)?.trim() || str(row.category)?.trim() : cardOfExpense.get(str(row.id) ?? "") || str(row.category)?.trim()) ||
+      FALLBACK_CARD;
+    const date = (str(row.transaction_date) || str(row.expense_date) || "").slice(0, 10);
     if (!date) continue;
-    const amount = Math.abs(num(row.amount));
+    const amount = refund ? -Math.abs(num(row.amount)) : Math.abs(num(row.amount));
     if (!amount) continue;
     const month = date.slice(0, 7);
     let byCard = acc.get(month);
@@ -86,7 +124,7 @@ export async function loadCardCostsByMonth(
       month,
       card,
       date,
-      description: str(row.description)?.trim() || card,
+      description: refund ? `זיכוי · ${str(row.description)?.trim() || card}` : str(row.description)?.trim() || card,
       amount,
     });
   }

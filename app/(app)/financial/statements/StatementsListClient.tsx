@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
+import type { StatementSteps } from "@/lib/financial/cardStatementMath";
+import { DifferenceChip, StatusChip } from "./[id]/StatementSteps";
 
 export type StatementListItem = {
   id: string;
@@ -13,7 +15,8 @@ export type StatementListItem = {
   marked_done: boolean | null;
   expensesTotal: number;
   incomeTotal: number;
-  chargesTotal: number;
+  /** Money per card and where the statement stands — the statement page's own rules. */
+  steps: StatementSteps;
 };
 
 function formatCurrency(n: number): string {
@@ -24,21 +27,6 @@ function formatDateTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
-}
-
-// Progress chip: an explicitly "done" statement wins; otherwise nothing created yet →
-// awaiting assignment; some but not all → partial; all rows materialized → done.
-function statusChip(created: number, total: number, markedDone: boolean) {
-  if (markedDone) {
-    return <span className="rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-soft-foreground">בוצע</span>;
-  }
-  if (total > 0 && created >= total) {
-    return <span className="rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-soft-foreground">הושלם</span>;
-  }
-  if (created > 0) {
-    return <span className="rounded bg-info-soft px-1.5 py-0.5 text-xs text-info-soft-foreground">חלקי</span>;
-  }
-  return <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs text-warning-soft-foreground">ממתין לשיוך</span>;
 }
 
 export default function StatementsListClient({ statements }: { statements: StatementListItem[] }) {
@@ -62,42 +50,65 @@ export default function StatementsListClient({ statements }: { statements: State
             <tr className="text-right">
               <th className="px-3 py-2 font-medium">תאריך העלאה</th>
               <th className="px-3 py-2 font-medium">קובץ</th>
-              <th className="px-3 py-2 font-medium">מקור</th>
               <th className="px-3 py-2 font-medium">סטטוס</th>
               <th className="px-3 py-2 font-medium">הוצאות שנוצרו</th>
               <th className="px-3 py-2 font-medium">סה״כ הוצאות</th>
               <th className="px-3 py-2 font-medium">סה״כ הכנסות</th>
-              <th className="px-3 py-2 font-medium">סה״כ חיובים</th>
+              <th className="px-3 py-2 font-medium">סה״כ שורות</th>
+              <th className="px-3 py-2 font-medium">חיוב בבנק</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {statements.map((s) => {
               const created = s.created_count ?? 0;
               const total = s.total_rows ?? 0;
+              const { totals, bank } = s.steps;
               return (
-              <tr
-                key={s.id}
-                onClick={() => router.push(`/financial/statements/${s.id}`)}
-                className="cursor-pointer hover:bg-muted/40"
-              >
-                <td className="whitespace-nowrap px-3 py-2">{formatDateTime(s.created_at)}</td>
-                <td className="px-3 py-2">{s.file_name || "—"}</td>
-                <td className="px-3 py-2">{s.source === "pdf" ? "PDF" : "Excel/CSV"}</td>
-                <td className="px-3 py-2">{statusChip(created, total, s.marked_done === true)}</td>
-                <td className="px-3 py-2">
-                  {created}
-                  {total !== created ? ` מתוך ${total}` : ""}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 font-medium">
-                  {s.expensesTotal > 0 ? formatCurrency(s.expensesTotal) : "—"}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 font-medium text-success-soft-foreground">
-                  {s.incomeTotal > 0 ? formatCurrency(s.incomeTotal) : "—"}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                  {s.chargesTotal > 0 ? formatCurrency(s.chargesTotal) : "—"}
-                </td>
-              </tr>
+                <tr
+                  key={s.id}
+                  onClick={() => router.push(`/financial/statements/${s.id}`)}
+                  className="cursor-pointer hover:bg-muted/40"
+                >
+                  <td className="whitespace-nowrap px-3 py-2">{formatDateTime(s.created_at)}</td>
+                  <td className="px-3 py-2">
+                    {s.file_name || "—"}
+                    <span className="ms-1 text-xs text-muted-foreground">{s.source === "pdf" ? "PDF" : "Excel"}</span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <StatusChip steps={s.steps} markedDone={s.marked_done === true} />
+                  </td>
+                  <td className="px-3 py-2">
+                    {created}
+                    {total !== created ? ` מתוך ${total}` : ""}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 font-medium">
+                    {s.expensesTotal > 0 ? formatCurrency(s.expensesTotal) : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 font-medium text-success-soft-foreground">
+                    {s.incomeTotal > 0 ? formatCurrency(s.incomeTotal) : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                    {totals.bill !== 0 ? formatCurrency(totals.bill) : "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {totals.charged > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="whitespace-nowrap font-medium">{formatCurrency(totals.charged)}</span>
+                        <DifferenceChip difference={totals.difference} />
+                      </div>
+                    ) : null}
+                    {totals.countedTwice > 0 ? (
+                      <div className="text-xs text-warning-soft-foreground" title="שורות שרשומות גם כהוצאה שיורדת מחשבון בנק בנפרד">
+                        נספר פעמיים: {formatCurrency(totals.countedTwice)}
+                      </div>
+                    ) : null}
+                    {bank.missingCards.length > 0 && s.marked_done !== true ? (
+                      <div className="text-xs text-warning-soft-foreground">חסר: {bank.missingCards.join(", ")}</div>
+                    ) : totals.charged > 0 ? null : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                </tr>
               );
             })}
           </tbody>

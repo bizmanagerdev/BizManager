@@ -182,12 +182,17 @@ export function WizardStepper<TStep extends string | number>({
   current,
   canClick,
   onStepClick,
+  isDone,
   className,
 }: {
   steps: WizardStepDef<TStep>[];
   current: TStep;
   canClick: (n: TStep) => boolean;
   onStepClick: (n: TStep) => void;
+  /** For a page whose steps can be finished in any order (a credit-card
+   *  statement: the bank charge may come before the assigning) — whether a
+   *  step is done, instead of "it's behind the current one". */
+  isDone?: (n: TStep) => boolean;
   className?: string;
 }) {
   const currentIndex = steps.findIndex((s) => s.n === current);
@@ -200,7 +205,7 @@ export function WizardStepper<TStep extends string | number>({
     // No-op for a short (≤4 step) wizard like order/project/customer.
     <div className={cn("flex w-full min-w-0 items-start overflow-x-auto overflow-y-hidden", className)}>
       {steps.map((s, i) => {
-        const done = currentIndex >= 0 && i < currentIndex;
+        const done = isDone ? isDone(s.n) : currentIndex >= 0 && i < currentIndex;
         const active = s.n === current;
         const clickable = canClick(s.n);
         return (
