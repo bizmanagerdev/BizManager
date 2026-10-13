@@ -35,9 +35,20 @@ function setOnline(online: boolean) {
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
 }
 
+function setVisible(visible: boolean) {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (visible ? "visible" : "hidden") });
+}
+
+/** The app back on screen (a phone opened again, a tab switched back to). */
+function comeBack() {
+  setVisible(true);
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   setOnline(true);
+  setVisible(true);
   nav.replace.mockReset();
   toasts.info.mockReset();
   setLocalSyncStatus(synced(true));
@@ -68,6 +79,50 @@ describe("useLocalCopyBehind", () => {
     act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS * 3));
     expect(result.current).toBe(false);
   });
+
+  // A phone's sync closes while the app is in the background; counting that
+  // time sent the board to the server version the moment it was opened again
+  // (Sentry, 2026-10-12). Coming back gets the same 30 s as opening.
+  it("time in the background doesn't count — coming back starts the count again", () => {
+    const { result, rerender } = renderHook(() => useLocalCopyBehind());
+    act(() => setLocalSyncStatus(synced(false)));
+    setVisible(false);
+    act(() => vi.advanceTimersByTime(40 * 60_000));
+    expect(result.current).toBe(false);
+    act(() => comeBack());
+    rerender();
+    expect(result.current).toBe(false);
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS - 1000));
+    expect(result.current).toBe(false);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current).toBe(true);
+  });
+
+  it("a check that runs far later than set (the device asleep) starts the count again", () => {
+    const { result } = renderHook(() => useLocalCopyBehind());
+    act(() => setLocalSyncStatus(synced(false)));
+    // Asleep: the clock moves on, the timers don't.
+    vi.setSystemTime(Date.now() + 40 * 60_000);
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS));
+    expect(result.current).toBe(false);
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS));
+    expect(result.current).toBe(true);
+  });
+
+  it("back online starts the count again", () => {
+    setOnline(false);
+    const { result, rerender } = renderHook(() => useLocalCopyBehind());
+    act(() => setLocalSyncStatus(synced(false)));
+    act(() => vi.advanceTimersByTime(5 * 60_000));
+    act(() => {
+      setOnline(true);
+      window.dispatchEvent(new Event("online"));
+    });
+    rerender();
+    expect(result.current).toBe(false);
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS));
+    expect(result.current).toBe(true);
+  });
 });
 
 describe("a page drawn from a copy that's behind", () => {
@@ -90,6 +145,25 @@ describe("a page drawn from a copy that's behind", () => {
     act(() => setLocalSyncStatus(synced(false)));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(COPY_BEHIND_AFTER_MS);
+    });
+    expect(nav.replace).not.toHaveBeenCalled();
+  });
+
+  it("a phone opened again after a while in the background stays on its copy while the sync reconnects", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    renderHook(() => useLocalCard({ kind: "sales" as never, viewer, page: "dashboard", serverHref: "/dashboard?data=server" }));
+    act(() => setLocalSyncStatus(synced(false)));
+    setVisible(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40 * 60_000);
+    });
+    act(() => comeBack());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    act(() => setLocalSyncStatus(synced(true)));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(COPY_BEHIND_AFTER_MS * 2);
     });
     expect(nav.replace).not.toHaveBeenCalled();
   });

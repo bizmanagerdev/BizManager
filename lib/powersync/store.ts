@@ -124,28 +124,65 @@ let disconnectedSince: number | null = null;
 export function setLocalSyncStatus(status: LocalSyncStatus | null) {
   if (status?.hasSynced && !status.connected) disconnectedSince ??= Date.now();
   else disconnectedSince = null;
+  if (status) watchWake();
   emit({ ...state, status });
 }
 
 /** How long the sync may be down (opening counts — it connects in a few seconds) before the copy counts as behind. */
 export const COPY_BEHIND_AFTER_MS = 30_000;
 
+/** A check that runs this much later than it was set for: the device was asleep, or the app in the background. */
+const LATE_CHECK_MS = 10_000;
+
 /**
- * True when this device is online but its complete copy has had no sync
- * connection for `afterMs`: the copy is out of date, and pages drawn from it
- * should show the server version instead (useLocalCard). Offline it stays
- * false — then the copy is the whole point.
+ * Start the count again: the app came back on screen, or the device back
+ * online. The time before — in the background, asleep, offline — says nothing
+ * about the copy; like opening, the sync gets its few seconds to reconnect.
+ * Phones counted the time in the background and went to the server version
+ * the moment they were opened again (Sentry, 2026-10-12).
+ */
+function restartCopyBehindClock() {
+  if (disconnectedSince === null) return;
+  disconnectedSince = Date.now();
+  emit({ ...state });
+}
+
+let wakeWatched = false;
+
+function watchWake() {
+  if (wakeWatched || typeof document === "undefined") return;
+  wakeWatched = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") restartCopyBehindClock();
+  });
+  window.addEventListener("online", () => restartCopyBehindClock());
+}
+
+/**
+ * True when this device is online, on screen, and its complete copy has had
+ * no sync connection for `afterMs`: the copy is out of date, and pages drawn
+ * from it should show the server version instead (useLocalCard). Offline it
+ * stays false — then the copy is the whole point.
  */
 export function useLocalCopyBehind(afterMs = COPY_BEHIND_AFTER_MS): boolean {
   const since = useSyncExternalStore(subscribe, () => disconnectedSince, () => null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (since === null) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, since + afterMs - Date.now()));
+    const delay = Math.max(0, since + afterMs - Date.now());
+    const setFor = Date.now() + delay;
+    const timer = setTimeout(() => {
+      // Far later than set: asleep or in the background (and maybe no word of
+      // coming back on screen) — that time doesn't count either.
+      if (Date.now() - setFor > LATE_CHECK_MS) restartCopyBehindClock();
+      else setNow(Date.now());
+    }, delay);
     return () => clearTimeout(timer);
   }, [since, afterMs]);
   if (since === null) return false;
   if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
+  // Off screen nothing is shown; coming back starts the count again.
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return false;
   return now - since >= afterMs;
 }
 
