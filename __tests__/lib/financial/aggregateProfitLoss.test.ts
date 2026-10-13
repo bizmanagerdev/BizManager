@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aggregateProfitLoss, includePersonalRow } from "@/lib/financial/entries";
+import { aggregateExpenseCategories, aggregateProfitLoss, includePersonalRow } from "@/lib/financial/entries";
 import type { FinancialEntry } from "@/lib/financial/types";
 
 // aggregateProfitLoss is a pure reducer over already-built FinancialEntry rows.
@@ -195,5 +195,30 @@ describe("aggregateProfitLoss — grouping, filtering & sorting", () => {
       makeEntry({ businessDomain: "spaceit", domainName: "ספייסיט", origin: "payment", amount: 900 }),
     ]);
     expect(rows.map((r) => r.domain)).toEqual(["spaceit", "sales"]);
+  });
+});
+
+describe("aggregateExpenseCategories — split by domain (owner, 2026-10-13)", () => {
+  it("keeps every domain, property and home included, one row per category and domain", () => {
+    const rows = aggregateExpenseCategories([
+      makeEntry({ type: "outflow", origin: "expense", businessDomain: "general_business", expenseCategory: "דלק", amount: 100 }),
+      makeEntry({ type: "outflow", origin: "expense", businessDomain: "property_management", expenseCategory: "דלק", amount: 40 }),
+      makeEntry({ type: "outflow", origin: "expense", businessDomain: "property_management", expenseCategory: "ארנונה", amount: 300 }),
+      makeEntry({ type: "outflow", origin: "expense", businessDomain: "home", expenseCategory: "דלק", amount: 7 }),
+    ]);
+    const find = (category: string, domain: string) =>
+      rows.find((r) => r.category === category && r.domain === domain);
+    expect(rows).toHaveLength(4);
+    expect(find("דלק", "general_business")?.cashExpense).toBe(100);
+    expect(find("דלק", "property_management")?.cashExpense).toBe(40);
+    expect(find("ארנונה", "property_management")?.cashExpense).toBe(300);
+    expect(find("דלק", "home")?.cashExpense).toBe(7);
+  });
+
+  it("counts only the paid part of a partly paid bill in cash, all of it in accrual", () => {
+    const rows = aggregateExpenseCategories([
+      makeEntry({ type: "outflow", origin: "expense", stage: "pending", businessDomain: "property_management", expenseCategory: "שיפוץ", amount: 1000, expensePaidAmount: 250 }),
+    ]);
+    expect(rows).toEqual([{ category: "שיפוץ", domain: "property_management", cashExpense: 250, accrualExpense: 1000 }]);
   });
 });

@@ -272,7 +272,9 @@ export default function FinancialPageClient({
   const [reportBasis, setReportBasis] = useState<"cash" | "earned">("earned");
   const [includeOpen, setIncludeOpen] = useState(false);
   const [includeHomeCharity, setIncludeHomeCharity] = useState(false);
-  const [includeProperties, setIncludeProperties] = useState(false);
+  // On by default: rent and property costs are part of the monthly cycle
+  // (owner, 2026-10-13: "yes, turn it on by default").
+  const [includeProperties, setIncludeProperties] = useState(true);
   // Global domain chips (empty = all) — live in the report control row and filter
   // the by-domain views (לפי תחום / חודשי) across every tab, not just one panel.
   const [selectedReportDomains, setSelectedReportDomains] = useState<string[]>([]);

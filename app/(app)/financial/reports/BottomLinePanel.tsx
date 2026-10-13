@@ -267,14 +267,18 @@ export default function BottomLinePanel({
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">
+                {/* Each step with its own sign: שוטף and בית/צדקה usually take
+                    money away, ניהול נכסים usually adds — "− נכסים -₪X" read
+                    as a double minus once property was on by default. */}
+                {`רווח מהעסקים ${formatCurrency(businessTotal)}`}
                 {[
-                  `רווח מהעסקים ${formatCurrency(businessTotal)}`,
-                  `שוטף ${formatCurrency(-overheadTotal)}`,
-                  groups.homeCharity.length > 0 ? `בית/צדקה ${formatCurrency(-homeCharityTotal)}` : null,
-                  groups.properties.length > 0 ? `נכסים ${formatCurrency(-propertiesTotal)}` : null,
+                  { label: "שוטף", value: overheadTotal, show: true },
+                  { label: "בית/צדקה", value: homeCharityTotal, show: groups.homeCharity.length > 0 },
+                  { label: "נכסים", value: propertiesTotal, show: groups.properties.length > 0 },
                 ]
-                  .filter(Boolean)
-                  .join(" − ")}{" "}
+                  .filter((step) => step.show)
+                  .map((step) => ` ${step.value < 0 ? "−" : "+"} ${step.label} ${formatCurrency(Math.abs(step.value))}`)
+                  .join("")}{" "}
                 = {formatCurrency(finalLeft)}
               </p>
             </CardContent>
@@ -324,7 +328,9 @@ export default function BottomLinePanel({
 
               {groups.properties.length > 0 ? (
                 <div className="pt-2">
-                  <div className="mb-1 text-xs font-medium text-muted-foreground">פחות ניהול נכסים</div>
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">
+                    {propertiesTotal >= 0 ? "ועוד ניהול נכסים" : "פחות ניהול נכסים"}
+                  </div>
                   {groups.properties
                     .slice()
                     .sort((a, b) => a.net - b.net)

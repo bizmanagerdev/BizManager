@@ -270,8 +270,11 @@ export type ProfitLossDomainRow = {
 };
 
 // Expense line item by category (cash/accrual) — see aggregateExpenseCategories in entries.ts.
+// One row per category AND business domain, so the report can apply the same
+// domain chips and בית/צדקה / ניהול נכסים toggles as the totals above it.
 export type ProfitLossCategoryRow = {
   category: string;
+  domain: string | null;
   cashExpense: number;
   accrualExpense: number;
 };

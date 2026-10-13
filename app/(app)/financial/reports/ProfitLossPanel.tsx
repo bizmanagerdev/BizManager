@@ -178,22 +178,27 @@ export default function ProfitLossPanel({
   // Comparison + category breakdown only exist for cash/accrual (not earned).
   const hasComparison = !isEarned && previousPeriod != null && previousRows.length > 0;
 
-  // Expense line items by category, with each line as a % of revenue.
+  // Expense line items by category, with each line as a % of revenue. The rows
+  // come split by domain and go through the same toggles and domain chips as the
+  // totals above, so the table adds up to the same expenses it sits under.
   const categoryRows = useMemo(() => {
     if (isEarned) return [];
     const revenue = view.totals.revenue;
-    return expenseCategories
-      .map((row) => {
-        const amount = basis === "cash" ? row.cashExpense : row.accrualExpense;
-        return {
-          category: row.category,
-          amount,
-          pctOfRevenue: revenue > 0 ? (amount / revenue) * 100 : null,
-        };
-      })
+    const byCategory = new Map<string, number>();
+    for (const row of expenseCategories) {
+      if (!includePersonalRow(row.domain, { includeHomeCharity, includeProperties })) continue;
+      if (!domainMatchesSelection(row.domain)) continue;
+      const amount = basis === "cash" ? row.cashExpense : row.accrualExpense;
+      byCategory.set(row.category, (byCategory.get(row.category) ?? 0) + amount);
+    }
+    return Array.from(byCategory, ([category, amount]) => ({
+      category,
+      amount,
+      pctOfRevenue: revenue > 0 ? (amount / revenue) * 100 : null,
+    }))
       .filter((row) => row.amount !== 0)
       .sort((left, right) => right.amount - left.amount);
-  }, [expenseCategories, basis, isEarned, view.totals.revenue]);
+  }, [expenseCategories, basis, isEarned, view.totals.revenue, includeHomeCharity, includeProperties, domainMatchesSelection]);
   const categoryTotal = categoryRows.reduce((sum, row) => sum + row.amount, 0);
 
   const periodLabel = `${from ? formatShortDate(from) : "—"} – ${to ? formatShortDate(to) : "—"}`;
@@ -602,7 +607,7 @@ export default function ProfitLossPanel({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base text-right">הוצאות לפי קטגוריה</CardTitle>
-          <CardDescription className="text-right">הוצאות עסקיות לפי קטגוריה, וכאחוז מההכנסות.</CardDescription>
+          <CardDescription className="text-right">ההוצאות שבסה״כ למעלה, לפי קטגוריה, וכאחוז מההכנסות.</CardDescription>
         </CardHeader>
         <CardContent>
           {categoryRows.length === 0 ? (

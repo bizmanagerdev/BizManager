@@ -28,7 +28,6 @@ import {
   buildDomainGroups,
   buildForecastMonthly,
   buildMonthlyTrend,
-  isPersonalDomain,
   buildExpenseEntries,
   buildLoanEntries,
   buildOrderReceivableEntries,
@@ -510,12 +509,11 @@ export async function getFinancialPageData(
     profitLoss: aggregateProfitLoss(domainEntries, { from, to }),
     // Line-item proof behind each domain's cash/accrual number (סקירה drill-down).
     profitLossProof: aggregateProfitLossProof(domainEntries, { from, to }),
-    // Expense line items by category. When no explicit domain is chosen, exclude personal
-    // (home/charity) to match the P&L's business-only default; an explicit domain shows as-is.
-    profitLossExpenseCategories: aggregateExpenseCategories(
-      domain ? domainEntries : domainEntries.filter((entry) => !isPersonalDomain(entry.businessDomain)),
-      { from, to }
-    ),
+    // Expense line items by category, split by domain — every domain, personal ones
+    // too. The report applies the בית/צדקה and ניהול נכסים toggles and the domain
+    // chips to these rows exactly as it does to the totals (owner, 2026-10-13: the
+    // table never showed property expenses, even with the toggle on).
+    profitLossExpenseCategories: aggregateExpenseCategories(domainEntries, { from, to }),
     profitLossPrevious: previousPeriod ? aggregateProfitLoss(domainEntries, previousPeriod) : [],
     profitLossPreviousPeriod: previousPeriod,
     // Historical monthly trend: posted-only, within [from..today] (default last 12 months).

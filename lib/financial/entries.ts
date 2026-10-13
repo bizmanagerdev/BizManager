@@ -367,11 +367,11 @@ export function buildDomainGroups(entries: FinancialEntry[], referenceDate: stri
   );
 }
 
-// Domains that are personal/off-books rather than core business activity. The
-// P&L excludes them by default — as TWO independently toggleable groups (owner
-// request, 2026-08-20): בית/צדקה (personal life) and ניהול נכסים (its own
-// separate "bucket" — not personal money, just kept apart unless asked for).
-// Each group has its own checkbox in the Reports control row.
+// Domains that are personal/off-books rather than core business activity — as TWO
+// independently toggleable groups (owner request, 2026-08-20): בית/צדקה (personal
+// life, off by default) and ניהול נכסים (its own separate "bucket"; on by default
+// since 2026-10-13 — rent is part of the monthly cycle). Each group has its own
+// checkbox in the Reports control row.
 const HOME_CHARITY_DOMAINS: ReadonlySet<string> = new Set(["home", "charity"]);
 const PROPERTY_PERSONAL_DOMAINS: ReadonlySet<string> = new Set(["property_management"]);
 
@@ -600,7 +600,9 @@ const UNCATEGORIZED = "ללא קטגוריה";
  * Expense line items by category over [from, to] — the classic P&L expense
  * breakdown. Worker pay (paid + owed) collapses into a single "שכר עובדים" line.
  * Both bases mirror aggregateProfitLoss's expense rules so the UI basis toggle
- * keeps the category table consistent with the totals.
+ * keeps the category table consistent with the totals. Rows are split by
+ * business domain (every domain, personal ones too): the report filters them
+ * with the same chips and toggles as the totals, then merges by category.
  */
 export function aggregateExpenseCategories(
   entries: FinancialEntry[],
@@ -610,11 +612,12 @@ export function aggregateExpenseCategories(
   const to = options.to || null;
   const rows = new Map<string, ProfitLossCategoryRow>();
 
-  const add = (category: string, cash: number, accrual: number) => {
-    let row = rows.get(category);
+  const add = (category: string, domain: string | null, cash: number, accrual: number) => {
+    const key = `${category}\u0000${domain ?? ""}`;
+    let row = rows.get(key);
     if (!row) {
-      row = { category, cashExpense: 0, accrualExpense: 0 };
-      rows.set(category, row);
+      row = { category, domain, cashExpense: 0, accrualExpense: 0 };
+      rows.set(key, row);
     }
     row.cashExpense += cash;
     row.accrualExpense += accrual;
@@ -626,17 +629,18 @@ export function aggregateExpenseCategories(
     if (to && entry.flowDate > to) continue;
 
     const { stage, origin, amount } = entry;
+    const domain = entry.businessDomain ?? null;
     const partialPaid =
       entry.expensePaidAmount != null && entry.expensePaidAmount > 0 ? entry.expensePaidAmount : 0;
 
     if (origin === "expense") {
       const category = entry.expenseCategory?.trim() || UNCATEGORIZED;
-      if (stage === "posted") add(category, amount, amount);
-      else if (stage === "pending") add(category, partialPaid, amount);
+      if (stage === "posted") add(category, domain, amount, amount);
+      else if (stage === "pending") add(category, domain, partialPaid, amount);
     } else if (origin === "worker_payment" && stage === "posted") {
-      add(WAGES_CATEGORY, amount, amount);
+      add(WAGES_CATEGORY, domain, amount, amount);
     } else if (origin === "worker_owed" && stage === "pending") {
-      add(WAGES_CATEGORY, 0, amount);
+      add(WAGES_CATEGORY, domain, 0, amount);
     }
   }
 
