@@ -105,11 +105,17 @@ describe("formatRelativeDateLabel", () => {
     expect(formatRelativeDateLabel("2026-06-10", "-", TODAY)).toBe("לפני 5 ימים");
   });
   it("within a month: rounds to whole weeks", () => {
-    expect(formatRelativeDateLabel("2026-06-29", "-", TODAY)).toBe("בעוד 2 שבועות"); // 14 days
+    expect(formatRelativeDateLabel("2026-06-29", "-", TODAY)).toBe("בעוד שבועיים"); // 14 days
     expect(formatRelativeDateLabel("2026-05-25", "-", TODAY)).toBe("לפני 3 שבועות"); // 21 days
   });
   it("a month or further out: rounds to whole months", () => {
-    expect(formatRelativeDateLabel("2026-08-15", "-", TODAY)).toBe("בעוד 2 חודשים"); // ~61 days
+    expect(formatRelativeDateLabel("2026-08-15", "-", TODAY)).toBe("בעוד חודשיים"); // ~61 days
+    expect(formatRelativeDateLabel("2026-10-01", "-", TODAY)).toBe("בעוד 4 חודשים"); // 108 days
+  });
+  it("one and two use Hebrew's own words, never '1 שבועות' or '2 ימים'", () => {
+    expect(formatRelativeDateLabel("2026-06-08", "-", TODAY)).toBe("לפני שבוע"); // 7 days
+    expect(formatRelativeDateLabel("2026-06-13", "-", TODAY)).toBe("לפני יומיים");
+    expect(formatRelativeDateLabel("2026-07-15", "-", TODAY)).toBe("בעוד חודש"); // 30 days
   });
   it("falls back for null/unparseable input", () => {
     expect(formatRelativeDateLabel(null, "-", TODAY)).toBe("-");

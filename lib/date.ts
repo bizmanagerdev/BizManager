@@ -1,3 +1,4 @@
+import { pluralHe } from "@/lib/i18n/pluralHe";
 import { israelDateKey, israelParts, type WallClockParts } from "@/lib/timezone";
 
 /**
@@ -170,15 +171,13 @@ export function formatRelativeDateLabel(value: string | null | undefined, fallba
   if (diffDays === -1) return "אתמול";
   if (diffDays === 1) return "מחר";
 
-  if (absDiffDays < 7) {
-    return diffDays < 0 ? `לפני ${absDiffDays} ימים` : `בעוד ${absDiffDays} ימים`;
-  }
-
-  if (absDiffDays < 30) {
-    const weeks = Math.round(absDiffDays / 7);
-    return diffDays < 0 ? `לפני ${weeks} שבועות` : `בעוד ${weeks} שבועות`;
-  }
-
-  const months = Math.max(1, Math.round(absDiffDays / 30));
-  return diffDays < 0 ? `לפני ${months} חודשים` : `בעוד ${months} חודשים`;
+  // Hebrew counts with its own words for one and two — "לפני שבוע", "בעוד
+  // שבועיים", never "לפני 1 שבועות" (seen on the customer page, 2026-10-13).
+  const span =
+    absDiffDays < 7
+      ? pluralHe(absDiffDays, { one: "יום", two: "יומיים", many: "ימים" })
+      : absDiffDays < 30
+        ? pluralHe(Math.round(absDiffDays / 7), { one: "שבוע", two: "שבועיים", many: "שבועות" })
+        : pluralHe(Math.max(1, Math.round(absDiffDays / 30)), { one: "חודש", two: "חודשיים", many: "חודשים" });
+  return diffDays < 0 ? `לפני ${span}` : `בעוד ${span}`;
 }
