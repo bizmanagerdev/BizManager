@@ -811,6 +811,12 @@ export default function SalesOrdersClient({
               desktop={
                 <DataTableShell
                   ref={scrollRef}
+                  // The column names' row is two lines tall from the start: as
+                  // more rows arrived, a column narrowed and "הערות ותגובות"
+                  // wrapped to a second line, pushing every row down 23px
+                  // (Sentry, 2026-10-14). On one line they'd widen the table
+                  // past a 1366px laptop instead.
+                  headerRowClassName="[&>th]:h-16"
                   header={
                     <>
                       <th className="px-4 py-3 font-medium">לקוח</th>

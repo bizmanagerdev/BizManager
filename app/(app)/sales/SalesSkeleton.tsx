@@ -94,7 +94,14 @@ function OrdersSkeleton() {
           breakpoint="xl"
           // A row is as tall as its actions cell: צפייה בהזמנה, ✓ אישור אספקה
           // and the ⋮ stacked (2 × h-9, h-8, two gaps), its padding and border.
-          desktop={<TableSkeleton headers={ORDER_COLUMNS} rows={4} rowClassName="h-[calc(9.5rem+1px)]" />}
+          desktop={
+            <TableSkeleton
+              headers={ORDER_COLUMNS}
+              rows={4}
+              rowClassName="h-[calc(9.5rem+1px)]"
+              headClassName="h-16 px-4 py-3 font-medium"
+            />
+          }
           mobile={
             <div className="grid grid-cols-1 gap-2">
               <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
