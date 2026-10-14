@@ -1,4 +1,7 @@
-# BizManager — PowerSync Sync Streams, v1.10 (2026-10-11): each worker's own
+# BizManager — PowerSync Sync Streams, v1.11 (2026-10-13): staff also get
+# customers' contacts, and the tags and which records carry them — the
+# customers list and a customer's page drawn on the device.
+# v1.10 (2026-10-11): each worker's own
 # shift reports, open and waiting for approval — so a clock-in with no signal
 # can check the phone for a shift already open (worker_attendance).
 # v1.9 (2026-10-09): each person's own
@@ -97,6 +100,11 @@ streams:
         FROM order_delivery_recipients, staff_gate AS bucket
       - SELECT customers.* FROM customers, staff_gate AS bucket
       - SELECT customer_branches.* FROM customer_branches, staff_gate AS bucket
+      # A customer's page and the customers list: his contacts, and the tags
+      # on him (tags are shared by customers, projects and other records).
+      - SELECT contacts.* FROM contacts, staff_gate AS bucket
+      - SELECT tags.* FROM tags, staff_gate AS bucket
+      - SELECT entity_tags.* FROM entity_tags, staff_gate AS bucket
       - SELECT order_items.* FROM order_items, staff_gate AS bucket
       - SELECT products.* FROM products, staff_gate AS bucket
       - |
