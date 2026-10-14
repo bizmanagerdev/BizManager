@@ -105,6 +105,10 @@ export function useCustomerSearchIndex({
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState<boolean>(cache?.stale ?? false);
   const [savedAt, setSavedAt] = useState<number | null>(cache?.loadedAt ?? null);
+  // Whether the list is wanted yet: at once, unless the caller defers it — then
+  // when the page goes idle, or the moment `load()` says it's needed (the
+  // search box focused before then).
+  const [wanted, setWanted] = useState(() => !deferUntilIdle || cache !== null);
 
   const syncMeta = useCallback(() => {
     const meta = getCustomerIndexMeta();
@@ -113,38 +117,42 @@ export function useCustomerSearchIndex({
   }, []);
 
   useEffect(() => {
+    if (wanted) return;
+    const want = () => setWanted(true);
+    const idle = typeof window.requestIdleCallback === "function";
+    const handle = idle ? window.requestIdleCallback(want, { timeout: 5000 }) : window.setTimeout(want, 2000);
+    return () => {
+      if (idle) window.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
+  }, [wanted]);
+
+  useEffect(() => {
+    if (!wanted) return;
     let cancelled = false;
     // loadIndex resolves instantly from the module cache when it is warm, so
     // this paints synchronously-ish without a network round-trip; only the
     // first cold load actually hits the server (or the offline snapshot).
-    const load = () => {
-      loadIndex()
-        .then((data) => {
-          if (cancelled) return;
-          setEntries(data);
-          setLoading(false);
-          syncMeta();
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setError("שגיאת טעינת רשימת הלקוחות");
-          setLoading(false);
-        });
-    };
-    if (!deferUntilIdle || cache) {
-      load();
-      return () => {
-        cancelled = true;
-      };
-    }
-    const idle = typeof window.requestIdleCallback === "function";
-    const handle = idle ? window.requestIdleCallback(load, { timeout: 5000 }) : window.setTimeout(load, 2000);
+    loadIndex()
+      .then((data) => {
+        if (cancelled) return;
+        setEntries(data);
+        setLoading(false);
+        setError(null);
+        syncMeta();
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError("שגיאת טעינת רשימת הלקוחות");
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
-      if (idle) window.cancelIdleCallback(handle);
-      else window.clearTimeout(handle);
     };
-  }, [syncMeta, deferUntilIdle]);
+  }, [syncMeta, wanted]);
+
+  /** Load it now (a deferred caller's search box was focused) — a no-op once it's wanted. */
+  const load = useCallback(() => setWanted(true), []);
 
   // Reload when the index is invalidated (e.g. after a customer is created).
   useEffect(() => {
@@ -174,5 +182,5 @@ export function useCustomerSearchIndex({
     return data;
   }, [syncMeta]);
 
-  return { entries, search, loading, error, refresh, stale, savedAt };
+  return { entries, search, loading, error, refresh, stale, savedAt, load };
 }

@@ -33,6 +33,16 @@ export function daysHe(count: number): string {
   return pluralHe(count, { one: "יום אחד", two: "יומיים", many: "ימים" });
 }
 
+/** Orders — "הזמנה אחת", "2 הזמנות" (the customers list and a customer's page). */
+export function ordersHe(count: number): string {
+  return pluralHe(count, { one: "הזמנה אחת", two: "2 הזמנות", many: "הזמנות" });
+}
+
+/** Projects — "פרויקט אחד", "2 פרויקטים", never "1 פרויקטים". */
+export function projectsHe(count: number): string {
+  return pluralHe(count, { one: "פרויקט אחד", two: "2 פרויקטים", many: "פרויקטים" });
+}
+
 /** Documents — "מסמך אחד", "2 מסמכים", never "1 מסמכים". */
 export function documentsHe(count: number): string {
   return pluralHe(count, { one: "מסמך אחד", two: "2 מסמכים", many: "מסמכים" });

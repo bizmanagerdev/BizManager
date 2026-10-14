@@ -19,9 +19,34 @@ import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
-import { fetchCustomerContactsDirect, fetchCustomerBranchesDirect, updateCustomerBranchDirect } from "@/lib/customers/branchesContacts";
+import {
+  fetchCustomerContactsDirect,
+  fetchCustomerBranchesDirect,
+  updateCustomerBranchDirect,
+  type BranchPatch,
+} from "@/lib/customers/branchesContacts";
 import { TagIcon } from "@/components/ui/icons";
 import { registerReversibleAction } from "@/lib/undo-engine";
+import { enqueue, offlineFetch } from "@/lib/offline-queue";
+import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+
+/** No connection right now (the browser knows it) — the save waits in the app's queue. */
+function isOffline() {
+  return typeof navigator !== "undefined" && !navigator.onLine;
+}
+
+// What the dialog says when it couldn't read the customer's contacts, branches
+// or tags — opened with no connection, or a read that failed. The read answers
+// an empty list either way, which used to wipe the contacts the dialog had been
+// handed and let a save "keep" no tags at all.
+const CONTACTS_NOT_REFRESHED = "לא ניתן היה לרענן את אנשי הקשר — מוצגים אלה שידועים. אפשר להוסיף חדשים.";
+const CONTACTS_NOT_LOADED = "אין חיבור — אנשי הקשר לא נטענו. אפשר להוסיף חדשים, והם יישלחו כשיחזור החיבור.";
+const BRANCHES_NOT_LOADED = "אין חיבור — הסניפים לא נטענו. אפשר להוסיף חדשים, והם יישלחו כשיחזור החיבור.";
+const TAGS_NOT_LOADED = "אין חיבור — את התגיות אפשר לערוך כשיחזור החיבור.";
+// Existing branches are written straight to the database, not through a route
+// the app's queue can send later — so with no connection they can't wait.
+const BRANCHES_NEED_CONNECTION =
+  "אין חיבור — שינוי בסניפים קיימים נשמר רק עם חיבור. בטלו את השינוי בסניפים, או נסו שוב כשיחזור החיבור.";
 
 function splitAddressIntoCityAndStreet(address: string | null): { city: string; street: string } {
   if (!address) return { city: "", street: "" };
@@ -62,6 +87,11 @@ export type EditCustomerInput = {
 export type EditCustomerSavedPayload = {
   customer: Row;
   contacts: Row[];
+  /**
+   * Some of the save is waiting in the app's queue for the connection (it goes
+   * out by itself). `customer` is then what was sent, not the server's answer.
+   */
+  queued?: boolean;
 };
 
 // Snapshot of every field this dialog can write, captured as it's loaded
@@ -187,6 +217,21 @@ function branchRowToDraft(row: Row): EditBranchDraft {
   };
 }
 
+/** What a save writes for a branch — also how an edit is compared to the loaded original. */
+function branchPayload(branch: EditBranchDraft) {
+  return {
+    name: branch.name.trim(),
+    address: branch.address.trim() || null,
+    phone: branch.phone.trim() || null,
+    active: branch.active,
+  };
+}
+
+/** A draft as the contact row it stands for (the shape the route answers with). */
+function contactDraftToRow(contact: EditContactDraft, customerId: string): Row {
+  return { id: contact.id, customer_id: customerId, ...contactPayload(contact) };
+}
+
 function emptyBranchDraft(): EditBranchDraft {
   return {
     key: nextBranchKey(),
@@ -204,9 +249,15 @@ export interface EditCustomerDialogProps {
   onOpenChange: (next: boolean) => void;
   customer: EditCustomerInput | null;
   onSaved: (payload: EditCustomerSavedPayload) => void;
+  /**
+   * The save was undone (the toast's "בטל"): the customer and contacts as they
+   * were before it. A list patches its row in place with this; without it the
+   * page is refreshed from the server.
+   */
+  onUndone?: (payload: EditCustomerSavedPayload) => void;
 }
 
-export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: EditCustomerDialogProps) {
+export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUndone }: EditCustomerDialogProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [err, setErr] = useState("");
@@ -238,11 +289,17 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
   // save that races the lookup can never silently unlink someone.
   const [linkLoaded, setLinkLoaded] = useState(false);
   const [tagIds, setTagIds] = useState<string[]>([]);
+  // The tag route replaces a customer's tags with whatever it's sent, so tags
+  // that were never read must never be sent (they'd all be wiped).
+  const [tagsLoaded, setTagsLoaded] = useState(false);
+  const [tagsNote, setTagsNote] = useState("");
 
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contacts, setContacts] = useState<EditContactDraft[]>([]);
+  const [contactsNote, setContactsNote] = useState("");
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [branches, setBranches] = useState<EditBranchDraft[]>([]);
+  const [branchesNote, setBranchesNote] = useState("");
 
   useEffect(() => {
     if (!open || !customer) return;
@@ -270,9 +327,14 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     setRequiresPrepayment(customer.requires_prepayment);
     setLinkedUserId(customer.linked_user_id ?? "");
     setLinkLoaded(customer.linked_user_id !== undefined);
-    setContacts((customer.contacts ?? []).map(contactRowToDraft));
+    const knownContacts = (customer.contacts ?? []).map(contactRowToDraft);
+    setContacts(knownContacts);
+    setContactsNote("");
     setBranches([]);
+    setBranchesNote("");
     setTagIds([]);
+    setTagsLoaded(false);
+    setTagsNote("");
 
     originalCustomerRef.current = {
       name: customer.name ?? "",
@@ -289,12 +351,21 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
       linkLoaded: customer.linked_user_id !== undefined,
       tag_ids: [],
     };
-    originalContactsRef.current = (customer.contacts ?? []).map(contactRowToDraft);
+    originalContactsRef.current = knownContacts;
     originalBranchesRef.current = [];
 
     if (!customer.id) return;
+    // No connection: nothing can be read. The contacts it was handed stay, and
+    // it says what wasn't loaded — the save still works, and waits in the queue.
+    if (isOffline()) {
+      setContactsNote(knownContacts.length > 0 ? CONTACTS_NOT_REFRESHED : CONTACTS_NOT_LOADED);
+      setBranchesNote(BRANCHES_NOT_LOADED);
+      setTagsNote(TAGS_NOT_LOADED);
+      return;
+    }
     void fetchExistingTagIds("customer", customer.id).then((ids) => {
       setTagIds(ids);
+      setTagsLoaded(true);
       if (originalCustomerRef.current) originalCustomerRef.current.tag_ids = ids;
     });
     // Authoritative worker link, whatever the caller happened to pass.
@@ -314,11 +385,18 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     setContactsLoading(true);
     void fetchCustomerContactsDirect(customer.id)
       .then((rows) => {
+        // A failed read answers [] too. Contacts are switched off, never
+        // deleted, so a customer it was handed contacts for still has them:
+        // keep those rather than show (and save) an empty list.
+        if (rows.length === 0 && knownContacts.length > 0) {
+          setContactsNote(CONTACTS_NOT_REFRESHED);
+          return;
+        }
         const drafts = rows.map(contactRowToDraft);
         setContacts(drafts);
         originalContactsRef.current = drafts;
       })
-      .catch(() => { /* ignore */ })
+      .catch(() => setContactsNote(knownContacts.length > 0 ? CONTACTS_NOT_REFRESHED : ""))
       .finally(() => setContactsLoading(false));
     setBranchesLoading(true);
     void fetchCustomerBranchesDirect(customer.id)
@@ -402,244 +480,286 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
 
     const loadedTagIds = originalCustomerRef.current?.tag_ids ?? [];
     const tagsChanged =
-      tagIds.length !== loadedTagIds.length || tagIds.some((tagId) => !loadedTagIds.includes(tagId));
+      tagsLoaded &&
+      (tagIds.length !== loadedTagIds.length || tagIds.some((tagId) => !loadedTagIds.includes(tagId)));
+
+    const customerId = customer.id;
+    const customerBody: Record<string, unknown> = {
+      id: customerId,
+      name: name.trim(),
+      name_for_invoice: invoiceName.trim() || null,
+      registration_number: reg.trim() || null,
+      phone: phone.trim() || null,
+      whatsapp: whatsapp.trim() || null,
+      email: email.trim() || null,
+      address: combinedAddress,
+      notes: notes.trim() || null,
+      active,
+      requires_prepayment: requiresPrepayment,
+      ...(linkLoaded ? { linked_user_id: linkedUserId || null } : {}),
+      // Only when they changed: the route clears and re-inserts a customer's
+      // tags whenever tag_ids is sent.
+      ...(tagsChanged ? { tag_ids: tagIds } : {}),
+    };
+
+    // Existing branches that changed — written straight to the database, so
+    // they go first, and only with a connection (see BRANCHES_NEED_CONNECTION).
+    const branchUpdates: { id: string; patch: BranchPatch; failure: string }[] = [];
+    const newBranches: EditBranchDraft[] = [];
+    for (const branch of branches) {
+      if (branch._deleted) {
+        if (branch.id) {
+          branchUpdates.push({ id: branch.id, patch: { active: false }, failure: `הסרת סניף נכשלה (${branch.name || branch.id}).` });
+        }
+        continue;
+      }
+      const payload = branchPayload(branch);
+      if (!branch.id) {
+        newBranches.push(branch);
+        continue;
+      }
+      const loadedBranch = originalBranchesRef.current.find((b) => b.id === branch.id);
+      if (loadedBranch && samePayload(payload, branchPayload(loadedBranch))) continue;
+      branchUpdates.push({ id: branch.id, patch: payload, failure: `עדכון סניף נכשל (${payload.name}).` });
+    }
+    if (branchUpdates.length > 0 && isOffline()) return setErr(BRANCHES_NEED_CONNECTION);
+
+    // Undo plan for this save — one op per contact/branch actually written,
+    // built as we go so it exactly matches what was committed (not what was
+    // attempted; an early return stops before anything gets queued).
+    type ContactOriginal = {
+      full_name: string;
+      role: string | null;
+      phone: string | null;
+      email: string | null;
+      whatsapp: string | null;
+      notes: string | null;
+      is_primary: boolean;
+      active: boolean;
+    };
+    const contactUndoOps: ({ kind: "un-create"; id: string } | { kind: "restore"; id: string; original: ContactOriginal })[] = [];
+    const branchUndoOps: (
+      | { kind: "un-create"; id: string }
+      | { kind: "restore"; id: string; original: { name: string; address: string | null; phone: string | null; active: boolean } }
+    )[] = [];
+    const restoreContact = (id: string) => {
+      const original = originalContactsRef.current.find((c) => c.id === id);
+      if (original) contactUndoOps.push({ kind: "restore", id, original: contactPayload(original) });
+    };
+    const restoreBranch = (id: string) => {
+      const original = originalBranchesRef.current.find((b) => b.id === id);
+      if (original) branchUndoOps.push({ kind: "restore", id, original: branchPayload(original) });
+    };
+    // New branches the server numbered — kept on their drafts if the save stops
+    // part-way, so saving again doesn't create them twice.
+    const createdBranchIds = new Map<string, string>();
+
+    // The rest goes through the app's queue (offlineFetch), in this order: the
+    // customer, then each contact that changed, then each new branch. A single
+    // request isn't possible (separate routes), so once one of them has to wait
+    // for the connection, every one after it waits too, right behind it — the
+    // queue sends them in order, by itself, when the connection is back. The
+    // list shows the change at once, marked as waiting.
+    type PlannedWrite = {
+      url: string;
+      body: Record<string, unknown>;
+      label: string;
+      idempotent?: boolean;
+      /** The words for a refusal. */
+      failure: string;
+      /** Record what the write did — `data` is null when it was queued. False: not the answer expected. */
+      done: (data: Record<string, unknown> | null) => boolean;
+    };
+    let savedCustomer: Row | null = null;
+    // In the drafts' order, as the caller gets them back.
+    const contactSlots: (Row | null)[] = contacts.map(() => null);
+    const writes: PlannedWrite[] = [
+      {
+        url: "/api/customers/update",
+        body: customerBody,
+        label: "עדכון לקוח",
+        failure: "עדכון לקוח נכשל.",
+        done: (data) => {
+          if (!data) return true;
+          if (!data.customer || typeof data.customer !== "object") return false;
+          savedCustomer = data.customer as Row;
+          return true;
+        },
+      },
+    ];
+    contacts.forEach((contact, index) => {
+      if (contact._deleted) {
+        if (!contact.id) return;
+        const id = contact.id;
+        writes.push({
+          url: "/api/customer-contacts/update",
+          body: { id, active: false, is_primary: false },
+          label: "הסרת איש קשר",
+          failure: `הסרת איש קשר נכשלה (${contact.full_name || id}).`,
+          done: () => {
+            restoreContact(id);
+            return true;
+          },
+        });
+        return;
+      }
+      const payload = contactPayload(contact);
+      const loadedContact = contact.id ? originalContactsRef.current.find((c) => c.id === contact.id) : undefined;
+      // Only contacts that actually changed are written — one request each, so
+      // rewriting every one of a chain's rows on every save cost seconds. An
+      // untouched contact still goes back to the caller as it was.
+      if (contact.id && loadedContact && samePayload(payload, contactPayload(loadedContact))) {
+        contactSlots[index] = contactDraftToRow(contact, customerId);
+        return;
+      }
+      if (contact.id) {
+        const id = contact.id;
+        writes.push({
+          url: "/api/customer-contacts/update",
+          body: { id, ...payload },
+          label: "עדכון איש קשר",
+          failure: `עדכון איש קשר נכשל (${payload.full_name}).`,
+          done: (data) => {
+            if (data && !data.contact) return false;
+            contactSlots[index] = (data?.contact as Row | undefined) ?? contactDraftToRow(contact, customerId);
+            restoreContact(id);
+            return true;
+          },
+        });
+        return;
+      }
+      writes.push({
+        url: "/api/customer-contacts/create",
+        body: { customer_id: customerId, ...payload },
+        label: "איש קשר חדש",
+        idempotent: true,
+        failure: `יצירת איש קשר נכשלה (${payload.full_name}).`,
+        done: (data) => {
+          if (data && !data.contact) return false;
+          const created = (data?.contact as Row | undefined) ?? contactDraftToRow(contact, customerId);
+          contactSlots[index] = created;
+          if (typeof created.id === "string" && created.id) contactUndoOps.push({ kind: "un-create", id: created.id });
+          return true;
+        },
+      });
+    });
+    for (const branch of newBranches) {
+      const payload = branchPayload(branch);
+      writes.push({
+        url: "/api/customer-branches/create",
+        body: { customer_id: customerId, ...payload },
+        label: "סניף חדש",
+        idempotent: true,
+        failure: `יצירת סניף נכשלה (${payload.name}).`,
+        done: (data) => {
+          const newBranchId = (data?.branch as Row | undefined)?.id;
+          if (typeof newBranchId === "string") {
+            branchUndoOps.push({ kind: "un-create", id: newBranchId });
+            createdBranchIds.set(branch.key, newBranchId);
+          }
+          return true;
+        },
+      });
+    }
+
+    const handBack = (queued: boolean): EditCustomerSavedPayload => ({
+      // Queued before the server answered: what was sent stands in for its answer.
+      customer: savedCustomer ?? { ...customerBody },
+      contacts: contactSlots.filter((c): c is Row => c !== null && c.active !== false),
+      queued,
+    });
 
     setLoading(true);
     try {
-      const res = await fetch("/api/customers/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: customer.id,
-          name: name.trim(),
-          name_for_invoice: invoiceName.trim() || null,
-          registration_number: reg.trim() || null,
-          phone: phone.trim() || null,
-          whatsapp: whatsapp.trim() || null,
-          email: email.trim() || null,
-          address: combinedAddress,
-          notes: notes.trim() || null,
-          active,
-          requires_prepayment: requiresPrepayment,
-          ...(linkLoaded ? { linked_user_id: linkedUserId || null } : {}),
-          // Only when they changed: the route clears and re-inserts a customer's
-          // tags whenever tag_ids is sent.
-          ...(tagsChanged ? { tag_ids: tagIds } : {}),
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
-      if (!res.ok || !json.customer) {
-        return setErr(toHebrewError(json.error, "עדכון לקוח נכשל."));
+      for (const update of branchUpdates) {
+        const result = await updateCustomerBranchDirect(update.id, update.patch);
+        if (!result.ok) return setErr(toHebrewError(result.error, update.failure));
+        restoreBranch(update.id);
       }
 
-      // Undo plan for this save — one op per contact/branch actually written,
-      // built as we go so it exactly matches what was committed (not what was
-      // attempted; an early return above stops before anything gets queued).
-      const contactUndoOps: (
-        | { kind: "un-create"; id: string }
-        | {
-            kind: "restore";
-            id: string;
-            original: {
-              full_name: string;
-              role: string | null;
-              phone: string | null;
-              email: string | null;
-              whatsapp: string | null;
-              notes: string | null;
-              is_primary: boolean;
-              active: boolean;
-            };
-          }
-      )[] = [];
-      const branchUndoOps: (
-        | { kind: "un-create"; id: string }
-        | { kind: "restore"; id: string; original: { name: string; address: string | null; phone: string | null; active: boolean } }
-      )[] = [];
-
-      const savedContacts: Row[] = [];
-      // Only contacts/branches that actually changed are written — one request
-      // each, so rewriting every one of a chain's rows on every save cost
-      // seconds. An untouched contact still goes back to the caller as it was.
-      for (const contact of contacts) {
-        if (contact._deleted) {
-          if (!contact.id) continue;
-          const delRes = await fetch("/api/customer-contacts/update", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: contact.id, active: false, is_primary: false }),
+      let queued = false;
+      for (const [index, write] of writes.entries()) {
+        if (queued) {
+          enqueue({
+            url: write.url,
+            body: write.body,
+            label: write.label,
+            idempotencyKey: write.idempotent ? crypto.randomUUID() : undefined,
           });
-          if (!delRes.ok) {
-            const delJson = (await delRes.json().catch(() => ({}))) as { error?: string };
-            return setErr(toHebrewError(delJson.error, `הסרת איש קשר נכשלה (${contact.full_name || contact.id}).`));
-          }
-          const originalContact = originalContactsRef.current.find((c) => c.id === contact.id);
-          if (originalContact) {
-            contactUndoOps.push({
-              kind: "restore",
-              id: contact.id,
-              original: {
-                full_name: originalContact.full_name,
-                role: originalContact.role || null,
-                phone: originalContact.phone || null,
-                email: originalContact.email || null,
-                whatsapp: originalContact.whatsapp || null,
-                notes: originalContact.notes || null,
-                is_primary: originalContact.is_primary,
-                active: originalContact.active,
-              },
-            });
-          }
+          write.done(null);
           continue;
         }
-
-        const payload = contactPayload(contact);
-
-        const loadedContact = contact.id ? originalContactsRef.current.find((c) => c.id === contact.id) : undefined;
-        if (contact.id && loadedContact && samePayload(payload, contactPayload(loadedContact))) {
-          savedContacts.push({ id: contact.id, customer_id: customer.id, ...payload });
+        const result = await offlineFetch(write.url, write.body, write.label, { idempotent: write.idempotent });
+        if (result.queued) {
+          queued = true;
+          write.done(null);
           continue;
         }
-
-        if (contact.id) {
-          const upRes = await fetch("/api/customer-contacts/update", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: contact.id, ...payload }),
-          });
-          const upJson = (await upRes.json().catch(() => ({}))) as { error?: string; contact?: Row };
-          if (!upRes.ok || !upJson.contact) {
-            return setErr(toHebrewError(upJson.error, `עדכון איש קשר נכשל (${payload.full_name}).`));
+        const data = result.ok ? ((result.data ?? {}) as Record<string, unknown>) : null;
+        if (!result.ok || !data || !write.done(data)) {
+          const message = toHebrewError(result.ok ? undefined : result.error, write.failure);
+          if (index === 0) return setErr(message);
+          // The customer (and what came before this) is saved; this one was
+          // refused. Say exactly that, keep the dialog open to fix it, and
+          // treat what was written as the loaded state, so saving again
+          // doesn't write it twice.
+          setErr(`פרטי הלקוח נשמרו, אבל ${message}`);
+          originalContactsRef.current = contacts
+            .map((contact, i) => {
+              const saved = contactSlots[i];
+              return saved ? contactRowToDraft(saved) : contact.id ? originalContactsRef.current.find((c) => c.id === contact.id) : undefined;
+            })
+            .filter((draft): draft is EditContactDraft => Boolean(draft));
+          setContacts((prev) =>
+            prev.map((contact, i) => {
+              const saved = contactSlots[i];
+              return saved && !contact.id && typeof saved.id === "string" ? { ...contact, id: saved.id } : contact;
+            })
+          );
+          if (createdBranchIds.size > 0) {
+            const numbered = branches.map((b) => (createdBranchIds.has(b.key) ? { ...b, id: createdBranchIds.get(b.key) ?? null } : b));
+            originalBranchesRef.current = [
+              ...originalBranchesRef.current,
+              ...numbered.filter((b) => createdBranchIds.has(b.key)),
+            ];
+            setBranches(numbered);
           }
-          savedContacts.push(upJson.contact);
-          const originalContact = originalContactsRef.current.find((c) => c.id === contact.id);
-          if (originalContact) {
-            contactUndoOps.push({
-              kind: "restore",
-              id: contact.id,
-              original: {
-                full_name: originalContact.full_name,
-                role: originalContact.role || null,
-                phone: originalContact.phone || null,
-                email: originalContact.email || null,
-                whatsapp: originalContact.whatsapp || null,
-                notes: originalContact.notes || null,
-                is_primary: originalContact.is_primary,
-                active: originalContact.active,
-              },
-            });
-          }
-        } else {
-          const crRes = await fetch("/api/customer-contacts/create", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ customer_id: customer.id, ...payload }),
-          });
-          const crJson = (await crRes.json().catch(() => ({}))) as { error?: string; contact?: Row };
-          if (!crRes.ok || !crJson.contact) {
-            return setErr(toHebrewError(crJson.error, `יצירת איש קשר נכשלה (${payload.full_name}).`));
-          }
-          savedContacts.push(crJson.contact);
-          const newContactId = crJson.contact.id;
-          if (typeof newContactId === "string") {
-            contactUndoOps.push({ kind: "un-create", id: newContactId });
-          }
+          onSaved(handBack(false));
+          return;
         }
       }
 
-      for (const branch of branches) {
-        if (branch._deleted) {
-          if (!branch.id) continue;
-          const delResult = await updateCustomerBranchDirect(branch.id, { active: false });
-          if (!delResult.ok) {
-            return setErr(toHebrewError(delResult.error, `הסרת סניף נכשלה (${branch.name || branch.id}).`));
-          }
-          const originalBranch = originalBranchesRef.current.find((b) => b.id === branch.id);
-          if (originalBranch) {
-            branchUndoOps.push({
-              kind: "restore",
-              id: branch.id,
-              original: {
-                name: originalBranch.name,
-                address: originalBranch.address || null,
-                phone: originalBranch.phone || null,
-                active: originalBranch.active,
-              },
-            });
-          }
-          continue;
-        }
-
-        const branchPayload = {
-          name: branch.name.trim(),
-          address: branch.address.trim() || null,
-          phone: branch.phone.trim() || null,
-          active: branch.active,
-        };
-
-        const loadedBranch = branch.id ? originalBranchesRef.current.find((b) => b.id === branch.id) : undefined;
-        if (
-          branch.id &&
-          loadedBranch &&
-          samePayload(branchPayload, {
-            name: loadedBranch.name.trim(),
-            address: loadedBranch.address.trim() || null,
-            phone: loadedBranch.phone.trim() || null,
-            active: loadedBranch.active,
-          })
-        ) {
-          continue;
-        }
-
-        if (branch.id) {
-          const upResult = await updateCustomerBranchDirect(branch.id, branchPayload);
-          if (!upResult.ok) {
-            return setErr(toHebrewError(upResult.error, `עדכון סניף נכשל (${branchPayload.name}).`));
-          }
-          const originalBranch = originalBranchesRef.current.find((b) => b.id === branch.id);
-          if (originalBranch) {
-            branchUndoOps.push({
-              kind: "restore",
-              id: branch.id,
-              original: {
-                name: originalBranch.name,
-                address: originalBranch.address || null,
-                phone: originalBranch.phone || null,
-                active: originalBranch.active,
-              },
-            });
-          }
-        } else {
-          const crRes = await fetch("/api/customer-branches/create", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ customer_id: customer.id, ...branchPayload }),
-          });
-          const crJson = (await crRes.json().catch(() => ({}))) as { error?: string; branch?: Row };
-          if (!crRes.ok) {
-            return setErr(toHebrewError(crJson.error, `יצירת סניף נכשלה (${branchPayload.name}).`));
-          }
-          const newBranchId = crJson.branch?.id;
-          if (typeof newBranchId === "string") {
-            branchUndoOps.push({ kind: "un-create", id: newBranchId });
-          }
-        }
-      }
-
-      onSaved({ customer: json.customer, contacts: savedContacts.filter((c) => c.active !== false) });
+      onSaved(handBack(queued));
       onOpenChange(false);
 
+      // Waiting for the connection: nothing reached the server yet to undo or
+      // to search for — the queue's own notice says it's saved and on its way.
+      if (queued) return;
+      // Searchable by its new name / phone at once (the index is per session).
+      invalidateCustomerSearchIndex();
+
       const originalFields = originalCustomerRef.current;
-      const customerId = customer.id;
+      const originalContacts = originalContactsRef.current;
       registerReversibleAction({
         key: `customer-edit:${customerId}:${Date.now()}`,
         message: "פרטי הלקוח נשמרו",
         onUndo: async () => {
+          // Branches are written straight to the database: with no connection
+          // the undo can't finish, so it doesn't start.
+          if (branchUndoOps.length > 0 && isOffline()) return { ok: false, error: BRANCHES_NEED_CONNECTION };
+          let undoQueued = false;
+          const send = async (body: Record<string, unknown>, url: string, label: string, failure: string) => {
+            const result = await offlineFetch(url, body, label);
+            if (result.queued) {
+              undoQueued = true;
+              return null;
+            }
+            return result.ok ? null : toHebrewError(result.error, failure);
+          };
+
           if (originalFields) {
-            const revertRes = await fetch("/api/customers/update", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
+            const failed = await send(
+              {
                 id: customerId,
                 name: originalFields.name,
                 name_for_invoice: originalFields.name_for_invoice,
@@ -652,26 +772,20 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
                 active: originalFields.active,
                 requires_prepayment: originalFields.requires_prepayment,
                 ...(originalFields.linkLoaded ? { linked_user_id: originalFields.linked_user_id } : {}),
-                tag_ids: originalFields.tag_ids,
-              }),
-            });
-            if (!revertRes.ok) {
-              const revertJson = (await revertRes.json().catch(() => ({}))) as { error?: string };
-              return { ok: false, error: toHebrewError(revertJson.error, "ביטול השינויים בלקוח נכשל.") };
-            }
+                // Only if this save changed them — tags never read must not be sent.
+                ...(tagsChanged ? { tag_ids: originalFields.tag_ids } : {}),
+              },
+              "/api/customers/update",
+              "ביטול עדכון לקוח",
+              "ביטול השינויים בלקוח נכשל."
+            );
+            if (failed) return { ok: false, error: failed };
           }
 
           for (const op of contactUndoOps) {
             const body = op.kind === "un-create" ? { id: op.id, active: false, is_primary: false } : { id: op.id, ...op.original };
-            const res = await fetch("/api/customer-contacts/update", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(body),
-            });
-            if (!res.ok) {
-              const undoJson = (await res.json().catch(() => ({}))) as { error?: string };
-              return { ok: false, error: toHebrewError(undoJson.error, "ביטול השינויים באנשי הקשר נכשל.") };
-            }
+            const failed = await send(body, "/api/customer-contacts/update", "ביטול עדכון איש קשר", "ביטול השינויים באנשי הקשר נכשל.");
+            if (failed) return { ok: false, error: failed };
           }
 
           for (const op of branchUndoOps) {
@@ -682,7 +796,31 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
             }
           }
 
-          startTransition(() => { router.refresh(); });
+          if (!undoQueued) invalidateCustomerSearchIndex();
+          if (onUndone && originalFields) {
+            // The row as it was — patched in place by the list, which stays
+            // where it was scrolled (a refresh started it over from the top).
+            onUndone({
+              customer: {
+                id: customerId,
+                name: originalFields.name,
+                name_for_invoice: originalFields.name_for_invoice,
+                registration_number: originalFields.registration_number,
+                phone: originalFields.phone,
+                whatsapp: originalFields.whatsapp,
+                email: originalFields.email,
+                address: originalFields.address,
+                notes: originalFields.notes,
+                active: originalFields.active,
+                requires_prepayment: originalFields.requires_prepayment,
+                ...(originalFields.linkLoaded ? { linked_user_id: originalFields.linked_user_id } : {}),
+              },
+              contacts: originalContacts.filter((c) => c.active).map((c) => contactDraftToRow(c, customerId)),
+              queued: undoQueued,
+            });
+          } else {
+            startTransition(() => { router.refresh(); });
+          }
           return { ok: true };
         },
       });
@@ -692,6 +830,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
       setLoading(false);
     }
   }
+
 
   return (
     <FormDialog
@@ -780,31 +919,38 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
               disabled={loading || !linkLoaded}
             />
 
-            <TagPicker
-              value={tagIds}
-              onChange={setTagIds}
-              kind="general"
-              createKind="general"
-              allowCreate
-              icon={<TagIcon className="h-3.5 w-3.5" />}
-              label="תגיות / סיווג לקוח"
-              addLabel="הוספת תגית"
-              emptyText="אין תגיות עדיין."
-            />
+            {tagsNote ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">תגיות / סיווג לקוח</div>
+                <p className="text-xs text-muted-foreground">{tagsNote}</p>
+              </div>
+            ) : (
+              <TagPicker
+                value={tagIds}
+                onChange={setTagIds}
+                kind="general"
+                createKind="general"
+                allowCreate
+                icon={<TagIcon className="h-3.5 w-3.5" />}
+                label="תגיות / סיווג לקוח"
+                addLabel="הוספת תגית"
+                emptyText="אין תגיות עדיין."
+              />
+            )}
 
             <div className="space-y-3 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-medium">אנשי קשר</div>
                   <div className="text-xs text-muted-foreground">
-                    {contactsLoading ? "טוען אנשי קשר..." : "אפשר להוסיף, לערוך או להסיר אנשי קשר."}
+                    {contactsLoading ? "טוען אנשי קשר..." : contactsNote || "אפשר להוסיף, לערוך או להסיר אנשי קשר."}
                   </div>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={addContact}>
                   הוספת איש קשר
                 </Button>
               </div>
-              {contacts.filter((c) => !c._deleted).length === 0 && !contactsLoading ? (
+              {contacts.filter((c) => !c._deleted).length === 0 && !contactsLoading && !contactsNote ? (
                 <p className="text-xs text-muted-foreground">אין עדיין אנשי קשר.</p>
               ) : null}
               {contacts
@@ -897,14 +1043,14 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
                   <div className="text-xs text-muted-foreground">
                     {branchesLoading
                       ? "טוען סניפים..."
-                      : "לקוח שמזמין עבור כמה סניפים (למשל רשת) — כל סניף עם כתובת/טלפון משלו."}
+                      : branchesNote || "לקוח שמזמין עבור כמה סניפים (למשל רשת) — כל סניף עם כתובת/טלפון משלו."}
                   </div>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={addBranch}>
                   הוספת סניף
                 </Button>
               </div>
-              {branches.filter((b) => !b._deleted).length === 0 && !branchesLoading ? (
+              {branches.filter((b) => !b._deleted).length === 0 && !branchesLoading && !branchesNote ? (
                 <p className="text-xs text-muted-foreground">עדיין לא נוספו סניפים.</p>
               ) : null}
               {branches

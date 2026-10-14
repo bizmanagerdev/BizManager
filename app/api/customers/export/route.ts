@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CustomerFilterMode } from "@/app/(app)/customers/loadCustomers";
+import { applyCustomersFilters } from "@/app/(app)/customers/loadCustomers";
+import { parseCustomersFilters, type CustomersFilters } from "@/app/(app)/customers/customersFilters";
 import { chunkStrings } from "@/lib/financial/utils";
+import { israelDateKey } from "@/lib/timezone";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,10 +18,6 @@ const OVERVIEW_SELECT =
 
 const PAGE_SIZE = 1000;
 
-function parseFilterMode(value: string | null): CustomerFilterMode {
-  return value === "yes" || value === "no" ? value : "all";
-}
-
 /**
  * Every customer_overview_view row matching the same filters /customers uses
  * (with_projects / with_orders / with_debt / active_only) — no page's worth,
@@ -27,30 +25,17 @@ function parseFilterMode(value: string | null): CustomerFilterMode {
  */
 async function fetchAllFilteredCustomers(
   supabase: SupabaseClient,
-  filters: {
-    withProjects: CustomerFilterMode;
-    withOrders: CustomerFilterMode;
-    withDebt: CustomerFilterMode;
-    activeOnly: CustomerFilterMode;
-  }
+  filters: CustomersFilters
 ): Promise<{ rows: Row[]; error: string | null }> {
   const all: Row[] = [];
   let from = 0;
 
   for (;;) {
-    let query = supabase
-      .from("customer_overview_view")
-      .select(OVERVIEW_SELECT)
-      .order("customer_name", { ascending: true });
-
-    if (filters.withProjects === "yes") query = query.gt("projects_count", 0);
-    if (filters.withProjects === "no") query = query.lte("projects_count", 0);
-    if (filters.withOrders === "yes") query = query.gt("orders_count", 0);
-    if (filters.withOrders === "no") query = query.lte("orders_count", 0);
-    if (filters.withDebt === "yes") query = query.gt("open_balance", 0);
-    if (filters.withDebt === "no") query = query.lte("open_balance", 0);
-    if (filters.activeOnly === "yes") query = query.eq("active", true);
-    if (filters.activeOnly === "no") query = query.eq("active", false);
+    // The list's own order, ties broken by id: paging over a name several
+    // customers share could otherwise repeat one and skip another.
+    const query = applyCustomersFilters(supabase.from("customer_overview_view").select(OVERVIEW_SELECT), filters)
+      .order("customer_name", { ascending: true })
+      .order("customer_id", { ascending: true });
 
     const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
     if (error) return { rows: all, error: toHebrewError(error.message) || error.message };
@@ -86,12 +71,7 @@ export async function GET(req: NextRequest) {
   const { supabase } = access.value;
 
   const params = req.nextUrl.searchParams;
-  const filters = {
-    withProjects: parseFilterMode(params.get("with_projects")),
-    withOrders: parseFilterMode(params.get("with_orders")),
-    withDebt: parseFilterMode(params.get("with_debt")),
-    activeOnly: parseFilterMode(params.get("active_only")),
-  };
+  const filters = parseCustomersFilters((param) => params.get(param));
 
   const { rows: overviewRows, error } = await fetchAllFilteredCustomers(supabase, filters);
   if (error) {
@@ -143,7 +123,9 @@ export async function GET(req: NextRequest) {
   XLSX.utils.book_append_sheet(wb, ws, "לקוחות");
 
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
-  const stamp = new Date().toISOString().slice(0, 10);
+  // Israel's date: the UTC one named an export made after midnight here by
+  // the day before.
+  const stamp = israelDateKey();
   const filename = `לקוחות-${stamp}.xlsx`;
 
   return new NextResponse(buf as unknown as BodyInit, {

@@ -1,54 +1,76 @@
 "use client";
-import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type MouseEvent } from "react";
+import { toast } from "sonner";
+import { toHebrewError } from "@/lib/error-messages";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
-import { offlineFetch } from "@/lib/offline-queue";
-import { loadCustomerRowsByIds, loadMoreCustomers } from "@/app/(app)/customers/actions";
-import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
-import type { CustomersFilters } from "@/app/(app)/customers/loadCustomers";
-import { EditCustomerDialog, type EditCustomerInput } from "@/components/customers/EditCustomerDialog";
+import { useOnline } from "@/hooks/useOfflineRows";
 import {
-  AdaptiveCell,
-  AdaptiveDialog,
-  AdaptiveGrid,
-  PageStack,
-} from "@/components/layout/page-layout";
+  searchCustomerEntries,
+  useCustomerSearchIndex,
+  type CustomerSearchIndexEntry,
+} from "@/hooks/useCustomerSearchIndex";
+import { findCustomerIdsPassingFilters, loadCustomerRowsByIds, loadMoreCustomers } from "@/app/(app)/customers/actions";
+import {
+  CUSTOMERS_FILTER_FIELDS,
+  compareCustomerRows,
+  customersFilterSummary,
+  customersFiltersQuery,
+  hasCustomersFilter,
+  needsServerCustomersFilter,
+  parseCustomerFilterMode,
+  parseCustomersFilters,
+  type CustomersFilterKey,
+  type CustomersFilters,
+} from "@/app/(app)/customers/customersFilters";
+import {
+  CUSTOMERS_CELL,
+  CUSTOMERS_COLUMNS,
+  CUSTOMERS_COUNT_ROW,
+  CUSTOMERS_HEAD_CELL,
+  CUSTOMERS_HINT_ROW,
+  CUSTOMERS_HINT_TEXT,
+  CUSTOMERS_SWIPE_HINT,
+  CUSTOMERS_TABLE_CLASS,
+  CUSTOMERS_TOOLBAR,
+} from "@/app/(app)/customers/customersTable";
+import CustomerRowActionsMenu from "@/app/(app)/customers/CustomerRowActionsMenu";
+import { CustomersFilterSummaryLine } from "@/app/(app)/customers/CustomersFilterSummary";
+import { useCustomersTitle } from "@/app/(app)/customers/CustomersTitle";
+import {
+  EditCustomerDialog,
+  type EditCustomerInput,
+  type EditCustomerSavedPayload,
+} from "@/components/customers/EditCustomerDialog";
+import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
+import { PageStack } from "@/components/layout/page-layout";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
+import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { clickableRowProps } from "@/lib/ui/row-navigation";
+import { CONNECTION_EVENTS, getQueue } from "@/lib/offline-queue";
+import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { DataTableShell } from "@/components/ui/data-table-shell";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
-import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { ChevronLeftIcon, CloseIcon, DownloadIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, SearchIcon, WazeIcon } from "@/components/ui/icons";
+import { CloseIcon, DownloadIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, SearchIcon, WazeIcon } from "@/components/ui/icons";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SwipeActions } from "@/components/ui/swipe-actions";
-import { useSetPageTitle } from "@/components/layout/page-title-context";
-import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { AddressLink } from "@/components/ui/address-link";
-import { ContactTapZone } from "@/components/ui/contact-link";
-import { Button } from "@/components/ui/button";
-import { EditButton } from "@/components/ui/icon-button";
-import { Field } from "@/components/ui/field";
-import { FormDialog } from "@/components/ui/form-dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { DictateButton } from "@/components/ui/dictate-button";
-import { appendDictatedText } from "@/lib/dictation";
-import { formatShortDate } from "@/lib/date";
-import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
-import {
-  Dialog,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { CallIconButton, ContactLink } from "@/components/ui/contact-link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LIST_CARD_BADGE, LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
+import { TOGGLE_OFF, TOGGLE_ON, TOGGLE_ON_HOVER } from "@/components/ui/filter-chip";
+import { formatMoneyRounded } from "@/lib/money";
+import { ordersHe, projectsHe } from "@/lib/i18n/pluralHe";
+import { cn } from "@/lib/utils";
 
 type Row = Record<string, unknown>;
-type FilterMode = "all" | "yes" | "no";
 
 const s = (row: Row, key: string) => {
   const v = row[key];
@@ -58,321 +80,547 @@ const s = (row: Row, key: string) => {
 };
 const n = (row: Row, key: string) => {
   const v = row[key];
-  if (typeof v === "number") return v;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   if (typeof v === "string") {
     const p = Number(v);
     return Number.isFinite(p) ? p : 0;
   }
   return 0;
 };
-const contactsOf = (row: Row): Row[] => (Array.isArray(row.contacts) ? (row.contacts as Row[]) : []);
-const ils = (v: number) =>
-  new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(v);
-const dateText = (v: string) => {
-  return formatShortDate(v);
-};
+const rowId = (row: Row) => s(row, "customer_id") || s(row, "id");
+
+/**
+ * A search match painted from the search index before the server's figures
+ * came: its counts, debt and Morning link aren't known yet, so they show as
+ * placeholders — not as zeros that then pop into numbers and badges.
+ */
+const ENRICH_PENDING = "_enrich_pending";
+/** An edit of this row waiting in the app's queue for the connection ("ממתין לשליחה"). */
+const SYNC_PENDING = "_sync_pending";
+
+/** A search's matches are enriched and shown this many at a time, like the list's pages. */
+export const SEARCH_PAGE_SIZE = 50;
+const NO_ROWS: Row[] = [];
+
+const SEARCHING = "מחפש…";
+const OFFLINE_FILTER = "אין חיבור — אפשר לסנן כשיחזור החיבור.";
+const OFFLINE_EXPORT = "אין חיבור — אפשר לייצא כשיחזור החיבור.";
+
 const morningClientUrl = (morningClientId: string) =>
   `https://app.greeninvoice.co.il/incomes/clients/${encodeURIComponent(morningClientId)}/documents`;
+const customerHref = (id: string) => `/customers/${encodeURIComponent(id)}`;
+const newOrderHref = (id: string) => `/sales/orders/new?customer_id=${encodeURIComponent(id)}`;
+const newProjectHref = (id: string) => `/projects?create=1&customer_id=${encodeURIComponent(id)}`;
 
-function customerFlagBadgeClass(tone: "success" | "danger" | "neutral" | "info") {
-  return getStatusColorClasses(tone);
+/** A phone the green call button can dial — the field sometimes holds an email. */
+const isDialable = (value: string) => /\d/.test(value) && !value.includes("@");
+
+function searchIndexRow(entry: CustomerSearchIndexEntry): Row {
+  return {
+    customer_id: entry.id,
+    customer_name: entry.name,
+    name_for_invoice: entry.name_for_invoice,
+    phone: entry.phone,
+    whatsapp: entry.whatsapp,
+    email: entry.email,
+    address: entry.address,
+    // From the index, so an inactive customer never shows as active meanwhile.
+    active: entry.active,
+    requires_prepayment: entry.requires_prepayment,
+    [ENRICH_PENDING]: true,
+  };
+}
+
+/** The server's copy over the row on screen — unless that row holds an edit still waiting to be sent. */
+function serverOver(current: Row, fresh: Row | undefined): Row {
+  if (!fresh || current[SYNC_PENDING] === true) return current;
+  return fresh;
+}
+
+/** Rows that arrive on their own (a new customer) put where they sort; ones already listed are skipped. */
+export function insertCustomerRows(rows: Row[], additions: Row[]): Row[] {
+  let next = rows;
+  for (const row of additions) {
+    const id = rowId(row);
+    if (!id || next.some((existing) => rowId(existing) === id)) continue;
+    const at = next.findIndex((existing) => compareCustomerRows(row, existing) < 0);
+    next = at === -1 ? [...next, row] : [...next.slice(0, at), row, ...next.slice(at)];
+  }
+  return next;
+}
+
+/**
+ * The server's fresh first page over the list on screen (a refresh of the same
+ * filters): its rows replace theirs and new ones go in where they sort, while
+ * the pages scrolled in under it stay. A first page with nothing after it is
+ * the whole list.
+ */
+export function mergeFirstPage(current: Row[], fresh: Row[], freshHasMore: boolean): Row[] {
+  const currentById = new Map(current.map((row) => [rowId(row), row]));
+  if (!freshHasMore) {
+    return fresh.map((row) => {
+      const shown = currentById.get(rowId(row));
+      return shown ? serverOver(shown, row) : row;
+    });
+  }
+  const freshById = new Map(fresh.map((row) => [rowId(row), row]));
+  const updated = current.map((row) => serverOver(row, freshById.get(rowId(row))));
+  return insertCustomerRows(
+    updated,
+    fresh.filter((row) => !currentById.has(rowId(row)))
+  );
+}
+
+/** The edit dialog's starting point — from a list row (customer_overview_view) or a customers row. */
+function editInputFromRow(row: Row): EditCustomerInput {
+  const linked = row.linked_user_id;
+  return {
+    id: rowId(row),
+    name: s(row, "customer_name") || s(row, "name"),
+    name_for_invoice: s(row, "name_for_invoice") || null,
+    registration_number: s(row, "registration_number") || null,
+    phone: s(row, "phone") || null,
+    whatsapp: s(row, "whatsapp") || null,
+    email: s(row, "email") || null,
+    address: s(row, "address") || null,
+    notes: s(row, "notes") || null,
+    active: row.active !== false,
+    requires_prepayment: row.requires_prepayment === true,
+    // Left out when unknown: the dialog then reads it before it lets it be saved.
+    linked_user_id: typeof linked === "string" ? linked : linked === null ? null : undefined,
+  };
+}
+
+/** A saved (or undone) customer over its row. */
+function savedOver(row: Row, saved: Row, queued: boolean): Row {
+  return {
+    ...row,
+    customer_name: s(saved, "name") || s(row, "customer_name"),
+    name: s(saved, "name") || s(row, "name"),
+    name_for_invoice: s(saved, "name_for_invoice"),
+    registration_number: s(saved, "registration_number"),
+    phone: s(saved, "phone"),
+    whatsapp: s(saved, "whatsapp"),
+    email: s(saved, "email"),
+    address: s(saved, "address"),
+    notes: s(saved, "notes"),
+    active: saved.active !== false,
+    requires_prepayment: saved.requires_prepayment === true,
+    // Only present when the edit actually touched the link — otherwise keep
+    // the row's value instead of dropping the עובד badge.
+    linked_user_id: "linked_user_id" in saved ? saved.linked_user_id : row.linked_user_id,
+    [SYNC_PENDING]: queued,
+  };
+}
+
+/** The small pills by a customer's name: inactive (quiet grey), a worker, pay-ahead, a save still waiting. */
+function CustomerFlags({ row, withInactive = false }: { row: Row; withInactive?: boolean }) {
+  return (
+    <>
+      {withInactive && row.active === false ? (
+        <Badge variant="neutral" className={LIST_CARD_BADGE}>
+          לא פעיל
+        </Badge>
+      ) : null}
+      {row.linked_user_id ? (
+        <Badge variant="info" className={LIST_CARD_BADGE}>
+          עובד
+        </Badge>
+      ) : null}
+      {row.requires_prepayment === true ? (
+        <Badge variant="destructive" className={LIST_CARD_BADGE}>
+          תשלום מראש
+        </Badge>
+      ) : null}
+      {row[SYNC_PENDING] === true ? (
+        <Badge variant="warning" className={LIST_CARD_BADGE}>
+          ממתין לשליחה
+        </Badge>
+      ) : null}
+    </>
+  );
+}
+
+/** A pill whose words aren't known yet — the same height as a real one. */
+function PillPlaceholder({ className }: { className?: string }) {
+  return <Skeleton className={cn("h-[calc(0.647rem*1.5+0.25rem+2px)] rounded-full", className)} />;
+}
+
+/** A phone card's second half: what it holds, the flags and what it owes. */
+function CardFacts({ row }: { row: Row }) {
+  const pending = row[ENRICH_PENDING] === true;
+  const orders = n(row, "orders_count");
+  const projects = n(row, "projects_count");
+  const debt = n(row, "open_balance");
+  const morning = s(row, "morning_client_id");
+  const flagged = Boolean(row.linked_user_id) || row.requires_prepayment === true || row[SYNC_PENDING] === true;
+  if (!pending && orders <= 0 && projects <= 0 && !morning && !flagged && debt <= 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {pending ? (
+        <>
+          <PillPlaceholder className="w-16" />
+          <PillPlaceholder className="w-20" />
+        </>
+      ) : (
+        <>
+          {orders > 0 ? (
+            <Badge variant="outline" className={LIST_CARD_BADGE}>
+              {ordersHe(orders)}
+            </Badge>
+          ) : null}
+          {projects > 0 ? (
+            <Badge variant="outline" className={LIST_CARD_BADGE}>
+              {projectsHe(projects)}
+            </Badge>
+          ) : null}
+          {morning ? (
+            <Badge variant="success" className={LIST_CARD_BADGE}>
+              Morning
+            </Badge>
+          ) : null}
+        </>
+      )}
+      <CustomerFlags row={row} />
+      {/* What it owes, in red at the card's end — the four sections' one name
+          for it. Whole shekels: a figure with agorot ran past the card. */}
+      {!pending && debt > 0 ? (
+        <span className="ms-auto whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
+          חוב פתוח {formatMoneyRounded(debt)}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 export default function CustomersClient({
   initialRows,
   initialHasMore = false,
-  initialEditCustomerId = "",
-  initialAddContactCustomerId = "",
   totalCount,
   initialFilters,
+  loadedAt,
 }: {
   initialRows: Row[];
   initialHasMore?: boolean;
-  initialEditCustomerId?: string;
-  initialAddContactCustomerId?: string;
   totalCount?: number;
-  initialFilters?: {
-    withProjects: FilterMode;
-    withOrders: FilterMode;
-    withDebt: FilterMode;
-    activeOnly: FilterMode;
-  };
+  initialFilters?: CustomersFilters;
+  /** When the server read these rows (Date.now() there) — an aged copy refreshes itself. */
+  loadedAt?: number;
 }) {
   const router = useRouter();
+  const online = useOnline();
+  const [filterPending, startFilterTransition] = useTransition();
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
-  const {
-    search: searchCustomerIndex,
-    loading: customerIndexLoading,
-    stale: indexStale,
-    savedAt: indexSavedAt,
-  } = useCustomerSearchIndex();
-  const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
-  const [handledInitialEdit, setHandledInitialEdit] = useState(false);
-  const [handledInitialAddContact, setHandledInitialAddContact] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(
-    Boolean(
-      initialFilters && (
-        initialFilters.withProjects !== "all" ||
-        initialFilters.withOrders !== "all" ||
-        initialFilters.withDebt !== "all" ||
-        initialFilters.activeOnly !== "all"
-      )
-    )
+  const q = query.trim();
+
+  // The filters the server applied (the address). Keyed by their text so a
+  // refresh's new-but-equal object doesn't count as a change.
+  const filtersKey = customersFiltersQuery(initialFilters ?? parseCustomersFilters(() => null));
+  const filters = useMemo(() => {
+    const params = new URLSearchParams(filtersKey);
+    return parseCustomersFilters((param) => params.get(param));
+  }, [filtersKey]);
+  const filterOn = hasCustomersFilter(filters);
+
+  // ── The list ───────────────────────────────────────────────────────────
+  // Fetch-from-DB-as-you-scroll, from the server's first page for these
+  // filters. A fresh first page for the SAME filters (a refresh — the quick-
+  // create + saving a customer, say) is merged into the list on screen below
+  // rather than starting it over: that threw away everything scrolled in.
+  const [seed, setSeed] = useState({ key: filtersKey, rows: initialRows, hasMore: initialHasMore });
+  const fetchListPage = useCallback(
+    async (page: number) => {
+      const result = await loadMoreCustomers(page, filters);
+      if (result.error) throw new Error(result.error);
+      return result;
+    },
+    [filters]
   );
-  const withProjects = initialFilters?.withProjects ?? "all";
-  const withOrders = initialFilters?.withOrders ?? "all";
-  const withDebt = initialFilters?.withDebt ?? "all";
-  const activeOnly = initialFilters?.activeOnly ?? "all";
+  const getRowId = useCallback((row: Row) => rowId(row), []);
 
-  // Fetch-from-DB-as-you-scroll: accumulate customer pages and pull the next one
-  // from the server when the bottom comes into view (no "next page" button).
-  const fetchFilters = useMemo<CustomersFilters>(
-    () => ({ withProjects, withOrders, withDebt, activeOnly }),
-    [withProjects, withOrders, withDebt, activeOnly]
-  );
-  const fetchPage = useCallback(
-    (page: number) => loadMoreCustomers(page, fetchFilters),
-    [fetchFilters]
-  );
-  const getRowId = useCallback((row: Row) => s(row, "customer_id"), []);
-  const {
-    rows,
-    setRows,
-    hasMore,
-    loading: loadingMore,
-    sentinelRef,
-    mobileSentinelRef,
-    scrollRef,
-  } = useInfiniteScroll<Row>({
-    initialRows,
-    initialHasMore,
-    fetchPage,
-    getId: getRowId,
-  });
+  const { entries: indexEntries, loading: indexLoading, error: indexError, stale: indexStale, savedAt: indexSavedAt, load: loadIndex } =
+    // After the page has settled — or the moment the search box is used.
+    useCustomerSearchIndex({ deferUntilIdle: true });
 
-  function applyFilter(next: { withProjects?: FilterMode; withOrders?: FilterMode; withDebt?: FilterMode; activeOnly?: FilterMode }) {
-    const merged = {
-      withProjects: next.withProjects ?? withProjects,
-      withOrders: next.withOrders ?? withOrders,
-      withDebt: next.withDebt ?? withDebt,
-      activeOnly: next.activeOnly ?? activeOnly,
-    };
-    const params = new URLSearchParams();
-    if (merged.withProjects !== "all") params.set("with_projects", merged.withProjects);
-    if (merged.withOrders !== "all") params.set("with_orders", merged.withOrders);
-    if (merged.withDebt !== "all") params.set("with_debt", merged.withDebt);
-    if (merged.activeOnly !== "all") params.set("active_only", merged.activeOnly);
-    const qs = params.toString();
-    router.push(qs ? `/customers?${qs}` : "/customers", { scroll: false });
-  }
+  // ── The search ─────────────────────────────────────────────────────────
+  // Every match from the in-memory index, best first (it used to stop at 50
+  // without a word), within the list's filters: "active" is on each index
+  // entry; projects / orders / debt are checked on the server first.
+  const serverFilter = needsServerCustomersFilter(filters);
+  // No list to search (it couldn't be read, and there's no copy on the device):
+  // say so — "no matches" would be a lie.
+  const indexUnavailable = Boolean(indexError) && indexEntries.length === 0;
+  const matchedPlan = useMemo(() => {
+    if (!q || indexLoading || indexUnavailable) return null;
+    const ids = searchCustomerEntries(indexEntries, q, Number.POSITIVE_INFINITY)
+      .filter((entry) => (filters.activeOnly === "all" ? true : filters.activeOnly === "yes" ? entry.active : !entry.active))
+      .map((entry) => entry.id);
+    return { key: `${filtersKey}|${ids.join(",")}`, ids };
+  }, [q, indexLoading, indexUnavailable, indexEntries, filters.activeOnly, filtersKey]);
+  // Held by its key: another letter typed (or the index reloaded) that leaves
+  // the same matches neither starts the results over nor asks the server again.
+  const [searchPlan, setSearchPlan] = useState(matchedPlan);
+  if (matchedPlan?.key !== searchPlan?.key) setSearchPlan(matchedPlan);
 
-  // Export mirrors whatever filter is currently applied — same four params
-  // applyFilter puts on the URL — so "no filter" naturally means "all customers".
-  const exportHref = useMemo(() => {
-    const params = new URLSearchParams();
-    if (withProjects !== "all") params.set("with_projects", withProjects);
-    if (withOrders !== "all") params.set("with_orders", withOrders);
-    if (withDebt !== "all") params.set("with_debt", withDebt);
-    if (activeOnly !== "all") params.set("active_only", activeOnly);
-    const qs = params.toString();
-    return qs ? `/api/customers/export?${qs}` : "/api/customers/export";
-  }, [withProjects, withOrders, withDebt, activeOnly]);
-
-  const [editOpen, setEditOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<EditCustomerInput | null>(null);
-
-  const [contactOpen, setContactOpen] = useState(false);
-  const [contactErr, setContactErr] = useState("");
-  const [contactLoading, setContactLoading] = useState(false);
-  const [targetCustomerId, setTargetCustomerId] = useState("");
-  const [targetCustomerName, setTargetCustomerName] = useState("");
-  const [contactName, setContactName] = useState("");
-  const [contactRole, setContactRole] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
-  const [contactWhatsapp, setContactWhatsapp] = useState("");
-  const [contactNotes, setContactNotes] = useState("");
-  const [contactPrimary, setContactPrimary] = useState(false);
-  const [contactActive, setContactActive] = useState(true);
-
+  const [filteredSearch, setFilteredSearch] = useState<{ key: string; ids: string[] | null; error: string | null } | null>(null);
   useEffect(() => {
-    const q = query.trim();
-    if (!q) { setApiSearchRows(null); return; }
-    if (customerIndexLoading) return; // index still loading on first use
+    if (!searchPlan || !serverFilter || !online) return;
     let cancelled = false;
-
-    // Instant: match the cached index in memory and paint the basic rows now.
-    const matched = searchCustomerIndex(q, 50);
-    const basicRows = matched.map((c) => ({
-      customer_id: c.id, customer_name: c.name, name: c.name,
-      phone: c.phone, whatsapp: c.whatsapp, email: c.email, address: c.address,
-      name_for_invoice: c.name_for_invoice,
-      requires_prepayment: c.requires_prepayment,
-      contacts: c.contacts,
-      orders_count: 0, projects_count: 0, total_sales: 0, total_paid: 0, open_balance: 0,
-    }));
-    setApiSearchRows(basicRows);
-
-    // Then enrich (counts/totals) in the background, debounced, preserving order.
-    const timer = setTimeout(async () => {
-      try {
-        const { rows: enriched } = await loadCustomerRowsByIds(matched.map((c) => c.id));
-        if (cancelled || enriched.length === 0) return;
-        const enrichedById = new Map(enriched.map((row) => [s(row, "customer_id"), row]));
-        setApiSearchRows(basicRows.map((row) => enrichedById.get(row.customer_id) ?? row));
-      } catch { /* ignore */ }
-    }, 300);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [query, searchCustomerIndex, customerIndexLoading]);
-
-  const filtered = useMemo(() => {
-    // When searching: API returns full-DB matches (search is global). When not searching:
-    // server already applied the filters via URL params, so we just use the rows as-is.
-    return apiSearchRows ?? rows;
-  }, [rows, apiSearchRows]);
-
-  useEffect(() => {
-    if (handledInitialEdit || !initialEditCustomerId || rows.length === 0) return;
-    const row = rows.find((current) => s(current, "customer_id") === initialEditCustomerId);
-    if (!row) return;
-    openEdit(row);
-    setHandledInitialEdit(true);
-  }, [handledInitialEdit, initialEditCustomerId, rows]);
-
-  useEffect(() => {
-    if (handledInitialAddContact || !initialAddContactCustomerId || rows.length === 0) return;
-    const row = rows.find((current) => s(current, "customer_id") === initialAddContactCustomerId);
-    if (!row) return;
-    openAddContact(row);
-    setHandledInitialAddContact(true);
-  }, [handledInitialAddContact, initialAddContactCustomerId, rows]);
-
-  function openEdit(row: Row) {
-    setEditTarget({
-      id: s(row, "customer_id"),
-      name: s(row, "name") || s(row, "customer_name"),
-      name_for_invoice: s(row, "name_for_invoice") || null,
-      registration_number: s(row, "registration_number") || null,
-      phone: s(row, "phone") || null,
-      whatsapp: s(row, "whatsapp") || null,
-      email: s(row, "email") || null,
-      address: s(row, "address") || null,
-      notes: s(row, "notes") || null,
-      active: row.active !== false,
-      requires_prepayment: row.requires_prepayment === true,
-      linked_user_id: typeof row.linked_user_id === "string" ? row.linked_user_id : null,
-      contacts: contactsOf(row),
-    });
-    setEditOpen(true);
-  }
-
-  function applySavedCustomer(u: Row, savedContacts: Row[]) {
-    setRows((prev) =>
-      prev.map((row) =>
-        s(row, "customer_id") !== s(u, "id")
-          ? row
-          : {
-              ...row,
-              customer_name: s(u, "name") || s(row, "customer_name"),
-              name: s(u, "name") || s(row, "name"),
-              name_for_invoice: s(u, "name_for_invoice"),
-              registration_number: s(u, "registration_number"),
-              phone: s(u, "phone"),
-              whatsapp: s(u, "whatsapp"),
-              email: s(u, "email"),
-              address: s(u, "address"),
-              notes: s(u, "notes"),
-              active: u.active !== false,
-              requires_prepayment: u.requires_prepayment === true,
-              // Only present when the edit actually touched the link — otherwise
-              // keep the row's value instead of dropping the עובד badge.
-              linked_user_id: "linked_user_id" in u ? u.linked_user_id : row.linked_user_id,
-              contacts: savedContacts,
-            }
-      )
-    );
-  }
-
-  function openAddContact(row: Row) {
-    setContactErr("");
-    setTargetCustomerId(s(row, "customer_id"));
-    setTargetCustomerName(s(row, "customer_name") || "לקוח");
-    setContactName("");
-    setContactRole("");
-    setContactPhone("");
-    setContactEmail("");
-    setContactWhatsapp("");
-    setContactNotes("");
-    setContactPrimary(false);
-    setContactActive(true);
-    setContactOpen(true);
-  }
-
-  async function createContact() {
-    if (contactLoading) return;
-    setContactErr("");
-    if (!targetCustomerId) return setContactErr("חסר לקוח.");
-    if (!contactName.trim()) return setContactErr("יש למלא שם איש קשר.");
-    setContactLoading(true);
-    try {
-      const result = await offlineFetch(
-        "/api/customer-contacts/create",
-        {
-          customer_id: targetCustomerId,
-          full_name: contactName.trim(),
-          role: contactRole.trim() || null,
-          phone: contactPhone.trim() || null,
-          email: contactEmail.trim() || null,
-          whatsapp: contactWhatsapp.trim() || null,
-          is_primary: contactPrimary,
-          active: contactActive,
-          notes: contactNotes.trim() || null,
-        },
-        "איש קשר חדש",
-        { idempotent: true }
-      );
-      if (result.queued) {
-        // Will appear in the list after it syncs and the page refreshes.
-        setContactOpen(false);
-        return;
-      }
-      const json = result.ok ? (result.data as { contact?: Row } | null) : null;
-      if (!result.ok || !json?.contact) {
-        return setContactErr((result.ok ? "יצירת איש קשר נכשלה." : result.error) || "יצירת איש קשר נכשלה.");
-      }
-      setRows((prev) =>
-        prev.map((row) => {
-          if (s(row, "customer_id") !== targetCustomerId) return row;
-          const current = contactsOf(row);
-          let next = [json.contact as Row, ...current];
-          if ((json.contact as Row).is_primary === true) {
-            next = next.map((c, i) => (i === 0 ? c : { ...c, is_primary: false }));
-          }
-          return { ...row, contacts: next };
+    const timer = window.setTimeout(() => {
+      findCustomerIdsPassingFilters(searchPlan.ids, filters)
+        .then((result) => {
+          if (!cancelled) setFilteredSearch({ key: searchPlan.key, ids: result.error ? null : result.ids, error: result.error });
         })
-      );
-      setContactOpen(false);
-    } catch (e: unknown) {
-      setContactErr(toHebrewError(e, "שגיאה לא ידועה"));
-    } finally {
-      setContactLoading(false);
+        .catch((caught) => {
+          if (!cancelled) setFilteredSearch({ key: searchPlan.key, ids: null, error: toHebrewError(caught, "החיפוש נכשל. נסו שוב.") });
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchPlan, serverFilter, online, filters]);
+
+  // Where the search stands: its final match list, or why there isn't one yet.
+  let searchReady: { key: string; ids: string[]; note: string | null } | null = null;
+  let searchStatus: string | null = null;
+  if (q) {
+    if (!searchPlan) {
+      searchStatus = indexUnavailable ? "החיפוש לא זמין כרגע — רשימת הלקוחות לא נטענה." : SEARCHING;
+    } else if (!serverFilter) {
+      searchReady = { key: searchPlan.key, ids: searchPlan.ids, note: null };
+    } else if (!online) {
+      // The orders / projects / debt check needs the server: say so, and show
+      // the matches as they are.
+      searchReady = { key: `${searchPlan.key}|offline`, ids: searchPlan.ids, note: "אין חיבור — הסינון לא הוחל על החיפוש." };
+    } else if (filteredSearch?.key === searchPlan.key) {
+      if (filteredSearch.ids) searchReady = { key: searchPlan.key, ids: filteredSearch.ids, note: null };
+      else searchStatus = filteredSearch.error ?? "החיפוש נכשל. נסו שוב.";
+    } else {
+      searchStatus = SEARCHING;
     }
   }
 
-  function customerDetailsHref(customerId: string) {
-    return `/customers/${encodeURIComponent(customerId)}`;
+  // The search on screen: kept while the next one works itself out (dimmed),
+  // replaced when it's ready — and only when its matches actually changed, so
+  // a reload of the index (after an edit) doesn't start the results over.
+  const [shownSearch, setShownSearch] = useState<{ key: string; ids: string[]; note: string | null; firstRows: Row[] } | null>(null);
+  if (!q && shownSearch) setShownSearch(null);
+  if (searchReady && searchReady.key !== shownSearch?.key) {
+    const entryById = new Map(indexEntries.map((entry) => [entry.id, entry]));
+    setShownSearch({
+      ...searchReady,
+      firstRows: searchReady.ids
+        .slice(0, SEARCH_PAGE_SIZE)
+        .map((id) => entryById.get(id))
+        .filter((entry): entry is CustomerSearchIndexEntry => Boolean(entry))
+        .map(searchIndexRow),
+    });
+  }
+  // A search that can't finish (no list to search, or the filter check failed)
+  // says why in the list's place — not a list left dimmed under it.
+  const searchFailed = Boolean(q) && !searchReady && searchStatus !== null && searchStatus !== SEARCHING;
+  const searchMode = Boolean(q && shownSearch) && !searchFailed;
+  const searchWaiting = Boolean(q) && !searchFailed && (!shownSearch || shownSearch.key !== searchReady?.key);
+
+  const list = useInfiniteScroll<Row>({
+    initialRows: seed.rows,
+    initialHasMore: seed.hasMore,
+    fetchPage: fetchListPage,
+    getId: getRowId,
+    loadedAt,
+    enabled: !searchMode,
+  });
+  const setListRows = list.setRows;
+
+  // A new server first page: other filters start the list over; the same
+  // filters (a refresh) merge into it ("adjust state during render").
+  const [seenInitialRows, setSeenInitialRows] = useState(initialRows);
+  if (initialRows !== seenInitialRows) {
+    setSeenInitialRows(initialRows);
+    if (filtersKey !== seed.key) setSeed({ key: filtersKey, rows: initialRows, hasMore: initialHasMore });
+    else setListRows((prev) => mergeFirstPage(prev, initialRows, initialHasMore));
   }
 
-  function openCustomerDetails(customerId: string) {
-    if (!customerId) return;
-    emitNavigationStart();
-    window.location.href = customerDetailsHref(customerId);
+  const searchIds = shownSearch?.ids;
+  const fetchSearchPage = useCallback(
+    async (page: number) => {
+      const ids = searchIds ?? [];
+      const slice = ids.slice((page - 1) * SEARCH_PAGE_SIZE, page * SEARCH_PAGE_SIZE);
+      const result = await loadCustomerRowsByIds(slice);
+      if (result.error) throw new Error(result.error);
+      const byId = new Map(result.rows.map((row) => [rowId(row), row]));
+      // In the search's own order — best match first.
+      return {
+        rows: slice.map((id) => byId.get(id)).filter((row): row is Row => Boolean(row)),
+        hasMore: page * SEARCH_PAGE_SIZE < ids.length,
+      };
+    },
+    [searchIds]
+  );
+  const searchList = useInfiniteScroll<Row>({
+    initialRows: shownSearch?.firstRows ?? NO_ROWS,
+    initialHasMore: (shownSearch?.ids.length ?? 0) > SEARCH_PAGE_SIZE,
+    fetchPage: fetchSearchPage,
+    getId: getRowId,
+    enabled: searchMode,
+  });
+  const setSearchRows = searchList.setRows;
+
+  // The first page of matches gets the server's figures in the background.
+  useEffect(() => {
+    if (!shownSearch || !online) return;
+    const ids = shownSearch.ids.slice(0, SEARCH_PAGE_SIZE);
+    if (ids.length === 0) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      loadCustomerRowsByIds(ids)
+        .then(({ rows: enriched }) => {
+          if (cancelled) return;
+          const byId = new Map(enriched.map((row) => [rowId(row), row]));
+          setSearchRows((prev) => prev.map((row) => serverOver(row, byId.get(rowId(row)))));
+        })
+        // The matches stay as the index painted them — still searchable.
+        .catch(() => {});
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [shownSearch, online, setSearchRows]);
+
+  const active = searchMode ? searchList : list;
+  const shownRows = active.rows;
+
+  // ── A customer created while the list is open ──────────────────────────
+  // Creating one (the quick-create +) reloads the search index, so a new id
+  // turns up there. A refresh brings it only if it sorts into the first page;
+  // further down, it's put in here — where the list has already reached.
+  const knownIdsRef = useRef<Set<string> | null>(null);
+  const listHasMore = list.hasMore;
+  const listRows = list.rows;
+  useEffect(() => {
+    if (indexLoading || indexEntries.length === 0) return;
+    const previous = knownIdsRef.current;
+    knownIdsRef.current = new Set(indexEntries.map((entry) => entry.id));
+    if (!previous) return;
+    const added = indexEntries.filter((entry) => !previous.has(entry.id)).map((entry) => entry.id);
+    if (added.length === 0 || added.length > SEARCH_PAGE_SIZE) return;
+    const last = listRows[listRows.length - 1];
+    let cancelled = false;
+    loadCustomerRowsByIds(added, filters)
+      .then(({ rows: fresh }) => {
+        if (cancelled || fresh.length === 0) return;
+        const reached = fresh.filter((row) => !listHasMore || !last || compareCustomerRows(row, last) < 0);
+        setListRows((prev) => insertCustomerRows(prev, reached));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // Only a new index matters here; the rest is read as it stands then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexEntries, indexLoading]);
+
+  // ── Edits waiting for the connection ───────────────────────────────────
+  // A row saved with no connection shows "ממתין לשליחה" until its writes have
+  // gone out (or failed for good); then it's read again from the server.
+  const searchRows = searchList.rows;
+  useEffect(() => {
+    const settle = () => {
+      const waiting = new Set(
+        getQueue()
+          .flatMap((entry) => [entry.body?.id, entry.body?.customer_id])
+          .filter((value): value is string => typeof value === "string")
+      );
+      const done = Array.from(
+        new Set(
+          [...listRows, ...searchRows]
+            .filter((row) => row[SYNC_PENDING] === true && !waiting.has(rowId(row)))
+            .map(rowId)
+        )
+      );
+      if (done.length === 0) return;
+      loadCustomerRowsByIds(done)
+        .then(({ rows: fresh }) => {
+          const byId = new Map(fresh.map((row) => [rowId(row), row]));
+          const replace = (prev: Row[]) => prev.map((row) => byId.get(rowId(row)) ?? row);
+          setListRows(replace);
+          setSearchRows(replace);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener(CONNECTION_EVENTS.synced, settle);
+    window.addEventListener(CONNECTION_EVENTS.failed, settle);
+    return () => {
+      window.removeEventListener(CONNECTION_EVENTS.synced, settle);
+      window.removeEventListener(CONNECTION_EVENTS.failed, settle);
+    };
+  }, [listRows, searchRows, setListRows, setSearchRows]);
+
+  // ── Edit ───────────────────────────────────────────────────────────────
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<EditCustomerInput | null>(null);
+
+  async function openEdit(row: Row) {
+    const id = rowId(row);
+    if (!id) return;
+    if (row[ENRICH_PENDING] !== true) {
+      setEditTarget(editInputFromRow(row));
+      setEditOpen(true);
+      return;
+    }
+    // A search match the server hasn't filled in yet has no notes, ID number
+    // or invoice name — and the dialog saves every field, so it would blank
+    // them. Read the customer first, as the projects list reads a project
+    // before its edit opens.
+    const core = await fetchCustomerCore(id).catch(() => null);
+    if (!core) {
+      toast.error(navigator.onLine ? "טעינת הלקוח נכשלה. נסו שוב." : "אין חיבור — אפשר לערוך את הלקוח כשיחזור החיבור.");
+      return;
+    }
+    setEditTarget(editInputFromRow(core));
+    setEditOpen(true);
   }
 
-  // Names the page in the mobile top bar (no sidebar on a phone to say where you
-  // are). The count rides along as the subtitle and follows the active filter.
-  useSetPageTitle("לקוחות", `${totalCount ?? filtered.length} לקוחות`);
+  // A save (or its undo) patches the row where it is — in the list and in the
+  // search results — so the list stays where it was scrolled.
+  const applySaved = useCallback(
+    ({ customer, queued }: EditCustomerSavedPayload) => {
+      const id = s(customer, "id");
+      if (!id) return;
+      const patch = (prev: Row[]) => prev.map((row) => (rowId(row) === id ? savedOver(row, customer, queued === true) : row));
+      setListRows(patch);
+      setSearchRows(patch);
+    },
+    [setListRows, setSearchRows]
+  );
+
+  // ── Filters and export ─────────────────────────────────────────────────
+  function pushFilters(next: CustomersFilters) {
+    if (!navigator.onLine) {
+      toast.error(OFFLINE_FILTER);
+      return;
+    }
+    const qs = customersFiltersQuery(next);
+    startFilterTransition(() => {
+      router.push(qs ? `/customers?${qs}` : "/customers", { scroll: false });
+    });
+  }
+  const applyFilter = (key: CustomersFilterKey, value: string) =>
+    pushFilters({ ...filters, [key]: parseCustomerFilterMode(value) });
+  const clearFilters = () => pushFilters(parseCustomersFilters(() => null));
+
+  // Export mirrors whatever filter is applied — the same parameters the
+  // address carries — so "no filter" exports every customer.
+  const exportHref = filtersKey ? `/api/customers/export?${filtersKey}` : "/api/customers/export";
+  function onExportClick(event: MouseEvent) {
+    if (navigator.onLine) return;
+    event.preventDefault();
+    toast.error(OFFLINE_EXPORT);
+  }
 
   // Escape closes the overlay. Gated on filtersOpen so the listener is gone
   // (and can't swallow keys) whenever the panel is shut.
@@ -385,785 +633,480 @@ export default function CustomersClient({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [filtersOpen]);
 
-  // Same four selects for the phone overlay and the inline tablet/desktop row.
-  const filterFields = (
-    <>
-      <FilterSelect
-        label="פרויקטים"
-        value={withProjects}
-        onChange={(v) => applyFilter({ withProjects: v })}
-        yes="עם פרויקטים"
-        no="ללא פרויקטים"
-      />
-      <FilterSelect
-        label="הזמנות"
-        value={withOrders}
-        onChange={(v) => applyFilter({ withOrders: v })}
-        yes="עם הזמנות"
-        no="ללא הזמנות"
-      />
-      <FilterSelect
-        label="חוב פתוח"
-        value={withDebt}
-        onChange={(v) => applyFilter({ withDebt: v })}
-        yes="חייבים כסף"
-        no="ללא חוב"
-      />
-      <FilterSelect
-        label="סטטוס"
-        value={activeOnly}
-        onChange={(v) => applyFilter({ activeOnly: v })}
-        yes="פעילים"
-        no="לא פעילים"
-      />
-    </>
-  );
+  // Names the page in the mobile top bar; the count rides along as the
+  // subtitle (the server's count, for the filter on) — held from the loading
+  // screen's first frame (CustomersTitle).
+  useCustomersTitle(totalCount ?? list.rows.length);
+
+  const goTo = (href: string) => {
+    emitNavigationStart();
+    router.push(href);
+  };
+
+  const onQueryChange = (value: string) => {
+    setQuery(value);
+    if (value.trim()) loadIndex();
+  };
+
+  // The filter toggle reads ON — the app's toggle fill — while the panel is
+  // open or a filter is narrowing the list.
+  const toggleClass =
+    filtersOpen || filterOn
+      ? cn("border-secondary", TOGGLE_ON, TOGGLE_ON_HOVER)
+      : cn("border-input bg-background", TOGGLE_OFF);
+  const toggleLabel = filtersOpen ? "הסתרת סינון" : "סינון";
+
+  const filterFields = (where: string) =>
+    CUSTOMERS_FILTER_FIELDS.map((field) => (
+      <div key={field.key} className="min-w-0 space-y-1">
+        <label htmlFor={`customers-filter-${field.key}-${where}`} className="text-sm text-muted-foreground">
+          {field.label}
+        </label>
+        <NativeSelect
+          id={`customers-filter-${field.key}-${where}`}
+          value={filters[field.key]}
+          onChange={(e) => applyFilter(field.key, e.target.value)}
+        >
+          <option value="all">הכל</option>
+          <option value="yes">{field.yes}</option>
+          <option value="no">{field.no}</option>
+        </NativeSelect>
+      </div>
+    ));
+
+  let countText: string;
+  if (q) {
+    countText = shownSearch && !searchWaiting
+      ? `נמצאו ${shownSearch.ids.length} לקוחות בחיפוש${shownSearch.note ? ` · ${shownSearch.note}` : ""}`
+      : searchStatus ?? SEARCHING;
+  } else {
+    const total = totalCount ?? list.rows.length;
+    countText = filterOn ? `סה״כ ${total} לקוחות אחרי סינון` : `סה״כ ${total} לקוחות`;
+  }
+
+  const totalShown = searchMode ? shownSearch?.ids.length ?? shownRows.length : Math.max(totalCount ?? 0, list.rows.length);
+  let bottomLine: React.ReactNode = null;
+  if (shownRows.length > 0 && !searchFailed) {
+    if (active.loading) bottomLine = "טוען…";
+    else if (active.offline && active.hasMore) bottomLine = "אין חיבור — שאר הלקוחות ייטענו כשיחזור החיבור.";
+    else if (active.error && active.hasMore) {
+      bottomLine = (
+        <span className="inline-flex flex-wrap items-center justify-center gap-x-2">
+          <span className="text-destructive">{active.error}</span>
+          <Button type="button" variant="link" className="h-auto px-1 py-2 text-xs" onClick={active.retry}>
+            נסו שוב
+          </Button>
+        </span>
+      );
+    } else bottomLine = `מציג ${shownRows.length} מתוך ${totalShown} לקוחות`;
+  }
+
+  // Nothing to list: the app's one empty box, with the way out of a search or
+  // a filter (the projects and orders lists' own).
+  let emptyState: React.ReactNode = null;
+  if (searchFailed) {
+    emptyState = (
+      <EmptyState
+        action={
+          <Button type="button" variant="muted" size="sm" onClick={() => setQuery("")}>
+            נקה חיפוש
+          </Button>
+        }
+      >
+        {searchStatus}
+      </EmptyState>
+    );
+  } else if (shownRows.length === 0 && !searchWaiting) {
+    emptyState = searchMode ? (
+      <EmptyState
+        action={
+          <Button type="button" variant="muted" size="sm" onClick={() => setQuery("")}>
+            נקה חיפוש
+          </Button>
+        }
+      >
+        {filterOn ? "לא נמצאו לקוחות לפי החיפוש והסינון." : "לא נמצאו לקוחות לפי החיפוש."}
+      </EmptyState>
+    ) : filterOn ? (
+      <EmptyState
+        action={
+          <Button type="button" variant="muted" size="sm" onClick={clearFilters}>
+            נקה סינון
+          </Button>
+        }
+      >
+        לא נמצאו לקוחות לפי הסינון.
+      </EmptyState>
+    ) : (
+      <EmptyState>אין לקוחות עדיין.</EmptyState>
+    );
+  }
 
   return (
     <PageStack>
-      {/* Mobile toolbar lives INSIDE the dark header (see PageHeaderToolbar), so
-          the page doesn't repeat the heading area in a second lighter strip. No
-          "חיפוש לקוחות" label and no total line here either — the placeholder and
-          the header subtitle already say both. */}
+      {/* Phone: the search / filter / export row lives INSIDE the header strip
+          (PageHeaderToolbar), so the page doesn't repeat the heading area. No
+          "לקוח" + here: creating a customer belongs to the app's one quick-
+          create + (top bar / bottom-nav FAB). */}
       <PageHeaderToolbar>
         <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
-          {/* No "לקוח" + button here: creating a customer belongs to the app's one
-              quick-create + (top bar / bottom-nav FAB), which is on screen on this
-              page too — see components/layout/QuickCreateMenu.tsx. */}
-          {/* Icon + a short "חיפוש..." — what it searches over is discoverable by
-              using it, and spelling out every field ate the whole bar. */}
           <div className="relative w-full min-w-0">
             <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => onQueryChange(e.target.value)}
+              onFocus={loadIndex}
               placeholder="חיפוש..."
-              className="h-10 w-full rounded-xl ps-9"
+              aria-label="חיפוש לקוחות"
+              className="h-10 w-full ps-9"
             />
           </div>
-          {/* Filters read as ON via a sky fill — the one place colour is earned. */}
           <Button
             type="button"
+            variant="outline"
             size="icon"
-            aria-label={filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
-            className={
-              filtersOpen
-                ? "h-10 w-10 shrink-0 rounded-xl"
-                : "h-10 w-10 shrink-0 rounded-xl "
-            }
-            onClick={() => setFiltersOpen((x) => !x)}
+            aria-label={toggleLabel}
+            aria-expanded={filtersOpen}
+            aria-controls="customers-filters-overlay"
+            className={cn("h-10 w-10 shrink-0", toggleClass)}
+            onClick={() => setFiltersOpen((open) => !open)}
           >
             <FilterIcon className="h-4 w-4" />
           </Button>
-          {/* Follows whatever filter is applied above — no filter set exports
-              every customer, same rule the desktop button below uses. */}
-          <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-xl" asChild>
-            <Link href={exportHref} aria-label="יצוא לאקסל" prefetch={false}>
+          <Button variant="outline" size="icon" className="h-10 w-10 shrink-0" asChild>
+            <Link href={exportHref} aria-label="ייצוא לאקסל" title="ייצוא לאקסל" prefetch={false} onClick={onExportClick}>
               <DownloadIcon className="h-4 w-4" />
             </Link>
           </Button>
         </div>
-        {indexStale ? (
-          <div className="mt-2 flex justify-end">
-            <StaleDataBadge savedAt={indexSavedAt} />
-          </div>
-        ) : null}
       </PageHeaderToolbar>
 
-      <AdaptiveGrid variant="customersToolbar" className="hidden lg:grid">
-        <AdaptiveCell variant="customersPrimary">
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
-            {indexStale ? <StaleDataBadge savedAt={indexSavedAt} /> : null}
+      {/* From md (a tablet) up the strip is gone, so the same three sit here —
+          768–1023px had no search, filters, export or count at all. */}
+      <div className={CUSTOMERS_TOOLBAR}>
+        <div className="min-w-0">
+          <label htmlFor="customers-search" className="text-sm text-muted-foreground">
+            חיפוש לקוחות
+          </label>
+          <div className="relative mt-1">
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="customers-search"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              onFocus={loadIndex}
+              placeholder="שם, טלפון, אימייל או כתובת"
+              className="h-11 ps-9"
+            />
           </div>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="שם, טלפון, אימייל או כתובת"
-            className="h-11"
-          />
-        </AdaptiveCell>
-        <AdaptiveCell variant="customersSecondary">
-          <label className="text-sm text-muted-foreground opacity-0">מסננים</label>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 w-full"
-            onClick={() => setFiltersOpen((x) => !x)}
-          >
-            {filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
-          </Button>
-        </AdaptiveCell>
-        <AdaptiveCell variant="customersSecondary">
-          <label className="text-sm text-muted-foreground opacity-0">יצוא</label>
-          {/* Follows whatever filter is applied above — no filter set exports
-              every customer. */}
-          <Button type="button" variant="outline" className="h-11 w-full gap-1.5" asChild>
-            <Link href={exportHref} prefetch={false}>
-              <DownloadIcon className="h-4 w-4" />
-              יצוא לאקסל
-            </Link>
-          </Button>
-        </AdaptiveCell>
-      </AdaptiveGrid>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          aria-expanded={filtersOpen}
+          aria-controls="customers-filters-inline"
+          className={cn("h-11 gap-1.5", toggleClass)}
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          <FilterIcon className="h-4 w-4" />
+          {toggleLabel}
+        </Button>
+        {/* Follows whatever filter is applied — no filter exports every customer. */}
+        <Button variant="outline" className="h-11 gap-1.5" asChild>
+          <Link href={exportHref} prefetch={false} onClick={onExportClick}>
+            <DownloadIcon className="h-4 w-4" />
+            ייצוא לאקסל
+          </Link>
+        </Button>
+      </div>
 
-      {/* Phone: the filters drop DOWN OVER the list, pinned right under the sticky
-          header (60px top bar + 52px toolbar) — not inline at the top of the page.
-          Inline meant that opening filters while scrolled halfway down the list
-          changed something you couldn't see. As an overlay it always appears
-          where you're looking, straight under the button you just pressed. */}
+      {/* Phone: the filters drop DOWN OVER the list, pinned right under the
+          sticky header (the top bar and the strip, whatever its height —
+          --page-sticky-h) — not inline at the top of the page, which changed
+          something you couldn't see when opened halfway down the list. */}
       {filtersOpen ? (
         <>
           <button
             type="button"
-            aria-label="סגירת מסננים"
-            className="fixed inset-0 top-[112px] z-20 bg-black/30 md:hidden"
+            aria-label="סגירת סינון"
+            className="fixed inset-x-0 bottom-0 top-[calc(60px+var(--page-sticky-h,0px))] z-20 bg-black/30 md:hidden"
             onClick={() => setFiltersOpen(false)}
           />
-          <div className="fixed inset-x-0 top-[112px] z-20 border-b border-border bg-card p-3 shadow-lg md:hidden">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium">מסננים</span>
-              <button
-                type="button"
-                aria-label="סגירת מסננים"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground"
+          <div
+            id="customers-filters-overlay"
+            className="fixed inset-x-0 top-[calc(60px+var(--page-sticky-h,0px))] z-20 border-b border-border bg-card p-3 shadow-lg md:hidden"
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-sm font-medium">סינון</span>
+              <IconButton
+                icon={CloseIcon}
+                label="סגירת סינון"
+                variant="ghost"
+                size="default"
+                className="-me-2 text-muted-foreground"
                 onClick={() => setFiltersOpen(false)}
-              >
-                <CloseIcon className="h-4 w-4" />
-              </button>
+              />
             </div>
-            <div className="grid grid-cols-2 gap-3">{filterFields}</div>
+            <div className="grid grid-cols-2 gap-3">{filterFields("phone")}</div>
+            {filterOn ? (
+              <Button type="button" variant="muted" className="mt-3 w-full" onClick={clearFilters}>
+                נקה סינון
+              </Button>
+            ) : null}
+          </div>
+          {/* Tablet and up there's no sticky strip, so the filters sit inline. */}
+          <div id="customers-filters-inline" className="hidden space-y-3 md:block">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{filterFields("inline")}</div>
+            {filterOn ? (
+              <div className="flex justify-end">
+                <Button type="button" variant="muted" size="sm" onClick={clearFilters}>
+                  נקה סינון
+                </Button>
+              </div>
+            ) : null}
           </div>
         </>
+      ) : filterOn ? (
+        <CustomersFilterSummaryLine summary={customersFilterSummary(filters)} onClear={clearFilters} />
       ) : null}
 
-      {/* Tablet and up there's no sticky page toolbar, so the filters stay inline. */}
-      {filtersOpen ? (
-        <div className="hidden grid-cols-2 gap-3 md:grid lg:grid-cols-4">{filterFields}</div>
-      ) : null}
-
-      <div className="hidden text-sm text-muted-foreground lg:block">
-        {(() => {
-          const usingApiSearch = apiSearchRows !== null;
-          const hasActiveFilter =
-            withProjects !== "all" ||
-            withOrders !== "all" ||
-            withDebt !== "all" ||
-            activeOnly !== "all";
-          if (usingApiSearch) {
-            return `נמצאו ${filtered.length} לקוחות בחיפוש`;
-          }
-          if (hasActiveFilter) {
-            return `סה״כ ${totalCount ?? filtered.length} לקוחות אחרי סינון`;
-          }
-          return `סה״כ ${totalCount ?? filtered.length} לקוחות`;
-        })()}
+      {/* The phone's top bar carries the count; from md it's this line. Its
+          height is held for the "לא מקוון" pill, so the pill can't push the
+          list down when the search index comes from the device's copy. */}
+      <div className={CUSTOMERS_COUNT_ROW}>
+        <span>{countText}</span>
+        {indexStale ? <StaleDataBadge savedAt={indexSavedAt} /> : null}
       </div>
 
-      {/* Mobile list. The four action buttons that used to sit under every card
-          are now behind a swipe — the card stays compact so more customers fit
-          on a screen, which is the whole point of the list. */}
-      <ResponsiveDataView
-        breakpoint="xl"
-        mobile={
-          <>
-            <div className="grid grid-cols-1 gap-2">
-              <p className="px-1 text-[0.647rem] text-muted-foreground">
-                החלק כרטיס ימינה לפעולות · הקש לפרטים
-              </p>
-              {filtered.map((row) => {
-                const id = s(row, "customer_id");
-                const customerName = s(row, "customer_name") || "לקוח";
-                const linkedMorningClientId = s(row, "morning_client_id");
-                const openBalance = n(row, "open_balance");
-                const phone = s(row, "phone");
-                const ordersCount = n(row, "orders_count");
-                const projectsCount = n(row, "projects_count");
-                const rowKey = id || customerName;
-                return (
-                  <SwipeActions
-                    key={rowKey}
-                    className="border border-border/70 shadow-sm"
-                    open={swipedRow === rowKey}
-                    onOpenChange={(next) => setSwipedRow(next ? rowKey : null)}
-                    actions={[
-                      {
-                        key: "project",
-                        label: "פרויקט",
-                        icon: <ProjectIcon className="h-5 w-5" />,
-                        className: "bg-secondary",
-                        onSelect: () => router.push(`/projects?create=1&customer_id=${encodeURIComponent(id)}`),
-                      },
-                      {
-                        key: "order",
-                        label: "הזמנה",
-                        icon: <OrderIcon className="h-5 w-5" />,
-                        className: "bg-secondary-3",
-                        onSelect: () => router.push(`/sales/orders/new?customer_id=${encodeURIComponent(id)}`),
-                      },
-                      {
-                        key: "edit",
-                        label: "עריכה",
-                        icon: <EditIcon className="h-5 w-5" />,
-                        className: "bg-secondary-2",
-                        onSelect: () => openEdit(row),
-                      },
-                    ]}
-                  >
-                    <div
-                      className="flex w-full min-w-0 cursor-pointer items-center gap-3 p-3 text-right"
-                      {...clickableRowProps(() => openCustomerDetails(id))}
-                    >
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="text-sm font-semibold leading-snug">{customerName}</div>
-                        {phone ? (
-                          // A <div> (ContactTapZone), not an <a href="tel:…"> — see its own
-                          // comment: a real tel: link claims the long-press gesture for the
-                          // browser's own menu instead of leaving the number selectable/copyable.
-                          <ContactTapZone
-                            kind="tel"
-                            value={phone}
-                            className="inline-block text-xs text-muted-foreground hover:text-secondary hover:underline"
-                          >
-                            <span dir="ltr">{phone}</span>
-                          </ContactTapZone>
-                        ) : null}
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {ordersCount > 0 ? (
-                            <Badge variant="outline" className="px-1.5 py-0 text-[0.588rem]">{ordersCount} הזמנות</Badge>
-                          ) : null}
-                          {projectsCount > 0 ? (
-                            <Badge variant="outline" className="px-1.5 py-0 text-[0.588rem]">{projectsCount} פרויקטים</Badge>
-                          ) : null}
-                          {row.linked_user_id ? (
-                            <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[0.588rem]`}>עובד</Badge>
-                          ) : null}
-                          {row.requires_prepayment === true ? (
-                            <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>תשלום מראש</Badge>
-                          ) : null}
-                          {row.active === false ? (
-                            <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>לא פעיל</Badge>
-                          ) : null}
-                          {linkedMorningClientId ? (
-                            <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[0.588rem]`}>Morning</Badge>
-                          ) : null}
-                        </div>
-                      </div>
-                      {openBalance > 0 ? (
-                        <div className="shrink-0 text-left">
-                          <div className="whitespace-nowrap text-sm font-semibold tabular-nums text-destructive">
-                            {ils(openBalance)}
-                          </div>
-                          <div className="text-[0.588rem] text-muted-foreground">יתרה</div>
-                        </div>
-                      ) : null}
-                      <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    </div>
-                  </SwipeActions>
-                );
-              })}
-            </div>
-          {!apiSearchRows && hasMore ? <div ref={mobileSentinelRef} className="h-1" /> : null}
-          </>
-        }
-        desktop={
-          <DataTableShell
-            ref={scrollRef}
-            // min-w in rem: with a bigger text size the columns kept their share
-            // of the page while their text grew, so emails and balances ran into
-            // the next column — now the table widens and scrolls inside its card.
-            tableClassName="table-fixed min-w-[65rem]"
-            colgroup={
+      <div
+        className={cn(
+          "transition-opacity duration-150",
+          filterPending || searchWaiting ? "pointer-events-none opacity-50" : "opacity-100"
+        )}
+      >
+        {emptyState ?? (
+          <ResponsiveDataView
+            breakpoint="lg"
+            mobile={
               <>
-                <col className="w-[17%]" />
-                <col className="w-[15%]" />
-                <col className="w-[12.5%]" />
-                <col className="w-[7%]" />
-                <col className="w-[5.7%]" />
-                <col className="w-[6.3%]" />
-                <col className="w-[10%]" />
-                <col className="w-[11%]" />
-                <col className="w-[15.5%]" />
-              </>
-            }
-            header={
-              <>
-                <th className="px-2 py-2 font-medium">לקוח</th>
-                <th className="px-2 py-2 font-medium">טלפון ואימייל</th>
-                <th className="px-2 py-2 font-medium">כתובת</th>
-                <th className="px-2 py-2 font-medium">Morning</th>
-                <th className="px-2 py-2 font-medium">הזמנות</th>
-                <th className="px-2 py-2 font-medium">פרויקטים</th>
-                <th className="px-2 py-2 font-medium">יתרה פתוחה</th>
-                <th className="px-2 py-2 font-medium">סטטוס</th>
-                <th className="px-2 py-2 font-medium">פעולות</th>
-              </>
-            }
-            footer={!apiSearchRows && hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
-          >
-            {filtered.map((row) => {
-              const id = s(row, "customer_id");
-              const customerName = s(row, "customer_name") || "לקוח";
-              const linkedMorningClientId = s(row, "morning_client_id");
-              const openBalance = n(row, "open_balance");
-
-              return (
-                <tr
-                  key={`${id || customerName}-desktop`}
-                  className="cursor-pointer align-middle hover:bg-muted/20 focus-visible:bg-muted/20"
-                  {...clickableRowProps(() => openCustomerDetails(id))}
-                >
-                  <td className="px-2 py-1.5">
-                    <div className="text-right font-medium leading-tight">{customerName}</div>
-                    {s(row, "name_for_invoice") && s(row, "name_for_invoice") !== customerName ? (
-                      <div className="text-right text-xs leading-tight text-muted-foreground">
-                        שם לחשבונית: {s(row, "name_for_invoice")}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    {/* The phone field sometimes holds an email: it breaks inside the cell. */}
-                    <div className="leading-tight [overflow-wrap:anywhere]">{s(row, "phone") || "-"}</div>
-                    {s(row, "email") ? (
-                      <div className="text-xs leading-tight text-muted-foreground [overflow-wrap:anywhere]">{s(row, "email")}</div>
-                    ) : null}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <div className="text-muted-foreground">
-                      {s(row, "address") ? (
-                        <AddressLink
-                          address={s(row, "address")}
-                          className="inline-flex max-w-full items-center gap-1 align-middle"
+                <div className="grid grid-cols-1 gap-2">
+                  <div className={CUSTOMERS_HINT_ROW}>
+                    <p className={CUSTOMERS_HINT_TEXT}>{CUSTOMERS_SWIPE_HINT}</p>
+                    {indexStale ? <StaleDataBadge savedAt={indexSavedAt} className="md:hidden" /> : null}
+                  </div>
+                  {shownRows.map((row) => {
+                    const id = rowId(row);
+                    const name = s(row, "customer_name") || "לקוח";
+                    const phone = s(row, "phone");
+                    return (
+                      <SwipeActions
+                        key={id || name}
+                        className="border border-border/70 shadow-card"
+                        open={swipedRow === id}
+                        onOpenChange={(next) => setSwipedRow(next ? id : null)}
+                        actions={[
+                          {
+                            key: "project",
+                            label: "פרויקט",
+                            icon: <ProjectIcon className="h-5 w-5" />,
+                            className: "bg-secondary",
+                            onSelect: () => goTo(newProjectHref(id)),
+                          },
+                          {
+                            key: "order",
+                            label: "הזמנה",
+                            icon: <OrderIcon className="h-5 w-5" />,
+                            className: "bg-secondary",
+                            onSelect: () => goTo(newOrderHref(id)),
+                          },
+                          {
+                            key: "edit",
+                            label: "עריכה",
+                            icon: <EditIcon className="h-5 w-5" />,
+                            className: "bg-secondary-2",
+                            onSelect: () => void openEdit(row),
+                          },
+                        ]}
+                      >
+                        <div
+                          className={cn("block cursor-pointer", LIST_CARD_BODY)}
+                          {...rowNavigateProps(router, customerHref(id), { prefetch: true })}
                         >
-                          <WazeIcon className="h-3 w-3 shrink-0" />
-                          <span>{s(row, "address")}</span>
-                        </AddressLink>
-                      ) : (
-                        "-"
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-2 py-1.5">
-                    {linkedMorningClientId ? (
-                      <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
-                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[0.588rem]`}>Morning</Badge>
-                      </a>
-                    ) : (
-                      <Badge className={`${customerFlagBadgeClass("neutral")} px-1.5 py-0 text-[0.588rem]`}>ללא</Badge>
-                    )}
-                  </td>
-                  <td className="px-2 py-1.5">{n(row, "orders_count")}</td>
-                  <td className="px-2 py-1.5">{n(row, "projects_count")}</td>
-                  <td className="px-2 py-1.5">
-                    {openBalance > 0 ? (
-                      <div className="whitespace-nowrap font-medium text-destructive">{ils(openBalance)}</div>
-                    ) : null}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <div className="flex flex-wrap gap-1">
-                      {row.linked_user_id ? (
-                        <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[0.588rem]`}>עובד</Badge>
-                      ) : null}
-                      {row.requires_prepayment === true ? (
-                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>תשלום מראש</Badge>
-                      ) : null}
-                      {openBalance > 0 ? (
-                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>חוב פתוח</Badge>
-                      ) : null}
-                      {row.active === false ? (
-                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>לא פעיל</Badge>
-                      ) : (
-                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[0.588rem]`}>פעיל</Badge>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <div className="flex flex-nowrap gap-1">
-                      <Button asChild size="sm" className="h-7 px-2 text-xs">
-                        <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
-                          + הזמנה
-                        </Link>
-                      </Button>
-                      <Button asChild size="sm" variant="secondary" className="h-7 px-2 text-xs">
-                        <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
-                          + פרויקט
-                        </Link>
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </DataTableShell>
-        }
-      />
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                <span className={LIST_CARD_NAME}>{name}</span>
+                                {row.active === false ? (
+                                  <Badge variant="neutral" className={LIST_CARD_BADGE}>
+                                    לא פעיל
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              {/* The number as plain text — a tap on it opens the
+                                  customer like the rest of the card; the green
+                                  phone in the corner calls (the four sections'
+                                  one look for "call"). */}
+                              {phone ? (
+                                <div className={cn("mt-0.5", LIST_CARD_META)}>
+                                  <span dir="ltr">{phone}</span>
+                                </div>
+                              ) : null}
+                            </div>
+                            {phone && isDialable(phone) ? (
+                              <CallIconButton phone={phone} name={name} className="shrink-0" />
+                            ) : null}
+                          </div>
+                          <CardFacts row={row} />
+                        </div>
+                      </SwipeActions>
+                    );
+                  })}
+                </div>
+                {active.hasMore ? (
+                  <div ref={searchMode ? searchList.mobileSentinelRef : list.mobileSentinelRef} className="h-1" />
+                ) : null}
+              </>
+            }
+            desktop={
+              <DataTableShell
+                ref={searchMode ? searchList.scrollRef : list.scrollRef}
+                tableClassName={CUSTOMERS_TABLE_CLASS}
+                colgroup={CUSTOMERS_COLUMNS.map((column) => (
+                  <col key={column.key} className={column.width} />
+                ))}
+                header={CUSTOMERS_COLUMNS.map((column) => (
+                  <th key={column.key} className={CUSTOMERS_HEAD_CELL}>
+                    {column.srOnly ? <span className="sr-only">{column.label}</span> : column.label}
+                  </th>
+                ))}
+                footer={
+                  active.hasMore ? (
+                    <div ref={searchMode ? searchList.sentinelRef : list.sentinelRef} className="h-1" />
+                  ) : null
+                }
+              >
+                {shownRows.map((row) => {
+                  const id = rowId(row);
+                  const name = s(row, "customer_name") || "לקוח";
+                  const invoiceName = s(row, "name_for_invoice");
+                  const phone = s(row, "phone");
+                  const email = s(row, "email");
+                  const address = s(row, "address");
+                  const morningId = s(row, "morning_client_id");
+                  const debt = n(row, "open_balance");
+                  const pending = row[ENRICH_PENDING] === true;
+                  return (
+                    <tr
+                      key={id || name}
+                      className="cursor-pointer align-middle hover:bg-muted/20 focus-visible:bg-muted/20"
+                      // A client navigation, and the customer's page fetched
+                      // ahead while the mouse rests on its row.
+                      {...rowNavigateProps(router, customerHref(id), { prefetch: true })}
+                    >
+                      <td className={CUSTOMERS_CELL}>
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                          <span className="font-medium leading-tight">{name}</span>
+                          <CustomerFlags row={row} withInactive />
+                        </div>
+                        {invoiceName && invoiceName !== name ? (
+                          <div className="text-xs leading-tight text-muted-foreground">שם לחשבונית: {invoiceName}</div>
+                        ) : null}
+                      </td>
+                      <td className={CUSTOMERS_CELL}>
+                        {/* The phone field sometimes holds an email: it breaks inside the cell. */}
+                        <div className="leading-tight [overflow-wrap:anywhere]">
+                          {phone ? (
+                            <ContactLink
+                              kind={phone.includes("@") ? "mailto" : "tel"}
+                              value={phone}
+                              className="hover:text-secondary hover:underline"
+                            >
+                              <span dir="ltr">{phone}</span>
+                            </ContactLink>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </div>
+                        {email ? (
+                          <div className="text-xs leading-tight text-muted-foreground [overflow-wrap:anywhere]">
+                            <ContactLink kind="mailto" value={email} className="hover:text-secondary hover:underline">
+                              {email}
+                            </ContactLink>
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className={CUSTOMERS_CELL}>
+                        <div className="text-muted-foreground [overflow-wrap:anywhere]">
+                          {address ? (
+                            <AddressLink address={address} className="inline-flex max-w-full items-center gap-1 align-middle">
+                              <WazeIcon className="h-3 w-3 shrink-0" />
+                              <span>{address}</span>
+                            </AddressLink>
+                          ) : (
+                            "—"
+                          )}
+                        </div>
+                      </td>
+                      <td className={CUSTOMERS_CELL}>
+                        {pending ? (
+                          <PillPlaceholder className="w-14" />
+                        ) : morningId ? (
+                          <a href={morningClientUrl(morningId)} target="_blank" rel="noreferrer">
+                            <Badge variant="success" className={LIST_CARD_BADGE}>
+                              Morning
+                            </Badge>
+                          </a>
+                        ) : (
+                          <Badge variant="neutral" className={LIST_CARD_BADGE}>
+                            ללא
+                          </Badge>
+                        )}
+                      </td>
+                      <td className={cn(CUSTOMERS_CELL, "tabular-nums")}>
+                        {pending ? <Skeleton className="h-4 w-6" /> : n(row, "orders_count")}
+                      </td>
+                      <td className={cn(CUSTOMERS_CELL, "tabular-nums")}>
+                        {pending ? <Skeleton className="h-4 w-6" /> : n(row, "projects_count")}
+                      </td>
+                      <td className={CUSTOMERS_CELL}>
+                        {/* Whole shekels, and it wraps rather than spill into the
+                            next column at a bigger text size. */}
+                        {pending ? (
+                          <Skeleton className="h-4 w-12" />
+                        ) : debt > 0 ? (
+                          <span className="font-medium tabular-nums text-destructive [overflow-wrap:anywhere]">
+                            {formatMoneyRounded(debt)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className={CUSTOMERS_CELL}>
+                        <CustomerRowActionsMenu
+                          onEdit={() => void openEdit(row)}
+                          onNewOrder={() => goTo(newOrderHref(id))}
+                          onNewProject={() => goTo(newProjectHref(id))}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </DataTableShell>
+            }
+          />
+        )}
+      </div>
 
-      {!apiSearchRows ? (
-        <div className="pt-1 text-center text-xs text-muted-foreground">
-          {loadingMore
-            ? "טוען…"
-            : `מציג ${rows.length}${totalCount != null ? ` מתוך ${Math.max(totalCount, rows.length)}` : ""} לקוחות`}
-        </div>
-      ) : null}
+      {bottomLine ? <div className="pt-1 text-center text-xs text-muted-foreground">{bottomLine}</div> : null}
 
-      {/* No create dialog on this page — "לקוח" is a tile in the global + menu,
-          which refreshes the route on save, so the new customer shows up here. */}
-
+      {/* No create dialog on this page — "לקוח" is a tile in the global + menu. */}
       <EditCustomerDialog
         open={editOpen}
         onOpenChange={setEditOpen}
         customer={editTarget}
-        onSaved={({ customer, contacts }) => applySavedCustomer(customer, contacts)}
+        onSaved={applySaved}
+        onUndone={applySaved}
       />
-
-      <FormDialog
-        open={contactOpen}
-        onOpenChange={setContactOpen}
-        title="הוספת איש קשר"
-        description={`לקוח: ${targetCustomerName}`}
-        submitLabel="יצירת איש קשר"
-        busyLabel="יוצר..."
-        onSubmit={() => void createContact()}
-        error={contactErr || undefined}
-        busy={contactLoading}
-      >
-        <Field label="שם מלא *">
-          <Input value={contactName} onChange={(e) => setContactName(e.target.value)} />
-        </Field>
-        <Field label="תפקיד">
-          <Input value={contactRole} onChange={(e) => setContactRole(e.target.value)} />
-        </Field>
-        <AdaptiveGrid variant="formTwo">
-          <Field label="טלפון">
-            <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
-          </Field>
-          <Field label="וואטסאפ">
-            <Input value={contactWhatsapp} onChange={(e) => setContactWhatsapp(e.target.value)} />
-          </Field>
-        </AdaptiveGrid>
-        <Field label="אימייל">
-          <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
-        </Field>
-        <Field label="הערות">
-          <div className="relative">
-            <Textarea
-              value={contactNotes}
-              onChange={(e) => setContactNotes(e.target.value)}
-              rows={3}
-              className="pe-11"
-            />
-            <DictateButton
-              onTranscript={(text) => setContactNotes((prev) => appendDictatedText(prev, text))}
-              disabled={contactLoading}
-              className="absolute bottom-1 end-1 h-8 w-8"
-            />
-          </div>
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={contactPrimary}
-            onChange={(e) => setContactPrimary(e.target.checked)}
-          />
-          <span>איש קשר ראשי</span>
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={contactActive}
-            onChange={(e) => setContactActive(e.target.checked)}
-          />
-          <span>פעיל</span>
-        </label>
-      </FormDialog>
     </PageStack>
   );
 }
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  yes,
-  no,
-}: {
-  label: string;
-  value: FilterMode;
-  onChange: (v: FilterMode) => void;
-  yes: string;
-  no: string;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm text-muted-foreground">{label}</label>
-      <NativeSelect
-        value={value}
-        onChange={(e) => onChange(e.target.value as FilterMode)}
-      >
-        <option value="all">הכל</option>
-        <option value="yes">{yes}</option>
-        <option value="no">{no}</option>
-      </NativeSelect>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border bg-background p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function ValueField({
-  label,
-  value,
-  className = "",
-  valueClassName = "",
-}: {
-  label: string;
-  value: React.ReactNode;
-  className?: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className={`rounded-xl border bg-background px-3 py-3 ${className}`.trim()}>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className={`mt-2 text-sm font-medium leading-6 text-foreground ${valueClassName}`.trim()}>{value}</div>
-    </div>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function CustomerDetailsDialog({
-  row,
-  open,
-  onOpenChange,
-  onEdit,
-  onAddContact,
-}: {
-  row: Row | null;
-  open: boolean;
-  onOpenChange: (next: boolean) => void;
-  onEdit: (row: Row) => void;
-  onAddContact: (row: Row) => void;
-}) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [isNavigating, startNavigation] = useTransition();
-  const [navigationTarget, setNavigationTarget] = useState<"projects" | "sales" | "financial" | "documents" | "">("");
-  const contacts = row ? contactsOf(row) : [];
-  const activeContacts = contacts.filter((c) => c.active !== false);
-  const inactiveContacts = contacts.filter((c) => c.active === false);
-  const id = row ? s(row, "customer_id") : "";
-
-  function navigateToCustomerPage(
-    target: "projects" | "sales" | "financial" | "documents",
-    path: string
-  ) {
-    if (!id) return;
-    setNavigationTarget(target);
-    startNavigation(() => {
-      router.push(path);
-    });
-  }
-
-  const customerNameParam = row ? s(row, "customer_name").trim() : "";
-  const customerPageParam = (searchParams.get("page") ?? "").trim();
-  const name = row ? s(row, "customer_name") || "לקוח" : "לקוח";
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="details4xl">
-        <DialogHeader>
-          <DialogTitle>{name}</DialogTitle>
-          <DialogDescription>פרטי לקוח, אנשי קשר וקישורים מהירים.</DialogDescription>
-        </DialogHeader>
-
-        {row ? (
-          <div className="space-y-4">
-            <AdaptiveGrid variant="customerStats">
-              <Stat label="הזמנות" value={`${n(row, "orders_count")}`} />
-              <Stat label="פרויקטים" value={`${n(row, "projects_count")}`} />
-              <Stat label='סה"כ מכירות' value={ils(n(row, "total_sales"))} />
-              <Stat label="יתרה פתוחה" value={ils(n(row, "open_balance"))} />
-            </AdaptiveGrid>
-
-            <AdaptiveGrid variant="customerPanels">
-              <div className="space-y-2 rounded-md border bg-background p-3 text-sm">
-                <div className="font-semibold">פרטי לקוח</div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <ValueField label="שם לחשבונית" value={s(row, "name_for_invoice") || "-"} />
-                  <ValueField label="ח.פ/ת.ז" value={s(row, "registration_number") || "-"} />
-                  <ValueField label="וואטסאפ" value={s(row, "whatsapp") || "-"} />
-                  <ValueField label="הזמנה אחרונה" value={dateText(s(row, "last_order_at"))} />
-                  <ValueField label="תשלום אחרון" value={dateText(s(row, "last_payment_at"))} />
-                  <ValueField
-                    label="כתובת"
-                    value={
-                      s(row, "address") ? (
-                        <AddressLink
-                          address={s(row, "address")}
-                          className="inline-flex items-start gap-1"
-                        >
-                          <WazeIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span className="whitespace-pre-wrap">{s(row, "address")}</span>
-                        </AddressLink>
-                      ) : (
-                        "-"
-                      )
-                    }
-                    className="sm:col-span-2"
-                    valueClassName="whitespace-pre-wrap"
-                  />
-                  <ValueField
-                    label="הערות"
-                    value={s(row, "notes") || "-"}
-                    className="sm:col-span-2"
-                    valueClassName="whitespace-pre-wrap"
-                  />
-                </div>
-                {/* Edit is the pencil, as everywhere else — so it sits beside the
-                    navigation buttons rather than posing as one of them. */}
-                <div className="flex justify-end pt-1">
-                  <EditButton onClick={() => onEdit(row)} label="עריכת לקוח" />
-                </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!id || isNavigating}
-                    onClick={() =>
-                      navigateToCustomerPage(
-                        "projects",
-                        `/projects?customer_id=${encodeURIComponent(id)}${
-                          customerNameParam
-                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
-                            : ""
-                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
-                      )
-                    }
-                  >
-                    {isNavigating && navigationTarget === "projects" ? "פותח פרויקטים..." : "צפייה בפרויקטים"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!id || isNavigating}
-                    onClick={() =>
-                      navigateToCustomerPage(
-                        "sales",
-                        `/sales?customer_id=${encodeURIComponent(id)}${
-                          customerNameParam
-                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
-                            : ""
-                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
-                      )
-                    }
-                  >
-                    {isNavigating && navigationTarget === "sales" ? "פותח הזמנות..." : "צפייה בהזמנות"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!id || isNavigating}
-                    onClick={() =>
-                      navigateToCustomerPage(
-                        "financial",
-                        `/financial?customer_id=${encodeURIComponent(id)}${
-                          customerNameParam
-                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
-                            : ""
-                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
-                      )
-                    }
-                  >
-                    {isNavigating && navigationTarget === "financial" ? "פותח מידע פיננסי..." : "מידע פיננסי"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!id || isNavigating}
-                    onClick={() =>
-                      navigateToCustomerPage(
-                        "documents",
-                        `/documents?customer_id=${encodeURIComponent(id)}${
-                          customerNameParam
-                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
-                            : ""
-                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
-                      )
-                    }
-                  >
-                    {isNavigating && navigationTarget === "documents" ? "פותח מסמכים..." : "קבלות ומסמכים"}
-                  </Button>
-                </div>
-              </div>
-
-              <MorningCustomerCard
-                customerId={id}
-                morningClientId={s(row, "morning_client_id") || null}
-                morningMatchStatus={s(row, "morning_match_status") || null}
-                morningSyncedAt={s(row, "morning_synced_at") || null}
-                morningLastSyncError={s(row, "morning_last_sync_error") || null}
-                morningDocuments={Array.isArray(row.morning_documents) ? (row.morning_documents as never[]) : []}
-                onChanged={() => startNavigation(() => { router.refresh(); })}
-              />
-
-              <div className="space-y-2 rounded-md border bg-background p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold">אנשי קשר</div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAddContact(row)}
-                  >
-                    הוספת איש קשר
-                  </Button>
-                </div>
-                {contacts.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">אין אנשי קשר ללקוח זה.</p>
-                ) : null}
-                {activeContacts.map((c, i) => (
-                  <div key={s(c, "id") || `${id}-active-${i}`} className="rounded-md border p-2 text-sm">
-                    <div className="font-medium">
-                      {s(c, "full_name") || `איש קשר ${i + 1}`}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {s(c, "role") || "ללא תפקיד"} | {s(c, "phone") || "-"} |{" "}
-                      {s(c, "email") || "-"}
-                    </div>
-                  </div>
-                ))}
-                {inactiveContacts.length > 0 ? (
-                  <div className="rounded-md border border-destructive/30 bg-destructive-soft p-2">
-                    <div className="mb-1 text-xs font-medium text-destructive">
-                      אנשי קשר לא פעילים
-                    </div>
-                    {inactiveContacts.map((c, i) => (
-                      <div
-                        key={s(c, "id") || `${id}-inactive-${i}`}
-                        className="text-xs text-destructive"
-                      >
-                        {s(c, "full_name") || `איש קשר ${i + 1}`} | {s(c, "phone") || "-"}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </AdaptiveGrid>
-
-          </div>
-        ) : null}
-      </AdaptiveDialog>
-    </Dialog>
-  );
-}
-

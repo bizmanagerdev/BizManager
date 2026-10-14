@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import * as XLSX from "xlsx";
 import type { NextRequest } from "next/server";
 
@@ -60,5 +60,52 @@ describe("GET /api/customers/export — the WhatsApp column", () => {
     expect(rows[399]["וואטסאפ"]).toBe("05399");
     expect(whatsappBatches.length).toBeGreaterThan(1);
     expect(Math.max(...whatsappBatches.map((batch) => batch.length))).toBeLessThanOrEqual(150);
+  });
+});
+
+// The export pages through the list in its own order — name, then id, so
+// customers who share a name are never repeated or skipped between pages —
+// and names the file by Israel's date, not UTC's.
+describe("GET /api/customers/export — order and file name", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("sorts by name then id, applies the filters, and stamps Israel's date", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // 22:30 UTC on the 13th is already 01:30 on the 14th in Israel.
+    vi.setSystemTime(new Date("2026-10-13T22:30:00Z"));
+    const orders: string[][] = [];
+    const filters: Array<[string, string, unknown]> = [];
+    const from = (table: string) => {
+      const order: string[] = [];
+      if (table === "customer_overview_view") orders.push(order);
+      const builder: Record<string, unknown> = {};
+      builder.select = () => builder;
+      builder.in = () => builder;
+      builder.range = () => builder;
+      builder.order = (column: string) => {
+        order.push(column);
+        return builder;
+      };
+      for (const op of ["gt", "lte", "eq"]) {
+        builder[op] = (column: string, value: unknown) => {
+          filters.push([op, column, value]);
+          return builder;
+        };
+      }
+      builder.then = (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
+        Promise.resolve({ data: [], error: null }).then(onF, onR);
+      return builder;
+    };
+    requireRouteAccess.mockResolvedValue({ ok: true, value: { supabase: { from } } });
+
+    const response = await exportCustomers({
+      nextUrl: new URL("https://biz-h.com/api/customers/export?with_debt=yes"),
+    } as unknown as NextRequest);
+
+    expect(orders[0]).toEqual(["customer_name", "customer_id"]);
+    expect(filters).toEqual([["gt", "open_balance", 0]]);
+    expect(decodeURIComponent(response.headers.get("Content-Disposition") ?? "")).toContain("2026-10-14.xlsx");
   });
 });

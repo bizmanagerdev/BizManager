@@ -13,6 +13,14 @@ describe("isFullyPrefetched", () => {
     }
   });
 
+  // The customers list is one of the four sections, done the same way
+  // (2026-10-13): loaded ahead like projects and sales, and refreshed when
+  // the copy has aged.
+  it("the customers list too", () => {
+    expect(isFullyPrefetched("/customers", "admin")).toBe(true);
+    expect(isFullyPrefetched("/customers", "office")).toBe(true);
+  });
+
   it("/tasks for admins and office (a device page), not for workers", () => {
     expect(isFullyPrefetched("/tasks", "admin")).toBe(true);
     expect(isFullyPrefetched("/tasks", "office")).toBe(true);
@@ -26,6 +34,7 @@ describe("isFullyPrefetched", () => {
   });
 
   it("nothing else", () => {
-    expect(isFullyPrefetched("/customers", "admin")).toBe(false);
+    expect(isFullyPrefetched("/settings", "admin")).toBe(false);
+    expect(isFullyPrefetched("/customers/c1", "admin")).toBe(false);
   });
 });
