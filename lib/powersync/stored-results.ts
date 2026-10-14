@@ -58,13 +58,24 @@ export function storedResultJson(raw: string | null): string | null {
 }
 
 /**
- * The stored text for `key` while it's under a day old — a stable snapshot
- * for useSyncExternalStore — or null.
+ * How old a LIST's stored result may be and still be shown while the fresh one
+ * comes (the orders, projects and tasks lists, the drivers' run). An older one
+ * — the first opening of the day — had the orders that came in since pushed
+ * in at the top the moment the fresh list arrived, and the whole list jumped
+ * down (Sentry, the sales page on a phone: 226px, 4 s after opening,
+ * 2026-10-14); the page's loading view holds its place for that moment
+ * instead. A card that keeps its size (the dashboard's) shows a day-old one.
  */
-export function readStoredResultRaw(key: string): string | null {
+export const LIST_STORED_MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * The stored text for `key` while it's under `maxAgeMs` old (a day unless
+ * said) — a stable snapshot for useSyncExternalStore — or null.
+ */
+export function readStoredResultRaw(key: string, maxAgeMs = STORED_RESULT_MAX_AGE_MS): string | null {
   try {
     const raw = localStorage.getItem(PREFIX + key);
-    return raw && Date.now() - savedAtOf(raw) < STORED_RESULT_MAX_AGE_MS ? raw : null;
+    return raw && Date.now() - savedAtOf(raw) < Math.min(maxAgeMs, STORED_RESULT_MAX_AGE_MS) ? raw : null;
   } catch {
     return null;
   }

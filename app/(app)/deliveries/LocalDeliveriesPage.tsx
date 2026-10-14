@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import PageTitle from "@/components/layout/PageTitle";
 import { LocalListPagerProvider } from "@/components/powersync/LocalListPager";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { LIST_STORED_MAX_AGE_MS } from "@/lib/powersync/stored-results";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import { loadLocalDataCode, localClient } from "@/lib/powersync/local-results";
 import type { LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
@@ -58,7 +59,14 @@ export default function LocalDeliveriesPage({
   }, [customerId, regionFilter]);
 
   const filters = useMemo(() => ({ customerId }), [customerId]);
-  const run = useLocalCard({ kind: "deliveriesRun", viewer, filters, page: "deliveries", serverHref });
+  const run = useLocalCard({
+    kind: "deliveriesRun",
+    viewer,
+    filters,
+    page: "deliveries",
+    serverHref,
+    storedMaxAgeMs: LIST_STORED_MAX_AGE_MS,
+  });
   useDevicePageTiming("deliveries", run);
 
   // Page 2, 3… as the list scrolls — from the phone too, with the same filters.

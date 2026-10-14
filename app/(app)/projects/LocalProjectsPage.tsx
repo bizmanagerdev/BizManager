@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import ProjectsListSkeleton, { ProjectsStripSkeleton } from "./ProjectsListSkeleton";
 import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { LIST_STORED_MAX_AGE_MS } from "@/lib/powersync/stored-results";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import type { LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
 import { getResult, loadLocalDataCode, localClient } from "@/lib/powersync/local-results";
@@ -47,7 +48,14 @@ export default function LocalProjectsPage({
 
   // The list for the URL's tab and filters, without a search (see above).
   const filters: ProjectsFilters = { ...parseProjectsFilters((key) => searchParams.get(key)), q: "" };
-  const list = useLocalCard({ kind: "projectsList", viewer, filters, page: "projects", serverHref });
+  const list = useLocalCard({
+    kind: "projectsList",
+    viewer,
+    filters,
+    page: "projects",
+    serverHref,
+    storedMaxAgeMs: LIST_STORED_MAX_AGE_MS,
+  });
   useDevicePageTiming("projects", list, list?.data.rows.length);
   const extras = useLocalCard({
     kind: "projectsExtras",

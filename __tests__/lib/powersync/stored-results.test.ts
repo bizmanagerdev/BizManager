@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
+  LIST_STORED_MAX_AGE_MS,
   STORED_RESULT_MAX_AGE_MS,
   clearStoredResults,
   parseStoredResult,
@@ -25,6 +26,22 @@ describe("stored device results", () => {
 
     vi.setSystemTime(new Date(Date.parse("2026-10-06T08:00:00Z") + STORED_RESULT_MAX_AGE_MS + 1));
     expect(readStoredResultRaw("me|admin|he|tasksBoard|{}")).toBeNull();
+  });
+
+  // A day-old orders list shown on opening had the orders that came in since
+  // pushed in at the top when the fresh list arrived — the list jumped down
+  // 226px (Sentry, 2026-10-14). Lists show a stored result for 30 minutes.
+  it("a list's stored result is read back for 30 minutes only", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const at = Date.parse("2026-10-14T08:00:00Z");
+    vi.setSystemTime(new Date(at));
+    storeResult("me|admin|he|salesOrders|{}", { items: [{ id: "o1" }] });
+    vi.setSystemTime(new Date(at + LIST_STORED_MAX_AGE_MS - 1000));
+    expect(readStoredResultRaw("me|admin|he|salesOrders|{}", LIST_STORED_MAX_AGE_MS)).not.toBeNull();
+    vi.setSystemTime(new Date(at + LIST_STORED_MAX_AGE_MS + 1000));
+    expect(readStoredResultRaw("me|admin|he|salesOrders|{}", LIST_STORED_MAX_AGE_MS)).toBeNull();
+    // A card that keeps its size still shows it for the day.
+    expect(readStoredResultRaw("me|admin|he|salesOrders|{}")).not.toBeNull();
   });
 
   it("keeps the most recent ones only", () => {

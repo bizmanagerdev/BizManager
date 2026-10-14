@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { LIST_STORED_MAX_AGE_MS } from "@/lib/powersync/stored-results";
 import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
@@ -35,7 +36,14 @@ export default function LocalTasksBoard({
     return `/tasks?${params.toString()}`;
   }, [searchParams]);
 
-  const result = useLocalCard({ kind: "tasksBoard", viewer, filters, page: "tasks", serverHref });
+  const result = useLocalCard({
+    kind: "tasksBoard",
+    viewer,
+    filters,
+    page: "tasks",
+    serverHref,
+    storedMaxAgeMs: LIST_STORED_MAX_AGE_MS,
+  });
   useDevicePageTiming("tasks", result, result?.data.items.length);
 
   // New filters: until the device's board for them is ready (a moment), the

@@ -86,6 +86,7 @@ export function useLocalCard<K extends LocalCardKind>({
   filters,
   page,
   serverHref,
+  storedMaxAgeMs,
 }: {
   kind: K;
   viewer: LocalCardViewer;
@@ -95,6 +96,8 @@ export function useLocalCard<K extends LocalCardKind>({
   page: string;
   /** The server version of this page, for the fallback. */
   serverHref: string;
+  /** How old the stored result may be and still show meanwhile — LIST_STORED_MAX_AGE_MS for lists (a day if not said). */
+  storedMaxAgeMs?: number;
 }): LocalCardResult<K> | null {
   const router = useRouter();
   const db = useLocalDatabase();
@@ -119,7 +122,7 @@ export function useLocalCard<K extends LocalCardKind>({
         : null;
   // Before the device has it (the app just opened): the copy stored on the
   // device last time. Read on the client only, so the server's HTML matches.
-  const storedRaw = useSyncExternalStore(neverChanges, () => readStoredResultRaw(key), () => null);
+  const storedRaw = useSyncExternalStore(neverChanges, () => readStoredResultRaw(key, storedMaxAgeMs), () => null);
   const stored = useMemo(() => parseStoredResult(storedRaw), [storedRaw]);
   // Read by the watch below without restarting it when the stored copy changes.
   const storedRef = useRef({ raw: storedRaw, parsed: stored });

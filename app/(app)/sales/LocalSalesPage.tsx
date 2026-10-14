@@ -7,6 +7,7 @@ import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { LocalListPagerProvider } from "@/components/powersync/LocalListPager";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { LIST_STORED_MAX_AGE_MS } from "@/lib/powersync/stored-results";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import { loadLocalDataCode, localClient } from "@/lib/powersync/local-results";
 import type {
@@ -122,7 +123,7 @@ export default function LocalSalesPage({
 
   const { kind, filters } = tabCard(activeTab, { customerId, category, paymentStatus, invoice });
   const countsFilters: SalesCountsFilters = { customerId, paymentStatus };
-  const tab = useLocalCard({ kind, viewer, filters, page: "sales", serverHref });
+  const tab = useLocalCard({ kind, viewer, filters, page: "sales", serverHref, storedMaxAgeMs: LIST_STORED_MAX_AGE_MS });
   const counts = useLocalCard({ kind: "salesCounts", viewer, filters: countsFilters, page: "sales", serverHref });
 
   // Page 2, 3… as the list scrolls — from the device, with the same filters.
