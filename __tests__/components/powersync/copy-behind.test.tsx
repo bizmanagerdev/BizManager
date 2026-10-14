@@ -18,7 +18,7 @@ vi.mock("@/lib/powersync/local-results", () => ({
   watchResult: () => () => {},
 }));
 
-import { COPY_BEHIND_AFTER_MS, setLocalSyncStatus, useLocalCopyBehind } from "@/lib/powersync/store";
+import { COPY_BEHIND_AFTER_MS, setLocalSyncStatus, useLocalCopyBehind, useSyncBlocked } from "@/lib/powersync/store";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 
 const synced = (connected: boolean) => ({
@@ -54,7 +54,10 @@ beforeEach(() => {
   setLocalSyncStatus(synced(true));
 });
 afterEach(() => {
+  // Connected: clears a note left by a test (the store keeps it in memory too).
+  setLocalSyncStatus(synced(true));
   setLocalSyncStatus(null);
+  localStorage.clear();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -107,6 +110,34 @@ describe("useLocalCopyBehind", () => {
     expect(result.current).toBe(false);
     act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS));
     expect(result.current).toBe(true);
+  });
+
+  // An office computer behind a filter that blocks the sync drew every page
+  // from its old copy, then swapped to the server version (Sentry,
+  // 2026-10-14). Once its sync is known not to connect, the device remembers
+  // it — this visit and the next — until the sync connects.
+  it("a sync that never connected is noted on the device, and the note goes when it connects", () => {
+    const { result } = renderHook(() => ({ behind: useLocalCopyBehind(), blocked: useSyncBlocked() }));
+    act(() => setLocalSyncStatus(synced(false)));
+    expect(result.current.blocked).toBe(false);
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS));
+    expect(result.current.behind).toBe(true);
+    expect(result.current.blocked).toBe(true);
+    expect(localStorage.getItem("bizh-sync-blocked")).toBe("1");
+
+    act(() => setLocalSyncStatus(synced(true)));
+    expect(result.current.blocked).toBe(false);
+    expect(localStorage.getItem("bizh-sync-blocked")).toBeNull();
+  });
+
+  it("a sync that connects within the 30 s is never noted", () => {
+    const { result } = renderHook(() => useSyncBlocked());
+    act(() => setLocalSyncStatus(synced(false)));
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS - 5000));
+    act(() => setLocalSyncStatus(synced(true)));
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS));
+    expect(result.current).toBe(false);
+    expect(localStorage.getItem("bizh-sync-blocked")).toBeNull();
   });
 
   it("back online starts the count again", () => {

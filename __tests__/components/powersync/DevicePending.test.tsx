@@ -8,9 +8,10 @@ import { render } from "@testing-library/react";
 // keeps the cookie in step with the copy: set while it's incomplete, gone the
 // moment the first download completes.
 
-const device = vi.hoisted(() => ({ status: null as { hasSynced: boolean } | null }));
+const device = vi.hoisted(() => ({ status: null as { hasSynced: boolean } | null, blocked: false }));
 vi.mock("@/lib/powersync/store", () => ({
   useLocalSyncStatus: () => device.status,
+  useSyncBlocked: () => device.blocked,
   registerLocalDataWipe: () => {},
   setLocalViewer: () => {},
 }));
@@ -43,6 +44,7 @@ describe("the device's note that its copy is incomplete", () => {
   beforeEach(() => {
     clearCookie();
     device.status = null;
+    device.blocked = false;
     jar.names.clear();
   });
 
@@ -65,6 +67,21 @@ describe("the device's note that its copy is incomplete", () => {
     expect(deviceCopyPending()).toBe(true);
 
     device.status = { hasSynced: true };
+    rerender(<LocalDataHost />);
+    expect(deviceCopyPending()).toBe(false);
+  });
+
+  // An office computer whose filter blocks the sync service drew every page
+  // from its out-of-date copy, then swapped to the server version (Sentry,
+  // 2026-10-14) — while its sync is known not to connect, the server sends
+  // the server version straight away, complete copy or not.
+  it("stays set while the sync is known not to connect, and goes when it connects", () => {
+    device.status = { hasSynced: true };
+    device.blocked = true;
+    const { rerender } = render(<LocalDataHost />);
+    expect(deviceCopyPending()).toBe(true);
+
+    device.blocked = false;
     rerender(<LocalDataHost />);
     expect(deviceCopyPending()).toBe(false);
   });

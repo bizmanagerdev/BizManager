@@ -124,8 +124,49 @@ let disconnectedSince: number | null = null;
 export function setLocalSyncStatus(status: LocalSyncStatus | null) {
   if (status?.hasSynced && !status.connected) disconnectedSince ??= Date.now();
   else disconnectedSince = null;
+  if (status?.connected) noteSyncBlocked(false);
   if (status) watchWake();
   emit({ ...state, status });
+}
+
+// A device whose sync couldn't connect for COPY_BEHIND_AFTER_MS while online
+// and on screen — an office computer behind an internet filter that blocks
+// the sync service, both ways of connecting (Sentry: 49 failed connections in
+// three days, 2026-10-14). Noted in memory and on the device, so its pages
+// come from the server straight away, this visit and the next
+// (LocalDataHost turns this into the device-pending cookie), instead of
+// drawing the out-of-date copy and swapping to the server version a moment
+// later — the swap read as the page jumping. Gone the moment the sync connects.
+const SYNC_BLOCKED_KEY = "bizh-sync-blocked";
+let syncBlocked: boolean | null = null;
+
+function readSyncBlocked(): boolean {
+  if (syncBlocked === null) {
+    try {
+      syncBlocked = localStorage.getItem(SYNC_BLOCKED_KEY) === "1";
+    } catch {
+      syncBlocked = false;
+    }
+  }
+  return syncBlocked;
+}
+
+/** Record whether the sync is blocked; true from useLocalCopyBehind, false when it connects. */
+function noteSyncBlocked(blocked: boolean): boolean {
+  if (typeof window === "undefined" || readSyncBlocked() === blocked) return false;
+  syncBlocked = blocked;
+  try {
+    if (blocked) localStorage.setItem(SYNC_BLOCKED_KEY, "1");
+    else localStorage.removeItem(SYNC_BLOCKED_KEY);
+  } catch {
+    // Storage blocked: known for this visit only.
+  }
+  return true;
+}
+
+/** True while this device's sync is known not to connect (see above). */
+export function useSyncBlocked(): boolean {
+  return useSyncExternalStore(subscribe, readSyncBlocked, () => false);
 }
 
 /** How long the sync may be down (opening counts — it connects in a few seconds) before the copy counts as behind. */
@@ -179,11 +220,16 @@ export function useLocalCopyBehind(afterMs = COPY_BEHIND_AFTER_MS): boolean {
     }, delay);
     return () => clearTimeout(timer);
   }, [since, afterMs]);
-  if (since === null) return false;
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
-  // Off screen nothing is shown; coming back starts the count again.
-  if (typeof document !== "undefined" && document.visibilityState === "hidden") return false;
-  return now - since >= afterMs;
+  const behind =
+    since !== null &&
+    !(typeof navigator !== "undefined" && navigator.onLine === false) &&
+    // Off screen nothing is shown; coming back starts the count again.
+    !(typeof document !== "undefined" && document.visibilityState === "hidden") &&
+    now - since >= afterMs;
+  useEffect(() => {
+    if (behind && noteSyncBlocked(true)) emit({ ...state });
+  }, [behind]);
+  return behind;
 }
 
 /** The open database, or null (not switched on for this person, or still opening). */

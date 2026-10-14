@@ -4,10 +4,12 @@
 // cookie, and the server then sends those pages' server version right away
 // (devicePageOn in lib/powersync/device-check.ts) — instead of a page that
 // waits for the copy and gives up after a few seconds. LocalDataHost keeps it
-// in step with the copy: set while it's incomplete, removed the moment the
-// first download completes, and the device pages then take over by
-// themselves. A device page that finds the copy incomplete sets it too
-// (useLocalCard), for a device whose copy never even opens.
+// in step with the copy: set while it's incomplete — or while its sync is
+// known not to connect, so the copy is out of date (useSyncBlocked) — removed
+// the moment the first download completes and the sync connects, and the
+// device pages then take over by themselves. A device page that finds the
+// copy incomplete sets it too (useLocalCard), for a device whose copy never
+// even opens.
 
 export const DEVICE_COPY_PENDING_COOKIE = "bizh-device-pending";
 

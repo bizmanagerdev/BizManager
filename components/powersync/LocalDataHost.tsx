@@ -3,7 +3,13 @@
 import { useEffect } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { closeLocalDatabase, openLocalDatabase } from "@/lib/powersync/database";
-import { readyLocalDatabase, registerLocalDataWipe, setLocalViewer, useLocalSyncStatus } from "@/lib/powersync/store";
+import {
+  readyLocalDatabase,
+  registerLocalDataWipe,
+  setLocalViewer,
+  useLocalSyncStatus,
+  useSyncBlocked,
+} from "@/lib/powersync/store";
 import DeviceSaveNotices from "@/components/powersync/DeviceSaveNotices";
 import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { withSentry } from "@/lib/sentry-lazy";
@@ -27,9 +33,10 @@ import { copyHasMoneyTables, setMoneyCopyReady } from "@/lib/powersync/money-cop
 // The page results stored on the device (lib/powersync/stored-results.ts) and
 // the dashboard's picture (lib/dashboard/picture.ts) go with the copy: wiped
 // at logout, and anyone else's dropped when this person is signed in.
-// Until this device's copy has finished its first download, the server sends
+// Until this device's copy has finished its first download — or while its
+// sync is known not to connect at all (useSyncBlocked) — the server sends
 // the device pages' server version (lib/powersync/device-pending.ts); the
-// moment it has, they switch over by themselves.
+// moment it has / it connects, they switch over by themselves.
 export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & { name?: string | null } }) {
   const viewerId = viewer?.userId;
   const viewerRole = viewer?.role;
@@ -51,9 +58,10 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & {
 
   const status = useLocalSyncStatus();
   const copyComplete = status ? status.hasSynced : null;
+  const syncBlocked = useSyncBlocked();
   useEffect(() => {
-    if (copyComplete !== null) setDeviceCopyPending(!copyComplete);
-  }, [copyComplete]);
+    if (copyComplete !== null) setDeviceCopyPending(!copyComplete || syncBlocked);
+  }, [copyComplete, syncBlocked]);
 
   // Whether this copy carries the dashboard's money tables (sync rules v1.8):
   // the board then draws its money cards from it (lib/powersync/money-copy.ts).
