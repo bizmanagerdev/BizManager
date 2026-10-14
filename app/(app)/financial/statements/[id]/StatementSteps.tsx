@@ -352,8 +352,9 @@ function FinishPanel({
         </p>
         {diffNote}
         <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link href="/financial/payments-calendar">ללוח התשלומים</Link>
+          {/* A finished statement's next stop is the list (owner, 2026-10-14). */}
+          <Button asChild size="sm">
+            <Link href="/financial/statements">חזרה לרשימת הפירוטים</Link>
           </Button>
           <Button size="sm" variant="outline" onClick={onReopen} disabled={busy}>
             {busy ? "שומר..." : "ביטול סיום"}

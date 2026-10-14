@@ -21,7 +21,7 @@ export default async function CardStatementsPage() {
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const baseStatements = (data ?? []) as Omit<StatementListItem, "expensesTotal" | "incomeTotal" | "steps">[];
+  const baseStatements = (data ?? []) as Omit<StatementListItem, "expensesTotal" | "incomeTotal" | "steps" | "bankAccounts">[];
 
   // Row-level amounts for the money columns and each statement's steps (same rules as the
   // statement page — lib/financial/cardStatementMath.ts). Paged: the lines of every
@@ -58,7 +58,7 @@ export default async function CardStatementsPage() {
           ).catch(() => [] as RowAmountRow[]),
           supabase
             .from("card_statement_charges")
-            .select("id,statement_id,card_label,amount,charge_date,account_id")
+            .select("id,statement_id,card_label,amount,charge_date,account_id,account:accounts(name)")
             .in("statement_id", statementIds)
             .then((r) => (r.data ?? []) as Array<Record<string, unknown>>),
         ])
@@ -91,8 +91,13 @@ export default async function CardStatementsPage() {
     mathRows.set(sid, list);
   }
   const mathCharges = new Map<string, StatementMathCharge[]>();
+  // Which bank account(s) each statement's cards were charged to (owner, 2026-10-14:
+  // "I want to see the account here").
+  const bankAccounts = new Map<string, Set<string>>();
   for (const c of chargeData) {
     const sid = String(c.statement_id ?? "");
+    const account = (Array.isArray(c.account) ? c.account[0] : c.account) as { name?: string } | null | undefined;
+    if (account?.name) bankAccounts.set(sid, (bankAccounts.get(sid) ?? new Set<string>()).add(account.name));
     const list = mathCharges.get(sid) ?? [];
     list.push({
       id: String(c.id ?? ""),
@@ -109,6 +114,7 @@ export default async function CardStatementsPage() {
     expensesTotal: totals[s.id]?.expensesTotal ?? 0,
     incomeTotal: totals[s.id]?.incomeTotal ?? 0,
     steps: summarizeStatement(mathRows.get(s.id) ?? [], mathCharges.get(s.id) ?? []),
+    bankAccounts: [...(bankAccounts.get(s.id) ?? [])].sort((a, b) => a.localeCompare(b, "he")),
   }));
 
   const cardCosts = await loadCardCostsByMonth(supabase);

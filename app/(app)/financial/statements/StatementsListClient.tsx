@@ -17,6 +17,8 @@ export type StatementListItem = {
   incomeTotal: number;
   /** Money per card and where the statement stands — the statement page's own rules. */
   steps: StatementSteps;
+  /** The bank account(s) its cards were charged to. */
+  bankAccounts: string[];
 };
 
 function formatCurrency(n: number): string {
@@ -96,6 +98,9 @@ export default function StatementsListClient({ statements }: { statements: State
                         <span className="whitespace-nowrap font-medium">{formatCurrency(totals.charged)}</span>
                         <DifferenceChip difference={totals.difference} />
                       </div>
+                    ) : null}
+                    {s.bankAccounts.length > 0 ? (
+                      <div className="text-xs text-muted-foreground">{s.bankAccounts.join(" · ")}</div>
                     ) : null}
                     {totals.countedTwice > 0 ? (
                       <div className="text-xs text-warning-soft-foreground" title="שורות שרשומות גם כהוצאה שיורדת מחשבון בנק בנפרד">
