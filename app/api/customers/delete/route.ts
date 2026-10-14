@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { customerDeleteBlocker } from "@/app/(app)/customers/[id]/customerPageModel";
 
 type DeleteCustomerPayload = {
   id?: string;
+  /** Only say whether it could be deleted (and why not) — the customer page asks before it leaves. */
+  dry_run?: boolean;
 };
 
 type DbError = {
@@ -80,13 +83,18 @@ export async function POST(req: Request) {
     // Payments are NOT checked directly: the `payments` table has no `customer_id`
     // column — a payment always belongs to an order or a project. Blocking on
     // orders/projects below therefore already covers any related payments.
-    const [ordersResult, projectsResult, morningResult] = await Promise.all([
+    // These four are every foreign key on customers.id the database refuses a
+    // delete for (orders, projects and leases ON DELETE RESTRICT, Morning
+    // documents a plain one); the rest cascade or let go of the link. The lease
+    // was missing, so a tenant's delete failed on the database's own refusal.
+    const [ordersResult, projectsResult, morningResult, leasesResult] = await Promise.all([
       supabase.from("orders").select("id", { count: "exact", head: true }).eq("customer_id", id),
       supabase.from("projects").select("id", { count: "exact", head: true }).eq("customer_id", id),
       supabase.from("morning_documents").select("id", { count: "exact", head: true }).eq("customer_id", id),
+      supabase.from("lease_agreements").select("id", { count: "exact", head: true }).eq("customer_id", id),
     ]);
 
-    for (const result of [ordersResult, projectsResult, morningResult]) {
+    for (const result of [ordersResult, projectsResult, morningResult, leasesResult]) {
       if (result.error) {
         console.error("customer delete: related-count query failed", {
           error: result.error,
@@ -100,16 +108,21 @@ export async function POST(req: Request) {
       }
     }
 
-    const blockers: string[] = [];
-    if ((ordersResult.count ?? 0) > 0) blockers.push(`${ordersResult.count} הזמנות`);
-    if ((projectsResult.count ?? 0) > 0) blockers.push(`${projectsResult.count} פרויקטים`);
-    if ((morningResult.count ?? 0) > 0) blockers.push(`${morningResult.count} מסמכי Morning`);
+    // The same words the customer page shows in its ⋮ ("יש ללקוח 6 הזמנות ו-2 פרויקטים").
+    const blocker = customerDeleteBlocker({
+      orders: ordersResult.count ?? 0,
+      projects: projectsResult.count ?? 0,
+      leases: leasesResult.count ?? 0,
+      morningDocuments: morningResult.count ?? 0,
+    });
 
-    if (blockers.length > 0) {
+    if (body.dry_run === true) {
+      return NextResponse.json({ ok: true, blocker });
+    }
+
+    if (blocker) {
       return NextResponse.json(
-        {
-          error: `לא ניתן למחוק את הלקוח: קיימים ${blockers.join(", ")}. יש למחוק אותם תחילה או לסמן את הלקוח כלא פעיל.`,
-        },
+        { error: `לא ניתן למחוק את הלקוח: ${blocker}. אפשר לסמן אותו כלא פעיל.`, blocker },
         { status: 400 }
       );
     }

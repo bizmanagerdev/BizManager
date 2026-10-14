@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
+import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleAction } from "@/lib/undo-engine";
 import {
   formatPin,
@@ -115,19 +116,21 @@ export function DeliveryLocationDialog({
     const nextInstructions = instructions.trim() || null;
     const nextPin = pin;
     try {
-      const response = await fetch("/api/customers/delivery-location", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      // Through the send queue, like every other save: with no connection (a
+      // driver at the door on one bar) it waits on the device and goes out
+      // when it's back, and the screen shows it at once. It used to fail.
+      const result = await offlineFetch(
+        "/api/customers/delivery-location",
+        {
           customer_id: customerId,
           instructions: nextInstructions,
           lat: nextPin?.lat ?? null,
           lng: nextPin?.lng ?? null,
-        }),
-      });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        setError(toHebrewError(json.error, "שמירת המיקום נכשלה."));
+        },
+        "פרטי הגעה ללקוח"
+      );
+      if (!result.queued && !result.ok) {
+        setError(toHebrewError(result.error, "שמירת המיקום נכשלה."));
         return;
       }
       onSaved?.({ instructions: nextInstructions, pin: nextPin });
@@ -139,18 +142,17 @@ export function DeliveryLocationDialog({
         key: `delivery-location:${customerId}`,
         message: "פרטי ההגעה נשמרו ללקוח.",
         onUndo: async () => {
-          const res = await fetch("/api/customers/delivery-location", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
+          const revert = await offlineFetch(
+            "/api/customers/delivery-location",
+            {
               customer_id: customerId,
               instructions: previousInstructions,
               lat: previousPin?.lat ?? null,
               lng: previousPin?.lng ?? null,
-            }),
-          });
-          const revertJson = await res.json().catch(() => ({}));
-          if (!res.ok) return { ok: false, error: toHebrewError(revertJson?.error, "ביטול נכשל.") };
+            },
+            "ביטול פרטי הגעה"
+          );
+          if (!revert.queued && !revert.ok) return { ok: false, error: toHebrewError(revert.error, "ביטול נכשל.") };
           onSaved?.({ instructions: previousInstructions, pin: previousPin });
           return { ok: true };
         },

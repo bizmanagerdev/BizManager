@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CheckIcon } from "@/components/ui/icons";
+import { formatShortDate } from "@/lib/date";
 import { fetchChecklistForEntity, type ChecklistItem } from "@/lib/documents/checklist";
 import type { ChecklistEntityType } from "@/lib/documents/categories";
 
@@ -74,14 +75,16 @@ export default function MissingDocumentsChecklist({
             )}
             <span className={item.present ? "" : "text-muted-foreground"}>{item.label}</span>
             {item.present && item.validUntil ? (
-              <span className="text-xs text-muted-foreground">בתוקף עד {item.validUntil}</span>
+              <span className="text-xs text-muted-foreground">בתוקף עד {formatShortDate(item.validUntil, "—")}</span>
             ) : null}
             {!item.present && onUpload ? (
+              // A less important action: the soft "+" look. 28px to look at,
+              // ~40 to tap (the ::before).
               <Button
                 type="button"
                 size="sm"
-                variant="secondary"
-                className="h-7"
+                variant="soft"
+                className="relative h-7 px-2.5 before:absolute before:-inset-1.5 before:content-['']"
                 onClick={() => onUpload(item.code)}
               >
                 העלאה

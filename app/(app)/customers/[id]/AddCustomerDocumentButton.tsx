@@ -1,39 +1,75 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
-import { DOCUMENT_CATEGORIES } from "@/lib/documents";
+import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, isDocumentCategory } from "@/lib/documents";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { offlineUpload } from "@/lib/offline-upload";
 import { uploadTogether } from "@/lib/upload-together";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { registerReversibleAction } from "@/lib/undo-engine";
+import { waitingRowId } from "@/hooks/useLocalAdditions";
+import { AddActionButton } from "@/app/(app)/customers/[id]/customerSectionUi";
+import type { CustomerDocumentItem } from "@/app/(app)/customers/[id]/customerPageModel";
 
-/** "+ מסמך" — upload documents linked to this customer, from the customer page. */
+/** The file itself, to view and download until the page has its signed link. */
+function localUrl(file: File): string | null {
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * "+ מסמך" — upload documents linked to this customer, from the customer page.
+ * Each file is handed to the page (`onUploaded`) and listed at once — one that
+ * waits for the connection too, marked as waiting — opened from the file on
+ * this device until the page is read again.
+ */
 export default function AddCustomerDocumentButton({
   customerId,
   customerName,
+  onUploaded,
+  onUndone,
+  open: openProp,
+  onOpenChange,
+  presetCategory,
 }: {
   customerId: string;
   customerName: string;
+  onUploaded: (documents: CustomerDocumentItem[]) => void;
+  /** The upload was undone (the toast's "בטל"): these documents are gone. */
+  onUndone: (documentIds: string[]) => void;
+  /** Opened from elsewhere too (the missing-documents list's "העלאה"). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** The category to start with — the missing document being uploaded. */
+  presetCategory?: string;
 }) {
-  const router = useRouter();
-  const [, startTransition] = useTransition();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [category, setCategory] = useState("");
+  // Each opening starts clean — on the missing document's category when it
+  // was opened for one.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setError("");
+      setFiles([]);
+      setCategory(presetCategory ?? "");
+    }
+  }
 
-  function openDialog() {
-    setError("");
-    setFiles([]);
-    setCategory("");
-    setOpen(true);
+  function setOpen(next: boolean) {
+    setOpenState(next);
+    onOpenChange?.(next);
   }
 
   async function upload() {
@@ -54,25 +90,39 @@ export default function AddCustomerDocumentButton({
       const results = await uploadTogether(files, (file) =>
         offlineUpload("/api/documents/upload", { fields, file, label: file.name })
       );
-      let uploaded = 0;
+      const added: CustomerDocumentItem[] = [];
       const uploadedIds: string[] = [];
       const remaining: File[] = [];
       results.forEach((result, i) => {
-        if (result.queued) return;
-        if (result.ok) {
-          uploaded += 1;
-          const data = result.data as { document?: { id?: string } } | null;
-          if (data?.document?.id) uploadedIds.push(data.document.id);
-        } else {
-          remaining.push(files[i]!);
+        const file = files[i]!;
+        if (!result.queued && !result.ok) {
+          remaining.push(file);
+          return;
         }
+        const saved = result.queued
+          ? null
+          : ((result.data as { document?: { id?: string; file_name?: string; document_type?: string; uploaded_at?: string } } | null)
+              ?.document ?? null);
+        if (saved?.id) uploadedIds.push(saved.id);
+        added.push({
+          id: saved?.id ?? waitingRowId(),
+          name: saved?.file_name || file.name,
+          fileName: saved?.file_name || file.name,
+          type: saved?.document_type ?? (category.trim() || null),
+          uploadedAt: saved?.uploaded_at ?? new Date().toISOString(),
+          url: localUrl(file),
+          sourceType: "customer",
+          sourceId: customerId,
+          waiting: result.queued,
+        });
       });
       const firstFailure = results.find((result) => !result.queued && !result.ok);
       if (firstFailure && !firstFailure.queued && !firstFailure.ok) {
         setError(firstFailure.error || `העלאת ${remaining[0]!.name} נכשלה.`);
       }
+      if (added.length > 0) onUploaded(added);
+      const uploaded = added.filter((doc) => !doc.waiting).length;
       if (uploaded > 0) {
-        startTransition(() => { router.refresh(); });
         const message = uploaded === 1 ? "המסמך הועלה" : `${uploaded} מסמכים הועלו`;
         if (uploadedIds.length > 0) {
           // The document(s) already exist server-side (uploaded straight to
@@ -80,7 +130,7 @@ export default function AddCustomerDocumentButton({
           // delete route the documents archive page already uses, once per
           // uploaded file.
           registerReversibleAction({
-            key: `customer-document:${customerId}:${Date.now()}`,
+            key: `customer-document:${customerId}:${uploadedIds.join(",")}`,
             message,
             onUndo: async () => {
               for (const id of uploadedIds) {
@@ -94,7 +144,7 @@ export default function AddCustomerDocumentButton({
                   return { ok: false, error: toHebrewError((json as { error?: string })?.error, "ביטול ההעלאה נכשל.") };
                 }
               }
-              startTransition(() => { router.refresh(); });
+              onUndone(uploadedIds);
               return { ok: true };
             },
           });
@@ -113,17 +163,11 @@ export default function AddCustomerDocumentButton({
     }
   }
 
+  const currentIsListed = !category || isDocumentCategory(category);
+
   return (
     <>
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        className="h-8 border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
-        onClick={openDialog}
-      >
-        + מסמך
-      </Button>
+      <AddActionButton label="מסמך" ariaLabel="העלאת מסמך" onClick={() => setOpen(true)} />
       <FormDialog
         open={open}
         onOpenChange={setOpen}
@@ -135,28 +179,28 @@ export default function AddCustomerDocumentButton({
         busy={busy}
         error={error || undefined}
       >
-          <div className="space-y-3">
-            <FileUploadActions
-              files={files}
-              onFilesSelected={setFiles}
-              multiple
+        <div className="space-y-3">
+          <FileUploadActions files={files} onFilesSelected={setFiles} multiple disabled={busy} chooseLabel="בחירת קבצים" />
+          <div className="space-y-1">
+            <label className="text-sm font-medium" htmlFor="customer-document-category">
+              קטגוריה (אופציונלי)
+            </label>
+            <NativeSelect
+              id="customer-document-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
               disabled={busy}
-              chooseLabel="בחירת קבצים"
-            />
-            <div className="space-y-1">
-              <label className="text-sm font-medium">קטגוריה (אופציונלי)</label>
-              <NativeSelect
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                disabled={busy}
-              >
-                <option value="">ללא קטגוריה</option>
-                {DOCUMENT_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </NativeSelect>
-            </div>
+            >
+              <option value="">ללא קטגוריה</option>
+              {DOCUMENT_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              {currentIsListed ? null : <option value={category}>{getDocumentCategoryLabel(category)}</option>}
+            </NativeSelect>
           </div>
+        </div>
       </FormDialog>
     </>
   );

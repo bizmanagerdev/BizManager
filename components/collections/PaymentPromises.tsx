@@ -1,39 +1,89 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { WaitingBadge } from "@/components/ui/waiting-badge";
+import { MetaRow } from "@/components/ui/meta-row";
 import { toHebrewError } from "@/lib/error-messages";
-import { formatCurrency } from "@/lib/payroll";
+import { formatMoney } from "@/lib/money";
+import { formatShortDate } from "@/lib/date";
+import { offlineFetch } from "@/lib/offline-queue";
 import { updatePaymentPromise } from "@/lib/collections/paymentPromises";
 import { promiseStatusLabel, type PaymentPromise } from "@/lib/promises";
 import { registerReversibleCreate, scheduleDeferredEdit } from "@/lib/undo-engine";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { useLocalAdditions, waitingRowId } from "@/hooks/useLocalAdditions";
 
-function statusTone(status: string): "success" | "destructive" | "secondary" | "warning" {
+// הבטחות תשלום — "the customer promised ₪X by date Y", on the customer page.
+//
+// Saves update the list in place (a new promise shows at once, a status change
+// is a deferred edit with undo) instead of reading the whole page again. Both
+// go through the send queue: with no connection a new promise shows marked as
+// waiting, and a promise marked kept stays kept — it used to be a direct
+// browser write that failed offline, and the undo engine then put the old
+// status back (lib/collections/paymentPromises.ts).
+
+type PromiseRow = PaymentPromise & { waiting?: boolean };
+
+function statusVariant(status: string): "success" | "destructive" | "neutral" | "warning" {
   if (status === "kept") return "success";
   if (status === "broken") return "destructive";
-  if (status === "cancelled") return "secondary";
+  if (status === "cancelled") return "neutral";
   return "warning";
 }
 
-export default function PaymentPromises({ customerId, promises: promisesProp }: { customerId: string; promises: PaymentPromise[] }) {
-  const router = useRouter();
-  const promises = useUndoOverlay(promisesProp, (p) => p.id, "payment-promise");
+/** Newest promised date first; the id breaks a tie so the list never reshuffles. */
+function byPromisedDate(a: PromiseRow, b: PromiseRow) {
+  if (a.promised_date !== b.promised_date) return a.promised_date < b.promised_date ? 1 : -1;
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+}
+
+export default function PaymentPromises({
+  customerId,
+  promises: promisesProp,
+  formOpen,
+  onFormOpenChange,
+  onPendingCountChange,
+}: {
+  customerId: string;
+  promises: PaymentPromise[];
+  /** The add form's state, when the page's section header holds its "+"; without it the form always shows. */
+  formOpen?: boolean;
+  onFormOpenChange?: (open: boolean) => void;
+  /** How many promises are still open, as it changes — for a section header. */
+  onPendingCountChange?: (count: number) => void;
+}) {
+  const local = useLocalAdditions<PromiseRow>(promisesProp);
+  const sorted = useMemo(() => [...local.rows].sort(byPromisedDate), [local.rows]);
+  const promises = useUndoOverlay(sorted, (p) => p.id, "payment-promise");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
-  const [, startTransition] = useTransition();
+  const showForm = formOpen ?? true;
+
+  const pendingCount = promises.filter((p) => p.status === "pending").length;
+  useEffect(() => {
+    onPendingCountChange?.(pendingCount);
+  }, [pendingCount, onPendingCountChange]);
+
+  function resetForm() {
+    setAmount("");
+    setDate("");
+    setNotes("");
+    onFormOpenChange?.(false);
+  }
 
   async function add() {
     if (busy) return;
-    if (!amount || Number(amount) <= 0) {
+    const value = Number(amount);
+    if (!amount || !Number.isFinite(value) || value <= 0) {
       toast.error("יש להזין סכום.");
       return;
     }
@@ -43,33 +93,41 @@ export default function PaymentPromises({ customerId, promises: promisesProp }: 
     }
     setBusy(true);
     try {
-      const res = await fetch("/api/payment-promises/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customer_id: customerId, amount: Number(amount), promised_date: date, notes: notes.trim() || undefined }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { id?: string | null; error?: string };
-      if (!res.ok) throw new Error(json.error);
-      setAmount("");
-      setDate("");
-      setNotes("");
-      startTransition(() => { router.refresh(); });
-      const newId = json.id;
-      if (!newId) {
-        toast.success("ההבטחה נוספה.");
-      } else {
-        registerReversibleCreate({
-          scope: "payment-promise",
-          id: newId,
-          message: "ההבטחה נוספה.",
-          onUndo: async () => {
-            const result = await updatePaymentPromise(newId, { status: "cancelled" });
-            startTransition(() => { router.refresh(); });
-            if (!result.ok) return { ok: false, error: toHebrewError(result.error, "ביטול נכשל.") };
-            return { ok: true };
-          },
-        });
+      const body = { customer_id: customerId, amount: value, promised_date: date, notes: notes.trim() || undefined };
+      const result = await offlineFetch("/api/payment-promises/create", body, "הבטחת תשלום", { idempotent: true });
+      if (!result.queued && !result.ok) {
+        toast.error(toHebrewError(result.error, "שמירה נכשלה."));
+        return;
       }
+      const newId = result.queued ? null : ((result.data as { id?: string | null } | null)?.id ?? null);
+      local.add({
+        id: newId ?? waitingRowId(),
+        customer_id: customerId,
+        order_id: null,
+        project_id: null,
+        amount: value,
+        promised_date: date,
+        status: "pending",
+        notes: notes.trim() || null,
+        created_at: new Date().toISOString(),
+        waiting: result.queued,
+      });
+      resetForm();
+      if (!newId) {
+        if (!result.queued) toast.success("ההבטחה נוספה.");
+        return;
+      }
+      registerReversibleCreate({
+        scope: "payment-promise",
+        id: newId,
+        message: "ההבטחה נוספה.",
+        onUndo: async () => {
+          const undone = await updatePaymentPromise(newId, { status: "cancelled" }, "ביטול הבטחת תשלום");
+          if (!undone.ok) return { ok: false, error: toHebrewError(undone.error, "ביטול נכשל.") };
+          local.remove(newId);
+          return { ok: true };
+        },
+      });
     } catch (err) {
       toast.error(toHebrewError(err, "שמירה נכשלה."));
     } finally {
@@ -86,7 +144,6 @@ export default function PaymentPromises({ customerId, promises: promisesProp }: 
       onCommit: async () => {
         const result = await updatePaymentPromise(id, { status });
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון נכשל.") };
-        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -94,38 +151,49 @@ export default function PaymentPromises({ customerId, promises: promisesProp }: 
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_2fr_auto]">
-        <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="סכום" />
-        <DateInput value={date} onChange={(e) => setDate(e.target.value)} />
-        <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="הערה (אופציונלי)" />
-        <Button onClick={add} disabled={busy}>
-          הוספה
-        </Button>
-      </div>
+      {showForm ? (
+        <div className="space-y-2 rounded-xl border border-border/70 bg-background/60 p-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_2fr]">
+            <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="סכום" aria-label="סכום" />
+            <DateInput value={date} onChange={(e) => setDate(e.target.value)} aria-label="תאריך הבטחה" />
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="הערה (אופציונלי)" />
+          </div>
+          <div className="flex justify-end gap-2">
+            {onFormOpenChange ? (
+              <Button type="button" size="sm" variant="muted" onClick={() => onFormOpenChange(false)} disabled={busy}>
+                ביטול
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" onClick={() => void add()} disabled={busy}>
+              {busy ? "שומר..." : "הוספת הבטחה"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {promises.length === 0 ? (
-        <div className="text-sm text-muted-foreground">אין הבטחות תשלום ללקוח זה.</div>
+        <EmptyState dense>אין הבטחות תשלום ללקוח זה.</EmptyState>
       ) : (
         <ul className="space-y-2">
           {promises.map((p) => (
             <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 p-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{formatCurrency(p.amount)}</span>
-                  <span className="text-sm text-muted-foreground">עד {p.promised_date}</span>
-                  <Badge variant={statusTone(p.status)}>{promiseStatusLabel(p.status)}</Badge>
+              <div className="min-w-0 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold tabular-nums">{formatMoney(p.amount)}</span>
+                  <span className="text-sm text-muted-foreground">עד {formatShortDate(p.promised_date, "—")}</span>
+                  {p.waiting ? <WaitingBadge /> : <Badge variant={statusVariant(p.status)}>{promiseStatusLabel(p.status)}</Badge>}
                 </div>
-                {p.notes ? <div className="text-xs text-muted-foreground">{p.notes}</div> : null}
+                {p.notes ? <MetaRow className="text-xs text-muted-foreground" items={[p.notes]} /> : null}
               </div>
-              {p.status === "pending" ? (
-                <div className="flex items-center gap-1">
-                  <Button size="sm" variant="secondary" onClick={() => setStatus(p.id, "kept")} disabled={busy}>
+              {p.status === "pending" && !p.waiting ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button size="sm" variant="outline" onClick={() => setStatus(p.id, "kept")}>
                     קוימה
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setStatus(p.id, "broken")} disabled={busy}>
+                  <Button size="sm" variant="outline" onClick={() => setStatus(p.id, "broken")}>
                     הופרה
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setStatus(p.id, "cancelled")} disabled={busy}>
+                  <Button size="sm" variant="muted" onClick={() => setStatus(p.id, "cancelled")}>
                     ביטול
                   </Button>
                 </div>

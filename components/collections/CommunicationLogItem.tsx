@@ -16,6 +16,7 @@ import {
 } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
 import { appendDictatedText } from "@/lib/dictation";
+import { formatShortDateTime } from "@/lib/date";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 
@@ -44,19 +45,11 @@ function ChannelIcon({ channel, direction }: { channel: string; direction: strin
   }
 }
 
+// The app's one date format, in Israel time on any device. The browser's own
+// toLocaleString used the device's (and the server's) zone — the customer page
+// draws this on the server now, and the two disagreed.
 function formatDateTime(value: string | null) {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString("he-IL", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return value;
-  }
+  return formatShortDateTime(value, "—");
 }
 
 // One logged contact in a timeline — shows the call details and lets an

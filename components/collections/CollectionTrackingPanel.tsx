@@ -1,18 +1,22 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { CheckIcon, CloseIcon, PhoneIcon, ReminderIcon } from "@/components/ui/icons";
+import { AddIcon, CheckIcon, CloseIcon, PhoneIcon, ReminderIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
+import { ContactLink } from "@/components/ui/contact-link";
+import { WaitingBadge } from "@/components/ui/waiting-badge";
 import { appendDictatedText } from "@/lib/dictation";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { formatMoney } from "@/lib/money";
 import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import type { CustomerReceivable } from "@/lib/collections";
@@ -23,13 +27,16 @@ import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import {
   COMMUNICATION_CHANNELS,
   actionTypeLabel,
+  channelLabel,
+  directionLabel,
   type CommunicationLog,
   type Reminder,
 } from "@/lib/communications";
-import { offlineFetch } from "@/lib/offline-queue";
+import { CONNECTION_EVENTS, offlineFetch } from "@/lib/offline-queue";
 import { EditButton } from "@/components/ui/icon-button";
 import { registerReversibleCreate, scheduleDeferredAction, scheduleDeferredDelete } from "@/lib/undo-engine";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { waitingRowId } from "@/hooks/useLocalAdditions";
 import { israelDateKey } from "@/lib/timezone";
 
 // A call/reminder here can be about anything (delivery, an order, a question) —
@@ -42,33 +49,60 @@ const TOPICS = [
   { value: "delivery", label: "משלוח" },
 ];
 
-// Same format as the customer page: no trailing ".00", decimals only when real.
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+// A small control's tap area reaches past its 28–32px box to ~40.
+const TAP_EXTEND = "relative before:absolute before:-inset-1.5 before:content-['']";
+
+// A "+" here is the soft one of every section on the customer page, the same
+// size (its AddActionButton): 32px to look at, 40 to tap.
+const ADD_CLASS = "relative h-8 gap-1 px-2.5 before:absolute before:-inset-1 before:content-['']";
+
+/** What the panel shows: the call log, the reminders and what the customer owes. */
+export type CollectionPanelData = {
+  logs: CommunicationLog[];
+  reminders: Reminder[];
+  receivables: CustomerReceivable[];
+};
+
+/** A call or reminder saved with no connection — on screen at once, sent later. */
+type WaitingLog = { id: string; channel: string; direction: string; content: string | null; created_at: string };
+type WaitingReminder = { id: string; remind_at: string; content: string | null };
 
 type Props = {
   customerId: string;
   customerName: string;
   customerPhone?: string | null;
-  /** Called after any successful mutation, so a parent list can refresh. */
-  onChanged?: () => void;
+  /**
+   * Called after any successful change, so a parent can refresh what it shows.
+   * "money" when the debt itself changed (a payment marked collected);
+   * "activity" for the call log and reminders, which the panel shows itself.
+   */
+  onChanged?: (what: "money" | "activity") => void;
   /**
    * Start the log-call / add-reminder forms collapsed behind "+" buttons and
    * collapse them again after a save (used when the panel is embedded inline
    * on the customer page rather than opened in a dedicated dialog).
    */
   collapsibleForms?: boolean;
+  /**
+   * What the page already read for this customer (the customer page reads it
+   * with everything else). The panel starts from it instead of fetching it —
+   * and the receivables a second time — after the page has shown.
+   */
+  initialData?: CollectionPanelData | null;
+  /** Open one of the forms (a new `key` each time) — the page's ⋮ and cards ask for them. */
+  formRequest?: { form: "call" | "reminder"; key: number } | null;
+  /** The open reminders' count as it changes — for a section header. */
+  onOpenRemindersChange?: (count: number) => void;
+  /**
+   * Israel's today on the server that drew the page, when the panel is drawn
+   * there too (initialData): its "באיחור" marks then say the same in both
+   * renders; the device's own date takes over after.
+   */
+  today?: string;
 };
 
-function isOverdue(remindAt: string) {
-  return remindAt.slice(0, 10) < israelDateKey();
-}
+// The date only matters at the first paint and after it; nothing to listen to.
+const noSubscription = () => () => {};
 
 export default function CollectionTrackingPanel({
   customerId,
@@ -76,16 +110,36 @@ export default function CollectionTrackingPanel({
   customerPhone,
   onChanged,
   collapsibleForms = false,
+  initialData = null,
+  formRequest = null,
+  onOpenRemindersChange,
+  today: serverToday,
 }: Props) {
+  const today = useSyncExternalStore(noSubscription, israelDateKey, () => serverToday ?? israelDateKey());
+  const isOverdue = (remindAt: string) => remindAt.slice(0, 10) < today;
   const [showCallForm, setShowCallForm] = useState(!collapsibleForms);
   const [showReminderForm, setShowReminderForm] = useState(!collapsibleForms);
-  const [logsRaw, setLogs] = useState<CommunicationLog[]>([]);
+  const [logsRaw, setLogs] = useState<CommunicationLog[]>(initialData?.logs ?? []);
   const logs = useUndoOverlay(logsRaw, (l) => l.id, "communication");
-  const [remindersRaw, setReminders] = useState<Reminder[]>([]);
+  const [remindersRaw, setReminders] = useState<Reminder[]>(initialData?.reminders ?? []);
   const reminders = useUndoOverlay(remindersRaw, (r) => r.id, "reminder");
-  const [receivables, setReceivables] = useState<CustomerReceivable[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [receivables, setReceivables] = useState<CustomerReceivable[]>(initialData?.receivables ?? []);
+  const [waitingLogs, setWaitingLogs] = useState<WaitingLog[]>([]);
+  const [waitingReminders, setWaitingReminders] = useState<WaitingReminder[]>([]);
+  // Until the first answer there is nothing to say "no reminders" about.
+  const [loaded, setLoaded] = useState(initialData !== null);
   const [error, setError] = useState<string | null>(null);
+
+  // A newer reading from the page (it was read again after an edit) replaces
+  // what the panel holds — the same answer the panel's own fetch would give.
+  const [seed, setSeed] = useState(initialData);
+  if (initialData && initialData !== seed) {
+    setSeed(initialData);
+    setLogs(initialData.logs);
+    setReminders(initialData.reminders);
+    setReceivables(initialData.receivables);
+    setLoaded(true);
+  }
 
   const { currentUserId } = useAssignableUsers();
 
@@ -105,6 +159,10 @@ export default function CollectionTrackingPanel({
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const callFormRef = useRef<HTMLDivElement>(null);
+  const reminderFormRef = useRef<HTMLDivElement>(null);
+  const [scrollTo, setScrollTo] = useState<"call" | "reminder" | null>(null);
+
   // Default both assignee pickers to the current user once the list resolves.
   useEffect(() => {
     if (!currentUserId) return;
@@ -112,36 +170,77 @@ export default function CollectionTrackingPanel({
     setReminderAssignee((prev) => prev || currentUserId);
   }, [currentUserId]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/collections/activity?customer_id=${encodeURIComponent(customerId)}`
-      );
-      const json = (await res.json().catch(() => ({}))) as {
-        logs?: CommunicationLog[];
-        reminders?: Reminder[];
-        receivables?: CustomerReceivable[];
-        error?: string;
-      };
-      if (!res.ok) {
-        setError(toHebrewError(json.error, "טעינה נכשלה"));
-        return;
+  /** The receivables only change when a payment does — a call or a reminder leaves them be. */
+  const load = useCallback(
+    async ({ receivables: withReceivables = true }: { receivables?: boolean } = {}) => {
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/collections/activity?customer_id=${encodeURIComponent(customerId)}${withReceivables ? "" : "&receivables=0"}`
+        );
+        const json = (await res.json().catch(() => ({}))) as {
+          logs?: CommunicationLog[];
+          reminders?: Reminder[];
+          receivables?: CustomerReceivable[];
+          error?: string;
+        };
+        if (!res.ok) {
+          setError(toHebrewError(json.error, "טעינה נכשלה"));
+          return;
+        }
+        setLogs(json.logs ?? []);
+        setReminders(json.reminders ?? []);
+        if (withReceivables) setReceivables(json.receivables ?? []);
+      } catch (err) {
+        setError(toHebrewError(err, "שגיאה לא ידועה"));
+      } finally {
+        setLoaded(true);
       }
-      setLogs(json.logs ?? []);
-      setReminders(json.reminders ?? []);
-      setReceivables(json.receivables ?? []);
-    } catch (err) {
-      setError(toHebrewError(err, "שגיאה לא ידועה"));
-    } finally {
-      setLoading(false);
-    }
-  }, [customerId]);
+    },
+    [customerId]
+  );
 
+  // Fetched only when nobody handed the panel its data (the dialog that opens it from a list).
+  const fetchOnMount = initialData === null;
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (fetchOnMount) void load();
+  }, [load, fetchOnMount]);
+
+  // What waited for the connection has gone out: read the real rows instead.
+  const waitingCount = waitingLogs.length + waitingReminders.length;
+  useEffect(() => {
+    if (waitingCount === 0) return;
+    const onSynced = () => {
+      void load({ receivables: false }).then(() => {
+        setWaitingLogs([]);
+        setWaitingReminders([]);
+      });
+    };
+    window.addEventListener(CONNECTION_EVENTS.synced, onSynced);
+    return () => window.removeEventListener(CONNECTION_EVENTS.synced, onSynced);
+  }, [waitingCount, load]);
+
+  // The page's ⋮ / card asked for a form: open it and bring it into view.
+  useEffect(() => {
+    if (!formRequest) return;
+    if (formRequest.form === "call") setShowCallForm(true);
+    else setShowReminderForm(true);
+    setScrollTo(formRequest.form);
+  }, [formRequest]);
+  useEffect(() => {
+    if (!scrollTo) return;
+    const target = scrollTo === "call" ? callFormRef.current : reminderFormRef.current;
+    if (!target) return;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.querySelector<HTMLElement>("textarea, input")?.focus({ preventScroll: true });
+    setScrollTo(null);
+  }, [scrollTo, showCallForm, showReminderForm]);
+
+  const openReminders = reminders.filter((r) => r.status === "pending");
+  const openCount = openReminders.length + waitingReminders.length;
+  useEffect(() => {
+    onOpenRemindersChange?.(openCount);
+  }, [openCount, onOpenRemindersChange]);
 
   async function logCall() {
     if (submitting) return;
@@ -165,6 +264,7 @@ export default function CollectionTrackingPanel({
     setSubmitting(true);
     setError(null);
     try {
+      const followUpAt = withFollowUp ? new Date(followUpDate).toISOString() : null;
       const result = await offlineFetch(
         "/api/communications/create",
         {
@@ -173,9 +273,9 @@ export default function CollectionTrackingPanel({
           direction,
           category: topic,
           content: content.trim() || undefined,
-          follow_up: withFollowUp
+          follow_up: followUpAt
             ? {
-                remind_at: new Date(followUpDate).toISOString(),
+                remind_at: followUpAt,
                 content: followUpContent.trim() || undefined,
                 assigned_to: followUpAssignee || undefined,
               }
@@ -185,8 +285,19 @@ export default function CollectionTrackingPanel({
         { idempotent: true }
       );
       if (result.queued) {
+        // Saved on the device: on the page now, marked as waiting.
+        setWaitingLogs((prev) => [
+          { id: waitingRowId(), channel, direction, content: content.trim() || null, created_at: new Date().toISOString() },
+          ...prev,
+        ]);
+        if (followUpAt) {
+          setWaitingReminders((prev) => [
+            { id: waitingRowId(), remind_at: followUpAt, content: followUpContent.trim() || null },
+            ...prev,
+          ]);
+        }
         resetCallForm();
-        onChanged?.();
+        onChanged?.("activity");
         return;
       }
       if (!result.ok) {
@@ -194,11 +305,11 @@ export default function CollectionTrackingPanel({
         return;
       }
       resetCallForm();
-      await load();
-      onChanged?.();
+      await load({ receivables: false });
+      onChanged?.("activity");
       const data = result.data as { id?: string | null; reminder_id?: string | null } | null;
       const newId = data?.id;
-      const message = withFollowUp ? "השיחה תועדה ותזכורת המשך נקבעה" : "השיחה תועדה";
+      const message = followUpAt ? "השיחה תועדה ותזכורת המשך נקבעה" : "השיחה תועדה";
       if (!newId) {
         toast.success(message);
       } else {
@@ -221,7 +332,7 @@ export default function CollectionTrackingPanel({
                 body: JSON.stringify({ id: followUpId, status: "cancelled" }),
               });
             }
-            await load();
+            await load({ receivables: false });
             if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
             return { ok: true };
           },
@@ -248,11 +359,12 @@ export default function CollectionTrackingPanel({
     setSubmitting(true);
     setError(null);
     try {
+      const remindAt = new Date(reminderDate).toISOString();
       const result = await offlineFetch(
         "/api/reminders/create",
         {
           customer_id: customerId,
-          remind_at: new Date(reminderDate).toISOString(),
+          remind_at: remindAt,
           content: reminderNote.trim() || undefined,
           action_type: "other",
           category: reminderTopic,
@@ -262,8 +374,9 @@ export default function CollectionTrackingPanel({
         { idempotent: true }
       );
       if (result.queued) {
+        setWaitingReminders((prev) => [{ id: waitingRowId(), remind_at: remindAt, content: reminderNote.trim() || null }, ...prev]);
         resetReminderForm();
-        onChanged?.();
+        onChanged?.("activity");
         return;
       }
       if (!result.ok) {
@@ -271,8 +384,8 @@ export default function CollectionTrackingPanel({
         return;
       }
       resetReminderForm();
-      await load();
-      onChanged?.();
+      await load({ receivables: false });
+      onChanged?.("activity");
       const newId = (result.data as { id?: string | null } | null)?.id;
       if (!newId) {
         toast.success("התזכורת נוספה");
@@ -288,7 +401,7 @@ export default function CollectionTrackingPanel({
               body: JSON.stringify({ id: newId, status: "cancelled" }),
             });
             const json = await res.json().catch(() => ({}));
-            await load();
+            await load({ receivables: false });
             if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
             return { ok: true };
           },
@@ -313,8 +426,8 @@ export default function CollectionTrackingPanel({
         if (!result.queued && !result.ok) {
           return { ok: false, error: toHebrewError(result.error, "עדכון התזכורת נכשל.") };
         }
-        await load();
-        onChanged?.();
+        await load({ receivables: false });
+        onChanged?.("activity");
         return { ok: true };
       },
     });
@@ -343,46 +456,33 @@ export default function CollectionTrackingPanel({
           return { ok: false, error: toHebrewError(result.error, "סימון התשלום נכשל.") };
         }
         await load();
-        onChanged?.();
+        onChanged?.("money");
         return { ok: true };
       },
     });
   }
 
-
   const totalOutstanding = receivables.reduce((sum, r) => sum + r.outstanding_amount, 0);
-
-  const openReminders = reminders.filter((r) => r.status === "pending");
 
   // The two entry forms — placed near the top in dialog mode, near the footer
   // action bar in the inline (collapsible) mode so they open where the buttons are.
   const callFormBlock = showCallForm ? (
-    <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+    <div ref={callFormRef} className="scroll-mt-24 rounded-xl border border-border/70 bg-background/60 p-3">
       <div className="mb-2 text-sm font-semibold">תיעוד שיחה</div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <NativeSelect
-          value={channel}
-          onChange={(e) => setChannel(e.target.value)}
-        >
+        <NativeSelect value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="ערוץ">
           {COMMUNICATION_CHANNELS.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect
-          value={direction}
-          onChange={(e) => setDirection(e.target.value)}
-        >
+        <NativeSelect value={direction} onChange={(e) => setDirection(e.target.value)} aria-label="כיוון">
           <option value="outgoing">שיחה יוצאת</option>
           <option value="incoming">שיחה נכנסת</option>
           <option value="missed">שלא נענתה</option>
         </NativeSelect>
-        <NativeSelect
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          title="נושא"
-        >
+        <NativeSelect value={topic} onChange={(e) => setTopic(e.target.value)} title="נושא" aria-label="נושא">
           {TOPICS.map((t) => (
             <option key={t.value} value={t.value}>
               {t.label}
@@ -397,6 +497,7 @@ export default function CollectionTrackingPanel({
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="מה סוכם? מה הלקוח אמר?"
+          aria-label="תוכן השיחה"
         />
         <DictateButton
           onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
@@ -405,23 +506,18 @@ export default function CollectionTrackingPanel({
         />
       </div>
 
-      <label className="mt-2 flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={withFollowUp}
-          onChange={(e) => setWithFollowUp(e.target.checked)}
-        />
+      <label className="mt-2 flex min-h-10 items-center gap-2 text-sm">
+        <input type="checkbox" checked={withFollowUp} onChange={(e) => setWithFollowUp(e.target.checked)} />
         קבע תזכורת המשך
       </label>
       {withFollowUp ? (
         <div className="mt-2 space-y-2">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <DateTimeInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
-            <input
+            <Input
               value={followUpContent}
               onChange={(e) => setFollowUpContent(e.target.value)}
               placeholder="להתקשר שוב..."
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
           <div className="space-y-1">
@@ -435,13 +531,7 @@ export default function CollectionTrackingPanel({
 
       <div className="mt-3 flex justify-end gap-2">
         {collapsibleForms ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => setShowCallForm(false)}
-            disabled={submitting}
-          >
+          <Button type="button" size="sm" variant="muted" onClick={() => setShowCallForm(false)} disabled={submitting}>
             סגירה
           </Button>
         ) : null}
@@ -453,15 +543,11 @@ export default function CollectionTrackingPanel({
   ) : null;
 
   const reminderFormBlock = showReminderForm ? (
-    <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+    <div ref={reminderFormRef} className="scroll-mt-24 rounded-xl border border-border/70 bg-background/60 p-3">
       <div className="mb-2 text-sm font-semibold">קביעת תזכורת</div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <DateTimeInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
-        <NativeSelect
-          value={reminderTopic}
-          onChange={(e) => setReminderTopic(e.target.value)}
-          title="נושא"
-        >
+        <NativeSelect value={reminderTopic} onChange={(e) => setReminderTopic(e.target.value)} title="נושא" aria-label="נושא">
           {TOPICS.map((t) => (
             <option key={t.value} value={t.value}>
               {t.label}
@@ -469,11 +555,11 @@ export default function CollectionTrackingPanel({
           ))}
         </NativeSelect>
       </div>
-      <input
+      <Input
         value={reminderNote}
         onChange={(e) => setReminderNote(e.target.value)}
         placeholder="על מה להזכיר? (אופציונלי)"
-        className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+        className="mt-2"
       />
       <div className="mt-2 space-y-1">
         <div className="text-xs text-muted-foreground">אחראי</div>
@@ -485,19 +571,14 @@ export default function CollectionTrackingPanel({
           <Button
             type="button"
             size="sm"
-            variant="secondary"
+            variant="muted"
             onClick={() => setShowReminderForm(false)}
             disabled={submitting}
           >
             סגירה
           </Button>
         ) : null}
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => void addReminder()}
-          disabled={submitting}
-        >
+        <Button type="button" size="sm" onClick={() => void addReminder()} disabled={submitting}>
           {submitting ? "שומר..." : "הוספת תזכורת"}
         </Button>
       </div>
@@ -512,9 +593,9 @@ export default function CollectionTrackingPanel({
           {customerPhone ? (
             <>
               {" · "}
-              <a href={`tel:${customerPhone}`} className="hover:underline">
-                <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{customerPhone}
-              </a>
+              <ContactLink kind="tel" value={customerPhone} className="hover:underline">
+                <PhoneIcon className="inline h-3 w-3 align-text-bottom" /> <span dir="ltr">{customerPhone}</span>
+              </ContactLink>
             </>
           ) : null}
         </div>
@@ -525,7 +606,7 @@ export default function CollectionTrackingPanel({
         <div className="rounded-xl border border-border/70 bg-background/60 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-semibold">מה חייב</span>
-            <span className="text-sm font-semibold">{formatCurrency(totalOutstanding)}</span>
+            <span className="text-sm font-semibold tabular-nums text-destructive">{formatMoney(totalOutstanding)}</span>
           </div>
           <div className="space-y-2">
             {receivables.map((r) => {
@@ -536,38 +617,29 @@ export default function CollectionTrackingPanel({
                     ? "הלוואה"
                     : `פרויקט #${r.source_id.slice(0, 8)}`;
               return (
-                <div
-                  key={r.collection_key}
-                  className="rounded-lg border border-border/60 bg-background/50 p-2 text-sm"
-                >
+                <div key={r.collection_key} className="rounded-lg border border-border/60 bg-background/50 p-2 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="font-medium">
-                        {r.source_type === "loan"
-                          ? r.title
-                            ? `הלוואה — ${r.title}`
-                            : "הלוואה"
-                          : r.title ?? fallbackTitle}
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="min-w-0 font-medium">
+                        {r.source_type === "loan" ? (r.title ? `הלוואה — ${r.title}` : "הלוואה") : r.title ?? fallbackTitle}
                       </span>
                       <Badge className={collectionStatusClasses(r.collection_status)}>
                         {collectionStatusLabel(r.collection_status)}
                       </Badge>
                     </div>
-                    <span className="font-semibold">{formatCurrency(r.outstanding_amount)}</span>
+                    <span className="font-semibold tabular-nums">{formatMoney(r.outstanding_amount)}</span>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-                    <span>תאריך: {r.reference_date ? formatShortDate(r.reference_date) : "—"}</span>
+                    <span>תאריך: {formatShortDate(r.reference_date, "—")}</span>
                     {r.payment_terms ? <span>צורת תשלום: {paymentTermsLabel(r.payment_terms)}</span> : null}
                     {r.due_date || r.next_due_date ? (
-                      <span>פירעון: {formatShortDate((r.due_date ?? r.next_due_date) as string)}</span>
+                      <span>פירעון: {formatShortDate(r.due_date ?? r.next_due_date, "—")}</span>
                     ) : null}
-                    {r.days_late > 0 ? (
-                      <span className="text-destructive">{r.days_late} ימים באיחור</span>
-                    ) : null}
+                    {r.days_late > 0 ? <span className="text-destructive">{r.days_late} ימים באיחור</span> : null}
                   </div>
                   {r.source_type === "loan" ? (
                     <div className="mt-2 flex justify-end border-t border-border/50 pt-2">
-                      <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                      <Button asChild size="sm" variant="outline" className={`h-8 text-xs ${TAP_EXTEND}`}>
                         <Link href={`/financial/loans/${r.source_id}`}>רישום החזר</Link>
                       </Button>
                     </div>
@@ -577,8 +649,7 @@ export default function CollectionTrackingPanel({
                       {r.pending_payments.map((p) => (
                         <div key={p.id} className="flex items-center justify-between gap-2">
                           <span className={p.overdue ? "text-destructive" : "text-muted-foreground"}>
-                            {formatCurrency(p.amount)} · פירעון{" "}
-                            {p.due_date ? formatShortDate(p.due_date) : "—"}
+                            {formatMoney(p.amount)} · פירעון {formatShortDate(p.due_date, "—")}
                             {p.payment_method ? ` · ${paymentMethodLabel(p.payment_method)}` : ""}
                             {p.overdue ? " (באיחור)" : ""}
                           </span>
@@ -586,7 +657,7 @@ export default function CollectionTrackingPanel({
                             type="button"
                             size="sm"
                             variant="outline"
-                            className="h-7 shrink-0 text-xs"
+                            className={`h-8 shrink-0 text-xs ${TAP_EXTEND}`}
                             onClick={() => markCollected(p.id)}
                           >
                             סמן כנגבה
@@ -609,12 +680,32 @@ export default function CollectionTrackingPanel({
       {/* Open reminders */}
       <div>
         <div className="mb-2 text-xs font-semibold text-muted-foreground">
-          תזכורות פתוחות ({openReminders.length})
+          תזכורות פתוחות{loaded ? ` (${openCount})` : ""}
         </div>
-        {openReminders.length === 0 ? (
+        {!loaded ? (
+          // Not "no reminders" while they're still on their way.
+          <p className="text-sm text-muted-foreground">טוען...</p>
+        ) : openCount === 0 ? (
           <p className="text-sm text-muted-foreground">אין תזכורות פתוחות.</p>
         ) : (
           <div className="space-y-2">
+            {waitingReminders.map((r) => (
+              <div
+                key={r.id}
+                className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-border/70 bg-background/60 p-3 text-sm"
+              >
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warning-soft text-warning-soft-foreground">
+                    <ReminderIcon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-semibold">{r.content || "תזכורת"}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">מתוזמן ל-{formatShortDateTime(r.remind_at, "—")}</div>
+                  </div>
+                </div>
+                <WaitingBadge />
+              </div>
+            ))}
             {openReminders.map((r) => {
               const overdue = isOverdue(r.remind_at);
               return (
@@ -627,9 +718,7 @@ export default function CollectionTrackingPanel({
                   <div className="flex min-w-0 items-start gap-2.5">
                     <span
                       className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                        overdue
-                          ? "bg-destructive-soft text-destructive"
-                          : "bg-warning-soft text-warning-soft-foreground"
+                        overdue ? "bg-destructive-soft text-destructive" : "bg-warning-soft text-warning-soft-foreground"
                       }`}
                     >
                       <ReminderIcon className="h-4 w-4" />
@@ -637,18 +726,18 @@ export default function CollectionTrackingPanel({
                     <div className="min-w-0">
                       <div className="font-semibold">{r.content || actionTypeLabel(r.action_type)}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        {actionTypeLabel(r.action_type)} · מתוזמן ל-{formatShortDateTime(r.remind_at)}
+                        {actionTypeLabel(r.action_type)} · מתוזמן ל-{formatShortDateTime(r.remind_at, "—")}
                         {overdue ? <span className="text-destructive"> (באיחור)</span> : null}
                         {r.assigned_to_name ? ` · ${r.assigned_to_name}` : ""}
                       </div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-1.5">
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="h-8 rounded-full px-3 text-xs"
+                      className="h-9 px-3 text-xs"
                       title="סימון כבוצע"
                       onClick={() => updateReminder(r.id, "done")}
                     >
@@ -658,9 +747,8 @@ export default function CollectionTrackingPanel({
                     <EditButton onClick={() => setEditingReminder(r)} label="עריכת תזכורת" />
                     <Button
                       type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 rounded-full border border-border/60 bg-background text-muted-foreground"
+                      size="icon-sm"
+                      variant="muted"
                       title="ביטול תזכורת"
                       aria-label="ביטול תזכורת"
                       onClick={() => updateReminder(r.id, "cancelled")}
@@ -678,19 +766,32 @@ export default function CollectionTrackingPanel({
       {/* Communication timeline */}
       <div>
         <div className="mb-2 text-xs font-semibold text-muted-foreground">היסטוריית שיחות</div>
-        {loading ? (
+        {!loaded ? (
           <p className="text-sm text-muted-foreground">טוען...</p>
-        ) : logs.length === 0 ? (
+        ) : logs.length === 0 && waitingLogs.length === 0 ? (
           <p className="text-sm text-muted-foreground">עדיין לא תועדו שיחות.</p>
         ) : (
           <div className="space-y-2">
+            {waitingLogs.map((log) => (
+              <div key={log.id} className="rounded-xl border border-border/70 bg-background/60 p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">
+                    {channelLabel(log.channel)}
+                    {log.channel === "phone" ? ` · ${directionLabel(log.direction)}` : ""}
+                  </span>
+                  <WaitingBadge />
+                </div>
+                {log.content ? <div className="mt-1 whitespace-pre-wrap">{log.content}</div> : null}
+                <div className="mt-1 text-xs text-muted-foreground">{formatShortDateTime(log.created_at, "—")}</div>
+              </div>
+            ))}
             {logs.map((log) => (
               <CommunicationLogItem
                 key={log.id}
                 log={log}
                 onChanged={() => {
-                  void load();
-                  onChanged?.();
+                  void load({ receivables: false });
+                  onChanged?.("activity");
                 }}
               />
             ))}
@@ -703,26 +804,29 @@ export default function CollectionTrackingPanel({
       {collapsibleForms ? reminderFormBlock : null}
       {collapsibleForms && (!showCallForm || !showReminderForm) ? (
         <div className="flex flex-wrap justify-end gap-2 border-t border-border/50 pt-3">
+          {/* The less important action's look (soft), as every section's "+". */}
           {!showReminderForm ? (
             <Button
               type="button"
               size="sm"
-              variant="secondary"
-              className="border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+              variant="soft"
+              className={ADD_CLASS}
               onClick={() => setShowReminderForm(true)}
             >
-              + תזכורת
+              <AddIcon aria-hidden />
+              תזכורת
             </Button>
           ) : null}
           {!showCallForm ? (
             <Button
               type="button"
               size="sm"
-              variant="secondary"
-              className="border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+              variant="soft"
+              className={ADD_CLASS}
               onClick={() => setShowCallForm(true)}
             >
-              + תיעוד שיחה
+              <AddIcon aria-hidden />
+              תיעוד שיחה
             </Button>
           ) : null}
         </div>
@@ -734,8 +838,8 @@ export default function CollectionTrackingPanel({
           reminder={editingReminder}
           onClose={() => setEditingReminder(null)}
           onSaved={() => {
-            void load();
-            onChanged?.();
+            void load({ receivables: false });
+            onChanged?.("activity");
           }}
         />
       ) : null}

@@ -1,35 +1,43 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { AddIcon, LockIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
-import { Button } from "@/components/ui/button";
+import { LockIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate } from "@/lib/date";
-import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { israelDateKey } from "@/lib/timezone";
+import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
+import { AddActionButton, SECTION_IDS, openSection } from "@/app/(app)/customers/[id]/customerSectionUi";
+import type { CustomerTaskItem } from "@/app/(app)/customers/[id]/customerPageModel";
+
+export type { CustomerTaskItem };
 
 const TaskUpsertDialog = dynamic(
   () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
   { loading: () => null }
 );
 
-export type CustomerTaskItem = {
-  id: string;
-  subject: string;
-  status: string | null;
-  priority: string | null;
-  due_date: string | null;
-  assigned_user_name: string | null;
-  has_open_reminder: boolean;
-  is_private: boolean;
-};
+// The date only matters at the first paint and after it; nothing to listen to.
+const noSubscription = () => () => {};
+
+function str(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  return typeof value === "string" && value ? value : null;
+}
 
 /**
  * The customer's tasks, on the customer page: a compact list plus a "+ משימה"
- * button that opens the task dialog pre-linked to this customer (so a follow-up
- * can be logged even when there's no order/project yet). Clicking a row edits it.
+ * that opens the task dialog pre-linked to this customer (so a follow-up can be
+ * logged even when there's no order/project yet). Clicking a row edits it.
+ *
+ * A new task shows at once from what the dialog hands back — saved on the
+ * device's copy too, before it reaches the server — rather than after the page
+ * is read again. "Overdue" is judged against the server's today on the first
+ * paint and the device's after it, so the two renders agree.
  */
 export default function CustomerTasksSection({
   customerId,
@@ -38,6 +46,9 @@ export default function CustomerTasksSection({
   tasks,
   users,
   currentUserId,
+  today: serverToday,
+  createOpen,
+  onCreateOpenChange,
 }: {
   customerId: string;
   customerName: string;
@@ -45,40 +56,118 @@ export default function CustomerTasksSection({
   tasks: CustomerTaskItem[];
   users: UserOption[];
   currentUserId: string;
+  /** Israel's today on the server that drew the page. */
+  today: string;
+  /** The create dialog — the page's ⋮ opens it too. */
+  createOpen: boolean;
+  onCreateOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const [editId, setEditId] = useState<string | null>(null);
+  const [created, setCreated] = useState<CustomerTaskItem[]>([]);
+  // The server's today while the page hydrates (so both renders say the same
+  // "באיחור"), the device's from then on.
+  const today = useSyncExternalStore(noSubscription, israelDateKey, () => serverToday);
 
-  const today = israelDateKey();
+  const shown = useMemo(() => {
+    const ids = new Set(tasks.map((task) => task.id));
+    return [...created.filter((task) => !ids.has(task.id)), ...tasks];
+  }, [created, tasks]);
+  const openCount = shown.filter((task) => task.status !== "done").length;
+
   // A single-option list so the dialog's customer picker shows this customer.
   const customerOptions = [
     { id: customerId, label: customerPhone ? `${customerName} · ${customerPhone}` : customerName },
   ];
+  const userNameById = new Map(users.map((user) => [user.id, user.label]));
 
-  const addButton = (
-    <Button
-      size="sm"
-      variant="soft"
-      onClick={() => setCreateOpen(true)}
+  function addCreated(row: Record<string, unknown> | null | undefined) {
+    const id = row ? str(row, "id") : null;
+    if (!row || !id) {
+      // Saved, but with nothing handed back (it waits for the connection): the
+      // server's list has it once the page is read again.
+      startTransition(() => router.refresh());
+      return;
+    }
+    const assignee = str(row, "assigned_user_id");
+    setCreated((prev) => [
+      {
+        id,
+        subject: str(row, "subject") ?? "משימה",
+        status: str(row, "status"),
+        priority: str(row, "priority"),
+        due_date: str(row, "due_date"),
+        assigned_user_name: assignee ? userNameById.get(assignee) ?? null : null,
+        has_open_reminder: false,
+        is_private: row.is_private === true,
+      },
+      ...prev.filter((task) => task.id !== id),
+    ]);
+    openSection(SECTION_IDS.tasks);
+  }
+
+  return (
+    <CollapsibleSection
+      id={SECTION_IDS.tasks}
+      title="משימות"
+      // The app's task glyph, grey like every section icon.
+      icon={<TaskIcon className={SECTION_ICON_CLASS} />}
+      summary={<SectionCount count={shown.length} />}
+      defaultOpen={openCount > 0}
+      action={<AddActionButton label="משימה" ariaLabel="משימה חדשה ללקוח" onClick={() => onCreateOpenChange(true)} />}
     >
-      <AddIcon className="h-3.5 w-3.5" /> משימה
-    </Button>
-  );
+      {shown.length === 0 ? (
+        <EmptyState dense>אין משימות ללקוח זה.</EmptyState>
+      ) : (
+        <div className="divide-y divide-border/60">
+          {shown.map((task) => {
+            const overdue = task.due_date !== null && task.status !== "done" && task.due_date.slice(0, 10) < today;
+            return (
+              <button
+                key={task.id}
+                type="button"
+                onClick={() => setEditId(task.id)}
+                className="-mx-2 flex min-h-12 w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-xl px-2 py-2.5 text-start text-sm hover:bg-muted/20"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-0 break-words font-medium">{task.subject}</span>
+                    {task.is_private ? <LockIcon className="h-3 w-3 text-muted-foreground" aria-label="פרטית" /> : null}
+                    {task.has_open_reminder ? (
+                      <NotificationIcon className="h-3 w-3 text-warning-strong" aria-label="יש תזכורת פתוחה" />
+                    ) : null}
+                    {task.status ? <StatusBadge value={task.status} type="task" /> : null}
+                  </div>
+                  {task.assigned_user_name ? (
+                    <div className="mt-0.5 text-xs text-muted-foreground">אחראי: {task.assigned_user_name}</div>
+                  ) : null}
+                </div>
+                <div className="shrink-0 text-end">
+                  {task.priority ? <StatusBadge value={task.priority} type="priority" /> : null}
+                  {task.due_date ? (
+                    <div className={`mt-1 text-xs ${overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+                      {overdue ? "באיחור · " : ""}
+                      {formatShortDate(task.due_date, "—")}
+                    </div>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-  const dialogs = (
-    <>
       <TaskUpsertDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={onCreateOpenChange}
         mode="create"
         users={users}
         customers={customerOptions}
         presetCustomerId={customerId}
         currentUserId={currentUserId}
         wizard
-        onSaved={() => startTransition(() => { router.refresh(); })}
+        onSaved={(row) => addCreated(row)}
       />
       <TaskUpsertDialog
         open={editId !== null}
@@ -90,83 +179,10 @@ export default function CustomerTasksSection({
         users={users}
         customers={customerOptions}
         currentUserId={currentUserId}
-        onSaved={() => startTransition(() => { router.refresh(); })}
+        // An edit can change anything about the task (and a device-copy save
+        // hands nothing back): the page reads its tasks again.
+        onSaved={() => startTransition(() => router.refresh())}
       />
-    </>
-  );
-
-  // Empty → a slim one-line row, matching the orders/projects empty rows so the
-  // section doesn't take a full card's footprint when there's nothing yet.
-  if (tasks.length === 0) {
-    return (
-      <>
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card/50 px-4 py-2.5">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-            <TaskIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="font-semibold">משימות</span>
-            <span className="text-xs text-muted-foreground">אין משימות ללקוח זה עדיין</span>
-          </div>
-          <div className="shrink-0">{addButton}</div>
-        </div>
-        {dialogs}
-      </>
-    );
-  }
-
-  return (
-    <section className="space-y-3 brand-frame surface-panel rounded-card border border-border/60 p-4 shadow-card">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <TaskIcon className="h-4 w-4 text-primary" />
-          משימות
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
-            {tasks.length}
-          </span>
-        </div>
-        {addButton}
-      </div>
-
-      <div className="divide-y divide-border/60">
-        {tasks.map((task) => {
-            const overdue =
-              task.due_date !== null &&
-              task.status !== "done" &&
-              task.due_date.slice(0, 10) < today;
-            return (
-              <button
-                key={task.id}
-                type="button"
-                onClick={() => setEditId(task.id)}
-                className="-mx-2 flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2.5 text-start text-sm hover:bg-muted/20"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{task.subject}</span>
-                    {task.is_private ? <LockIcon className="h-3 w-3 text-muted-foreground" /> : null}
-                    {task.has_open_reminder ? <NotificationIcon className="h-3 w-3 text-warning-strong" /> : null}
-                    {task.status ? <StatusBadge value={task.status} type="task" /> : null}
-                  </div>
-                  {task.assigned_user_name ? (
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      אחראי: {task.assigned_user_name}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="shrink-0 text-left">
-                  {task.priority ? <StatusBadge value={task.priority} type="priority" /> : null}
-                  {task.due_date ? (
-                    <div className={`mt-1 text-xs ${overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}>
-                      {overdue ? "באיחור · " : ""}
-                      {formatShortDate(task.due_date)}
-                    </div>
-                  ) : null}
-                </div>
-              </button>
-            );
-          })}
-      </div>
-
-      {dialogs}
-    </section>
+    </CollapsibleSection>
   );
 }
