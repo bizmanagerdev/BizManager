@@ -19,7 +19,7 @@ import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsCh
 import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, isDocumentCategory } from "@/lib/documents";
 import { updateDocumentTag } from "@/lib/documents/updateDocumentTag";
 import { offlineFetch } from "@/lib/offline-queue";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDateTime } from "@/lib/date";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import AddCustomerDocumentButton from "@/app/(app)/customers/[id]/AddCustomerDocumentButton";
@@ -117,7 +117,7 @@ function DocumentsList({
                         ) : (
                           "לקוח"
                         ),
-                        doc.uploadedAt ? `הועלה ${formatShortDate(doc.uploadedAt, "—")}` : null,
+                        doc.uploadedAt ? `הועלה ${formatShortDateTime(doc.uploadedAt, "—")}` : null,
                       ]}
                     />
                   </span>

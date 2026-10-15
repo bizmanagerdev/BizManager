@@ -47,6 +47,7 @@ function task(id: string): DashboardTask {
     subject_he: null,
     subject_ar: null,
     due_date: null,
+    due_time: null,
     priority: null,
     status: "todo",
     sort_order: null,

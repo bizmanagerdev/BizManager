@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { OfflineIcon } from "@/components/ui/icons";
+import { formatDayMonth, formatTimeOnly } from "@/lib/date";
 
 // The page on screen is a copy saved on this device, shown because the server
 // didn't answer in time (the service worker marks it: <html data-bizh-saved>,
@@ -65,9 +66,9 @@ export default function SavedCopyNotice() {
   }, []);
 
   if (savedAt === null) return null;
-  const time = savedAt
-    ? new Intl.DateTimeFormat("he-IL", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "numeric" }).format(savedAt)
-    : null;
+  // "14/10 15:32" on Israel's clock, not the device's.
+  const savedIso = savedAt ? new Date(savedAt).toISOString() : null;
+  const time = savedIso ? `${formatDayMonth(savedIso, "")} ${formatTimeOnly(savedIso, "")}` : null;
 
   return (
     <div

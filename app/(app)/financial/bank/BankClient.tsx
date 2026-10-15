@@ -37,6 +37,7 @@ import { deleteCardCharge } from "@/lib/financial/cardChargesClient";
 import { deleteAccountTransfer } from "@/lib/financial/transfersClient";
 import type { Loan } from "@/lib/loans";
 import { formatMoneyRounded } from "@/lib/money";
+import { formatEnteredLabel, formatShortDate } from "@/lib/date";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 const ExpenseDialog = dynamic(
@@ -56,15 +57,9 @@ const ExpenseDialog = dynamic(
 // formatMoney allows up to 2 decimals, which briefly leaked ugly amounts
 // like ₪128,006.4 onto this page after the first switch).
 
-function formatDate(iso: string) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
-}
+// Dates go through lib/date's formatShortDate: a register day is a calendar
+// day, and `new Date("2026-10-14")` read on the device's clock showed 13/10 on
+// a phone set to US time.
 
 function monthLabel(monthKey: string) {
   const [year, month] = monthKey.split("-");
@@ -790,6 +785,7 @@ export default function BankClient({
                     .map((row) => {
                     const hasBreakdown = Boolean(row.breakdown && row.breakdown.length > 0);
                     const breakdownOpen = expandedBreakdownIds.has(row.id);
+                    const enteredLabel = formatEnteredLabel(row.enteredByName, row.enteredAt);
                     const inner = (
                       <>
                         {/* flex-1 so the amount (and the delete button on a
@@ -807,9 +803,14 @@ export default function BankClient({
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            <span dir="ltr">{formatDate(row.date)}</span>
+                            <span dir="ltr">{formatShortDate(row.date)}</span>
                             {row.sublabel && <span> · {row.sublabel}</span>}
                           </div>
+                          {/* When it was typed in, and by whom — the day above
+                              is when the money moved (owner, 2026-10-15). */}
+                          {enteredLabel && (
+                            <div className="text-[11px] text-muted-foreground/70">{enteredLabel}</div>
+                          )}
                         </div>
                         <div className="flex shrink-0 flex-col items-end">
                           <div
@@ -1010,14 +1011,18 @@ export default function BankClient({
                         {hasBreakdown && breakdownOpen && (
                           <div className="space-y-1 border-t bg-muted/20 px-3 py-2 ps-8">
                             {row.breakdown!.map((payment) => {
+                              const paymentEntered = formatEnteredLabel(payment.enteredByName, payment.enteredAt);
                               const paymentInner = (
                                 <>
                                   <div className="min-w-0 flex-1">
                                     <div className="text-sm">{payment.label}</div>
                                     <div className="text-xs text-muted-foreground">
-                                      <span dir="ltr">{formatDate(payment.date)}</span>
+                                      <span dir="ltr">{formatShortDate(payment.date)}</span>
                                       {payment.sublabel && <span> · {payment.sublabel}</span>}
                                     </div>
+                                    {paymentEntered && (
+                                      <div className="text-[11px] text-muted-foreground/70">{paymentEntered}</div>
+                                    )}
                                   </div>
                                   <div dir="ltr" className="shrink-0 text-sm font-medium tabular-nums text-success">
                                     +{formatMoneyRounded(payment.amount)}
@@ -1057,7 +1062,7 @@ export default function BankClient({
               you scroll past or permanent sticky-header real estate. */}
           <div className="border-t px-3 py-1.5 text-xs text-muted-foreground">
             יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
-            <span dir="ltr">{formatDate(selected.openingDate)}</span>
+            <span dir="ltr">{formatShortDate(selected.openingDate)}</span>
           </div>
           </div>
         </CardContent>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { formatShortDateTime } from "@/lib/date";
 import { Card, CardContent } from "@/components/ui/card";
 import type { StatementSteps } from "@/lib/financial/cardStatementMath";
 import { DifferenceChip, StatusChip } from "./[id]/StatementSteps";
@@ -12,6 +13,8 @@ export type StatementListItem = {
   created_count: number | null;
   total_rows: number | null;
   created_at: string;
+  /** Who uploaded it (card_statements.imported_by → name). */
+  importedByName: string | null;
   marked_done: boolean | null;
   expensesTotal: number;
   incomeTotal: number;
@@ -25,11 +28,6 @@ function formatCurrency(n: number): string {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(n);
 }
 
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
-}
 
 export default function StatementsListClient({ statements }: { statements: StatementListItem[] }) {
   const router = useRouter();
@@ -71,7 +69,12 @@ export default function StatementsListClient({ statements }: { statements: State
                   onClick={() => router.push(`/financial/statements/${s.id}`)}
                   className="cursor-pointer hover:bg-muted/40"
                 >
-                  <td className="whitespace-nowrap px-3 py-2">{formatDateTime(s.created_at)}</td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <span dir="ltr">{formatShortDateTime(s.created_at)}</span>
+                    {s.importedByName ? (
+                      <div className="text-[11px] text-muted-foreground/70">הועלה ע״י {s.importedByName}</div>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-2">
                     {s.file_name || "—"}
                     <span className="ms-1 text-xs text-muted-foreground">{s.source === "pdf" ? "PDF" : "Excel"}</span>

@@ -40,9 +40,9 @@ import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { parseInstallments, splitCardInstallments } from "@/lib/payments";
 import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
-import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
+import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import { appendOrderComment, formatOrderCommentTimestamp } from "@/lib/orders/comments";
-import { israelDateKey } from "@/lib/timezone";
+import { israelDateKey, israelWallClockToUtc } from "@/lib/timezone";
 
 type OrderItem = {
   product_id: string;
@@ -73,6 +73,8 @@ type DeliveryImage = {
   id: string;
   file_name: string | null;
   uploaded_at: string | null;
+  /** Who added it, as a name (lib/orders/order-edit-data.ts). */
+  uploaded_by_name?: string | null;
   url: string | null;
 };
 
@@ -147,6 +149,28 @@ function formatDate(value: string | null) {
   return formatShortDate(value);
 }
 
+/**
+ * What "אספקה אושרה" stores (owner, 2026-10-15: "when the delivery was
+ * delivered"). An hour typed in → that moment on Israel's clock. Confirmed on
+ * the day itself with no hour → the moment the button is pressed. An earlier
+ * day with no hour → just the day, as before: an hour nobody knows isn't made up.
+ */
+function deliveryMoment(day: string, time: string) {
+  const date = day || israelDateKey();
+  const dayMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time.trim());
+  if (dayMatch && timeMatch) {
+    return israelWallClockToUtc(
+      Number(dayMatch[1]),
+      Number(dayMatch[2]),
+      Number(dayMatch[3]),
+      Number(timeMatch[1]),
+      Number(timeMatch[2])
+    ).toISOString();
+  }
+  return date === israelDateKey() ? new Date().toISOString() : date;
+}
+
 // Paid-amount line: green once the order is fully paid, red while a balance remains.
 function paidAmountClass(status: string) {
   return status === "paid"
@@ -169,7 +193,7 @@ const STEP_META: Record<string, { eyebrow: string; title: string; description?: 
   reference: { eyebrow: "תשלום", title: "אסמכתא", description: "אופציונלי — מספר קבלה/אסמכתא." },
   paymentNotes: { eyebrow: "תשלום", title: "הערת תשלום", description: "אופציונלי." },
   refund: { eyebrow: "החזר", title: "רישום החזר ללקוח", description: "נגבה יותר מסכום ההזמנה." },
-  deliveryDate: { eyebrow: "הוכחת אספקה", title: "מתי סופק?", description: "התאריך שבו אושרה האספקה בפועל." },
+  deliveryDate: { eyebrow: "הוכחת אספקה", title: "מתי סופק?", description: "היום והשעה שבהם סופקה ההזמנה בפועל." },
   images: { eyebrow: "הוכחת אספקה", title: "צירוף תמונות", description: "צלם או העלה הוכחת אספקה." },
   comments: { eyebrow: "הערות אספקה", title: "הערות למסירה", description: "חוסרים, מצב אספקה, כל דבר שכדאי לתעד." },
   arrival: {
@@ -289,6 +313,7 @@ export default function OrderConfirmDialog({
     );
   }
   const [deliveryDate, setDeliveryDate] = useState(israelDateKey());
+  const [deliveryTime, setDeliveryTime] = useState("");
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<ProductSearchResult[]>([]);
@@ -409,6 +434,7 @@ export default function OrderConfirmDialog({
     // and writing it back on confirm used to overwrite the whole thread.
     setDeliveryNotes("");
     setDeliveryDate(israelDateKey());
+    setDeliveryTime("");
     setDeliveryImages([]);
     setProductQuery("");
     setProductResults([]);
@@ -668,7 +694,7 @@ export default function OrderConfirmDialog({
         order_date: data.initialOrder.order_date,
         status: finalStatus,
         payment_status: finalPaymentStatus,
-        delivery_date: deliveryDate || israelDateKey(),
+        delivery_date: deliveryMoment(deliveryDate, deliveryTime),
         discount_amount: data.initialOrder.discount_amount,
         notes: mergedNotes,
         items: deliveryLines.map(({ line, finalDelivered }) => ({
@@ -1189,6 +1215,12 @@ export default function OrderConfirmDialog({
             <Field label="תאריך אספקה">
               <DateInput value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
             </Field>
+            <Field label="שעה" htmlFor="delivery-time">
+              <Input id="delivery-time" type="time" value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} dir="ltr" />
+            </Field>
+            <p className="text-xs text-muted-foreground">
+              {deliveryDate === israelDateKey() ? "בלי שעה — נרשמת השעה של עכשיו." : "בלי שעה — נרשם היום בלבד."}
+            </p>
             {requestedDate ? (
               <p className="text-xs text-muted-foreground">
                 תאריך למשלוח: <span className="font-medium text-foreground">{formatDate(requestedDate)}</span>
@@ -1237,7 +1269,13 @@ export default function OrderConfirmDialog({
                       isImage
                       previewClassName="h-32"
                       imageSizes="(max-width: 640px) 100vw, 280px"
-                      date={formatDate(image.uploaded_at)}
+                      // When it was added, to the minute, and by whom (owner, 2026-10-15).
+                      date={formatShortDateTime(image.uploaded_at)}
+                      meta={
+                        image.uploaded_by_name ? (
+                          <div className="truncate text-xs text-muted-foreground">{image.uploaded_by_name}</div>
+                        ) : null
+                      }
                     />
                   ))}
                 </div>

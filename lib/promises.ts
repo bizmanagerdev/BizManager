@@ -12,6 +12,8 @@ export type PaymentPromise = {
   status: "pending" | "kept" | "broken" | "cancelled";
   notes: string | null;
   created_at: string;
+  // When the status was last set — the update route stamps it on every change.
+  updated_at?: string | null;
 };
 
 type Row = Record<string, unknown>;
@@ -33,7 +35,7 @@ function num(row: Row, key: string): number {
 export async function getCustomerPromises(supabase: SupabaseClient, customerId: string): Promise<PaymentPromise[]> {
   const { data, error } = await supabase
     .from("payment_promises")
-    .select("id,customer_id,order_id,project_id,amount,promised_date,status,notes,created_at")
+    .select("id,customer_id,order_id,project_id,amount,promised_date,status,notes,created_at,updated_at")
     .eq("customer_id", customerId)
     .order("promised_date", { ascending: false })
     .range(0, 99);
@@ -48,6 +50,7 @@ export async function getCustomerPromises(supabase: SupabaseClient, customerId: 
     status: (str(r, "status") ?? "pending") as PaymentPromise["status"],
     notes: str(r, "notes"),
     created_at: str(r, "created_at") ?? "",
+    updated_at: str(r, "updated_at"),
   }));
 }
 

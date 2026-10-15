@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n/t";
 import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
 import type { Locale } from "@/lib/i18n/types";
 import { cn } from "@/lib/utils";
+import { formatTimeOnly } from "@/lib/date";
 
 // One line in the account menu: is this device's copy of the data up to date?
 // Shown only while the copy is switched on for the person (store has a status).
@@ -25,9 +26,8 @@ export function LocalSyncStatusLine({ locale }: { locale: Locale }) {
     synced: t(topbarDict, locale, "localDataSynced"),
     offline: t(topbarDict, locale, "localDataOffline"),
   }[state];
-  const time = status.lastSyncedAt
-    ? status.lastSyncedAt.toLocaleTimeString(locale === "ar" ? "ar" : "he-IL", { hour: "2-digit", minute: "2-digit" })
-    : null;
+  // Israel's clock, not the device's.
+  const time = status.lastSyncedAt ? formatTimeOnly(status.lastSyncedAt.toISOString(), "") || null : null;
 
   return (
     <div className="flex items-start gap-2 px-3 py-1.5 text-xs text-muted-foreground" role="status">

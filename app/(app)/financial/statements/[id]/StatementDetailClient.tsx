@@ -41,6 +41,7 @@ import {
 import { StatementRowSplit, emptySplitPart } from "./StatementRowSplit";
 import { StatementSteps, StatusChip, firstOpenStep, type StatementStepId } from "./StatementSteps";
 import { israelDateKey } from "@/lib/timezone";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 
 type Option = { id: string; name: string };
 
@@ -116,6 +117,8 @@ export type CardChargeView = {
   amount: number;
   chargeDate: string;
   notes: string | null;
+  /** When the charge was first entered (created_at) — kept across edits. */
+  createdAt: string | null;
 };
 
 type ChargeForm = {
@@ -132,14 +135,11 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
 }
 
-function formatIsoDisplay(iso: string): string {
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}/${m[2]}/${m[1].slice(-2)}` : iso || "—";
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
+// A day ("2026-10-14", or an expense's midnight-UTC timestamptz) — lib/date reads
+// both as the day. The old regex only took the bare form, so a matched expense's
+// full expense_date showed raw ("2026-10-14T00:00:00+00:00") under a duplicate.
+function formatIsoDisplay(iso: string | null | undefined): string {
+  return formatShortDate(iso, "—");
 }
 
 // draft = not recorded yet (assignable here); created = a purchase has its expense, a
@@ -370,6 +370,9 @@ export default function StatementDetailClient({
         amount: amountNum,
         chargeDate: chargeForm.chargeDate,
         notes: chargeForm.notes.trim() || null,
+        // An edit is an upsert on the same row, so its created_at stays; a new
+        // charge was entered just now (the refresh brings the exact stamp).
+        createdAt: chargeFor(chargeCardLabel)?.createdAt ?? new Date().toISOString(),
       };
       setCardCharges((prev) => [...prev.filter((c) => c.cardLabel !== chargeCardLabel), saved]);
       setChargeCardLabel(null);
@@ -1068,7 +1071,7 @@ export default function StatementDetailClient({
           <h1 className="text-lg font-semibold">{statement.fileName || "פירוט אשראי"}</h1>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
             <span>
-              {formatDateTime(statement.createdAt)} · {statement.source === "pdf" ? "PDF" : "Excel/CSV"} · {rows.length} שורות ·{" "}
+              <span dir="ltr">{formatShortDateTime(statement.createdAt)}</span> · {statement.source === "pdf" ? "PDF" : "Excel/CSV"} · {rows.length} שורות ·{" "}
               {cardGroups.length === 1 ? "כרטיס אחד" : `${cardGroups.length} כרטיסים`}
             </span>
             <StatusChip steps={steps} markedDone={markedDone} />
@@ -1157,6 +1160,7 @@ export default function StatementDetailClient({
         }}
         bank={{
           accountName,
+          chargeCreatedAt: (chargeId) => cardCharges.find((c) => c.id === chargeId)?.createdAt ?? null,
           onRecord: openCharge,
           onDelete: (card) => {
             const existing = chargeFor(card.label);

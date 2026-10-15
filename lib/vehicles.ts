@@ -438,6 +438,8 @@ export type VehicleTask = {
   subject: string | null;
   status: string | null;
   dueDate: string | null;
+  /** "HH:MM" the task is due at, when one was chosen. */
+  dueTime: string | null;
 };
 export type VehicleDocument = {
   id: string;
@@ -513,7 +515,7 @@ export async function fetchVehicleActivity(
             .in("id", idsBy.payment)
         : Promise.resolve({ data: [] as Row[] }),
       idsBy.task.length
-        ? supabase.from("tasks").select("id,subject,status,due_date").in("id", idsBy.task)
+        ? supabase.from("tasks").select("id,subject,status,due_date,due_time").in("id", idsBy.task)
         : Promise.resolve({ data: [] as Row[] }),
       idsBy.document.length
         ? supabase
@@ -551,6 +553,7 @@ export async function fetchVehicleActivity(
       subject: str(r.subject),
       status: str(r.status),
       dueDate: str(r.due_date),
+      dueTime: str(r.due_time),
     }));
     const documents: VehicleDocument[] = ((dcRes.data ?? []) as Row[]).map((r) => ({
       id: str(r.id) ?? "",

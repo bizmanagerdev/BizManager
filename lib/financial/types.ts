@@ -19,6 +19,8 @@ export type PaymentRow = {
   target_type: string | null;
   target_id: string | null;
   recorded_by: string | null;
+  /** When the row was typed in (a real instant, unlike payment_date). */
+  created_at?: string | null;
   /** Which account the money lands in — keys a card deposit's confirmation. */
   account_id?: string | null;
 };
@@ -35,6 +37,8 @@ export type ExpenseRow = {
   order_id: string | null;
   property_id: string | null;
   recorded_by: string | null;
+  /** When the row was typed in (a real instant, unlike expense_date). */
+  created_at?: string | null;
   payment_status: string | null;
   paid_amount: number | string | null;
   payment_method: string | null;
@@ -106,6 +110,7 @@ export type WorkerPaymentRow = {
   reference_number: string | null;
   notes: string | null;
   recorded_by: string | null;
+  created_at?: string | null;
 };
 
 export type WorkerPaymentAllocationRow = {
@@ -218,6 +223,13 @@ export type FinancialEntry = {
   paymentMethodLabel: string | null;
   paymentStatus: string | null;
   recordedByName: string | null;
+  /**
+   * When the source row was typed into the system (its created_at) — the moment
+   * behind "הוזן ע״י … · 14/10/26 15:32". Not flowDate/recordedDate, which are
+   * the days the money moved. Absent on computed rows (receivables, projected
+   * wages, loans) that nobody typed in as such.
+   */
+  createdAt?: string | null;
   customerId: string | null;
   searchText: string;
   // Set on worker wage entries (worker_owed / worker_payment) so consumers can

@@ -32,6 +32,7 @@ import {
 } from "@/lib/financial/cardImport";
 import { extractPdfLines } from "@/lib/financial/pdfStatement";
 import ImportNotes from "./ImportNotes";
+import { formatShortDate } from "@/lib/date";
 
 type Option = { id: string; name: string };
 type Sheet = { name: string; rows: string[][] };
@@ -122,8 +123,7 @@ function colLetter(index: number): string {
 }
 
 function formatIsoDisplay(iso: string): string {
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}/${m[2]}/${m[1].slice(-2)}` : iso;
+  return formatShortDate(iso, "");
 }
 
 function formatCurrency(value: number): string {

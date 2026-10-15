@@ -1,4 +1,5 @@
 import { formatShortDate, formatTimeOnly } from "@/lib/date";
+import { ISRAEL_TIME_ZONE } from "@/lib/timezone";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatMoney } from "@/lib/money";
 import { ORDER_NOTES_SEPARATOR } from "@/lib/orders/comments";
@@ -383,6 +384,8 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
               month: "short",
               hour: "2-digit",
               minute: "2-digit",
+              // Israel's clock — this runs on the server too, which keeps UTC.
+              timeZone: ISRAEL_TIME_ZONE,
             })
           );
         }
@@ -400,6 +403,8 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
               month: "short",
               hour: "2-digit",
               minute: "2-digit",
+              // Israel's clock — this runs on the server too, which keeps UTC.
+              timeZone: ISRAEL_TIME_ZONE,
             })
           );
         }

@@ -52,6 +52,7 @@ import {
   calculateSessionLaborCost,
   formatCurrency,
   formatDate,
+  formatDateTime,
   formatMinutes,
   minutesBetween,
   toNumber,
@@ -1339,8 +1340,17 @@ export default function SessionEditorDialog({
             <SummaryRow label="תחום" value={getBusinessDomainLabel(sessionForm.business_domain)} />
             {needsProject ? <SummaryRow label="פרויקט" value={projectLabel ?? "—"} /> : null}
             {needsProperty ? <SummaryRow label="נכס" value={propertyLabel ?? "—"} /> : null}
-            <SummaryRow label="כניסה" value={formatDate(sessionForm.clock_in)} />
-            {sessionForm.clock_out ? <SummaryRow label="יציאה" value={formatDate(sessionForm.clock_out)} /> : null}
+            {/* With the hour when the worker's hours count (owner, 2026-10-15: "see
+                exactly when things happen"); a per-session worker picked a day
+                only, so his shift is just its date. */}
+            {shouldShowSessionHours(sessionDialogWorkerType) ? (
+              <>
+                <SummaryRow label="כניסה" value={formatDateTime(sessionForm.clock_in)} />
+                {sessionForm.clock_out ? <SummaryRow label="יציאה" value={formatDateTime(sessionForm.clock_out)} /> : null}
+              </>
+            ) : (
+              <SummaryRow label="תאריך" value={formatDate(sessionForm.clock_in)} />
+            )}
             {sessionSplitEnabled ? <SummaryRow label="פיצול" value={`${sessionSplitParts.length} חלקים`} /> : null}
             {sessionDialogSuggestedAmount !== null ? (
               <SummaryRow label="עלות משמרת" value={formatCurrency(sessionDialogSuggestedAmount)} />

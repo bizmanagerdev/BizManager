@@ -12,7 +12,7 @@ import { WaitingBadge } from "@/components/ui/waiting-badge";
 import { MetaRow } from "@/components/ui/meta-row";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatMoney } from "@/lib/money";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { offlineFetch } from "@/lib/offline-queue";
 import { updatePaymentPromise } from "@/lib/collections/paymentPromises";
 import { promiseStatusLabel, type PaymentPromise } from "@/lib/promises";
@@ -29,7 +29,21 @@ import { useLocalAdditions, waitingRowId } from "@/hooks/useLocalAdditions";
 // browser write that failed offline, and the undo engine then put the old
 // status back (lib/collections/paymentPromises.ts).
 
+// updated_at: when the status was last set — /api/payment-promises/update stamps
+// it on every change. Optional: getCustomerPromises (lib/promises.ts) doesn't
+// select it yet, and the line below simply leaves it out until it does.
 type PromiseRow = PaymentPromise & { waiting?: boolean };
+
+// "נוספה 14/10/26 15:32 · קוימה 15/10/26 09:10" — when the promise was made and
+// when it was marked (owner, 2026-10-15: "see exactly when things happen").
+function promiseTimesLine(p: PromiseRow): string | null {
+  const parts: string[] = [];
+  if (p.created_at) parts.push(`נוספה ${formatShortDateTime(p.created_at)}`);
+  if (p.status !== "pending" && p.updated_at) {
+    parts.push(`${promiseStatusLabel(p.status)} ${formatShortDateTime(p.updated_at)}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 function statusVariant(status: string): "success" | "destructive" | "neutral" | "warning" {
   if (status === "kept") return "success";
@@ -140,7 +154,7 @@ export default function PaymentPromises({
       scope: "payment-promise",
       id,
       message: "ההבטחה עודכנה.",
-      patch: { status },
+      patch: { status, updated_at: new Date().toISOString() },
       onCommit: async () => {
         const result = await updatePaymentPromise(id, { status });
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון נכשל.") };
@@ -184,6 +198,9 @@ export default function PaymentPromises({
                   {p.waiting ? <WaitingBadge /> : <Badge variant={statusVariant(p.status)}>{promiseStatusLabel(p.status)}</Badge>}
                 </div>
                 {p.notes ? <MetaRow className="text-xs text-muted-foreground" items={[p.notes]} /> : null}
+                {promiseTimesLine(p) ? (
+                  <div className="text-[11px] text-muted-foreground/70">{promiseTimesLine(p)}</div>
+                ) : null}
               </div>
               {p.status === "pending" && !p.waiting ? (
                 <div className="flex flex-wrap items-center gap-1.5">

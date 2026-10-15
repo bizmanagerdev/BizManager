@@ -131,6 +131,12 @@ export type AccountLedgerEntry = {
    * recordedDate=24/05. Null when the two are the same day.
    */
   recordedDate: string | null;
+  /** When the row was typed into the system (created_at, a real instant) and
+   *  by whom — NOT the day the money moved, which is `date` (owner, 2026-10-15:
+   *  "see exactly when things happen"). Null when the source row has none
+   *  (a Grow batch is many payments, so it has no single entry moment). */
+  enteredAt: string | null;
+  enteredByName: string | null;
   runningBalance: number | null; // posted-only running balance; null for pending rows
   /** Set only on העברה בין חשבונות rows — the whole transfer this leg belongs
    *  to, so the register can edit or delete it (both legs move together)
@@ -164,6 +170,8 @@ export type AccountLedgerEntry = {
 export type LedgerBreakdownItem = {
   id: string;
   date: string; // the day the money actually moved for THIS item, not the parent row's date
+  enteredAt: string | null; // created_at — when this payment was typed in
+  enteredByName: string | null;
   amount: number;
   label: string;
   sublabel: string | null;
@@ -207,6 +215,8 @@ export type EditableExpense = {
   billed_to_customer: boolean;
   included_in_base_price: boolean;
   bill_to_customer_amount: number | null;
+  created_at: string | null;
+  recorded_by_name: string | null;
 };
 
 /** A transfer as the register needs it to prefill the edit form. */
@@ -285,6 +295,8 @@ type RawLedgerEntry = {
   id: string;
   date: string;
   recordedDate?: string | null;
+  enteredAt?: string | null;
+  enteredByName?: string | null;
   label: string;
   sublabel: string | null;
   href: string | null;
@@ -350,7 +362,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("payments", (from, to) =>
         supabase
           .from("payments")
-          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain")
+          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain,created_at,recorded_by")
           .not("account_id", "is", null)
           // Either date may be the one inside the window: a check handed over
           // in May and cashed in July is May-dated but July money. And card
@@ -371,7 +383,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         supabase
           .from("expenses")
           .select(
-            "id,account_id,expense_date,paid_date,amount,paid_amount,payment_status,description,category,project_id,order_id,property_id,business_domain,payment_method,notes"
+            "id,account_id,expense_date,paid_date,amount,paid_amount,payment_status,description,category,project_id,order_id,property_id,business_domain,payment_method,notes,created_at,recorded_by"
           )
           .not("account_id", "is", null)
           .gte("expense_date", earliestOpening)
@@ -380,7 +392,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("worker_payments", (from, to) =>
         supabase
           .from("worker_payments")
-          .select("id,account_id,payment_date,amount,notes,user_id")
+          .select("id,account_id,payment_date,amount,notes,user_id,created_at,recorded_by")
           .not("account_id", "is", null)
           .gte("payment_date", earliestOpening)
           .range(from, to)
@@ -389,7 +401,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("loans", (from, to) =>
         supabase
           .from("loans")
-          .select("id,account_id,direction,loan_date,amount,lender,borrower,business_domain")
+          .select("id,account_id,direction,loan_date,amount,lender,borrower,business_domain,created_at,created_by")
           .not("account_id", "is", null)
           .gte("loan_date", earliestOpening)
           .range(from, to)
@@ -405,7 +417,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           // every row this query CAN return already has account_id set, and a
           // still-planned installment never gets one (nothing's moved yet) —
           // so every row reaching this loop is safely a paid repayment.
-          .select("id,account_id,loan_id,repayment_date,amount,interest_amount,method,notes,created_at")
+          .select("id,account_id,loan_id,repayment_date,amount,interest_amount,method,notes,created_at,created_by")
           .not("account_id", "is", null)
           .gte("repayment_date", earliestOpening)
           .range(from, to)
@@ -415,7 +427,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("account_transfers", (from, to) =>
         supabase
           .from("account_transfers")
-          .select("id,from_account_id,to_account_id,amount,transfer_date,notes")
+          .select("id,from_account_id,to_account_id,amount,transfer_date,notes,created_at,created_by")
           .gte("transfer_date", earliestOpening)
           .range(from, to)
       ),
@@ -426,7 +438,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("card_statement_charges", (from, to) =>
         supabase
           .from("card_statement_charges")
-          .select("id,statement_id,card_label,account_id,amount,charge_date,notes")
+          .select("id,statement_id,card_label,account_id,amount,charge_date,notes,created_at,created_by")
           .gte("charge_date", earliestOpening)
           .range(from, to)
       ),
@@ -435,7 +447,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("payments", (from, to) =>
         supabase
           .from("payments")
-          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain")
+          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain,created_at,recorded_by")
           .is("account_id", null)
           .eq("payment_method", "credit_card")
           .or(`payment_date.gte.${cardScanSince(earliestOpening)},due_date.gte.${earliestOpening}`)
@@ -472,6 +484,15 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   for (const row of expenseRows) {
     const id = str(row.property_id);
     if (id) propertyIds.add(id);
+  }
+  // Who typed each row in (recorded_by / created_by) — resolved in the same
+  // users lookup as the worker names below, so it costs no extra round trip.
+  const creatorOf = (row: Row) => str(row.recorded_by) ?? str(row.created_by);
+  for (const rows of [paymentRows, expenseRows, workerPaymentRows, loanRows, loanRepaymentRows, transferRows, cardChargeRows]) {
+    for (const row of rows) {
+      const id = creatorOf(row);
+      if (id) workerIds.add(id);
+    }
   }
   // Customer of a תקבול/refund is resolved through its order or (fallback) project.
   const orderIds = new Set<string>();
@@ -682,6 +703,13 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     return parts.length > 0 ? parts.join(" · ") : null;
   };
 
+  // When + by whom a row was entered (workerNameById holds every looked-up user,
+  // creators included — see creatorOf above).
+  const entered = (row: Row) => ({
+    enteredAt: str(row.created_at),
+    enteredByName: workerNameById.get(creatorOf(row) ?? "") ?? null,
+  });
+
   // A תקבול's customer comes from its order, else the project it's attached to.
   const paymentCustomerId = (row: Row): string | null => {
     const orderId = str(row.order_id);
@@ -749,6 +777,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         g.payments.push({
           id: str(row.id) ?? "",
           date: recordedDate!,
+          ...entered(row),
           amount,
           label: str(row.notes)?.trim() || "תקבול",
           sublabel: composeSublabel({
@@ -787,6 +816,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       date,
       // Kept only to explain a row whose two dates differ ("נרשם 24/05").
       recordedDate: recordedDate && recordedDate !== date ? recordedDate : null,
+      ...entered(row),
       label: str(row.notes)?.trim() || (isRefund ? "החזר ללקוח" : "תקבול"),
       sublabel: composeSublabel({
         domain: str(row.business_domain),
@@ -925,6 +955,9 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         // (only attendance_sessions/salary_agreements have a real column) —
         // ExpenseDialog just shows an empty override field for it.
         bill_to_customer_amount: null,
+        // For the dialog's "הוזן ע״י … · 14/10/26 15:32" line.
+        created_at: str(row.created_at),
+        recorded_by_name: workerNameById.get(creatorOf(row) ?? "") ?? null,
       },
     };
     if (postedAmount > 0) {
@@ -932,6 +965,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       b.rows.push({
         id: `e:${expenseId}`,
         date,
+        ...entered(row),
         label,
         sublabel,
         href,
@@ -947,6 +981,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       b.rows.push({
         id: `e:${expenseId}:p`,
         date,
+        ...entered(row),
         label,
         sublabel,
         href,
@@ -973,6 +1008,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     b.rows.push({
       id: `w:${str(row.id) ?? ""}`,
       date,
+      ...entered(row),
       label: str(row.notes)?.trim() || "תשלום שכר",
       sublabel: composeSublabel({ workerName, projectId: workerPaymentProject.get(str(row.id) ?? "") }),
       href: str(row.user_id) ? `/payroll/workers/${str(row.user_id)}` : "/payroll",
@@ -1043,6 +1079,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     b.rows.push({
       id: `l:${str(row.id) ?? ""}`,
       date,
+      ...entered(row),
       label: taken ? "הלוואה שהתקבלה" : "הלוואה שניתנה",
       sublabel: loanSublabel(row),
       href: `/financial/loans/${str(row.id) ?? ""}`,
@@ -1073,6 +1110,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     b.rows.push({
       id: `lr:${repaymentId}`,
       date,
+      ...entered(row),
       label: taken ? "החזר הלוואה" : "החזר שהתקבל",
       sublabel: loanSublabelById.get(loanId) ?? null,
       href: `/financial/loans/${loanId}`,
@@ -1127,6 +1165,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       b.rows.push({
         id: `t:${id}:out`,
         date,
+        ...entered(row),
         label: to ? `העברה ל${to.name}` : "העברה לחשבון אחר",
         sublabel: note,
         href: null,
@@ -1142,6 +1181,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       b.rows.push({
         id: `t:${id}:in`,
         date,
+        ...entered(row),
         label: from ? `העברה מ${from.name}` : "העברה מחשבון אחר",
         sublabel: note,
         href: null,
@@ -1167,6 +1207,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     b.rows.push({
       id: `cc:${str(row.id) ?? ""}`,
       date,
+      ...entered(row),
       label: `חיוב כרטיס: ${cardLabel}`,
       sublabel: str(row.notes),
       href: statementId ? `/financial/statements/${statementId}` : "/financial/statements",
@@ -1243,9 +1284,11 @@ export async function loadAccountsOverview(
     let running = a.openingBalance;
     const withRunning: AccountLedgerEntry[] = chronological.map((row) => {
       const recordedDate = row.recordedDate ?? null;
-      if (!row.posted) return { ...row, recordedDate, runningBalance: null };
+      const enteredAt = row.enteredAt ?? null;
+      const enteredByName = row.enteredByName ?? null;
+      if (!row.posted) return { ...row, recordedDate, enteredAt, enteredByName, runningBalance: null };
       running += row.type === "in" ? row.amount : -row.amount;
-      return { ...row, recordedDate, runningBalance: running };
+      return { ...row, recordedDate, enteredAt, enteredByName, runningBalance: running };
     });
     return {
       ...a,

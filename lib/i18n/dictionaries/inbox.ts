@@ -42,8 +42,8 @@ export type InboxKey =
   | "timeNow"
   | "timeMinutesAgo"
   | "timeYesterday"
-  | "timeHoursAgo"
-  | "timeDaysAgo"
+  | "timeInMinutes"
+  | "timeTomorrow"
   | "groupEarlier"
   | "toastDone"
   | "toastReopened"
@@ -93,8 +93,8 @@ export const inboxDict: Dictionary<InboxKey> = {
     timeNow: "עכשיו",
     timeMinutesAgo: "לפני {n} דק׳",
     timeYesterday: "אתמול",
-    timeHoursAgo: "לפני {n} שעות",
-    timeDaysAgo: "לפני {n} ימים",
+    timeInMinutes: "בעוד {n} דק׳",
+    timeTomorrow: "מחר",
     groupEarlier: "קודם",
     toastDone: "סומן כבוצע",
     toastReopened: "הוחזר",
@@ -143,8 +143,8 @@ export const inboxDict: Dictionary<InboxKey> = {
     timeNow: "الآن",
     timeMinutesAgo: "منذ {n} دقيقة",
     timeYesterday: "أمس",
-    timeHoursAgo: "منذ {n} ساعة",
-    timeDaysAgo: "منذ {n} يوم",
+    timeInMinutes: "بعد {n} دقيقة",
+    timeTomorrow: "غدًا",
     groupEarlier: "سابقًا",
     toastDone: "تم التحديد كمنجز",
     toastReopened: "تمت الاستعادة",

@@ -154,6 +154,8 @@ export type CustomerPaymentRow = {
   status: string;
   dueDate: string | null;
   checkNumber: string | null;
+  /** When it was typed in (payments.created_at) — a real moment, unlike `date`. */
+  createdAt: string | null;
   amount: number;
   source: { type: "order" | "project" | "property"; id: string; label: string } | null;
 };

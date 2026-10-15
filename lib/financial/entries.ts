@@ -869,6 +869,7 @@ export function buildPaymentEntries(args: {
       paymentMethodLabel: paymentMethodValue ? paymentMethodLabel(paymentMethodValue) : null,
       paymentStatus: flowMeta.status,
       recordedByName: typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
+      createdAt: row.created_at ?? null,
       customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? null,
       searchText: [description, source.label, reference ?? "", row.notes ?? "", row.payment_method ?? "",
         row.payment_status ?? "", getBusinessDomainLabel(businessDomain),
@@ -967,6 +968,7 @@ export function buildExpenseEntries(args: {
       paymentMethodLabel: null,
       paymentStatus: normalizePaymentStatus(row.payment_status),
       recordedByName,
+      createdAt: row.created_at ?? null,
       customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? null,
       searchText: [description, row.description ?? "", source.label, reference ?? "", row.notes ?? "",
         row.category ?? "", getBusinessDomainLabel(businessDomain), recordedByName ?? ""]
@@ -1305,6 +1307,7 @@ export function buildWorkerPaymentEntries(args: {
       paymentMethodLabel: paymentMethodValue ? paymentMethodLabel(paymentMethodValue) : null,
       paymentStatus: null,
       recordedByName: typeof workerPayment.recorded_by === "string" ? recordedByNames[workerPayment.recorded_by] ?? null : null,
+      createdAt: workerPayment.created_at ?? null,
       customerId: linkedProject?.customer_id ?? null,
       searchText: [description, source.label, reference ?? "", workerPayment.notes ?? "", paymentMethodValue ?? "",
         workerName ?? "", getBusinessDomainLabel(businessDomain),

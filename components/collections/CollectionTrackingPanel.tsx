@@ -15,7 +15,7 @@ import { DictateButton } from "@/components/ui/dictate-button";
 import { ContactLink } from "@/components/ui/contact-link";
 import { WaitingBadge } from "@/components/ui/waiting-badge";
 import { appendDictatedText } from "@/lib/dictation";
-import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { formatShortDate, formatShortDateTime, toDateKey } from "@/lib/date";
 import { formatMoney } from "@/lib/money";
 import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
@@ -116,7 +116,7 @@ export default function CollectionTrackingPanel({
   today: serverToday,
 }: Props) {
   const today = useSyncExternalStore(noSubscription, israelDateKey, () => serverToday ?? israelDateKey());
-  const isOverdue = (remindAt: string) => remindAt.slice(0, 10) < today;
+  const isOverdue = (remindAt: string) => toDateKey(remindAt) < today;
   const [showCallForm, setShowCallForm] = useState(!collapsibleForms);
   const [showReminderForm, setShowReminderForm] = useState(!collapsibleForms);
   const [logsRaw, setLogs] = useState<CommunicationLog[]>(initialData?.logs ?? []);

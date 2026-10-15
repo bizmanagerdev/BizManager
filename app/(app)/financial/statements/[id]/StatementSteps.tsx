@@ -8,6 +8,7 @@ import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-butto
 import { CheckIcon, LinkIcon } from "@/components/ui/icons";
 import type { CardSummary, StatementSteps as Steps } from "@/lib/financial/cardStatementMath";
 import { PanelTitle, STATUS_CHIP as chip } from "@/components/financial/statement-ui";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 
 // The statement page's three steps — שיוך והוצאות → חיוב בבנק → סיום — as a
 // step bar with one panel under it for the step on screen. Before this the
@@ -26,10 +27,6 @@ const STEP_DEFS: WizardStepDef<StatementStepId>[] = [
 const ils = (n: number) =>
   new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
-function formatIsoDisplay(iso: string): string {
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}/${m[2]}/${m[1].slice(-2)}` : iso || "—";
-}
 
 /** The step a statement opens on: the first one still open. */
 export function firstOpenStep(steps: Steps, markedDone: boolean): StatementStepId {
@@ -90,6 +87,8 @@ export function StatementSteps({
   };
   bank: {
     accountName: (id: string) => string;
+    /** When a charge was entered (created_at), by its id. */
+    chargeCreatedAt: (chargeId: string) => string | null;
     onRecord: (card: CardSummary) => void;
     onDelete: (card: CardSummary) => void;
     onMerge: ((card: CardSummary) => void) | null;
@@ -214,6 +213,7 @@ function AssignPanel({
 function BankPanel({
   steps,
   accountName,
+  chargeCreatedAt,
   onRecord,
   onDelete,
   onMerge,
@@ -222,6 +222,7 @@ function BankPanel({
 }: {
   steps: Steps;
   accountName: (id: string) => string;
+  chargeCreatedAt: (chargeId: string) => string | null;
   onRecord: (card: CardSummary) => void;
   onDelete: (card: CardSummary) => void;
   onMerge: ((card: CardSummary) => void) | null;
@@ -255,7 +256,12 @@ function BankPanel({
                 <div className="text-xs text-muted-foreground">
                   {charge ? (
                     <>
-                      {formatIsoDisplay(charge.chargeDate)} · {accountName(charge.accountId) || "חשבון"} · {card.lineCount} שורות
+                      {formatShortDate(charge.chargeDate, "—")} · {accountName(charge.accountId) || "חשבון"} · {card.lineCount} שורות
+                      {chargeCreatedAt(charge.id) ? (
+                        <div className="text-[11px] text-muted-foreground/70">
+                          נרשם {formatShortDateTime(chargeCreatedAt(charge.id))}
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <>

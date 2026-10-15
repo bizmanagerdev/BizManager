@@ -46,12 +46,9 @@ function esc(value: string) {
   return escapeSummaryHtml(value);
 }
 
+// Israel's clock, not the device's — a phone on another zone printed the wrong hour.
 function nowLabel() {
-  const generatedAt = new Date();
-  return `${formatDate(generatedAt.toISOString())} ${generatedAt.toLocaleTimeString("he-IL", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
+  return formatDateTime(new Date().toISOString());
 }
 
 /**

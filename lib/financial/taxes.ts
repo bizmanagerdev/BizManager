@@ -44,6 +44,8 @@ export type TaxPayment = {
   date: string;
   amount: number;
   notes: string | null;
+  /** When it was typed in (expenses.created_at) — `date` is the day it was paid. */
+  createdAt: string | null;
 };
 
 /**
@@ -79,10 +81,10 @@ function str(value: unknown) {
  */
 async function fetchTaxExpenseRows(supabase: SupabaseClient): Promise<Row[]> {
   const selectVariants = [
-    "id,expense_date,paid_date,amount,paid_amount,payment_status,notes",
-    "id,expense_date,amount,paid_amount,payment_status,notes",
-    "id,expense_date,amount,payment_status,notes",
-    "id,expense_date,amount,notes",
+    "id,expense_date,paid_date,amount,paid_amount,payment_status,notes,created_at",
+    "id,expense_date,amount,paid_amount,payment_status,notes,created_at",
+    "id,expense_date,amount,payment_status,notes,created_at",
+    "id,expense_date,amount,notes,created_at",
   ] as const;
 
   let lastError: unknown = null;
@@ -180,6 +182,7 @@ export async function loadTaxToPay(supabase: SupabaseClient): Promise<TaxToPay> 
       date: str(row.paid_date) || str(row.expense_date) || "",
       amount,
       notes: str(row.notes),
+      createdAt: str(row.created_at),
     });
   }
   payments.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));

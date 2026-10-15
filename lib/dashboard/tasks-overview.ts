@@ -17,6 +17,8 @@ export type DashboardTask = {
   /** Lazily cached Arabic translation of a Hebrew-authored subject. */
   subject_ar: string | null;
   due_date: string | null;
+  /** "HH:MM" it's due at, when one was chosen — shown beside the day. */
+  due_time: string | null;
   priority: string | null;
   status: string | null;
   /** Its place in its board list — the dashboard lists them as the board does (lib/tasks/board-order.ts). */
@@ -63,7 +65,7 @@ export async function getMyTasks(
 
   let tasksQuery = supabase
     .from("tasks")
-    .select("id,subject,subject_he,subject_ar,due_date,priority,status,project_id,sort_order")
+    .select("id,subject,subject_he,subject_ar,due_date,due_time,priority,status,project_id,sort_order")
     .in("status", OPEN_TASK_STATUSES)
     // The newest when there are more than the cap; the panel then lists them
     // in the board's order (sortLikeBoard).
@@ -153,6 +155,7 @@ export async function getMyTasks(
       subject_he: getString(t, "subject_he"),
       subject_ar: getString(t, "subject_ar"),
       due_date: due,
+      due_time: getString(t, "due_time"),
       priority: getString(t, "priority"),
       status: getString(t, "status"),
       sort_order: typeof t.sort_order === "number" ? t.sort_order : t.sort_order == null ? null : Number(t.sort_order),

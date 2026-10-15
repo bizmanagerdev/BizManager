@@ -41,7 +41,8 @@ import RowActionsMenu from "@/app/(app)/sales/RowActionsMenu";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getOrderStatusColor } from "@/lib/ui/status-colors";
-import { formatOrderDate } from "@/lib/orders/format";
+import { formatOrderDate, formatOrderEnteredShort } from "@/lib/orders/format";
+import { formatEnteredLabel } from "@/lib/date";
 import {
   isUnpaidPrepayment,
   PREPAYMENT_UNPAID_LABEL,
@@ -128,6 +129,8 @@ type OrderView = {
   customerCity: string | null;
   customerAddress: string | null;
   orderDate: string | null;
+  /** When it was typed in — a real moment, unlike orderDate (a picked day). */
+  createdAt: string | null;
   dueDate: string | null;
   status: string;
   paymentStatus: string;
@@ -276,6 +279,15 @@ function getNumber(row: Row, keys: string[]) {
 
 // ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts. A missing
 // value is "—", as everywhere (owner, 2026-10-11).
+/**
+ * The phone card's corner: " 15:32" when the order was typed in on its own day,
+ * nothing otherwise — "12/10 15:32" beside another date wouldn't fit there.
+ */
+function mobileEnteredTime(orderDate: string | null, createdAt: string | null) {
+  const entered = formatOrderEnteredShort(orderDate, createdAt);
+  return entered && !entered.includes("/") ? ` ${entered}` : null;
+}
+
 function formatCurrency(value: number | null) {
   if (value === null) return "—";
   return formatMoney(value);
@@ -686,6 +698,7 @@ export default function SalesOrdersClient({
         customerCity: getString(row, ["customer_city"]),
         customerAddress: getString(row, ["customer_address"]),
         orderDate,
+        createdAt: getString(row, ["created_at"]),
         dueDate,
         status: normalizeOrderStatus(getString(row, ["status"])),
         paymentStatus: derivePaymentStatus(totalAmount, totalPaid),
@@ -929,7 +942,19 @@ export default function SalesOrdersClient({
                       <td className="px-4 py-4">
                         <div>
                           <div>{row.customerCity ?? "—"}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
+                          {/* The order's day, then when it was really typed in —
+                              on the same line, so the row keeps its height,
+                              and with no "הוזן" before it ("it's extra" —
+                              owner, 2026-10-15). */}
+                          <div
+                            className="mt-1 whitespace-nowrap text-xs text-muted-foreground"
+                            title={formatEnteredLabel(null, row.createdAt) ?? undefined}
+                          >
+                            {formatOrderDate(row.orderDate)}
+                            {formatOrderEnteredShort(row.orderDate, row.createdAt)
+                              ? ` · ${formatOrderEnteredShort(row.orderDate, row.createdAt)}`
+                              : null}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -1163,8 +1188,14 @@ export default function SalesOrdersClient({
                             {/* The far corner: the date, and under it the one control
                                 that calls the customer. */}
                             <div className="flex shrink-0 flex-col items-end gap-1.5">
-                              <span className="text-[0.647rem] leading-4 text-muted-foreground">
+                              {/* The day, with the hour it was entered when that was
+                                  the same day — one line, the corner keeps its size. */}
+                              <span
+                                className="whitespace-nowrap text-[0.647rem] leading-4 text-muted-foreground"
+                                title={formatEnteredLabel(null, row.createdAt) ?? undefined}
+                              >
                                 {formatOrderDate(row.orderDate)}
+                                {mobileEnteredTime(row.orderDate, row.createdAt)}
                               </span>
                               {row.customerPhone ? <CallIconButton phone={row.customerPhone} name={row.customerName} /> : null}
                             </div>

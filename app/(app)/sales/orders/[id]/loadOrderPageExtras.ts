@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getEntityAuditTrail, getLatestAuditByRecordIds, type AuditFeedItem } from "@/lib/audit";
+import {
+  getEntityAuditTrail,
+  getLatestAuditByRecordIds,
+  resolveUserDisplayNamesForValues,
+  type AuditFeedItem,
+} from "@/lib/audit";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { FinancialAttachment } from "@/lib/payments";
@@ -90,8 +95,14 @@ async function readOrderPageExtras(
     if (documentIds.length === 0) return [] as DeliveryImage[];
     const { data: deliveryDocuments } = await supabase
       .from("documents")
-      .select("id,file_name,storage_key,uploaded_at,document_type")
+      .select("id,file_name,storage_key,uploaded_at,uploaded_by,document_type")
       .in("id", documentIds);
+    // Who added each photo, by name — read beside the signing below (owner,
+    // 2026-10-15: when and by whom).
+    const uploaderNamesRead = resolveUserDisplayNamesForValues(
+      supabase,
+      uniqueStrings(((deliveryDocuments ?? []) as Row[]).map((row) => getString(row, "uploaded_by")))
+    );
 
     const deliveryDocumentMap = new Map<string, Row>();
     ((deliveryDocuments ?? []) as Row[]).forEach((row) => {
@@ -112,6 +123,7 @@ async function readOrderPageExtras(
           storageKey,
           file_name: getString(document, "file_name"),
           uploaded_at: getString(document, "uploaded_at") ?? getString(link, "created_at"),
+          uploadedBy: getString(document, "uploaded_by"),
         };
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
@@ -129,10 +141,12 @@ async function readOrderPageExtras(
       });
     }
 
+    const uploaderNames = await uploaderNamesRead;
     return deliveryImageDocs.map((d) => ({
       id: d.id,
       file_name: d.file_name,
       uploaded_at: d.uploaded_at,
+      uploaded_by_name: d.uploadedBy ? uploaderNames[d.uploadedBy] ?? null : null,
       url: signedUrlByKey.get(d.storageKey) ?? null,
     }));
   });

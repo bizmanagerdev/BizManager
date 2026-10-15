@@ -24,6 +24,7 @@ import {
 } from "@/lib/offline-upload";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { useLocalDatabase } from "@/lib/powersync/store";
+import { formatTimeOnly } from "@/lib/date";
 import { readDeviceSavesWaiting, type DeviceSaveWaiting } from "@/lib/powersync/device-saves-waiting";
 
 const DEVICE_CHANGE_WORD: Record<DeviceSaveWaiting["change"], string> = {
@@ -35,13 +36,11 @@ const DEVICE_CHANGE_WORD: Record<DeviceSaveWaiting["change"], string> = {
 /** How often the phone-copy part is read again while the list is open. */
 const DEVICE_REFRESH_MS = 2500;
 
+// Israel's clock, not the device's.
 function formatTime(ts?: number) {
   if (!ts) return "";
-  try {
-    return new Date(ts).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? "" : formatTimeOnly(d.toISOString(), "");
 }
 
 /** First image part of an upload entry → an object URL for a thumbnail (or null). */

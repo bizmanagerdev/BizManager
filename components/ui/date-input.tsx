@@ -3,6 +3,8 @@ import * as React from "react";
 import { CalendarIcon } from "@/components/ui/icons";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { cn } from "@/lib/utils";
+import { toDateKey } from "@/lib/date";
+import { toIsraelLocalValue } from "@/lib/timezone";
 import { Input } from "@/components/ui/input";
 
 type DateInputProps = Omit<React.ComponentProps<typeof Input>, "type" | "value" | "onChange"> & {
@@ -30,14 +32,32 @@ function padTwo(value: number) {
   return String(value).padStart(2, "0");
 }
 
+// A form may prefill a box straight from the database, where a picked day can
+// be a whole timestamp ("2026-10-15T00:00:00+00:00"). The box only ever deals
+// in its own shape, so such a value is read as its day (or, for the date+time
+// box, its Israel wall clock) before it is shown or handed to the picker.
+function asDateValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  return toDateKey(trimmed) || trimmed;
+}
+
+function asDateTimeValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+  // Only a real instant (Z or ±hh:mm) is converted; anything else is left for
+  // the display check below to show as typed.
+  return /(Z|[+-]\d{2}:?\d{2})$/.test(trimmed) ? toIsraelLocalValue(trimmed) || trimmed : trimmed;
+}
+
 function formatIsoForDisplay(value: string) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(asDateValue(value));
   if (!match) return value;
   return `${match[3]}/${match[2]}/${match[1].slice(-2)}`;
 }
 
 function formatIsoDateTimeForDisplay(value: string) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value.trim());
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(asDateTimeValue(value));
   if (!match) return value;
   return `${match[3]}/${match[2]}/${match[1].slice(-2)} ${match[4]}:${match[5]}`;
 }
@@ -236,7 +256,7 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
           ref={pickerRef}
           type="date"
           lang="he"
-          value={value}
+          value={asDateValue(value)}
           onChange={(event) => {
             const iso = event.target.value;
             if (iso) {
@@ -317,7 +337,7 @@ export const DateTimeInput = React.forwardRef<HTMLInputElement, DateTimeInputPro
           ref={pickerRef}
           type="datetime-local"
           lang="he"
-          value={value}
+          value={asDateTimeValue(value)}
           onChange={(event) => {
             const iso = event.target.value;
             if (iso) {

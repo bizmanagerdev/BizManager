@@ -1439,12 +1439,15 @@ export default function ProjectTabsClient({
           getString(item.expense, "vendor") ??
           (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");
 
+      // A worker whose hours are tracked: his shift's clock-in hour is on the
+      // row itself. A per-session worker's clock_in isn't a real hour.
+      const showSessionHours =
+        session !== null &&
+        shouldShowSessionHours(
+          normalizePayrollWorkerType(sessionWorker?.payroll_worker_type, sessionWorker?.pay_tracking_mode)
+        );
       if (session) {
-        if (
-          shouldShowSessionHours(
-            normalizePayrollWorkerType(sessionWorker?.payroll_worker_type, sessionWorker?.pay_tracking_mode)
-          )
-        ) {
+        if (showSessionHours) {
           extras.push({ label: "כניסה", value: formatDateTime(session.clock_in) });
           extras.push({ label: "יציאה", value: formatDateTime(session.clock_out) });
           extras.push({ label: "משך", value: formatMinutes(sessionWorkedMinutes(session)) });
@@ -1478,6 +1481,7 @@ export default function ProjectTabsClient({
         date: session
           ? session.clock_in
           : getString(item.expense, "expense_date") ?? getString(item.expense, "created_at") ?? null,
+        dateHasTime: showSessionHours,
         category: session ? "שכר עובד" : expenseCategory,
         name: session ? sessionEmployeeName ?? "עובד" : expenseName ?? "הוצאה",
         status: session
@@ -2305,7 +2309,7 @@ export default function ProjectTabsClient({
                   name={d.title ?? d.file_name ?? "קובץ"}
                   fileName={d.file_name}
                   url={d.url}
-                  date={<LtrInline>{d.uploaded_at ? formatDate(d.uploaded_at) : "—"}</LtrInline>}
+                  date={<LtrInline>{formatDateTime(d.uploaded_at)}</LtrInline>}
                   meta={
                     d.document_type ? (
                       <span className="inline-block rounded-full border border-border/70 bg-background px-1.5 py-0 text-[0.647rem] text-muted-foreground">

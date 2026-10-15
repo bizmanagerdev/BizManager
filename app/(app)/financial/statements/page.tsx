@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { loadCardCostsByMonth } from "@/lib/financial/cardCosts";
 import { summarizeStatement, type StatementMathCharge, type StatementMathRow } from "@/lib/financial/cardStatementMath";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
@@ -17,11 +18,15 @@ export default async function CardStatementsPage() {
 
   const { data } = await supabase
     .from("card_statements")
-    .select("id,file_name,source,created_count,total_rows,created_at,marked_done")
+    .select("id,file_name,source,created_count,total_rows,created_at,marked_done,imported_by")
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const baseStatements = (data ?? []) as Omit<StatementListItem, "expensesTotal" | "incomeTotal" | "steps" | "bankAccounts">[];
+  const baseStatements = (data ?? []) as Array<
+    Omit<StatementListItem, "expensesTotal" | "incomeTotal" | "steps" | "bankAccounts" | "importedByName"> & {
+      imported_by: string | null;
+    }
+  >;
 
   // Row-level amounts for the money columns and each statement's steps (same rules as the
   // statement page — lib/financial/cardStatementMath.ts). Paged: the lines of every
@@ -42,6 +47,13 @@ export default async function CardStatementsPage() {
   };
 
   const statementIds = baseStatements.map((s) => s.id);
+  // Who uploaded each statement, beside its upload time (owner, 2026-10-15).
+  // The import route writes the login id there; user_labels() resolves a user id
+  // or a login id alike, for every statement in one call.
+  const importerNamesPromise = resolveUserDisplayNamesForValues(
+    supabase,
+    baseStatements.map((s) => s.imported_by).filter((v): v is string => Boolean(v))
+  ).catch(() => ({}) as Record<string, string>);
   const [rowData, chargeData] =
     statementIds.length > 0
       ? await Promise.all([
@@ -109,8 +121,10 @@ export default async function CardStatementsPage() {
     mathCharges.set(sid, list);
   }
 
-  const statements: StatementListItem[] = baseStatements.map((s) => ({
+  const importerNames = await importerNamesPromise;
+  const statements: StatementListItem[] = baseStatements.map(({ imported_by, ...s }) => ({
     ...s,
+    importedByName: imported_by ? importerNames[imported_by] ?? null : null,
     expensesTotal: totals[s.id]?.expensesTotal ?? 0,
     incomeTotal: totals[s.id]?.incomeTotal ?? 0,
     steps: summarizeStatement(mathRows.get(s.id) ?? [], mathCharges.get(s.id) ?? []),

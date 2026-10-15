@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DesktopIcon, MobileIcon, TabletIcon } from "@/components/ui/icons";
 import type { DeviceIcon } from "@/lib/notifications/devices";
+import { formatShortDateTime } from "@/lib/date";
 
 export type ConnectedDevice = {
   userId: string;
@@ -32,11 +33,9 @@ function Icon({ icon }: { icon: DeviceIcon }) {
   return <DesktopIcon className={cls} />;
 }
 
+// When it was connected, with the hour, on Israel's clock (not the device's).
 function formatDate(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return formatShortDateTime(iso, "");
 }
 
 export default function ConnectedDevicesCard({ devices, unavailable }: Props) {

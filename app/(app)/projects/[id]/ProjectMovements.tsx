@@ -50,12 +50,16 @@ import { SwipeActions } from "@/components/ui/swipe-actions";
 import { getStatusColor, getStatusLabel, type StatusColor } from "@/lib/ui/status-colors";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { LedgerGroupBy, LedgerSortBy, LedgerSortDirection } from "@/lib/projectLedgerPrefs";
-import { formatIls, formatDate, LtrInline } from "./ProjectTabsClient.helpers";
+import { israelDateKey } from "@/lib/timezone";
+import { formatIls, formatDate, formatDateTime, LtrInline } from "./ProjectTabsClient.helpers";
 
 export type Movement = {
   key: string;
   direction: "in" | "out";
   date: string | null;
+  /** `date` is a real moment (a shift's clock-in), not a picked day — shown
+   *  with its hour (owner, 2026-10-15: "see exactly when things happen"). */
+  dateHasTime?: boolean;
   /** The kind chip ("שכר עובד", an expense category…) — null when there's
    *  nothing worth a chip (a payment). */
   category: string | null;
@@ -219,6 +223,22 @@ function RowActions({ movement }: { movement: Movement }) {
   );
 }
 
+function movementDateLabel(movement: Movement) {
+  return movement.dateHasTime ? formatDateTime(movement.date) : formatDate(movement.date);
+}
+
+/** The Israeli calendar day a row belongs to, as YYYY-MM-DD. A bare day (or a
+ *  typed wall clock) is read as written; an instant goes through Israel's
+ *  clock — slicing its UTC string put a shift that started after midnight
+ *  Israel time (21:00/22:00 UTC) under the day before. */
+function movementDayKey(value: string) {
+  if (/^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?$/.test(value.trim())) {
+    return value.trim().slice(0, 10);
+  }
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? value.slice(0, 10) : israelDateKey(at);
+}
+
 function hasAttachment(movement: Movement) {
   return movement.attachments.some((attachment) => attachment.url);
 }
@@ -308,7 +328,7 @@ function ExpandedCard({ movement }: { movement: Movement }) {
           hides that line) — repeating it here would be the same doubled
           badge this component exists to avoid. */}
       <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
-        <LtrInline>{formatDate(movement.date)}</LtrInline>
+        <LtrInline>{movementDateLabel(movement)}</LtrInline>
         {movement.status ? (
           <StatusBadge value={movement.status} type="payment" dueDate={movement.dueDate} />
         ) : null}
@@ -358,7 +378,7 @@ function groupKey(movement: Movement, groupBy: LedgerGroupBy): { id: string; nam
     case "category":
       return movement.category ? { id: movement.category, name: movement.category } : null;
     case "date":
-      return movement.date ? { id: movement.date.slice(0, 10), name: formatDate(movement.date) } : null;
+      return movement.date ? { id: movementDayKey(movement.date), name: formatDate(movement.date) } : null;
   }
 }
 
@@ -519,7 +539,7 @@ export default function ProjectMovements({
             ) : null}
           </td>
           <td className={TD + " whitespace-nowrap text-muted-foreground"}>
-            <LtrInline>{formatDate(movement.date)}</LtrInline>
+            <LtrInline>{movementDateLabel(movement)}</LtrInline>
           </td>
           <td className={TD}>
             <div className="flex flex-wrap items-center gap-1.5">

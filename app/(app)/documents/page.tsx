@@ -11,6 +11,7 @@ import type {
 } from "@/lib/documents/archive";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { formatShortDate } from "@/lib/date";
 import { buildDocumentDisplayName, inferFileKind } from "@/lib/documents";
 import DocumentsSkeleton from "@/app/(app)/documents/DocumentsSkeleton";
 
@@ -698,7 +699,8 @@ export default async function DocumentsPage({
           const orderCustomerName =
             normalizeString(order?.customer_name) ||
             normalizeString(customersById.get(normalizeString(order?.customer_id))?.customer_name);
-          const orderDate = normalizeString(order?.order_date).slice(0, 10);
+          // order_date is a moment — its day is Israel's, written the app's way.
+          const orderDate = formatShortDate(normalizeString(order?.order_date), "");
           const orderLabel = orderCustomerName
             ? `הזמנה · ${orderCustomerName}`
             : orderDate
@@ -902,7 +904,9 @@ export default async function DocumentsPage({
       const id = normalizeString((row as Row).order_id);
       const who = normalizeString((row as Row).customer_name);
       const when = normalizeString((row as Row).order_date).slice(0, 10);
-      const label = [who || "הזמנה", when].filter(Boolean).join(" · ");
+      const label = [who || "הזמנה", formatShortDate(normalizeString((row as Row).order_date), "")]
+        .filter(Boolean)
+        .join(" · ");
       return { id, label, customerId: normalizeString((row as Row).customer_id) || null, date: when || null };
     })
     .filter((option) => option.id);

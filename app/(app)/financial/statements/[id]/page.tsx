@@ -77,7 +77,7 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       // This statement's own lump-sum bank charges (one per card, if recorded).
       supabase
         .from("card_statement_charges")
-        .select("id,card_label,account_id,amount,charge_date,notes")
+        .select("id,card_label,account_id,amount,charge_date,notes,created_at")
         .eq("statement_id", id),
       // Remembered card → account choice, for pre-filling a card that hasn't been charged yet.
       supabase.from("card_account_mappings").select("card_key,account_id"),
@@ -175,6 +175,7 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       amount: Number(r.amount ?? 0),
       chargeDate: String(r.charge_date ?? "").slice(0, 10),
       notes: typeof r.notes === "string" ? r.notes : null,
+      createdAt: typeof r.created_at === "string" ? r.created_at : null,
     }));
   const cardAccountDefaults: Record<string, string> = {};
   for (const r of (mappingRows ?? []) as Record<string, unknown>[]) {

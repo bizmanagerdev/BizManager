@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useAudioTranscription } from "@/hooks/useAudioTranscription";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
+import { ISRAEL_TIME_ZONE, israelDateKey } from "@/lib/timezone";
 
 export type ParsedTaskFields = {
   subject: string;
@@ -35,10 +36,11 @@ export function TaskVoiceFillButton({ users, domains, onParsed, disabled = false
   async function parse(transcript: string) {
     setParsing(true);
     try {
+      // "Now" and "today" on Israel's clock — the device's is another day/hour abroad,
+      // and "מחר בעשר" means the office's tomorrow.
       const now = new Date();
-      const nowLabel = now.toLocaleString("he-IL", { dateStyle: "full", timeStyle: "short" });
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const nowLabel = now.toLocaleString("he-IL", { dateStyle: "full", timeStyle: "short", timeZone: ISRAEL_TIME_ZONE });
+      const today = israelDateKey(now);
       const res = await fetch("/api/tasks/parse-voice", {
         method: "POST",
         headers: { "content-type": "application/json" },

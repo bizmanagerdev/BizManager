@@ -13,6 +13,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
+import { formatEnteredLabel, formatShortDate } from "@/lib/date";
 import { EXPENSE_TAX_CATEGORY } from "@/lib/expenses";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
@@ -29,12 +30,6 @@ function formatIls(amount: number) {
   }).format(Math.round(amount));
 }
 
-function formatDate(iso: string) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
-}
 
 function StatBox({ label, value, tone }: { label: string; value: string; tone?: "owed" | "in" | "out" }) {
   return (
@@ -195,9 +190,14 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
                 <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
                   <div className="min-w-0">
                     <div className="font-medium">{p.notes?.trim() || "תשלום מע״מ / מסים"}</div>
+                    {/* The day it was paid — through lib/date: `new Date("2026-10-14")`
+                        on the device's clock showed 13/10 on a phone set to US time. */}
                     <div className="text-xs text-muted-foreground">
-                      <span dir="ltr">{formatDate(p.date)}</span>
+                      <span dir="ltr">{formatShortDate(p.date, "")}</span>
                     </div>
+                    {p.createdAt ? (
+                      <div className="text-[11px] text-muted-foreground/70">{formatEnteredLabel(null, p.createdAt)}</div>
+                    ) : null}
                   </div>
                   <div dir="ltr" className="shrink-0 font-semibold tabular-nums text-destructive">
                     −{formatIls(p.amount)}

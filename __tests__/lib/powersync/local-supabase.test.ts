@@ -397,7 +397,7 @@ describe("the server's own loaders, run on the device copy", () => {
           { id: "t2", subject: "חבר", status: "in_progress", assigned_user_id: "other", project_id: null, created_at: "2026-10-06T10:00:00.000000", due_date: "2026-10-01T00:00:00.000000" },
           { id: "t3", subject: "סגורה", status: "done", assigned_user_id: "me", project_id: null, created_at: "2026-10-06T11:00:00.000000", due_date: null },
           { id: "t4", subject: "של אחר", status: "todo", assigned_user_id: "other", project_id: null, created_at: "2026-10-06T12:00:00.000000", due_date: null },
-        ].map((t) => ({ subject_he: null, subject_ar: null, priority: "medium", sort_order: null, ...t })),
+        ].map((t) => ({ subject_he: null, subject_ar: null, priority: "medium", sort_order: null, due_time: null, ...t })),
         projects: [{ id: "p1", name: "פרויקט" }],
         reminders: [],
       })
@@ -413,7 +413,7 @@ describe("the server's own loaders, run on the device copy", () => {
 describe("tasks that wait: a done reminder keeps a far-off task up; a snooze hides it for its person", () => {
   afterEach(() => vi.useRealTimers());
   // A far-off to-do (due in ~3 months), mine.
-  const farTask = { id: "t9", subject: "רחוק", status: "todo", assigned_user_id: "me", project_id: null, created_at: "2026-10-01T10:00:00.000000", due_date: "2027-01-15", subject_he: null, subject_ar: null, priority: "medium", sort_order: null };
+  const farTask = { id: "t9", subject: "רחוק", status: "todo", assigned_user_id: "me", project_id: null, created_at: "2026-10-01T10:00:00.000000", due_date: "2027-01-15", due_time: null, subject_he: null, subject_ar: null, priority: "medium", sort_order: null };
 
   it("its reminder came and was marked done: it stays on the list (it used to hide again)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });

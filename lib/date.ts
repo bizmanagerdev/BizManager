@@ -98,6 +98,67 @@ export function formatTimeOnly(value: string | null | undefined, fallback = "-")
   return `${pad(parts.hour)}:${pad(parts.minute)}`;
 }
 
+/**
+ * "2026-10-15" — the calendar day of any stored value, as a date field holds it.
+ * A picked day saved into a timestamptz comes back as "2026-10-15T00:00:00+00:00",
+ * and a date box handed that raw string showed it raw (owner's screenshot of
+ * "עריכת תשלום", 2026-10-15). "" when the value isn't a date.
+ */
+export function toDateKey(value: string | null | undefined) {
+  if (!value) return "";
+  const parts = displayParts(value);
+  if (!parts) return "";
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+}
+
+/**
+ * A timestamptz that is sometimes a moment and sometimes only a picked day —
+ * orders.delivery_confirmed_at: a day chosen without an hour is stored as
+ * midnight UTC, a confirmation with its hour as the real instant (owner,
+ * 2026-10-15: "when the delivery was delivered"). The day alone for the first,
+ * day and hour for the second, so a made-up 03:00 is never shown.
+ */
+export function formatDayOrDateTime(value: string | null | undefined, fallback = "-") {
+  if (!value) return fallback;
+  // A bare "2026-10-14" also parses as midnight UTC, so one check covers both.
+  const date = new Date(value.trim());
+  const dayOnly = !Number.isNaN(date.getTime()) && date.getTime() % 86_400_000 === 0;
+  return dayOnly ? formatShortDate(value, fallback) : formatShortDateTime(value, fallback);
+}
+
+const DUE_TIME_PATTERN = /^(\d{1,2}):(\d{2})/;
+
+/**
+ * A day plus the separate "HH:MM" a person chose for it ("14/10/26 09:30"), or
+ * just the day when no hour was chosen. For tasks, whose due day and due hour
+ * live in two columns: the day is not an instant, so its own time is never shown.
+ */
+export function formatDateWithTime(
+  day: string | null | undefined,
+  time: string | null | undefined,
+  fallback = "-"
+) {
+  const date = formatShortDate(day, fallback);
+  if (!day) return date;
+  const match = DUE_TIME_PATTERN.exec((time ?? "").trim());
+  return match ? `${date} ${pad(Number(match[1]))}:${match[2]}` : date;
+}
+
+/**
+ * "הוזן ע״י יענקי · 14/10/26 15:32" — who entered a record and when, from the
+ * moment it was saved (created_at), never from the day it is about. Either part
+ * can be missing; null when both are (owner, 2026-10-15: "see exactly when things
+ * happen").
+ */
+export function formatEnteredLabel(byName: string | null | undefined, at: string | null | undefined) {
+  const name = byName?.trim();
+  const when = at ? formatShortDateTime(at, "") : "";
+  if (name && when) return `הוזן ע״י ${name} · ${when}`;
+  if (name) return `הוזן ע״י ${name}`;
+  if (when) return `הוזן ${when}`;
+  return null;
+}
+
 export type DueUrgency = "overdue" | "due-soon" | "due-week" | "none";
 
 /**

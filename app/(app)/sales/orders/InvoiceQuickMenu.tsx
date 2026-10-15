@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { formatOrderDate } from "@/lib/orders/format";
+import { formatShortDateTime } from "@/lib/date";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type InvoiceState = "needs_unsent" | "needs_sent" | "no" | "undecided";
@@ -127,7 +127,9 @@ export default function InvoiceQuickMenu({
         </DropdownMenuContent>
       </DropdownMenu>
       {showSentDate && state === "needs_sent" && invoiceSentAt ? (
-        <div className="text-[0.647rem] text-muted-foreground">{formatOrderDate(invoiceSentAt)}</div>
+        // invoice_sent_at is the moment it was marked/issued, so its hour too
+        // (owner, 2026-10-15).
+        <div className="whitespace-nowrap text-[0.647rem] text-muted-foreground">{formatShortDateTime(invoiceSentAt)}</div>
       ) : null}
     </div>
   );

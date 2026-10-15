@@ -38,7 +38,7 @@ import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, toDateKey } from "@/lib/date";
 import { formatMoney } from "@/lib/money";
 
 export type PaymentItem = {
@@ -159,11 +159,13 @@ export function EditPaymentDialog({
     originalAmount < 0 ? "refund" : "payment"
   );
   const [amount, setAmount] = useState(String(Math.abs(originalAmount)));
-  const [paymentDate, setPaymentDate] = useState(payment.payment_date ?? "");
+  // As a "YYYY-MM-DD" day: payment_date comes back as a full timestamp, and
+  // the installments / next-month-10th math below only reads a plain day.
+  const [paymentDate, setPaymentDate] = useState(toDateKey(payment.payment_date));
   const [paymentMethod, setPaymentMethod] = useState(payment.payment_method ?? "");
   const [accountId, setAccountId] = useState(payment.account_id ?? "");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
-  const [dueDate, setDueDate] = useState(payment.due_date ?? "");
+  const [dueDate, setDueDate] = useState(toDateKey(payment.due_date));
   const [referenceNumber, setReferenceNumber] = useState(payment.reference_number ?? "");
   const [checkNumber, setCheckNumber] = useState(payment.check_number ?? "");
   const [checkPhotoFiles, setCheckPhotoFiles] = useState<File[]>([]);

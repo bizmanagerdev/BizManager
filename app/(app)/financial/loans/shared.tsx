@@ -2,6 +2,7 @@
 
 import type { LoanStatus } from "@/lib/loans";
 import { israelDateKey } from "@/lib/timezone";
+import { formatShortDate } from "@/lib/date";
 
 // Small presentational helpers shared by the loans page and the installment-plan
 // section, so both render money, dates and form fields identically.
@@ -38,11 +39,10 @@ export function formatIls(amount: number) {
   }).format(Math.round(amount));
 }
 
+// A loan/repayment day, read as the day itself (lib/date) — `new Date("2026-10-14")`
+// on the device's clock showed 13/10 on a phone set to US time.
 export function formatDate(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+  return formatShortDate(value, "—");
 }
 
 export function todayIso() {

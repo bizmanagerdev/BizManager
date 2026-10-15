@@ -71,12 +71,12 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
   // that never touches them now goes first; the two dead variants stay at
   // the end purely as a harmless safety net.
   const selectVariants = [
-    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by,account_id",
-    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by",
-    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,recorded_by",
-    "id,payment_date,amount_total,payment_method,reference_number,business_domain,notes,recorded_by",
-    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,target_type,target_id,recorded_by",
-    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,target_type,target_id,recorded_by",
+    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,account_id",
+    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at",
+    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,recorded_by,created_at",
+    "id,payment_date,amount_total,payment_method,reference_number,business_domain,notes,recorded_by,created_at",
+    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,target_type,target_id,recorded_by,created_at",
+    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,target_type,target_id,recorded_by,created_at",
   ] as const;
 
   let lastError: unknown = null;
@@ -108,13 +108,13 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
 
 export async function scanExpenseRows(supabase: SupabaseClient, since?: string | null) {
   const selectVariants = [
-    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method,paid_date,account_id,installment_group_id,installment_index,installment_count,recurring_expense_template_id",
-    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method,paid_date,account_id,installment_group_id,installment_index,installment_count",
-    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method,paid_date,account_id",
-    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method,paid_date",
-    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method",
-    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status",
-    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method,paid_date,account_id,installment_group_id,installment_index,installment_count,recurring_expense_template_id",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method,paid_date,account_id,installment_group_id,installment_index,installment_count",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method,paid_date,account_id",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method,paid_date",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at",
   ] as const;
 
   let lastError: unknown = null;
@@ -147,7 +147,7 @@ export async function scanWorkerPaymentRows(supabase: SupabaseClient, since?: st
   return scanRows<WorkerPaymentRow>(
     supabase,
     "worker_payments",
-    "id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by",
+    "id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at",
     "payment_date",
     since
   );

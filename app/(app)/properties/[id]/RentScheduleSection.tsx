@@ -15,6 +15,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { formatCurrency } from "@/lib/payroll";
+import { formatShortDate } from "@/lib/date";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { normalizeCheckStatus, checkStatusLabel, checkStatusClasses } from "@/lib/checks";
@@ -34,10 +35,7 @@ function monthLabel(dateStr: string | null): string {
 }
 
 function fmtDate(value: string | null) {
-  if (!value) return "—";
-  const d = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return value.slice(0, 10);
-  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+  return formatShortDate(value, "—");
 }
 
 type EditForm = {

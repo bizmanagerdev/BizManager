@@ -21,7 +21,7 @@ import { clickableRowProps } from "@/lib/ui/row-navigation";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { formatShortDate, formatShortDateTime, formatTimeOnly, toDateKey } from "@/lib/date";
 import {
   collectionStatusClasses,
   collectionStatusLabel,
@@ -74,13 +74,15 @@ function LastContactSignal({
     return <span className="text-[0.647rem] font-medium text-warning-strong"><WarningIcon className="inline h-3 w-3 align-text-bottom" /> טרם נוצר קשר</span>;
   }
   const days = daysSince(lastContactAt);
+  // With the hour — a communication log's created_at is a real moment (owner,
+  // 2026-10-15: "see exactly when things happen").
   const label = compact
     ? days === 0
-      ? "היום"
-      : formatDate(lastContactAt)
+      ? `היום ${formatTimeOnly(lastContactAt)}`
+      : formatShortDateTime(lastContactAt)
     : days === 0
-      ? "נוצר קשר היום"
-      : `נוצר קשר ב: ${formatDate(lastContactAt)}`;
+      ? `נוצר קשר היום ${formatTimeOnly(lastContactAt)}`
+      : `נוצר קשר ב: ${formatShortDateTime(lastContactAt)}`;
   const stale = (days ?? 0) >= 7;
   return (
     <span className={`text-xs ${stale ? "text-warning-strong" : "text-muted-foreground"}`}>{label}</span>
@@ -151,7 +153,7 @@ export function TodayOverview({
   onUpdateReminder: (id: string, status: "done" | "cancelled") => void;
 }) {
   const today = todayIso();
-  const dueReminders = reminders.filter((r) => r.remind_at.slice(0, 10) <= today);
+  const dueReminders = reminders.filter((r) => toDateKey(r.remind_at) <= today);
   if (dueReminders.length === 0 && dueToday.length === 0) return null;
 
   return (
@@ -161,7 +163,7 @@ export function TodayOverview({
           <div className="mb-2 text-sm font-semibold">תזכורות להיום ({dueReminders.length})</div>
           <div className="space-y-2">
             {dueReminders.map((r) => {
-              const overdue = r.remind_at.slice(0, 10) < today;
+              const overdue = toDateKey(r.remind_at) < today;
               return (
                 <div
                   key={r.id}
@@ -551,7 +553,7 @@ const CustomerCard = memo(function CustomerCard({
                 title="מעבר לתזכורת"
                 className="mt-0.5 block text-xs text-primary hover:underline"
               >
-                <ReminderIcon className="inline h-3 w-3 align-text-bottom" />{" "}תזכורת {formatDate(group.next_reminder_at)}
+                <ReminderIcon className="inline h-3 w-3 align-text-bottom" />{" "}תזכורת {formatShortDateTime(group.next_reminder_at)}
               </button>
             ) : null}
           </div>
@@ -1398,7 +1400,7 @@ const FragmentRow = memo(function FragmentRow({
               title="מעבר לתזכורת"
               className="text-xs text-primary hover:underline"
             >
-              <ReminderIcon className="inline h-3 w-3 align-text-bottom" />{" "}{formatDate(group.next_reminder_at)}
+              <ReminderIcon className="inline h-3 w-3 align-text-bottom" />{" "}{formatShortDateTime(group.next_reminder_at)}
             </button>
           ) : (
             <span className="text-muted-foreground/40">—</span>

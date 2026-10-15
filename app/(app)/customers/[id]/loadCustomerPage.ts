@@ -154,7 +154,7 @@ export function startCustomerPageReads(
         paged((from, to) =>
           supabase
             .from("payments")
-            .select("id,project_id,amount_total,net_amount,payment_date,payment_method,payment_status,due_date,check_number")
+            .select("id,project_id,amount_total,net_amount,payment_date,payment_method,payment_status,due_date,check_number,created_at")
             .in("project_id", batch)
             .order("payment_date", { ascending: false })
             .order("id", { ascending: false })
@@ -422,7 +422,7 @@ export function startCustomerPageReads(
       paged((from, to) =>
         supabase
           .from("payments")
-          .select("id,order_id,amount_total,payment_date,payment_method,payment_status,due_date,check_number")
+          .select("id,order_id,amount_total,payment_date,payment_method,payment_status,due_date,check_number,created_at")
           .in("order_id", batch)
           .order("payment_date", { ascending: false })
           .order("id", { ascending: false })
@@ -437,7 +437,7 @@ export function startCustomerPageReads(
         paged((from, to) =>
           supabase
             .from("payments")
-            .select("id,property_id,amount_total,payment_date,payment_method,payment_status,due_date,check_number")
+            .select("id,property_id,amount_total,payment_date,payment_method,payment_status,due_date,check_number,created_at")
             .in("property_id", batch)
             .order("payment_date", { ascending: false })
             .order("id", { ascending: false })
@@ -470,6 +470,7 @@ export function startCustomerPageReads(
           status: (str(row, "payment_status") || "cleared").toLowerCase(),
           dueDate: str(row, "due_date") || null,
           checkNumber: str(row, "check_number") || null,
+          createdAt: str(row, "created_at") || null,
           amount: num(row.amount_total),
           source: orderId
             ? { type: "order", id: orderId, label: "" }

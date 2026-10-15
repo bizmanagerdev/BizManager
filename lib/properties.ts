@@ -486,6 +486,8 @@ export type PropertyTask = {
   subject: string | null;
   status: string | null;
   dueDate: string | null;
+  /** "HH:MM" the task is due at, when one was chosen. */
+  dueTime: string | null;
 };
 
 /**
@@ -609,7 +611,7 @@ export async function fetchPropertyActivity(
         .select("id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id")
         .eq("property_id", propertyId),
       supabase.from("document_links").select("document_id").eq("entity_type", "property").eq("entity_id", propertyId),
-      supabase.from("tasks").select("id,subject,status,due_date").eq("property_id", propertyId),
+      supabase.from("tasks").select("id,subject,status,due_date,due_time").eq("property_id", propertyId),
       supabase.from("recurring_expense_templates").select(RECURRING_TEMPLATE_SELECT).eq("property_id", propertyId),
       supabase
         .from("attendance_sessions")
@@ -683,6 +685,7 @@ export async function fetchPropertyActivity(
       subject: str(r.subject),
       status: str(r.status),
       dueDate: str(r.due_date),
+      dueTime: str(r.due_time),
     }));
     const recurringTemplates: PropertyRecurringTemplate[] = ((rtRes.data ?? []) as Row[]).map(normalizeRecurringTemplate);
     // Kept as raw WorkSessionRow shape — see the PropertySession alias comment.

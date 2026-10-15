@@ -46,6 +46,7 @@ import RepaymentPlanPicker, {
 } from "./RepaymentPlanPicker";
 import { Field, METHOD_OPTIONS, StatBox, formatDate, formatIls, todayIso } from "./shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { formatEnteredLabel, formatShortDateTime } from "@/lib/date";
 import { DocumentRow } from "@/components/ui/document-tile";
 
 // The business owner — auto-filled on "our" side of every loan.
@@ -515,6 +516,10 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
                       ? ` · תשלום ${r.installment_index} מתוך ${r.installment_count}`
                       : ""}
                   </span>
+                  {/* When the repayment was typed in — the day above is when it was paid. */}
+                  {r.created_at ? (
+                    <div className="text-[11px] text-muted-foreground/70">{formatEnteredLabel(null, r.created_at)}</div>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <EditButton onClick={() => setEditTarget(r)} disabled={pending} label="עריכת החזר" />
@@ -935,7 +940,7 @@ export function LoanDocumentsDialog({
                   name={doc.fileName}
                   fileName={doc.fileName}
                   url={doc.url}
-                  meta={doc.uploadedAt ? formatDate(doc.uploadedAt) : null}
+                  meta={doc.uploadedAt ? formatShortDateTime(doc.uploadedAt) : null}
                   onDelete={() => removeDoc(doc.id)}
                   deleteLabel="מחיקת מסמך"
                   confirmDelete={{ title: "מחיקת מסמך", description: `למחוק את ${doc.fileName}?` }}

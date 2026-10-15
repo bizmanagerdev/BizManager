@@ -77,12 +77,16 @@ describe("formatIls / formatTimeOnly / isSameDay", () => {
     expect(formatTimeOnly(null)).toBe("—");
     expect(formatTimeOnly("not a date")).toBe("—");
     expect(formatTimeOnly("2026-09-17T14:05:00")).toBe("14:05");
+    // An instant is read on Israel's clock, whatever the device's zone.
+    expect(formatTimeOnly("2026-09-17T19:30:00Z")).toBe("22:30");
   });
 
   it("compares two ISO strings by calendar day", () => {
     expect(isSameDay("2026-09-17T01:00", "2026-09-17T23:00")).toBe(true);
     expect(isSameDay("2026-09-17", "2026-09-18")).toBe(false);
     expect(isSameDay(null, "2026-09-17")).toBe(false);
+    // 22:30 UTC is already the next day in Israel.
+    expect(isSameDay("2026-09-17T22:30:00Z", "2026-09-18T08:00:00Z")).toBe(true);
   });
 });
 
@@ -122,6 +126,15 @@ describe("paymentRecordedByLabel / expenseRecordedByLabel", () => {
       paymentAuditById: auditById,
     });
     expect(label).toBe("הוזן ע״י רותי");
+  });
+
+  it("adds the moment it was saved (created_at, Israel time)", () => {
+    const payment = { id: "p1", recorded_by: "u1", created_at: "2026-10-14T12:32:00Z" } as PaymentRow;
+    const label = paymentRecordedByLabel(payment, {
+      paymentRecordedByNameByValue: { u1: "דוד" },
+      paymentAuditById: {},
+    });
+    expect(label).toBe("הוזן ע״י דוד · 14/10/26 15:32");
   });
 
   it("returns null when there is neither a name nor a create audit entry", () => {

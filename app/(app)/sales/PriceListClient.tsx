@@ -212,6 +212,8 @@ export default function PriceListClient({
       new Intl.DateTimeFormat("he-IL", {
         dateStyle: "full",
         timeStyle: "short",
+        // Israel's clock, not the device's (owner, 2026-10-15).
+        timeZone: "Asia/Jerusalem",
       }).format(new Date()),
     []
   );

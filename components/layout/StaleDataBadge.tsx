@@ -1,19 +1,18 @@
 "use client";
 
 import { OfflineIcon } from "@/components/ui/icons";
+import { formatDayMonth, formatTimeOnly } from "@/lib/date";
+import { israelDateKey } from "@/lib/timezone";
 
+// Israel's day and clock, not the device's.
 function formatSavedAt(savedAt: number | null): string {
   if (!savedAt) return "";
-  try {
-    const d = new Date(savedAt);
-    const today = new Date();
-    const sameDay = d.toDateString() === today.toDateString();
-    const time = d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-    if (sameDay) return `עודכן ${time}`;
-    return `עודכן ${d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit" })} ${time}`;
-  } catch {
-    return "";
-  }
+  const d = new Date(savedAt);
+  if (Number.isNaN(d.getTime())) return "";
+  const iso = d.toISOString();
+  const time = formatTimeOnly(iso, "");
+  if (israelDateKey(d) === israelDateKey()) return `עודכן ${time}`;
+  return `עודכן ${formatDayMonth(iso, "")} ${time}`;
 }
 
 /**

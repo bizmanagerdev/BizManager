@@ -48,6 +48,7 @@ import {
 } from "@/lib/documents/expiry";
 import { documentsHe } from "@/lib/i18n/pluralHe";
 import { israelDateKey } from "@/lib/timezone";
+import { formatShortDate } from "@/lib/date";
 import { offerVehicleDateSync } from "@/lib/documents/vehicleDateSync";
 import { downloadFileName } from "@/lib/documents/downloadName";
 import { downloadFile } from "@/lib/file-download";
@@ -2100,7 +2101,8 @@ export default function DocumentsArchiveClient({
                               className="font-medium hover:underline"
                               title="עריכת תאריך התוקף"
                             >
-                              {formatDate(activePreviewDoc.valid_until)}
+                              {/* A calendar day, not a moment — no "00:00". */}
+                              {formatShortDate(activePreviewDoc.valid_until)}
                             </button>
                             {tone ? <Badge variant={tone}>{expiryLabel(expiry)}</Badge> : null}
                             {expiry.status === "superseded" ? (

@@ -46,6 +46,11 @@ describe("DateInput", () => {
     expect(screen.getByTestId("date")).toHaveValue("17/09/26");
   });
 
+  it("shows a day prefilled as a whole stored timestamp as that day, not the raw string (owner's screenshot, 2026-10-15)", () => {
+    render(<ControlledDate initial="2026-10-15T00:00:00+00:00" />);
+    expect(screen.getByTestId("date")).toHaveValue("15/10/26");
+  });
+
   it("auto-inserts slashes as digits are typed, and emits the full ISO value", () => {
     render(<ControlledDate />);
     const el = screen.getByTestId("date");
@@ -116,6 +121,11 @@ describe("DateTimeInput", () => {
   it("displays an ISO datetime as dd/mm/yy hh:mm", () => {
     render(<ControlledDateTime initial="2026-09-17T14:30" />);
     expect(screen.getByTestId("datetime")).toHaveValue("17/09/26 14:30");
+  });
+
+  it("shows a stored instant on Israel's clock instead of the raw string", () => {
+    render(<ControlledDateTime initial="2026-10-15T12:32:00+00:00" />);
+    expect(screen.getByTestId("datetime")).toHaveValue("15/10/26 15:32");
   });
 
   it("auto-inserts separators (slashes, space, colon) and emits the full ISO value", () => {

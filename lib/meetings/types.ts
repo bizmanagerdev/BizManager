@@ -67,6 +67,8 @@ export type MeetingTask = {
   assignedUserId: string | null;
   assigneeName: string | null;
   dueDate: string | null;
+  /** "HH:MM" it's due at, when one was chosen. */
+  dueTime: string | null;
 };
 
 // ── The week's numbers ──────────────────────────────────────────────────────

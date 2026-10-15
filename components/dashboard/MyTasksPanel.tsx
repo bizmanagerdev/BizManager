@@ -18,7 +18,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { CountBadge } from "@/components/ui/count-badge";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { cn } from "@/lib/utils";
-import { formatShortDate } from "@/lib/date";
+import { formatDateWithTime, formatShortDate } from "@/lib/date";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import type { DashboardTask } from "@/lib/dashboard/tasks-overview";
 import { t } from "@/lib/i18n/t";
@@ -170,10 +170,18 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
     });
   }
 
+  // The due day with its hour when one was chosen ("היום 15:00", "14/10/26 09:30")
+  // — owner, 2026-10-15: "see exactly when".
   function dueLabel(task: DashboardTask) {
-    if (task.overdue) return `${t(dashboardDict, locale, "lateLabel")} · ${formatShortDate(task.due_date)}`;
-    if (task.due_date?.slice(0, 10) === today) return t(dashboardDict, locale, "tabToday");
-    if (task.due_date) return formatShortDate(task.due_date);
+    if (task.overdue) {
+      return `${t(dashboardDict, locale, "lateLabel")} · ${formatDateWithTime(task.due_date, task.due_time)}`;
+    }
+    if (task.due_date?.slice(0, 10) === today) {
+      const hour = /^(\d{1,2}):(\d{2})/.exec(task.due_time ?? "");
+      const label = t(dashboardDict, locale, "tabToday");
+      return hour ? `${label} ${hour[1].padStart(2, "0")}:${hour[2]}` : label;
+    }
+    if (task.due_date) return formatDateWithTime(task.due_date, task.due_time);
     return STATUS_LABEL[task.status ?? ""] ?? "";
   }
 

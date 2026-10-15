@@ -6,6 +6,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { OptionRow } from "@/components/ui/option-row";
 import { toHebrewError } from "@/lib/error-messages";
+import { formatShortDate } from "@/lib/date";
 import {
   findLedgerCandidates,
   linkDocumentToLedger,
@@ -119,7 +120,9 @@ export default function LinkDocumentToLedgerDialog({
               <OptionRow
                 key={`${row.entityType}-${row.id}`}
                 label={row.label}
-                sub={[row.entityType === "expense" ? "הוצאה" : "תשלום", row.date, formatAmount(row.amount)]
+                // row.date is the picked day as stored — a full timestamptz
+                // ("2026-10-14T00:00:00+00:00") that showed raw here.
+                sub={[row.entityType === "expense" ? "הוצאה" : "תשלום", row.date ? formatShortDate(row.date) : null, formatAmount(row.amount)]
                   .filter(Boolean)
                   .join(" · ")}
                 selected={selected?.id === row.id && selected?.entityType === row.entityType}

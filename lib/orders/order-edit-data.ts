@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { toHebrewError } from "@/lib/error-messages";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { attachProductStock } from "@/lib/orders/productStock";
@@ -76,7 +77,14 @@ export type OrderEditData = {
     reference_number: string;
     notes: string;
   }[];
-  deliveryImages: { id: string; file_name: string | null; uploaded_at: string | null; url: string | null }[];
+  deliveryImages: {
+    id: string;
+    file_name: string | null;
+    uploaded_at: string | null;
+    /** Who added the photo (documents.uploaded_by), as a name. */
+    uploaded_by_name: string | null;
+    url: string | null;
+  }[];
 };
 
 /**
@@ -274,8 +282,18 @@ async function signedDeliveryImages(supabase: SupabaseClient, deliveryLinks: Row
 
   const { data: deliveryDocuments } =
     deliveryDocumentIds.length > 0
-      ? await supabase.from("documents").select("id,file_name,storage_key,uploaded_at,document_type").in("id", deliveryDocumentIds)
+      ? await supabase
+          .from("documents")
+          .select("id,file_name,storage_key,uploaded_at,uploaded_by,document_type")
+          .in("id", deliveryDocumentIds)
       : { data: [] as Row[] };
+  // Who added each photo, by name (owner, 2026-10-15: when and by whom).
+  const uploaderNamesRead = resolveUserDisplayNamesForValues(
+    supabase,
+    ((deliveryDocuments ?? []) as Row[])
+      .map((row) => getString(row, ["uploaded_by"]))
+      .filter((value): value is string => Boolean(value))
+  );
 
   const deliveryDocumentMap = new Map<string, Row>();
   ((deliveryDocuments ?? []) as Row[]).forEach((row) => {
@@ -283,27 +301,36 @@ async function signedDeliveryImages(supabase: SupabaseClient, deliveryLinks: Row
     if (documentId) deliveryDocumentMap.set(documentId, row);
   });
 
-  const deliveryImages = await Promise.all(
-    deliveryLinks.map(async (link) => {
-      const documentId = getString(link, ["document_id"]);
-      if (!documentId) return null;
+  const [uploaderNames, deliveryImages] = await Promise.all([
+    uploaderNamesRead,
+    Promise.all(
+      deliveryLinks.map(async (link) => {
+        const documentId = getString(link, ["document_id"]);
+        if (!documentId) return null;
 
-      const row = deliveryDocumentMap.get(documentId);
-      if (!row) return null;
-      if (getString(row, ["document_type"]) !== "order_delivery_image") return null;
+        const row = deliveryDocumentMap.get(documentId);
+        if (!row) return null;
+        if (getString(row, ["document_type"]) !== "order_delivery_image") return null;
 
-      const storageKey = getString(row, ["storage_key"]);
-      const { data: signed } = storageKey
-        ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storageKey, 60 * 60)
-        : { data: null };
+        const storageKey = getString(row, ["storage_key"]);
+        const { data: signed } = storageKey
+          ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storageKey, 60 * 60)
+          : { data: null };
 
-      return {
-        id: documentId,
-        file_name: getString(row, ["file_name"]),
-        uploaded_at: getString(row, ["uploaded_at"]) ?? getString(link, ["created_at"]),
-        url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
-      };
-    })
-  );
-  return deliveryImages.filter((row): row is NonNullable<typeof row> => Boolean(row));
+        return {
+          id: documentId,
+          file_name: getString(row, ["file_name"]),
+          uploaded_at: getString(row, ["uploaded_at"]) ?? getString(link, ["created_at"]),
+          uploadedBy: getString(row, ["uploaded_by"]),
+          url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
+        };
+      })
+    ),
+  ]);
+  return deliveryImages
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .map(({ uploadedBy, ...image }) => ({
+      ...image,
+      uploaded_by_name: uploadedBy ? uploaderNames[uploadedBy] ?? null : null,
+    }));
 }

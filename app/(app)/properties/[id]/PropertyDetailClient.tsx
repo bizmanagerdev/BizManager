@@ -39,6 +39,7 @@ import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { paymentRecordStatusLabel } from "@/lib/payments";
 import { appendDictatedText } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
+import { formatDateWithTime, formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   depositTypeLabel,
   leaseStatusLabel,
@@ -74,11 +75,15 @@ const TaskUpsertDialog = dynamic(
   { loading: () => null }
 );
 
+// Israel's calendar, not the device's: a date-only "2026-10-14" through
+// `new Date()` + Intl is UTC midnight, the 13th on a phone abroad.
 function fmtDate(value: string | null) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value.slice(0, 10);
-  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+  return formatShortDate(value, "");
+}
+
+/** For real moments (a file's upload) — the day and the hour (owner, 2026-10-15). */
+function fmtDateTime(value: string | null) {
+  return formatShortDateTime(value, "");
 }
 
 /** `long` = free text (description/notes) — rendered label-above-value, wrapping
@@ -1162,7 +1167,7 @@ export default function PropertyDetailClient({
                 <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="font-medium">{t.subject || "משימה"}</div>
-                    <div className="text-xs text-muted-foreground">{fmtDate(t.dueDate) || "—"}</div>
+                    <div className="text-xs text-muted-foreground">{formatDateWithTime(t.dueDate, t.dueTime, "—")}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
@@ -1258,7 +1263,7 @@ export default function PropertyDetailClient({
                     hideName
                     previewClassName="h-28"
                     imageSizes="(max-width: 640px) 50vw, 200px"
-                    date={fmtDate(photo.uploadedAt)}
+                    date={fmtDateTime(photo.uploadedAt)}
                     onDelete={() => setDel({ kind: "document", id: photo.id, label: photo.title || "תמונה" })}
                     deleteLabel="מחיקת תמונה"
                   />
@@ -1292,7 +1297,7 @@ export default function PropertyDetailClient({
                   name={d.title || d.fileName || "מסמך"}
                   fileName={d.fileName}
                   url={d.url}
-                  meta={<MetaRow as="span" items={[d.documentType, fmtDate(d.uploadedAt)]} fallback="—" />}
+                  meta={<MetaRow as="span" items={[d.documentType, fmtDateTime(d.uploadedAt)]} fallback="—" />}
                   onDelete={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })}
                   deleteLabel="מחיקת מסמך"
                 />

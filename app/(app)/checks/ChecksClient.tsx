@@ -21,7 +21,7 @@ import type { Account } from "@/lib/accounts";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { checkStatusClasses, checkStatusLabel, type CheckRow } from "@/lib/checks";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
@@ -397,6 +397,19 @@ function DueCell({ c, today }: { c: CheckRow; today: string }) {
   );
 }
 
+// The day the check was received (a picked day) — under its פירעון date.
+function ReceivedLine({ c }: { c: CheckRow }) {
+  if (!c.payment_date) return null;
+  return <div className="text-[11px] text-muted-foreground/70">התקבל {formatShortDate(c.payment_date)}</div>;
+}
+
+// When it was marked deposited, to the minute (owner, 2026-10-15: "see exactly
+// when things happen") — cleared_at is the moment the status flipped.
+function DepositedLine({ c }: { c: CheckRow }) {
+  if (c.status !== "cleared" || !c.cleared_at) return null;
+  return <div className="text-[11px] text-muted-foreground/70">הופקד {formatShortDateTime(c.cleared_at)}</div>;
+}
+
 function PhotoCell({ c }: { c: CheckRow }) {
   if (!c.photo_url) return <span className="text-muted-foreground/40">—</span>;
   // Opens as it did; הורדה follows it on hover (owner, 2026-10-12).
@@ -480,9 +493,11 @@ function CheckRowDesktop({
       <td className="px-3 py-2 text-center font-semibold">{formatCurrency(c.amount)}</td>
       <td className="px-3 py-2">
         <DueCell c={c} today={today} />
+        <ReceivedLine c={c} />
       </td>
       <td className="px-3 py-2">
         <Badge className={checkStatusClasses(c.status)}>{checkStatusLabel(c.status)}</Badge>
+        <DepositedLine c={c} />
       </td>
       <td className="px-3 py-2 text-xs">
         <SourceLink c={c} />
@@ -537,6 +552,12 @@ function CheckCard({
         <SourceLink c={c} />
         <PhotoCell c={c} />
       </div>
+      {c.payment_date || (c.status === "cleared" && c.cleared_at) ? (
+        <div className="mt-1 flex flex-wrap gap-x-3">
+          <ReceivedLine c={c} />
+          <DepositedLine c={c} />
+        </div>
+      ) : null}
       <div className="mt-2 border-t border-border/50 pt-2">
         <ActionCell c={c} busy={busy} onSetCleared={onSetCleared} onEdit={onEdit} onDeleteRequest={onDeleteRequest} />
       </div>

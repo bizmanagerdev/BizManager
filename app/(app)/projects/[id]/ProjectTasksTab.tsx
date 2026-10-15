@@ -40,7 +40,7 @@ import { offlineUpload } from "@/lib/offline-upload";
 import { uploadTogether } from "@/lib/upload-together";
 import { scheduleDeferredAction, registerReversibleCreate } from "@/lib/undo-engine";
 import { toHebrewError } from "@/lib/error-messages";
-import { formatShortDate } from "@/lib/date";
+import { formatDateWithTime } from "@/lib/date";
 import { getStatusDotClasses } from "@/lib/ui/status-color-classes";
 import {
   getTaskPriorityColor,
@@ -79,8 +79,9 @@ function getFirstDate(row: Record<string, unknown> | null, keys: string[]) {
   return null;
 }
 
-function formatDate(value: string | null) {
-  return formatShortDate(value, "—");
+// The due day plus the hour chosen for it ("14/10/26 09:30"), or just the day.
+function formatDue(row: Record<string, unknown>, due: string) {
+  return formatDateWithTime(due, getString(row, "due_time"), "—");
 }
 
 function taskStatusLabel(status: TaskStatus | string) {
@@ -578,7 +579,7 @@ export function ProjectTasksTab({
                           <div>
                             יעד:{" "}
                             <span className="text-foreground">
-                              {due ? formatDate(due) : "—"}
+                              {due ? formatDue(t, due) : "—"}
                             </span>
                           </div>
                           <div>
@@ -670,7 +671,7 @@ export function ProjectTasksTab({
                             )}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {due ? formatDate(due) : "—"}
+                            {due ? formatDue(t, due) : "—"}
                           </td>
                           <td className="px-3 py-2">{assignee ? assignee : "—"}</td>
                           <td className="px-3 py-2 whitespace-nowrap">

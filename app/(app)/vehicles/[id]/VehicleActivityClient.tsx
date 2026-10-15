@@ -38,6 +38,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import type { EditingExpenseData } from "@/components/expenses/ExpenseDialog";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
+import { formatDateWithTime, formatShortDate, formatShortDateTime } from "@/lib/date";
 import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
 import { formatCurrency } from "@/lib/payroll";
 import {
@@ -105,11 +106,10 @@ function RowActionsMenu({
   );
 }
 
+// Israel's calendar, not the device's: a date-only "2026-10-14" through
+// `new Date()` + Intl is UTC midnight, the 13th on a phone abroad.
 function fmtDate(value: string | null) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value.slice(0, 10);
-  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+  return formatShortDate(value, "");
 }
 
 // Groups documents by the year they're FOR (refYear — e.g. a 2026 טסט
@@ -169,7 +169,7 @@ function DocumentYearGroup({
                   <DocumentRowThumb doc={d} />
                   <div className="min-w-0 text-sm">
                     <div className="font-medium">{d.documentType || d.title || "מסמך"}</div>
-                    <div className="text-xs text-muted-foreground">{fmtDate(d.uploadedAt) || "—"}</div>
+                    <div className="text-xs text-muted-foreground">{formatShortDateTime(d.uploadedAt, "—")}</div>
                     {d.fileName ? (
                       // `dir="ltr"` isolates the filename from the surrounding RTL
                       // flow — without it a ".pdf"/".jpeg" extension can land
@@ -682,7 +682,7 @@ export default function VehicleActivityClient({
                       <div className={cn("font-medium", done && "text-muted-foreground line-through")}>
                         {t.subject || "משימה"}
                       </div>
-                      <div className="text-xs text-muted-foreground">{fmtDate(t.dueDate) || "—"}</div>
+                      <div className="text-xs text-muted-foreground">{formatDateWithTime(t.dueDate, t.dueTime, "—")}</div>
                     </div>
                     <Badge variant="outline" className="shrink-0">{taskStatusLabel(t.status)}</Badge>
                   </div>

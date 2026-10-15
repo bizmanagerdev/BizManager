@@ -11,6 +11,7 @@ import { MetaRow } from "@/components/ui/meta-row";
 import { updateProperty } from "../actions";
 import { PropertyPurchaseFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
 import { formatCurrency } from "@/lib/payroll";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { Property, PropertyDocument } from "@/lib/properties";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 
@@ -49,11 +50,10 @@ function buildPurchasePatch(input: PropertyInput): Partial<Property> {
   };
 }
 
+// Israel's calendar, not the device's (a date-only value through `new Date()`
+// is UTC midnight — the previous day on a phone abroad).
 function fmtDate(value: string | null) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value.slice(0, 10);
-  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+  return formatShortDate(value, "");
 }
 
 /** "רכישת הנכס" — seller/date/price/tax/land-registry, edited in place (no popup). */
@@ -198,7 +198,7 @@ export default function PropertyPurchaseCard({
                 name={d.title || d.fileName || "מסמך"}
                 fileName={d.fileName}
                 url={d.url}
-                meta={<MetaRow as="span" items={[d.documentType, fmtDate(d.uploadedAt)]} fallback="—" />}
+                meta={<MetaRow as="span" items={[d.documentType, formatShortDateTime(d.uploadedAt, "")]} fallback="—" />}
                 onDelete={() => onDeleteDocument(d.id, d.title || "מסמך")}
                 deleteLabel="מחיקת מסמך"
               />

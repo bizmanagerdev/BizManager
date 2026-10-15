@@ -3,6 +3,9 @@ import {
   formatShortDate,
   formatShortDateTime,
   formatTimeOnly,
+  formatDateWithTime,
+  formatDayOrDateTime,
+  formatEnteredLabel,
   getDueUrgency,
   dueUrgencyChipClass,
   dueUrgencyTextClass,
@@ -40,6 +43,44 @@ describe("formatShortDateTime", () => {
   });
   it("falls back to '-' for null", () => {
     expect(formatShortDateTime(null)).toBe("-");
+  });
+});
+
+describe("formatDateWithTime", () => {
+  it("adds the chosen hour to the day", () => {
+    expect(formatDateWithTime("2026-10-14", "09:30")).toBe("14/10/26 09:30");
+    expect(formatDateWithTime("2026-10-14", "9:05:00")).toBe("14/10/26 09:05");
+  });
+  it("a day stored as a timestamp keeps its own day and never shows its midnight", () => {
+    expect(formatDateWithTime("2026-10-14T00:00:00+00:00", null)).toBe("14/10/26");
+  });
+  it("no hour, or no day, falls back cleanly", () => {
+    expect(formatDateWithTime("2026-10-14", "")).toBe("14/10/26");
+    expect(formatDateWithTime(null, "09:30")).toBe("-");
+  });
+});
+
+describe("formatDayOrDateTime", () => {
+  it("a day picked without an hour (midnight UTC, or a bare date) shows the day only", () => {
+    expect(formatDayOrDateTime("2026-10-14T00:00:00+00:00")).toBe("14/10/26");
+    expect(formatDayOrDateTime("2026-10-14")).toBe("14/10/26");
+  });
+  it("a real moment shows day and hour in Israel time", () => {
+    expect(formatDayOrDateTime("2026-10-14T09:12:45.120Z")).toBe("14/10/26 12:12");
+  });
+  it("falls back when empty", () => {
+    expect(formatDayOrDateTime(null, "—")).toBe("—");
+  });
+});
+
+describe("formatEnteredLabel", () => {
+  it("names who and when, in Israel time", () => {
+    expect(formatEnteredLabel("יענקי", "2026-10-14T12:32:00Z")).toBe("הוזן ע״י יענקי · 14/10/26 15:32");
+  });
+  it("either part alone, or null when both are missing", () => {
+    expect(formatEnteredLabel("יענקי", null)).toBe("הוזן ע״י יענקי");
+    expect(formatEnteredLabel(null, "2026-10-14T12:32:00Z")).toBe("הוזן 14/10/26 15:32");
+    expect(formatEnteredLabel("  ", undefined)).toBeNull();
   });
 });
 

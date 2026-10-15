@@ -36,7 +36,7 @@ import PositionPanel from "@/app/(app)/financial/reports/PositionPanel";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
 import type { DomainProofMap } from "@/lib/financial/domainProof";
-import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
+import { formatEnteredLabel, formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import { appendDictatedText } from "@/lib/dictation";
 import {
   getBusinessDomainLabel,
@@ -213,10 +213,15 @@ function createIncomeFormState(): IncomeCreateFormState {
 }
 
 // Who put this row in: a person, or the recurring rule that generated it (a
-// generated bill carries no recordedByName — see buildExpenseEntries).
+// generated bill carries no recordedByName — see buildExpenseEntries) — and
+// when, from the row's created_at (owner, 2026-10-15: "see exactly when things
+// happen"). The row's own date stays the day the money moved.
 function recordedByLabel(entry: FinancialEntry): string | null {
-  if (entry.recordedByName) return `הוזן ע"י ${entry.recordedByName}`;
-  return entry.expenseRecurringTemplateId ? "נוצר אוטומטית" : null;
+  if (!entry.recordedByName && entry.expenseRecurringTemplateId) {
+    const when = formatShortDateTime(entry.createdAt, "");
+    return when ? `נוצר אוטומטית · ${when}` : "נוצר אוטומטית";
+  }
+  return formatEnteredLabel(entry.recordedByName, entry.createdAt);
 }
 
 function setOrDelete(params: URLSearchParams, key: string, value: string | number | null | undefined) {
@@ -2519,6 +2524,8 @@ export default function FinancialPageClient({
           project_id: activeEditingExpense.expenseProjectId,
           order_id: activeEditingExpense.expenseOrderId,
           property_id: activeEditingExpense.expensePropertyId,
+          created_at: activeEditingExpense.createdAt ?? null,
+          recorded_by_name: activeEditingExpense.recordedByName,
         } : null}
         editingSourceLabel={activeEditingExpense?.sourceLabel ?? null}
         lockedProjectId={activeEditingExpense?.expenseProjectId}

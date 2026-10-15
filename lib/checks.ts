@@ -18,6 +18,9 @@ export type CheckRow = {
   due_date: string | null;
   /** When the check was recorded. */
   payment_date: string | null;
+  /** When it was marked deposited (payments.cleared_at, a real instant kept by
+   *  trg_set_payment_cleared_at); null while it hasn't cleared. */
+  cleared_at: string | null;
   status: CheckStatus;
   customer_id: string | null;
   customer_name: string;
@@ -86,7 +89,7 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
   const { data, error } = await supabase
     .from("payments")
     .select(
-      "id,amount_total,due_date,payment_date,payment_status,check_number,order_id,project_id,notes,account_id,reference_number,requires_split"
+      "id,amount_total,due_date,payment_date,payment_status,cleared_at,check_number,order_id,project_id,notes,account_id,reference_number,requires_split"
     )
     .eq("payment_method", "check")
     .range(0, 999);
@@ -228,6 +231,7 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       amount: toNum(row.amount_total),
       due_date: str(row, "due_date"),
       payment_date: str(row, "payment_date"),
+      cleared_at: str(row, "cleared_at"),
       status: normalizeCheckStatus(str(row, "payment_status")),
       customer_id: customerId,
       customer_name: cust?.name ?? "לקוח",

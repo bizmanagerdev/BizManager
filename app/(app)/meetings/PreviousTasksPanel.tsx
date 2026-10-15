@@ -6,18 +6,12 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { CheckIcon, PendingIcon } from "@/components/ui/icons";
 import { isTaskSettled } from "@/lib/meetings/load";
 import { cn } from "@/lib/utils";
+import { formatDateWithTime } from "@/lib/date";
 import type { MeetingTask } from "@/lib/meetings/types";
 
 // Agenda item 0's body: the commitments made at the LAST meeting and what
 // actually became of them. Auto-filled — there is nothing here to tick, the
 // tasks' own statuses are the answer.
-
-function formatDue(iso: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", timeZone: "Asia/Jerusalem" });
-}
 
 export function PreviousTasksPanel({
   tasks,
@@ -64,7 +58,8 @@ export function PreviousTasksPanel({
       <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
         {[...open, ...settled].map((task) => {
           const done = isTaskSettled(task.status);
-          const due = formatDue(task.dueDate);
+          // The due day with its hour when one was chosen (owner, 2026-10-15).
+          const due = formatDateWithTime(task.dueDate, task.dueTime, "");
           return (
             <li key={task.taskId}>
               <Link

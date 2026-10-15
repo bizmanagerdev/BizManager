@@ -53,11 +53,14 @@ export function viewerHour(date: Date = new Date(), timeZone = DEFAULT_TIME_ZONE
  * doesn't shrink, it spills; inside the card the line has room to wrap.
  */
 export function formatToday(date: Date, locale: Locale = "he"): string {
+  // Israel's day — the schedule under it is Israel's, and the server (UTC) would
+  // otherwise print yesterday until 03:00.
   return new Intl.DateTimeFormat(locale === "ar" ? "ar" : "he-IL", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
+    timeZone: DEFAULT_TIME_ZONE,
   }).format(date);
 }
 

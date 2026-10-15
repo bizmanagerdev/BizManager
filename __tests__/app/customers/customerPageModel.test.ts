@@ -43,7 +43,7 @@ function receivable(overrides: Partial<CustomerReceivable>): CustomerReceivable 
 }
 
 function payment(id: string, date: string | null, status = "cleared"): CustomerPaymentRow {
-  return { id, date, method: null, status, dueDate: null, checkNumber: null, amount: 1, source: null };
+  return { id, date, method: null, status, dueDate: null, checkNumber: null, createdAt: null, amount: 1, source: null };
 }
 
 describe("the money summary", () => {

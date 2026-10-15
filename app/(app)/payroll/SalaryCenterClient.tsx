@@ -128,6 +128,7 @@ import {
   toDateTimeLocalValue,
 } from "./SalaryCenterUi";
 import { buildWorkerSummaryPrintDocument, openWorkerSummaryPrintWindow } from "@/lib/payroll/workerSummaryPrint";
+import { formatEnteredLabel } from "@/lib/date";
 import { israelDateKey, israelParts } from "@/lib/timezone";
 
 const DEFAULT_SESSION_FORM: SessionFormState = {
@@ -2318,11 +2319,8 @@ export default function SalaryCenterClient({
           : workerPrintFilters.year
             ? `כל השנה ${workerPrintFilters.year}`
             : `כל ${workerPrintFilters.month}/*`;
-    const generatedAt = new Date();
-    const generatedLabel = `${formatDate(generatedAt.toISOString())} ${generatedAt.toLocaleTimeString("he-IL", {
-      hour: "2-digit",
-      minute: "2-digit",
-    })}`;
+    // Israel's clock, not the device's — a computer on another zone printed the wrong hour.
+    const generatedLabel = formatDateTime(new Date().toISOString());
     const workRowData = selectedWorkerPrintSessions.map((session) => {
       const workedAt = getSessionLinkLabel(session, projectLabelsById, propertyLabelsById);
       const startDateValue = new Date(session.clock_in);
@@ -4155,11 +4153,17 @@ export default function SalaryCenterClient({
                                 </div>
                               </div>
                               {payment.notes ? <div className="mt-1 text-xs text-muted-foreground">{payment.notes}</div> : null}
-                              {workerPaymentRecordedByNameById[payment.id] ? (
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  {`הוזן ע״י ${workerPaymentRecordedByNameById[payment.id]}`}
-                                </div>
-                              ) : null}
+                              {/* Who entered it and the moment it was saved — payment_date
+                                  above is the day it's for, picked by hand. */}
+                              {(() => {
+                                const entered = formatEnteredLabel(
+                                  workerPaymentRecordedByNameById[payment.id],
+                                  payment.created_at
+                                );
+                                return entered ? (
+                                  <div className="mt-1 text-xs text-muted-foreground">{entered}</div>
+                                ) : null;
+                              })()}
                             </div>
                           ))
                         )}
@@ -4677,7 +4681,15 @@ export default function SalaryCenterClient({
                                 <tbody className="divide-y">
                                   {selectedWorkerPrintSessions.map((session) => (
                                     <tr key={session.id}>
-                                      <td className="px-2 py-2 whitespace-nowrap">{formatDate(session.clock_in)}</td>
+                                      {/* The clock-in hour too when his hours count; a per-session
+                                          worker's day is all there is. */}
+                                      <td className="px-2 py-2 whitespace-nowrap">
+                                        <span dir="ltr">
+                                          {shouldShowSessionHours(selectedWorkerType)
+                                            ? formatDateTime(session.clock_in)
+                                            : formatDate(session.clock_in)}
+                                        </span>
+                                      </td>
                                       <td className="px-2 py-2 whitespace-nowrap">{formatMinutes(sessionWorkedMinutes(session))}</td>
                                       <td className="px-2 py-2">{getSessionLinkLabel(session, projectLabelsById, propertyLabelsById)}</td>
                                       <td className="px-2 py-2 whitespace-nowrap">{formatCurrency(sessionCostsById.get(session.id) ?? 0)}</td>

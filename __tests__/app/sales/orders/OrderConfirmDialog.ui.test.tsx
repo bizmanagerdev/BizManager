@@ -1137,11 +1137,32 @@ describe("delivery details", () => {
     expect(sentPayload().delivery_date).toBe("2020-01-15");
   });
 
-  it("today's delivery date is sent when nothing is changed", async () => {
+  // Confirmed on the day itself with no hour typed: the moment the button was
+  // pressed is what's stored (owner, 2026-10-15: "when the delivery was delivered").
+  function expectPressedJustNow(sent: unknown) {
+    expect(typeof sent).toBe("string");
+    const at = new Date(sent as string).getTime();
+    expect(Math.abs(Date.now() - at)).toBeLessThan(60_000);
+    expect(israelDateKey(new Date(at))).toBe(israelDateKey());
+  }
+
+  it("today's delivery is sent as the moment of confirming when nothing is changed", async () => {
     await openOnItems();
     await straightToReview();
     await confirmDelivery();
-    expect(sentPayload().delivery_date).toBe(israelDateKey());
+    expectPressedJustNow(sentPayload().delivery_date);
+  });
+
+  it("an earlier day with an hour typed in is sent as that moment on Israel's clock", async () => {
+    await openOnItems();
+    await next("האם נגבה תשלום במסירה?");
+    await next("מתי סופק?");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "15/01/20" } });
+    fireEvent.change(screen.getByLabelText("שעה"), { target: { value: "09:30" } });
+    await deliveryDateToReview();
+    await confirmDelivery();
+    // January: Israel is UTC+2.
+    expect(sentPayload().delivery_date).toBe("2020-01-15T07:30:00.000Z");
   });
 
   it("a cleared delivery date isn't demanded — today's is sent", async () => {
@@ -1151,7 +1172,7 @@ describe("delivery details", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "" } });
     await deliveryDateToReview();
     await confirmDelivery();
-    expect(sentPayload().delivery_date).toBe(israelDateKey());
+    expectPressedJustNow(sentPayload().delivery_date);
   });
 
   describe("photos", () => {
@@ -1427,7 +1448,7 @@ describe("confirming", () => {
       order_date: "2026-10-05",
       status: "delivered",
       payment_status: "unpaid",
-      delivery_date: israelDateKey(),
+      delivery_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       discount_amount: 0,
       notes: EXISTING_NOTE,
       items: [

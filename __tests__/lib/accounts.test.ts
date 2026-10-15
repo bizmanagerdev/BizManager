@@ -683,6 +683,36 @@ describe("loadAccountsOverview — running balance & register", () => {
     expect(byId["w:w1"].href).toBe("/payroll/workers/u1");
   });
 
+  it("carries when each row was entered and by whom, from created_at + recorded_by/created_by", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        payments: [
+          {
+            id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "collected",
+            created_at: "2024-02-01T12:32:00Z", recorded_by: "u2",
+          },
+        ],
+        loans: [
+          {
+            id: "l1", account_id: "acc1", direction: "taken", loan_date: "2024-02-05", amount: 1000,
+            created_at: "2024-02-05T08:00:00Z", created_by: "u2",
+          },
+        ],
+        account_transfers: [
+          { id: "t1", from_account_id: "acc1", to_account_id: "other", amount: 50, transfer_date: "2024-02-06" },
+        ],
+        users: [{ id: "u2", full_name: "רחל" }],
+      })
+    );
+
+    const byId = Object.fromEntries(overview.ledger.map((l) => [l.id, l]));
+    expect(byId["p:p1"]).toMatchObject({ enteredAt: "2024-02-01T12:32:00Z", enteredByName: "רחל" });
+    expect(byId["l:l1"]).toMatchObject({ enteredAt: "2024-02-05T08:00:00Z", enteredByName: "רחל" });
+    // No created_at / creator on the source row → nothing to show, not a guess.
+    expect(byId["t:t1:out"]).toMatchObject({ enteredAt: null, enteredByName: null });
+  });
+
   it("shows the business domain on every applicable row, plus the property/project only when the domain matches", async () => {
     const [overview] = await loadAccountsOverview(
       makeSupabase({

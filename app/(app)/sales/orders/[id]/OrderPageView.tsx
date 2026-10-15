@@ -22,7 +22,7 @@ import type { PaymentItem } from "@/app/(app)/sales/orders/OrderPaymentActionsCl
 import { splitPaymentAmounts, orderCollectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection, isOpenOrderStatus } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
-import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
+import { formatDayOrDateTime, formatEnteredLabel, formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { OrderPageCore } from "@/lib/orders/order-page";
 import type { OrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPageExtras";
 import { israelDateKey } from "@/lib/timezone";
@@ -78,19 +78,22 @@ function paymentInsertedByLabel(
     paymentAuditById: OrderPageExtras["paymentAudit"];
   }
 ) {
+  // Who AND when it was typed in — payments.created_at, not the payment's own
+  // day (owner, 2026-10-15: "see exactly when things happen").
   const recordedByValue = getString(payment, "recorded_by");
   if (recordedByValue && paymentRecordedByNameByValue[recordedByValue]) {
-    return `הוזן ע"י ${paymentRecordedByNameByValue[recordedByValue]}`;
+    return formatEnteredLabel(paymentRecordedByNameByValue[recordedByValue], getString(payment, "created_at"));
   }
 
   const paymentId = getString(payment, "id");
-  if (!paymentId) return null;
-  const audit = paymentAuditById[paymentId];
+  const audit = paymentId ? paymentAuditById[paymentId] : undefined;
   if (audit?.action === "create") {
-    return `הוזן ע"י ${audit.actorName}${audit.createdAt ? ` | ${formatDateTime(audit.createdAt)}` : ""}`;
+    return formatEnteredLabel(audit.actorName, audit.createdAt ?? getString(payment, "created_at"));
   }
 
-  return null;
+  // No name known (yet — the history arrives with the server's parts): the
+  // time alone, so the line is already there and only gains the name.
+  return formatEnteredLabel(null, getString(payment, "created_at"));
 }
 
 function formatAddressForDisplay(address: string | null) {
@@ -135,6 +138,9 @@ export default function OrderPageView({
   const customerId = order && typeof order.customer_id === "string" ? order.customer_id : null;
   const orderCreatedBy = getString(order ?? {}, "created_by");
   const orderCreatedByName = orderCreatedBy ? paymentRecordedByNameByValue[orderCreatedBy] ?? null : null;
+  // When the order was really typed in (created_at), beside the day it is FOR
+  // (order_date, a picked day) — owner, 2026-10-15.
+  const orderEnteredLabel = formatEnteredLabel(orderCreatedByName, getString(order ?? {}, "created_at"));
 
   const productMap = new Map<string, Row>();
   core.products.forEach((row) => {
@@ -351,16 +357,21 @@ export default function OrderPageView({
               details={[
                 {
                   label: "תאריך הזמנה",
-                  value: `${formatDate(orderDate)}${
-                    formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""
-                  }`,
+                  value: (
+                    <>
+                      {formatDate(orderDate)}
+                      {formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""}
+                      {orderEnteredLabel ? (
+                        <span className="block font-normal text-muted-foreground">{orderEnteredLabel}</span>
+                      ) : null}
+                    </>
+                  ),
                 },
                 ...(orderRequestedDeliveryDate
                   ? [{ label: "תאריך אספקה מבוקש", value: formatDate(orderRequestedDeliveryDate) }]
                   : []),
                 { label: "פריטים", value: `${orderItems.length} (${totalUnits} יחידות)` },
-                ...(orderDeliveryConfirmedAt ? [{ label: "אספקה אושרה", value: formatDate(orderDeliveryConfirmedAt) }] : []),
-                ...(orderCreatedByName ? [{ label: 'הוזן ע"י', value: orderCreatedByName }] : []),
+                ...(orderDeliveryConfirmedAt ? [{ label: "אספקה אושרה", value: formatDayOrDateTime(orderDeliveryConfirmedAt) }] : []),
               ]}
               action={
                 needsDeliveryAction ? (
@@ -459,7 +470,7 @@ export default function OrderPageView({
                   variant="text"
                 />
               }
-              details={orderInvoiceSentAt ? [{ label: "תאריך הנפקה", value: formatDate(orderInvoiceSentAt) }] : undefined}
+              details={orderInvoiceSentAt ? [{ label: "תאריך הנפקה", value: formatDateTime(orderInvoiceSentAt) }] : undefined}
             />
           </div>
 

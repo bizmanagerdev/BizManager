@@ -77,6 +77,7 @@ export function paymentRow(id: string, overrides: Partial<CustomerPaymentRow> = 
     status: "cleared",
     dueDate: null,
     checkNumber: null,
+    createdAt: null,
     amount: 100,
     source: { type: "order", id: "o1", label: "" },
     ...overrides,

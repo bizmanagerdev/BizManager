@@ -127,7 +127,7 @@ describe("CustomerDocumentsSection", () => {
     expect(screen.getByText("#o1234567")).toBeInTheDocument();
     expect(screen.getByText("שיפוץ משרד")).toBeInTheDocument();
     expect(screen.getAllByText("חוזה/הסכם")).toHaveLength(2);
-    expect(screen.getAllByText("הועלה 01/10/26")).toHaveLength(3);
+    expect(screen.getAllByText("הועלה 01/10/26 11:00")).toHaveLength(3);
     expect(screen.getByRole("link", { name: "לכל המסמכים (14)" })).toHaveAttribute(
       "href",
       "/documents?customer_id=c1&customer_name=%D7%97%D7%91%D7%A8%D7%AA%20%D7%90%D7%9C%D7%95%D7%9F"

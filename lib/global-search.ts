@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { buildFocusHref } from "@/lib/audit";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { customerMatchesQuery, fuzzyTextMatch, phoneMatchesQuery } from "@/lib/search/customerMatch";
 import {
@@ -280,6 +281,9 @@ export function projectResult(row: Row): GlobalSearchResult | null {
   };
 }
 
+// Dates as the rest of the app shows them, never the raw stored value: a day
+// someone picked (due/order/payment/expense) as the day, a real moment
+// (uploaded_at) with its hour — both on Israel's clock (owner, 2026-10-15).
 export function taskResult(row: Row): GlobalSearchResult | null {
   const id = text(row.task_id) || text(row.id);
   const subject = text(row.subject);
@@ -290,7 +294,7 @@ export function taskResult(row: Row): GlobalSearchResult | null {
     groupLabel: GROUP_LABELS.tasks,
     title: subject,
     subtitle: text(row.project_name) || null,
-    meta: [text(row.status), text(row.priority), text(row.assigned_user_name), text(row.due_date)].filter(Boolean),
+    meta: [text(row.status), text(row.priority), text(row.assigned_user_name), formatShortDate(text(row.due_date), "")].filter(Boolean),
     href: `/tasks/${encodeURIComponent(id)}`,
   };
 }
@@ -304,7 +308,7 @@ export function orderResult(row: Row): GlobalSearchResult | null {
     group: "orders",
     groupLabel: GROUP_LABELS.orders,
     title: customerName ? `${customerName} · #${shortId(id)}` : `הזמנה #${shortId(id)}`,
-    subtitle: text(row.order_date) || null,
+    subtitle: formatShortDate(text(row.order_date), "") || null,
     meta: [text(row.status), text(row.payment_status), formatCurrency(num(row.total_amount))].filter(Boolean) as string[],
     href: `/sales/orders/${encodeURIComponent(id)}`,
   };
@@ -335,7 +339,7 @@ export function documentResult(row: Row): GlobalSearchResult | null {
     groupLabel: GROUP_LABELS.documents,
     title,
     subtitle: text(row.file_name) || null,
-    meta: [text(row.document_type), text(row.uploaded_at)].filter(Boolean),
+    meta: [text(row.document_type), formatShortDateTime(text(row.uploaded_at), "")].filter(Boolean),
     href: buildFocusHref("/documents", id),
   };
 }
@@ -363,7 +367,7 @@ export function paymentResult(row: Row): GlobalSearchResult | null {
     group: "payments",
     groupLabel: GROUP_LABELS.payments,
     title: text(row.notes) || text(row.reference_number) || `תשלום #${shortId(id)}`,
-    subtitle: text(row.payment_date) || null,
+    subtitle: formatShortDate(text(row.payment_date), "") || null,
     meta: [formatCurrency(num(row.amount_total)), text(row.payment_method), text(row.business_domain)].filter(Boolean) as string[],
     href: buildFocusHref("/financial", `payment:${id}`),
   };
@@ -377,7 +381,7 @@ export function expenseResult(row: Row): GlobalSearchResult | null {
     group: "expenses",
     groupLabel: GROUP_LABELS.expenses,
     title: text(row.description) || text(row.category) || `הוצאה #${shortId(id)}`,
-    subtitle: text(row.expense_date) || null,
+    subtitle: formatShortDate(text(row.expense_date), "") || null,
     meta: [formatCurrency(num(row.amount)), text(row.category), text(row.business_domain)].filter(Boolean) as string[],
     href: buildFocusHref("/financial", `expense:${id}`),
   };

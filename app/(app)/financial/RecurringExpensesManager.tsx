@@ -37,6 +37,7 @@ const SOURCE_KINDS = [...OUTFLOW_SOURCE_KINDS, ...INFLOW_SOURCE_KINDS];
 import { buildFixedPaymentRows, summarizeFixedPayments, type FixedPaymentRow } from "@/lib/fixed-payments";
 import { useOutflowSources } from "./useOutflowSources";
 import { useBackfillMissing } from "./useBackfillMissing";
+import { formatShortDate } from "@/lib/date";
 
 const ExpenseDialog = dynamic(
   () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
@@ -147,8 +148,10 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+// lib/date reads a bare day and a stored timestamptz alike as the day; the old
+// slicing assumed the bare "YYYY-MM-DD" shape.
 function fmtDay(iso: string) {
-  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`;
+  return formatShortDate(iso, "");
 }
 
 // The recurring payment timing, NOT a concrete date — a monthly bill leaves on

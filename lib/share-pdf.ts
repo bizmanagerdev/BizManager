@@ -21,7 +21,8 @@ export function escapeHtml(value: string) {
 }
 
 export function sheetGeneratedAt() {
-  return new Intl.DateTimeFormat("he-IL", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+  // Israel's clock, not the device's (owner, 2026-10-15).
+  return new Intl.DateTimeFormat("he-IL", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Jerusalem" }).format(new Date());
 }
 
 /**

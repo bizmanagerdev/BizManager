@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toHebrewError } from "@/lib/error-messages";
-import { formatShortDate } from "@/lib/date";
+import { formatDateWithTime } from "@/lib/date";
 import { getTaskPriorityColor, getTaskPriorityLabel } from "@/lib/ui/status-colors";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
@@ -75,6 +75,8 @@ export default function ProjectTasksMini({
           cancelled: status === "cancelled",
           priority: str(task, ["priority"]),
           dueDate: str(task, ["due_date"]),
+          // The hour chosen for it, when there is one — "14/10/26 09:30".
+          dueTime: str(task, ["due_time"]),
           assignee: str(task, ["assigned_user_name"]),
         };
       }),
@@ -200,7 +202,7 @@ export default function ProjectTasksMini({
                     </span>
                   ) : null}
                   {row.assignee ? <span>{row.assignee}</span> : null}
-                  {row.dueDate ? <span dir="ltr">{formatShortDate(row.dueDate, "—")}</span> : null}
+                  {row.dueDate ? <span dir="ltr">{formatDateWithTime(row.dueDate, row.dueTime, "—")}</span> : null}
                 </span>
               </button>
             </li>

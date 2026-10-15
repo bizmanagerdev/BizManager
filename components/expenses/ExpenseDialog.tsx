@@ -72,6 +72,7 @@ import type { UserRole } from "@/lib/auth/requireProfile";
 import { isImageDocument } from "@/lib/documents";
 import { uploadTogether } from "@/lib/upload-together";
 import { israelDateKey } from "@/lib/timezone";
+import { formatEnteredLabel, formatShortDate, toDateKey } from "@/lib/date";
 
 type PaymentStatus = "paid" | "partial" | "not_paid";
 type PaymentChoice = "none" | "paid" | "partial";
@@ -174,6 +175,12 @@ export type EditingExpenseData = {
   included_in_base_price?: boolean | null;
   bill_to_customer_amount?: number | string | null;
   attachments?: FinancialAttachment[];
+  // Who typed the expense in and when (created_at), for the small "הוזן ע״י …"
+  // line under the edit title. Optional — a caller that doesn't carry them just
+  // gets no line. There is deliberately no "last edited" line: expenses.updated_at
+  // isn't kept current by a trigger, so it would claim a time that isn't true.
+  created_at?: string | null;
+  recorded_by_name?: string | null;
 };
 
 // Edit mode for a RECURRING EXPENSE TEMPLATE (the הוצאות קבועות tab). Turns the
@@ -645,7 +652,11 @@ export function ExpenseDialog({
     } else if (editingExpense) {
       const raw = editingExpense.amount;
       setAmount(typeof raw === "number" ? String(raw) : raw ?? "");
-      setExpenseDate(editingExpense.expense_date || israelDateKey());
+      // expense_date is a timestamptz ("2026-10-15T00:00:00+00:00") holding a
+      // picked day — reduce it to that day's key, or the summary step showed the
+      // raw stamp and the .slice(5, 7)/.slice(8, 10) month/day reads below
+      // depended on the stamp happening to be midnight UTC.
+      setExpenseDate(toDateKey(editingExpense.expense_date) || israelDateKey());
       setPaymentStatus(normalizePaymentStatus(editingExpense.payment_status));
       const rawPaid = editingExpense.paid_amount;
       setPaidAmount(rawPaid != null ? String(rawPaid) : "");
@@ -2442,7 +2453,7 @@ export function ExpenseDialog({
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
                 ...(sourceLabel ? [sourceLabel] : []),
                 ["קטגוריה", finalCategory || "—"],
-                ["תאריך", expenseDate || "—"],
+                ["תאריך", formatShortDate(expenseDate, "—")],
                 ["סטטוס", paymentStatusLabel(paymentStatus)],
               ];
         return (
@@ -2474,6 +2485,12 @@ export function ExpenseDialog({
       : isEditing
         ? "עריכת הוצאה"
         : "הוצאה חדשה";
+  // "הוזן ע״י X · 14/10/26 15:32" under the edit title (owner, 2026-10-15).
+  const enteredLabel =
+    editingExpense && !isEditingTemplate && !isEditingSession
+      ? formatEnteredLabel(editingExpense.recorded_by_name, editingExpense.created_at)
+      : null;
+
   const dialogDescriptionText = isEditingTemplate
     ? "עדכון תבנית ההוצאה הקבועה."
     : isEditingSession
@@ -2570,6 +2587,7 @@ export function ExpenseDialog({
             <div className="min-w-0">
               <DialogTitle>{dialogTitleText}</DialogTitle>
               <DialogDescription>{dialogDescriptionText}</DialogDescription>
+              {enteredLabel ? <div className="mt-0.5 text-[11px] text-muted-foreground/70">{enteredLabel}</div> : null}
             </div>
           </div>
         </DialogHeader>

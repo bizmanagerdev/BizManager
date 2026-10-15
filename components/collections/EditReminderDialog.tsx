@@ -9,15 +9,11 @@ import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import type { Reminder } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
 import { scheduleDeferredEdit } from "@/lib/undo-engine";
+import { israelLocalValueToIso, toIsraelLocalValue } from "@/lib/timezone";
 
-// Convert a stored ISO timestamp to the local "YYYY-MM-DDTHH:mm" value that
-// DateTimeInput expects, so an existing reminder's date AND hour prefill.
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+// The stored instant goes into the editor as Israel wall clock, and back out the
+// same way — the device's clock (getHours/new Date(value)) showed a phone set
+// abroad a different hour than every reminder list, which reads Israel time.
 
 // Reusable "edit reminder" — reschedule, edit content, and reassign (אחראי).
 // Used wherever reminders are managed (collections list, per-customer panel).
@@ -32,7 +28,7 @@ export default function EditReminderDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [remindAt, setRemindAt] = useState(reminder.remind_at ? toLocalInput(reminder.remind_at) : "");
+  const [remindAt, setRemindAt] = useState(reminder.remind_at ? toIsraelLocalValue(reminder.remind_at) : "");
   const [content, setContent] = useState(reminder.content ?? "");
   const [assignee, setAssignee] = useState(reminder.assigned_to ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -42,9 +38,13 @@ export default function EditReminderDialog({
       setError("יש לבחור תאריך ושעה.");
       return;
     }
+    const remindIso = israelLocalValueToIso(remindAt);
+    if (!remindIso) {
+      setError("יש לבחור תאריך ושעה.");
+      return;
+    }
     setError(null);
     const id = reminder.id;
-    const remindIso = new Date(remindAt).toISOString();
     const snapshotContent = content.trim() || null;
     const snapshotAssignee = assignee || null;
     onClose();

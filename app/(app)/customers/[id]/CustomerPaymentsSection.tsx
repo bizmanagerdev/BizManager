@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { MetaRow } from "@/components/ui/meta-row";
 import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
 import { formatMoney } from "@/lib/money";
-import { formatShortDate } from "@/lib/date";
+import { formatEnteredLabel, formatShortDate } from "@/lib/date";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { CountSkeleton, RowsSkeleton, SECTION_IDS } from "@/app/(app)/customers/[id]/customerSectionUi";
 import { OrderRef } from "@/app/(app)/customers/[id]/CustomerOrdersSection";
@@ -57,6 +57,8 @@ function PaymentRowView({ payment }: { payment: CustomerPaymentRow }) {
           items={[
             source?.type === "order" ? <OrderRef key="ref" orderId={source.id} /> : source?.label,
             payment.status === "pending" && payment.dueDate ? `לפירעון ${formatShortDate(payment.dueDate, "—")}` : null,
+            // When it was typed in, beside the day it is for (owner, 2026-10-15).
+            formatEnteredLabel(null, payment.createdAt),
           ]}
         />
       </div>

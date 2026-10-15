@@ -26,7 +26,7 @@ import { registerReversibleAction, scheduleDeferredDelete } from "@/lib/undo-eng
 import { offlineUpload } from "@/lib/offline-upload";
 import { uploadTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
-import { formatShortDate } from "@/lib/date";
+import { formatDayOrDateTime, formatShortDateTime } from "@/lib/date";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
@@ -40,6 +40,8 @@ export type DeliveryImage = {
   id: string;
   file_name: string | null;
   uploaded_at: string | null;
+  /** Who added it (documents.uploaded_by), as a name. */
+  uploaded_by_name: string | null;
   url: string | null;
 };
 
@@ -252,7 +254,7 @@ export default function DeliveryImagesCard({
           instead of through אישור אספקה. */}
       <div className="text-xs text-muted-foreground">
         {deliveryConfirmedAt
-          ? `אספקה אושרה בתאריך ${formatShortDate(deliveryConfirmedAt)}`
+          ? `אספקה אושרה ${formatDayOrDateTime(deliveryConfirmedAt)}`
           : needsDeliveryAction
             ? "האספקה טרם אושרה."
             : `ההזמנה מסומנת כ"${getOrderStatusLabel(orderStatus)}" — לא נרשם תאריך אספקה.`}
@@ -274,7 +276,14 @@ export default function DeliveryImagesCard({
               isImage
               hideName
               previewClassName="h-28"
-              date={formatShortDate(image.uploaded_at)}
+              // When it was added, to the minute, and by whom (owner,
+              // 2026-10-15: "see exactly when things happen").
+              date={formatShortDateTime(image.uploaded_at)}
+              meta={
+                image.uploaded_by_name ? (
+                  <div className="truncate text-xs text-muted-foreground">{image.uploaded_by_name}</div>
+                ) : null
+              }
               onEdit={() => openReplace(image.id)}
               editLabel="החלפת תמונה"
               onDelete={() => openDelete(image)}

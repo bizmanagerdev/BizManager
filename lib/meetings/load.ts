@@ -219,7 +219,7 @@ export async function loadMeetingTasks(
   const itemIds = [...new Set(links.map((l) => str(l, "meeting_item_id")).filter((v): v is string => Boolean(v)))];
 
   const [tasksResult, itemsResult] = await Promise.all([
-    supabase.from("tasks").select("id,subject,status,assigned_user_id,due_date").in("id", taskIds),
+    supabase.from("tasks").select("id,subject,status,assigned_user_id,due_date,due_time").in("id", taskIds),
     itemIds.length > 0
       ? supabase.from("meeting_items").select("id,title").in("id", itemIds)
       : Promise.resolve({ data: [] as Row[] }),
@@ -263,6 +263,7 @@ export async function loadMeetingTasks(
       assignedUserId: assignee,
       assigneeName: assignee ? names.get(assignee) ?? null : null,
       dueDate: str(task, "due_date"),
+      dueTime: str(task, "due_time"),
     });
   }
   // Not-done first: the whole point of item 0 is what is still open.

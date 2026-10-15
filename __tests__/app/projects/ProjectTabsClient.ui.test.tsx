@@ -677,10 +677,10 @@ describe("ProjectTabsClient — תנועות ledger", () => {
     };
 
     // A note that isn't the row's hint, and who recorded it.
-    expect(details("אסמכתא 4411").facts).toEqual(["אמצעי:העברהבנקאית", "אסמכתא:4411", "הערות:מקדמה", "נרשם:הוזןע״ידנה"]);
+    expect(details("אסמכתא 4411").facts).toEqual(["אמצעי:העברהבנקאית", "אסמכתא:4411", "הערות:מקדמה", "נרשם:הוזןע״ידנה·01/09/2611:00"]);
     // A check: its number, when it's due, its photo, and its place on the checks page.
     const check = details("תשלום");
-    expect(check.facts).toEqual(["אמצעי:צ'ק", "מס'צ'ק:1234", "פירעון:01/12/26"]);
+    expect(check.facts).toEqual(["אמצעי:צ'ק", "מס'צ'ק:1234", "פירעון:01/12/26", "נרשם:הוזן01/09/2611:00"]);
     expect(check.links).toEqual([
       ["צילוםהצ׳ק", "https://files.example.test/check.jpg"],
       // Its הורדה glyph right after it (owner, 2026-10-12).

@@ -48,7 +48,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
-import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
+import { dueUrgencyChipClass, formatDateWithTime, formatShortDate, getDueUrgency } from "@/lib/date";
 import type { TaskOption, UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
@@ -451,8 +451,7 @@ const TaskCard = memo(function TaskCard({
               }
             >
               {dueChipClass ? <ClockIcon className="h-[1.1em] w-[1.1em]" /> : null}
-              {formatShortDate(task.due_date)}
-              {task.due_time ? ` ${task.due_time}` : ""}
+              {formatDateWithTime(task.due_date, task.due_time)}
             </span>
           ) : null}
           {task.project_name ? (

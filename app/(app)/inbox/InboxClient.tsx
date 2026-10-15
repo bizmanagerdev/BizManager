@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminders/ReminderFormDialog";
 import { cn } from "@/lib/utils";
+import { formatDayMonth, formatShortDateTime, formatTimeOnly } from "@/lib/date";
+import { israelDateKey, israelLocalValueToIso } from "@/lib/timezone";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
 import { inboxBucket, inboxOrigin, type InboxView, type WorklistItem, type WorklistSeverity } from "@/lib/reminders/worklist";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -70,31 +72,51 @@ function actionLabel(item: WorklistItem, locale: Locale): string {
   return t(inboxDict, locale, "actionOpen");
 }
 
-function timeAgo(iso: string, locale: Locale): string {
-  if (!iso) return "";
-  const ts = new Date(iso).getTime();
-  if (Number.isNaN(ts)) return "";
-  const mins = Math.round((Date.now() - ts) / 60000);
-  if (mins < 1) return t(inboxDict, locale, "timeNow");
-  if (mins < 60) return t(inboxDict, locale, "timeMinutesAgo").replace("{n}", String(mins));
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return t(inboxDict, locale, "timeHoursAgo").replace("{n}", String(hours));
-  const days = Math.round(hours / 24);
-  if (days === 1) return t(inboxDict, locale, "timeYesterday");
-  if (days < 30) return t(inboxDict, locale, "timeDaysAgo").replace("{n}", String(days));
-  return new Intl.DateTimeFormat(locale === "ar" ? "ar" : "he-IL", { day: "2-digit", month: "2-digit" }).format(ts);
+// Days between two Israeli calendar days ("2026-10-14" → "2026-10-15" is 1).
+function dayDiff(fromKey: string, toKey: string): number {
+  const [fy, fm, fd] = fromKey.split("-").map(Number);
+  const [ty, tm, td] = toKey.split("-").map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000);
 }
 
-// Day buckets, so the list reads as a timeline rather than one long wall.
+// The calendar day after an Israeli day key — counted on the calendar, not by
+// adding 24 hours (a DST night is 23 or 25 of them).
+function nextDayKey(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+// When it was (or will be), on Israel's clock: the last hour as minutes, then
+// the day and the hour — "היום 15:32", "אתמול 09:10", "מחר 08:00", "12/10 14:05"
+// (owner, 2026-10-15: "see exactly when things happen"). A time still ahead (a
+// snooze, a reminder set for later) reads forward, never "עכשיו".
+function whenLabel(iso: string, locale: Locale): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const ts = date.getTime();
+  if (Number.isNaN(ts)) return "";
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins >= 0 && mins < 1) return t(inboxDict, locale, "timeNow");
+  if (mins > 0 && mins < 60) return t(inboxDict, locale, "timeMinutesAgo").replace("{n}", String(mins));
+  if (mins < 0 && mins > -60) return t(inboxDict, locale, "timeInMinutes").replace("{n}", String(-mins));
+
+  const hour = formatTimeOnly(iso, "");
+  const days = dayDiff(israelDateKey(), israelDateKey(date));
+  if (days === 0) return `${t(commonDict, locale, "today")} ${hour}`;
+  if (days === -1) return `${t(inboxDict, locale, "timeYesterday")} ${hour}`;
+  if (days === 1) return `${t(inboxDict, locale, "timeTomorrow")} ${hour}`;
+  // Within the year the day/month is enough; further off, the year too.
+  return Math.abs(days) < 300 ? `${formatDayMonth(iso, "")} ${hour}` : formatShortDateTime(iso, "");
+}
+
+// Day buckets, so the list reads as a timeline rather than one long wall —
+// Israel's day, not the device's (a phone abroad would split them elsewhere).
 function dayGroup(iso: string): "today" | "yesterday" | "earlier" {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "earlier";
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  if (d.getTime() >= start.getTime()) return "today";
-  const y = new Date(start);
-  y.setDate(y.getDate() - 1);
-  if (d.getTime() >= y.getTime()) return "yesterday";
+  const days = dayDiff(israelDateKey(), israelDateKey(d));
+  if (days >= 0) return "today";
+  if (days === -1) return "yesterday";
   return "earlier";
 }
 function groupLabel(key: string, locale: Locale): string {
@@ -104,13 +126,11 @@ function groupLabel(key: string, locale: Locale): string {
 }
 
 function preset(kind: "hour" | "tomorrow" | "week"): string {
-  const d = new Date();
-  if (kind === "hour") d.setHours(d.getHours() + 1);
-  else if (kind === "tomorrow") {
-    d.setDate(d.getDate() + 1);
-    d.setHours(8, 0, 0, 0);
-  } else d.setDate(d.getDate() + 7);
-  return d.toISOString();
+  const now = Date.now();
+  if (kind === "hour") return new Date(now + 60 * 60000).toISOString();
+  // Tomorrow 08:00 on Israel's clock — the device's 08:00 is another hour abroad.
+  if (kind === "tomorrow") return israelLocalValueToIso(`${nextDayKey(israelDateKey())}T08:00`);
+  return new Date(now + 7 * 24 * 60 * 60000).toISOString();
 }
 
 export default function InboxClient({
@@ -271,7 +291,7 @@ export default function InboxClient({
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-1 text-[0.647rem] text-muted-foreground">
               <ClockIcon className="h-3 w-3 shrink-0" />
-              {timeAgo(item.remindAt, locale)}
+              {whenLabel(item.remindAt, locale)}
               {item.customerName ? <span>· {item.customerName}</span> : null}
               {item.assignedToName && muted ? <span>· {item.assignedToName}</span> : null}
               {mine ? <span className="rounded bg-primary/10 px-1 text-primary">{t(inboxDict, locale, "mine")}</span> : null}
@@ -474,7 +494,7 @@ export default function InboxClient({
                     </Link>
                     <div className="text-[0.647rem] text-muted-foreground">
                       {item.snoozedUntil
-                        ? `${t(inboxDict, locale, "snoozedReturnsPrefix")} ${timeAgo(item.snoozedUntil, locale)}`
+                        ? `${t(inboxDict, locale, "snoozedReturnsPrefix")} ${whenLabel(item.snoozedUntil, locale)}`
                         : t(inboxDict, locale, "snoozedLabel")}
                     </div>
                   </div>

@@ -76,7 +76,7 @@ export async function loadOrderPageCore(
     supabase
       .from("orders")
       .select(
-        "id,customer_id,branch_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,requested_delivery_date,created_by,collect_payment_on_delivery"
+        "id,customer_id,branch_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,requested_delivery_date,created_by,created_at,collect_payment_on_delivery"
       )
       .eq("id", id)
       .maybeSingle()

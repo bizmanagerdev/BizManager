@@ -14,18 +14,14 @@ import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
+import { formatShortDateTime } from "@/lib/date";
 
 type IssueKind = "quote" | "invoice" | "receipt" | "invoice-receipt";
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat("he-IL", {
-    year: "2-digit",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(parsed);
+// issued_at is the moment the document was made, so with its hour, on Israel's
+// clock — this used the device's own (owner, 2026-10-15).
+function formatIssuedAt(value: string | null | undefined) {
+  return formatShortDateTime(value, "—");
 }
 
 function formatAmount(value: number | string | null | undefined, currency = "ILS") {
@@ -328,7 +324,7 @@ export default function MorningDocumentsPanel({
                 <Badge className={statusClass(document.status)}>{documentStatusLabel(document.status)}</Badge>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {formatDate(document.issued_at)} • {formatAmount(document.amount, document.currency ?? "ILS")}
+                {formatIssuedAt(document.issued_at)} • {formatAmount(document.amount, document.currency ?? "ILS")}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {document.pdf_url ? (
