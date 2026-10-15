@@ -190,7 +190,7 @@ export function startProjectPageReads(supabase: SupabaseClient, id: string): Pro
   const tasksRead = Promise.resolve(
     supabase
       .from("task_overview_view")
-      .select("task_id,subject,status,priority,due_date,project_id,project_name,assigned_user_id,assigned_user_name,created_at,updated_at,is_overdue")
+      .select("task_id,subject,status,priority,due_date,due_time,project_id,project_name,assigned_user_id,assigned_user_name,created_at,updated_at,is_overdue")
       .eq("project_id", id)
       .order("due_date", { ascending: true })
       .order("task_id")

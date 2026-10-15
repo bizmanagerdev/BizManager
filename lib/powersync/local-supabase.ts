@@ -941,6 +941,7 @@ const VIEWS: Record<string, SourceLoader> = {
         status: t.status ?? null,
         priority: t.priority ?? null,
         due_date: t.due_date ?? null,
+        due_time: t.due_time ?? null,
         project_id: t.project_id ?? null,
         project_name: (t.project_id ? projectById.get(t.project_id)?.name : null) ?? null,
         assigned_user_id: t.assigned_user_id ?? null,

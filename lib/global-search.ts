@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { buildFocusHref } from "@/lib/audit";
-import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { formatDateWithTime, formatShortDate, formatShortDateTime } from "@/lib/date";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { customerMatchesQuery, fuzzyTextMatch, phoneMatchesQuery } from "@/lib/search/customerMatch";
 import {
@@ -294,7 +294,7 @@ export function taskResult(row: Row): GlobalSearchResult | null {
     groupLabel: GROUP_LABELS.tasks,
     title: subject,
     subtitle: text(row.project_name) || null,
-    meta: [text(row.status), text(row.priority), text(row.assigned_user_name), formatShortDate(text(row.due_date), "")].filter(Boolean),
+    meta: [text(row.status), text(row.priority), text(row.assigned_user_name), formatDateWithTime(text(row.due_date), text(row.due_time), "")].filter(Boolean),
     href: `/tasks/${encodeURIComponent(id)}`,
   };
 }
@@ -482,7 +482,7 @@ export async function performGlobalSearch(
       .range(0, fetchSize - 1),
     supabase
       .from("task_overview_view")
-      .select("task_id,subject,project_name,status,priority,assigned_user_name,due_date,updated_at")
+      .select("task_id,subject,project_name,status,priority,assigned_user_name,due_date,due_time,updated_at")
       .order("updated_at", { ascending: false })
       .range(0, fetchSize - 1),
     supabase
@@ -765,7 +765,7 @@ export async function performGlobalSearch(
   const taskHave = new Set(taskRows.map((row) => text(row.task_id) || text(row.id)));
   const commentTaskRows = await fetchByIds(
     "task_overview_view",
-    "task_id,subject,project_name,status,priority,assigned_user_name,due_date,updated_at",
+    "task_id,subject,project_name,status,priority,assigned_user_name,due_date,due_time,updated_at",
     "task_id",
     commentContent.ids,
     taskHave
