@@ -182,6 +182,21 @@ const STREET_TYPE_PREFIX = /^(רחוב|רח['׳]|שדרות|שד['׳]|דרך|ס�
  * own. Addresses are stored "city | street", which we split apart. Shared by
  * the deliveries cards and the shareable delivery image so both read alike.
  */
+/**
+ * A town at the start, followed by a comma or by more words: "ירושלים, הרצל 5",
+ * "בית שמש רמה ג". Not "ירושלים 5" — that's a street named after the town.
+ * Longest name first, so "מודיעין עילית" wins over "מודיעין".
+ */
+const PLACES_LONGEST_FIRST = [...KNOWN_PLACES].sort((a, b) => b.length - a.length);
+function leadingPlace(raw: string): string | null {
+  for (const place of PLACES_LONGEST_FIRST) {
+    if (!raw.startsWith(place)) continue;
+    const rest = raw.slice(place.length);
+    if (/^\s*,/.test(rest) || /^\s+[^\d\s]/.test(rest)) return place;
+  }
+  return null;
+}
+
 function splitDeliveryAddress(input: {
   address?: string | null;
   city?: string | null;
@@ -203,6 +218,10 @@ function splitDeliveryAddress(input: {
     street = raw.slice(city.length).replace(/^[\s,]+/, "").trim();
   } else if (!city && KNOWN_PLACES.has(raw)) {
     city = raw;
+  } else if (!city && leadingPlace(raw)) {
+    // "ירושלים, הרצל 5": the order page shows "city | street" with a comma.
+    city = leadingPlace(raw)!;
+    street = raw.slice(city.length).replace(/^[\s,]+/, "").trim();
   } else if (!isBlankAddressPart(raw)) {
     // "-" is what the deliveries loader puts for no address at all.
     street = raw;

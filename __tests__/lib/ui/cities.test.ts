@@ -88,6 +88,10 @@ describe("addressQuality", () => {
     expect(addressQuality({ address: "זכריה הרופא 14", city: null })).toBe("clear");
     expect(addressQuality({ address: "סורוצקין 1 ירושלים", city: null })).toBe("clear");
     expect(addressQuality({ address: "בן איש חי11", city: null })).toBe("clear");
+    // The order page's "city | street" shown as "city, street".
+    expect(addressQuality({ address: "ירושלים, הרצל 5", city: null })).toBe("clear");
+    expect(addressQuality({ address: "מודיעין עילית, אבני נזר 3", city: null })).toBe("clear");
+    expect(plainAddress({ address: "בית שמש, יחזקאל הנביא 27", city: null })).toBe("יחזקאל הנביא 27, בית שמש");
   });
 
   it("unclear: words after the number, or no number at all", () => {
@@ -95,6 +99,7 @@ describe("addressQuality", () => {
     expect(addressQuality({ address: "הר יונה | האדמו\"ר מבעלז 26 דירה 1", city: "הר יונה" })).toBe("unclear");
     expect(addressQuality({ address: "ירושלים | קניון רמות קומה 2  שדרות גולדה מאיר 255", city: null })).toBe("unclear");
     expect(addressQuality({ address: "ירושלים | רמות", city: null })).toBe("unclear");
+    expect(addressQuality({ address: "בית שמש, יחזקאל הנביא 27 בחניה", city: null })).toBe("unclear");
     expect(addressQuality({ address: "כיכר רבין", city: null })).toBe("unclear");
   });
 
