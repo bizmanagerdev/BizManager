@@ -18,6 +18,10 @@ export const dynamic = "force-dynamic";
 
 type Option = { id: string; name: string };
 
+type CashTransfer = { id: string; to_account_id: string | null; transfer_date: string | null };
+
+type AccountRow = { id: string; name: string; kind: string | null; is_active: boolean | null };
+
 type LiveExpense = {
   id: string;
   amount: number | null;
@@ -61,7 +65,9 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
         .select(
           "id,expense_id,income_payment_id,expense_date,transaction_date,amount,description,category,card_label,business_domain,project_id,property_id,notes,assignment_raw,include," +
             "expense:expenses(id,amount,category,description,business_domain,project_id,property_id,expense_date,transaction_date,notes,account_id)," +
-            "income_payment:payments(id,amount_total)"
+            "income_payment:payments(id,amount_total)," +
+            // "מול מזומן": the cash entry a line put in the cash box (one per line).
+            "cash_transfer:account_transfers(id,to_account_id,transfer_date)"
         )
         .eq("statement_id", id)
         .order("row_index", { ascending: true, nullsFirst: false })
@@ -81,7 +87,7 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
         .eq("statement_id", id),
       // Remembered card → account choice, for pre-filling a card that hasn't been charged yet.
       supabase.from("card_account_mappings").select("card_key,account_id"),
-      supabase.from("accounts").select("id,name"),
+      supabase.from("accounts").select("id,name,kind,is_active"),
       // "לחיוב לקוח" waits on its own column (migration 20261013120000). Asked apart from
       // the rows so the page keeps working before that migration runs — the tick just hides.
       supabase.from("card_statement_rows").select("id,bill_to_customer").eq("statement_id", id),
@@ -132,6 +138,8 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
     const incPay = (Array.isArray(incEmbed) ? incEmbed[0] : incEmbed) ?? null;
     const incomePaymentId = typeof r.income_payment_id === "string" ? r.income_payment_id : null;
     const incomeExists = Boolean(incomePaymentId) && Boolean(incPay?.id);
+    const cashEmbed = r.cash_transfer as CashTransfer | CashTransfer[] | null;
+    const cash = (Array.isArray(cashEmbed) ? cashEmbed[0] : cashEmbed) ?? null;
     return {
       id: String(r.id),
       expenseId: typeof r.expense_id === "string" ? r.expense_id : null,
@@ -155,6 +163,9 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       incomeAmount: Number(incPay?.amount_total ?? 0),
       expenseAccountId: expenseExists && typeof live?.account_id === "string" ? live.account_id : null,
       billToCustomer: expenseExists ? billedExpenses.has(String(r.expense_id)) : billedDraftRows.has(String(r.id)),
+      cashTransferId: cash?.id ?? null,
+      cashAccountId: cash?.to_account_id ?? null,
+      cashDate: String(cash?.transfer_date ?? "").slice(0, 10),
     };
   });
 
@@ -177,6 +188,7 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       notes: typeof r.notes === "string" ? r.notes : null,
       createdAt: typeof r.created_at === "string" ? r.created_at : null,
     }));
+  const accounts = ((accountRows ?? []) as AccountRow[]).filter((a) => typeof a.id === "string" && typeof a.name === "string");
   const cardAccountDefaults: Record<string, string> = {};
   for (const r of (mappingRows ?? []) as Record<string, unknown>[]) {
     const key = typeof r.card_key === "string" ? r.card_key : "";
@@ -203,7 +215,8 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
         fileUrl={fileUrl}
         cardCharges={cardCharges}
         cardAccountDefaults={cardAccountDefaults}
-        accounts={((accountRows ?? []) as Option[]).filter((a) => typeof a.id === "string" && typeof a.name === "string")}
+        accounts={accounts}
+        cashAccountId={accounts.find((a) => a.kind === "cash" && a.is_active !== false)?.id ?? null}
         billToCustomerAvailable={billToCustomerAvailable}
       />
     </AppShell>

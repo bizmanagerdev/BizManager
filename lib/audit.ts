@@ -842,7 +842,8 @@ export function buildHref(
     // rows (one per leg) — land on the FROM account's register, where the
     // transfer's own row also carries data-focus-id.
     case "account_transfers": {
-      const fromAccount = fk("from_account_id");
+      // A "מול מזומן" card line has no FROM — it lives on the cash account it went into.
+      const fromAccount = fk("from_account_id") ?? fk("to_account_id");
       const base = fromAccount ? `/financial/bank?account=${encodeURIComponent(fromAccount)}` : "/financial/bank";
       return buildFocusHref(base, recordId);
     }

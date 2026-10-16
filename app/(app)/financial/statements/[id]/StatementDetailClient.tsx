@@ -19,7 +19,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
 import { DocumentDownloadLink } from "@/components/ui/document-tile";
 import { CheckIcon, MoreIcon } from "@/components/ui/icons";
 import {
@@ -74,6 +74,11 @@ export type StatementRowView = {
   expenseAccountId: string | null;
   /** "לחיוב לקוח" — a project line the project's customer pays (project_expenses.billed_to_customer). */
   billToCustomer: boolean;
+  /** "מול מזומן": the cash entry (account_transfers) this purchase put in the cash box — someone
+   *  paid us its amount in cash. Null for every other line. */
+  cashTransferId: string | null;
+  cashAccountId: string | null;
+  cashDate: string;
 };
 
 // Payment methods offered for statement income (no check flow here — use the financial page for that).
@@ -162,6 +167,7 @@ export default function StatementDetailClient({
   cardCharges: initialCardCharges,
   cardAccountDefaults,
   accounts,
+  cashAccountId,
   billToCustomerAvailable,
 }: {
   statement: Statement;
@@ -177,6 +183,8 @@ export default function StatementDetailClient({
   cardAccountDefaults: Record<string, string>;
   /** Account names, for the bank step's "02/10/26 · מזרחי בית". */
   accounts: Option[];
+  /** The cash box ("מזומן") — where a "מול מזומן" line's cash goes unless another account is picked. */
+  cashAccountId: string | null;
   /** False until card_statement_rows.bill_to_customer exists in the database. */
   billToCustomerAvailable: boolean;
 }) {
@@ -238,6 +246,16 @@ export default function StatementDetailClient({
   const [moveTwiceError, setMoveTwiceError] = useState<string | null>(null);
   const [chargeDeleting, setChargeDeleting] = useState(false);
   const [chargeDeleteError, setChargeDeleteError] = useState<string | null>(null);
+
+  // "מול מזומן" — a line swiped for someone who paid us its amount in cash (owner,
+  // 2026-10-15). Recording it puts the cash in the cash box; undoing takes it out.
+  const [cashRow, setCashRow] = useState<StatementRowView | null>(null);
+  const [cashForm, setCashForm] = useState<{ accountId: string; date: string }>({ accountId: "", date: "" });
+  const [cashSaving, setCashSaving] = useState(false);
+  const [cashError, setCashError] = useState<string | null>(null);
+  const [undoCashRow, setUndoCashRow] = useState<StatementRowView | null>(null);
+  const [undoingCash, setUndoingCash] = useState(false);
+  const [undoCashError, setUndoCashError] = useState<string | null>(null);
 
   // Merge a whole "card" group into another — the cleanup tool for a
   // phantom card created by editing rows' category (see the reassign-card
@@ -325,6 +343,79 @@ export default function StatementDetailClient({
       setMoveTwiceError("העברת ההוצאות לחיוב הכרטיס נכשלה.");
     } finally {
       setMovingTwice(false);
+    }
+  }
+
+  // Dated on the purchase day — when the person handed over the cash.
+  function openCash(row: StatementRowView) {
+    setCashRow(row);
+    setCashForm({ accountId: cashAccountId ?? "", date: row.transactionDate || row.expenseDate || todayIso });
+    setCashError(null);
+  }
+
+  async function submitCash() {
+    if (!cashRow || cashSaving) return;
+    if (!cashForm.accountId) {
+      setCashError("יש לבחור חשבון.");
+      return;
+    }
+    if (!cashForm.date) {
+      setCashError("יש לבחור תאריך.");
+      return;
+    }
+    setCashSaving(true);
+    setCashError(null);
+    try {
+      const res = await fetch("/api/expenses/statement-rows/cash", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ row_id: cashRow.id, account_id: cashForm.accountId, date: cashForm.date }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; transfer_id?: string };
+      if (!res.ok || !data.transfer_id) {
+        setCashError(toHebrewError(data.error, "הרישום מול מזומן נכשל."));
+        return;
+      }
+      const rowId = cashRow.id;
+      const marked = { include: false, cashTransferId: data.transfer_id, cashAccountId: cashForm.accountId, cashDate: cashForm.date };
+      setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...marked } : r)));
+      setCashRow(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch {
+      setCashError("הרישום מול מזומן נכשל.");
+    } finally {
+      setCashSaving(false);
+    }
+  }
+
+  async function undoCash() {
+    if (!undoCashRow || undoingCash) return;
+    setUndoingCash(true);
+    setUndoCashError(null);
+    try {
+      const res = await fetch("/api/expenses/statement-rows/cash", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ row_id: undoCashRow.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setUndoCashError(toHebrewError(data.error, "ביטול הרישום מול מזומן נכשל."));
+        return;
+      }
+      const rowId = undoCashRow.id;
+      const cleared = { include: true, cashTransferId: null, cashAccountId: null, cashDate: "" };
+      setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...cleared } : r)));
+      setUndoCashRow(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch {
+      setUndoCashError("ביטול הרישום מול מזומן נכשל.");
+    } finally {
+      setUndoingCash(false);
     }
   }
 
@@ -1124,6 +1215,13 @@ export default function StatementDetailClient({
             <p className="font-medium text-destructive">מחיקת הפירוט</p>
             <p className="mt-1 text-muted-foreground">
               הפירוט ו-{rows.length} שורותיו יימחקו. ההוצאות שכבר נוצרו <strong>לא יימחקו</strong> — הן נשארות במערכת.
+              {steps.assign.cash > 0 ? (
+                <>
+                  {" "}
+                  {steps.assign.cash === 1 ? "רישום המזומן" : `${steps.assign.cash} רישומי המזומן`} של השורות “מול מזומן”{" "}
+                  <strong>יימחקו איתו</strong>.
+                </>
+              ) : null}
               לאחר המחיקה תוכל/י להעלות את הקובץ מחדש.
             </p>
             {deleteError ? <p className="mt-1 text-destructive">{deleteError}</p> : null}
@@ -1238,6 +1336,7 @@ export default function StatementDetailClient({
                   let rowBg = "";
                   if (mode === "created") rowBg = "bg-success-soft/20";
                   else if (mode === "deleted") rowBg = "opacity-50";
+                  else if (mode === "cash") rowBg = "bg-muted/40";
                   else if (!row.include) rowBg = "opacity-50";
                   else if (dup) rowBg = "bg-warning-soft/25";
                   else if (row.businessDomain) rowBg = "bg-info-soft/20";
@@ -1270,6 +1369,19 @@ export default function StatementDetailClient({
                           <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs text-warning-soft-foreground">
                             {isRefund ? "ההכנסה נמחקה" : "נמחקה"}
                           </span>
+                        ) : mode === "cash" ? (
+                          <div className="space-y-0.5">
+                            <Link
+                              href={row.cashAccountId ? `/financial/bank?account=${encodeURIComponent(row.cashAccountId)}` : "/financial/bank"}
+                              title="שולם לנו במזומן — הסכום נכנס לחשבון, ולא נרשם כהוצאה"
+                              className="whitespace-nowrap rounded bg-info-soft px-1.5 py-0.5 text-xs text-info-soft-foreground hover:underline"
+                            >
+                              מול מזומן
+                            </Link>
+                            <div className="whitespace-nowrap text-[0.647rem] text-muted-foreground">
+                              {accountName(row.cashAccountId ?? "") || "מזומן"} · {formatIsoDisplay(row.cashDate)}
+                            </div>
+                          </div>
                         ) : (
                           <div className="space-y-1">
                             <label className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -1311,13 +1423,16 @@ export default function StatementDetailClient({
                             placeholder="— בחר —"
                             className="h-8 min-w-[8rem]"
                           />
+                        ) : mode === "cash" ? (
+                          // Not our expense — no domain.
+                          <span className="text-xs text-muted-foreground">—</span>
                         ) : (
                           getBusinessDomainLabel(row.businessDomain)
                         )}
                       </td>
                       {/* Project / property */}
                       <td className="px-3 py-2">
-                        {isRefund ? (
+                        {isRefund || mode === "cash" ? (
                           // A refund is income on its domain only — never a customer's payment.
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : mode === "draft" && row.businessDomain === "logistics_projects" ? (
@@ -1352,7 +1467,7 @@ export default function StatementDetailClient({
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
-                        {row.billToCustomer && row.projectId && !isRefund ? (
+                        {row.billToCustomer && row.projectId && !isRefund && mode !== "cash" ? (
                           <span
                             title="הפרויקט מחייב את הלקוח על השורה הזו"
                             className="mt-1 block w-fit rounded bg-warning-soft px-1.5 py-0.5 text-[0.647rem] font-medium text-warning-soft-foreground"
@@ -1399,7 +1514,7 @@ export default function StatementDetailClient({
                       ) : null}
                       {/* Income */}
                       <td className="px-3 py-2">
-                        {isRefund ? (
+                        {isRefund || mode === "cash" ? (
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : row.incomeExists ? (
                           <span
@@ -1421,12 +1536,45 @@ export default function StatementDetailClient({
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
-                      {/* Edit */}
+                      {/* Edit, and ⋯ for "מול מזומן" */}
                       <td className="px-3 py-2 text-left">
                         {mode === "deleted" ? (
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : (
-                          <EditButton onClick={() => startEdit(row)} label="עריכה" />
+                          <div className="flex items-center justify-end gap-1">
+                            {mode !== "cash" ? <EditButton onClick={() => startEdit(row)} label="עריכה" /> : null}
+                            {mode === "cash" || (mode === "draft" && row.amount > 0 && !row.incomeExists) ? (
+                              <DropdownMenu modal={false}>
+                                <DropdownMenuTrigger asChild>
+                                  <IconButton
+                                    icon={MoreIcon}
+                                    label="פעולות נוספות"
+                                    variant="ghost"
+                                    className="text-muted-foreground hover:text-foreground"
+                                  />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-64">
+                                  {mode === "cash" ? (
+                                    <DropdownMenuItem
+                                      onSelect={() => {
+                                        setUndoCashError(null);
+                                        setUndoCashRow(row);
+                                      }}
+                                    >
+                                      ביטול מול מזומן
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem onSelect={() => openCash(row)} className="flex-col items-start gap-0.5">
+                                      <span>מול מזומן</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        שולם לנו במזומן — הסכום נכנס לקופה, לא הוצאה
+                                      </span>
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            ) : null}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -1817,6 +1965,68 @@ export default function StatementDetailClient({
         ) : null}
       </ConfirmDialog>
 
+      {/* "מול מזומן": the line's cash goes into the cash box */}
+      <FormDialog
+        open={cashRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setCashRow(null);
+        }}
+        title="מול מזומן"
+        description="קנייה בכרטיס שמישהו שילם לנו עליה במזומן. השורה נשארת בחיוב הכרטיס, כמו בבנק, ולא נרשמת כהוצאה. הסכום נכנס לחשבון המזומן כהעברה בין חשבונות."
+        onSubmit={() => void submitCash()}
+        submitLabel="רישום"
+        busyLabel="רושם..."
+        busy={cashSaving}
+        error={cashError || undefined}
+      >
+        {cashRow ? (
+          <div className="space-y-3">
+            <div className="flex justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+              <span className="min-w-0 truncate">
+                {cashRow.description || "—"}
+                <span className="text-xs text-muted-foreground"> · {cashRow.cardLabel || "כרטיס אשראי"}</span>
+              </span>
+              <span className="shrink-0 font-medium tabular-nums">{formatCurrency(cashRow.amount)}</span>
+            </div>
+            <AccountSelect required value={cashForm.accountId} onChange={(accountId) => setCashForm((f) => ({ ...f, accountId }))} />
+            <Field size="xs" label="תאריך קבלת המזומן *">
+              <Input
+                type="date"
+                value={cashForm.date}
+                onChange={(e) => setCashForm((f) => ({ ...f, date: e.target.value }))}
+                className="h-9"
+              />
+            </Field>
+          </div>
+        ) : null}
+      </FormDialog>
+
+      {/* Undo "מול מזומן" */}
+      <ConfirmDialog
+        open={undoCashRow !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setUndoCashRow(null);
+            setUndoCashError(null);
+          }
+        }}
+        title="ביטול מול מזומן"
+        description="רישום המזומן יימחק מהחשבון, והשורה תחזור לשיוך כמו כל קנייה."
+        cancelLabel="חזרה"
+        confirmLabel="ביטול הרישום"
+        destructive
+        loading={undoingCash}
+        error={undoCashError || undefined}
+        onConfirm={() => void undoCash()}
+      >
+        {undoCashRow ? (
+          <div className="flex justify-between gap-3 text-sm">
+            <span className="min-w-0 truncate font-medium">{undoCashRow.description || "—"}</span>
+            <span className="shrink-0 tabular-nums">{formatCurrency(undoCashRow.amount)}</span>
+          </div>
+        ) : null}
+      </ConfirmDialog>
+
       {/* Delete a recorded card charge */}
       <ConfirmDialog
         open={chargeToDelete !== null}
@@ -1867,6 +2077,12 @@ function ChargeBreakdown({ card, typed }: { card: CardSummary; typed: string }) 
         <p className="text-muted-foreground">
           כולל {card.leftOutCount === 1 ? "שורה אחת" : `${card.leftOutCount} שורות`} “לא לתיעוד” ({ils2(card.leftOut)}): הן לא
           הוצאה שלנו, אבל הבנק גובה גם אותן.
+        </p>
+      ) : null}
+      {card.cashCount > 0 ? (
+        <p className="text-muted-foreground">
+          כולל {card.cashCount === 1 ? "שורה אחת" : `${card.cashCount} שורות`} “מול מזומן” ({ils2(card.cash)}): שולמו לנו במזומן, הסכום
+          נכנס לקופה, והבנק גובה אותן עם השאר.
         </p>
       ) : null}
       {card.refundsLeftOutCount > 0 ? (

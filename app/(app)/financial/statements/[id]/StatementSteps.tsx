@@ -156,6 +156,11 @@ function AssignPanel({
         {a.needsDomain > 0 ? <span className={chip.warn}>{a.needsDomain} ממתינות לשיוך</span> : null}
         {a.refundsWaiting > 0 ? <span className={chip.info}>{a.refundsWaiting} זיכויים יירשמו כהכנסה</span> : null}
         {a.leftOut > 0 ? <span className={chip.plain}>{a.leftOut} לא לתיעוד</span> : null}
+        {a.cash > 0 ? (
+          <span className={chip.plain} title="שולמו לנו במזומן — הסכום נכנס לקופה, לא הוצאה">
+            {a.cash} מול מזומן
+          </span>
+        ) : null}
         {a.refundsLeftOut > 0 ? (
           <span className={chip.plain} title="זיכויים שלא מסומנים להכנסה — הבנק כבר הוריד אותם מחיוב הכרטיס">
             {a.refundsLeftOut} זיכויים לא נרשמים

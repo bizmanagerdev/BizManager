@@ -44,6 +44,8 @@ export default async function CardStatementsPage() {
     income_payment_id: string | null;
     expense: { id: string; amount: number | null; account_id: string | null } | { id: string; amount: number | null; account_id: string | null }[] | null;
     income_payment: { amount_total: number | null } | { amount_total: number | null }[] | null;
+    /** "מול מזומן": the cash entry the line put in the cash box. */
+    cash_transfer: { id: string } | { id: string }[] | null;
   };
 
   const statementIds = baseStatements.map((s) => s.id);
@@ -62,7 +64,7 @@ export default async function CardStatementsPage() {
               .from("card_statement_rows")
               .select(
                 "id,statement_id,card_label,category,amount,include,expense_date,business_domain,expense_id,income_payment_id," +
-                  "expense:expenses(id,amount,account_id),income_payment:payments(amount_total)"
+                  "expense:expenses(id,amount,account_id),income_payment:payments(amount_total),cash_transfer:account_transfers(id)"
               )
               .in("statement_id", statementIds)
               .order("id")
@@ -99,6 +101,7 @@ export default async function CardStatementsPage() {
       expenseAccountId: r.expense_id && live?.account_id ? live.account_id : null,
       incomePaymentId: r.income_payment_id,
       incomeExists: Boolean(r.income_payment_id && pay),
+      cashTransferId: (Array.isArray(r.cash_transfer) ? r.cash_transfer[0] : r.cash_transfer)?.id ?? null,
     });
     mathRows.set(sid, list);
   }

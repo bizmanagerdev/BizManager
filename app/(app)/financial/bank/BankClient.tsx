@@ -977,6 +977,9 @@ export default function BankClient({
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
+                        {/* A row with no actions (a "מול מזומן" cash entry, undone from its
+                            statement) keeps the ⋮'s room, so its amount lines up with the rest. */}
+                        {!hasActions && <span aria-hidden="true" className="hidden h-8 w-8 shrink-0 md:inline-block" />}
                       </div>
                     );
                     // Mobile: swipe the row to reveal edit/delete instead of the

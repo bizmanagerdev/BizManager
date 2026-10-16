@@ -330,6 +330,44 @@ describe("loadAccountBalances — transfers between our own accounts", () => {
     expect(balances.find((b) => b.id === "cash")!.postedIn).toBe(0);
   });
 
+  it("\"מול מזומן\": a card line paid for in cash adds only the cash leg; the bank's side is the card charge", async () => {
+    const overview = await loadAccountsOverview(
+      makeSupabase({
+        accounts: twoAccounts,
+        card_statement_charges: [
+          { id: "c1", statement_id: "s1", card_label: "9557", account_id: "bank", amount: 400, charge_date: "2024-02-02", notes: null },
+        ],
+        account_transfers: [
+          {
+            id: "t2",
+            from_account_id: null,
+            to_account_id: "cash",
+            amount: 100,
+            transfer_date: "2024-02-01",
+            notes: null,
+            card_statement_row_id: "row-1",
+            card_row: { statement_id: "s1", card_label: "9557", description: "שירדן טכנולוגיות" },
+          },
+        ],
+      })
+    );
+    const bank = overview.find((a) => a.id === "bank")!;
+    const cash = overview.find((a) => a.id === "cash")!;
+
+    // The bank loses only the card charge, once.
+    expect(bank.postedOut).toBe(400);
+    expect(bank.currentBalance).toBe(600);
+    expect(cash.postedIn).toBe(100);
+    expect(cash.currentBalance).toBe(100);
+
+    const [leg] = cash.ledger;
+    expect(leg.label).toBe("מזומן מול כרטיס 9557");
+    expect(leg.sublabel).toBe("שירדן טכנולוגיות");
+    expect(leg.href).toBe("/financial/statements/s1");
+    // Undone from its statement line, not edited here.
+    expect(leg.transfer).toBeUndefined();
+  });
+
   it("labels each leg with the other account and carries the transfer for edit/delete", async () => {
     const overview = await loadAccountsOverview(
       makeSupabase({

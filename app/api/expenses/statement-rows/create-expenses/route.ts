@@ -68,7 +68,16 @@ export async function POST(req: Request) {
       .eq("bill_to_customer", true);
     const billedRowIds = new Set(((billingData ?? []) as Array<{ id: string }>).map((r) => r.id));
 
-    const candidates = (rowData ?? []) as RowRecord[];
+    // "מול מזומן" lines are left out when marked; this also holds if one were ticked again.
+    const candidateIds = ((rowData ?? []) as RowRecord[]).map((r) => r.id);
+    const { data: cashData, error: cashError } =
+      candidateIds.length > 0
+        ? await supabase.from("account_transfers").select("card_statement_row_id").in("card_statement_row_id", candidateIds)
+        : { data: [], error: null };
+    if (cashError) return NextResponse.json({ error: toHebrewError(cashError.message) }, { status: 400 });
+    const cashRowIds = new Set(((cashData ?? []) as Array<{ card_statement_row_id: string }>).map((r) => r.card_statement_row_id));
+
+    const candidates = ((rowData ?? []) as RowRecord[]).filter((r) => !cashRowIds.has(r.id));
     const errors: { id: string; message: string }[] = [];
     const eligible: { rowId: string; projectId: string | null; billed: boolean; payload: Record<string, unknown> }[] = [];
     const refunds: { rowId: string; payload: Record<string, unknown> }[] = [];

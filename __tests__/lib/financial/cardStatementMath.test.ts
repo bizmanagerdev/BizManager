@@ -132,7 +132,39 @@ describe("summarizeStatement — a bank charge that differs from the lines", () 
   });
 });
 
+describe("summarizeStatement — \"מול מזומן\" lines", () => {
+  // The owner's example (2026-10-15): the bank took ₪4,000 for the card; ₪3,000 were
+  // ours, ₪1,000 was swiped for someone who paid us cash.
+  const card = "ויזה 9557";
+  const rows = [
+    row({ cardLabel: card, amount: 3000, ...created }),
+    row({ cardLabel: card, amount: 1000, include: false, cashTransferId: "t1" }),
+  ];
+  const steps = summarizeStatement(rows, [charge(card, 4000)]);
+  const [summary] = steps.cards;
+
+  it("stays inside the bill, so the charge still matches the bank", () => {
+    expect(summary.bill).toBe(4000);
+    expect(summary.difference).toBe(0);
+  });
+
+  it("is counted as cash, not as a left-out line, and doesn't hold up the steps", () => {
+    expect(summary.cash).toBe(1000);
+    expect(summary.cashCount).toBe(1);
+    expect(summary.leftOut).toBe(0);
+    expect(steps.assign).toMatchObject({ created: 1, cash: 1, leftOut: 0, ready: 0, needsDomain: 0 });
+    expect(steps.canFinish).toBe(true);
+  });
+});
+
 describe("statementRowMode", () => {
+  it("a purchase with a cash entry is \"cash\"; its expense, if any, still wins", () => {
+    const base = { amount: 5, expenseId: null, expenseExists: false, incomePaymentId: null, incomeExists: false };
+    expect(statementRowMode({ ...base, cashTransferId: "t" })).toBe("cash");
+    expect(statementRowMode({ ...base, expenseId: "e", expenseExists: true, cashTransferId: "t" })).toBe("created");
+    expect(statementRowMode({ ...base, amount: -5, cashTransferId: "t" })).toBe("draft");
+  });
+
   it("a refund is done by its income, a purchase by its expense", () => {
     expect(statementRowMode({ amount: -5, expenseId: null, expenseExists: false, incomePaymentId: "p", incomeExists: true })).toBe("created");
     expect(statementRowMode({ amount: -5, expenseId: null, expenseExists: false, incomePaymentId: "p", incomeExists: false })).toBe("deleted");

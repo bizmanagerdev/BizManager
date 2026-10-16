@@ -424,10 +424,14 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       ),
       // העברה בין חשבונות: one row = two legs (OUT of from, IN to to). Never
       // touches the P&L — it only moves money between our own containers.
+      // A "מול מזומן" card line has no "from": its OUT side is the card charge.
       scan("account_transfers", (from, to) =>
         supabase
           .from("account_transfers")
-          .select("id,from_account_id,to_account_id,amount,transfer_date,notes,created_at,created_by")
+          .select(
+            "id,from_account_id,to_account_id,amount,transfer_date,notes,created_at,created_by,card_statement_row_id," +
+              "card_row:card_statement_rows(statement_id,card_label,description)"
+          )
           .gte("transfer_date", earliestOpening)
           .range(from, to)
       ),
@@ -1150,6 +1154,31 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const from = byId.get(str(row.from_account_id) ?? "");
     const to = byId.get(str(row.to_account_id) ?? "");
     const note = str(row.notes)?.trim() || null;
+
+    // "מול מזומן": a card purchase someone paid us for in cash. Only the IN leg —
+    // the bank's side is inside the card's charge. Undone from its statement line,
+    // so it carries no transfer to edit or delete here.
+    if (str(row.card_statement_row_id)) {
+      if (!to || date < to.openingDate) continue;
+      const cardRow = (Array.isArray(row.card_row) ? row.card_row[0] : row.card_row) as Row | null | undefined;
+      const card = str(cardRow?.card_label)?.trim() || "כרטיס אשראי";
+      const statementId = str(cardRow?.statement_id);
+      const b = buckets.get(to.id)!;
+      b.postedIn += amount;
+      b.rows.push({
+        id: `t:${id}:in`,
+        date,
+        ...entered(row),
+        label: `מזומן מול ${card.startsWith("כרטיס") ? card : `כרטיס ${card}`}`,
+        sublabel: [str(cardRow?.description)?.trim(), note].filter(Boolean).join(" · ") || null,
+        href: statementId ? `/financial/statements/${statementId}` : "/financial/statements",
+        type: "in",
+        amount,
+        posted: true,
+      });
+      continue;
+    }
+
     const ref: AccountTransferRef = {
       id,
       fromAccountId: str(row.from_account_id) ?? "",

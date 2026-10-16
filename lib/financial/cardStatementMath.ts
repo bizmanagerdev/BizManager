@@ -7,7 +7,9 @@
 // Per card:  purchases − refunds = bill — what the card company takes from the bank
 // in one line, so the bank charge recorded for the card should equal it.
 // Left-out lines ("לא לתיעוד" — swiped for someone who paid us cash) are not
-// expenses, but the bank still takes them, so they stay inside the bill.
+// expenses, but the bank still takes them, so they stay inside the bill. A
+// "מול מזומן" line is a left-out line whose cash was also put in the cash box
+// (an account_transfers row with no "from" — its OUT side is the card charge).
 // "countedTwice" = lines linked to an expense that carries its own bank account
 // (typed by hand before the statement came, or given an account later): that
 // expense leaves the account by itself AND inside the card's charge. Found
@@ -31,6 +33,8 @@ export type StatementMathRow = {
   expenseAccountId: string | null;
   incomePaymentId: string | null;
   incomeExists: boolean;
+  /** "מול מזומן": the cash entry this purchase put in the cash box. */
+  cashTransferId?: string | null;
 };
 
 export type StatementMathCharge = {
@@ -55,6 +59,9 @@ export type CardSummary = {
   /** Refunds left unticked: the bill is already lower by them, yet no income records them. */
   refundsLeftOut: number;
   refundsLeftOutCount: number;
+  /** "מול מזומן" purchases: inside the bill, not expenses, their cash in the cash box. */
+  cash: number;
+  cashCount: number;
   /** Lines whose expense also leaves a bank account by itself — the bank balance counts them twice. */
   countedTwice: number;
   countedTwiceCount: number;
@@ -82,6 +89,7 @@ export type StatementSteps = {
     leftOut: number;
     refundsLeftOut: number;
     refundsWaiting: number;
+    cash: number;
   };
   bank: { done: boolean; missingCards: string[] };
   canFinish: boolean;
@@ -99,16 +107,19 @@ export function cardKeyOf(label: string | null | undefined): string {
   return (label ?? "").trim() || GENERIC_CARD_LABEL;
 }
 
-export type RowMode = "draft" | "created" | "deleted";
+export type RowMode = "draft" | "created" | "deleted" | "cash";
 
-/** A purchase is done once it has an expense; a refund once it has its income. */
-export function statementRowMode(row: Pick<StatementMathRow, "amount" | "expenseId" | "expenseExists" | "incomePaymentId" | "incomeExists">): RowMode {
+/** A purchase is done once it has an expense, or once it is "מול מזומן"; a refund once it has its income. */
+export function statementRowMode(
+  row: Pick<StatementMathRow, "amount" | "expenseId" | "expenseExists" | "incomePaymentId" | "incomeExists" | "cashTransferId">
+): RowMode {
   if (row.amount < 0) {
     if (row.incomeExists) return "created";
     if (row.incomePaymentId) return "deleted";
     return "draft";
   }
   if (row.expenseExists) return "created";
+  if (row.cashTransferId) return "cash";
   if (row.expenseId) return "deleted";
   return "draft";
 }
@@ -124,6 +135,8 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
     leftOutCount: number;
     refundsLeftOut: number;
     refundsLeftOutCount: number;
+    cash: number;
+    cashCount: number;
     countedTwice: number;
     countedTwiceIds: string[];
     dates: Map<string, { amount: number; count: number }>;
@@ -135,6 +148,7 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
   let leftOutRows = 0;
   let refundsLeftOutRows = 0;
   let refundsWaiting = 0;
+  let cashRows = 0;
 
   for (const row of rows) {
     const label = cardKeyOf(row.cardLabel);
@@ -150,6 +164,8 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
         leftOutCount: 0,
         refundsLeftOut: 0,
         refundsLeftOutCount: 0,
+        cash: 0,
+        cashCount: 0,
         countedTwice: 0,
         countedTwiceIds: [] as string[],
         dates: new Map(),
@@ -180,6 +196,12 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
     if (ag === 0 || mode === "deleted") continue;
     if (mode === "created") {
       created += 1;
+      continue;
+    }
+    if (mode === "cash") {
+      acc.cash += ag;
+      acc.cashCount += 1;
+      cashRows += 1;
       continue;
     }
     if (!row.include) {
@@ -228,6 +250,8 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
       leftOutCount: acc.leftOutCount,
       refundsLeftOut: fromAgorot(acc.refundsLeftOut),
       refundsLeftOutCount: acc.refundsLeftOutCount,
+      cash: fromAgorot(acc.cash),
+      cashCount: acc.cashCount,
       countedTwice: fromAgorot(acc.countedTwice),
       countedTwiceCount: acc.countedTwiceIds.length,
       countedTwiceExpenseIds: acc.countedTwiceIds,
@@ -255,6 +279,8 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
       leftOutCount: 0,
       refundsLeftOut: 0,
       refundsLeftOutCount: 0,
+      cash: 0,
+      cashCount: 0,
       countedTwice: 0,
       countedTwiceCount: 0,
       countedTwiceExpenseIds: [],
@@ -280,7 +306,7 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
   const allCharged = cards.length > 0 && cards.every((c) => c.charge || !c.needsCharge);
   return {
     cards,
-    assign: { done: assignDone, created, ready, needsDomain, leftOut: leftOutRows, refundsLeftOut: refundsLeftOutRows, refundsWaiting },
+    assign: { done: assignDone, created, ready, needsDomain, leftOut: leftOutRows, refundsLeftOut: refundsLeftOutRows, refundsWaiting, cash: cashRows },
     bank: { done: missingCards.length === 0, missingCards },
     canFinish: assignDone && missingCards.length === 0,
     missing,
