@@ -151,8 +151,8 @@ import { ORDER_NOT_SENT_YET } from "@/lib/orders/device-order-saves";
 
 // What page.tsx hands the form: the first customers and products, as rows.
 const CUSTOMER_ROWS = [
-  { id: "c1", name: "משכן משה", phone: "052-1234567", email: "office@mishkan.example", address: "בני ברק", requires_prepayment: false },
-  { id: "c2", name: "בית הכנסת הגדול", phone: "03-5555555", email: null, address: "ירושלים", requires_prepayment: true },
+  { id: "c1", name: "משכן משה", phone: "052-1234567", email: "office@mishkan.example", address: "בני ברק | רבי עקיבא 10", requires_prepayment: false },
+  { id: "c2", name: "בית הכנסת הגדול", phone: "03-5555555", email: null, address: "ירושלים | יפו 20", requires_prepayment: true },
 ];
 const PRODUCT_ROWS = [
   { id: "p1", name: "שקית חול", sku: "SAND-25", base_price: 120, stock: 10 },
@@ -360,6 +360,47 @@ describe("the new-order wizard — the first step", () => {
     fireEvent.click(screen.getByRole("button", { name: "שמירת הלקוח" }));
     expect(screen.getByRole("heading", { name: "נגריית השרון" })).toBeInTheDocument();
     expect(nextButton()).toBeEnabled();
+  });
+
+  /** משכן משה with another address saved, in the list and the search index alike. */
+  function withAddress(address: string) {
+    const rows = [{ ...CUSTOMER_ROWS[0], address }, CUSTOMER_ROWS[1]];
+    server.customerIndex = rows.map((row) => indexEntry(row));
+    return rows;
+  }
+
+  // Owner, 2026-10-16: picking a customer with no real address should say so
+  // at once, while they're on the phone, so the office asks for it.
+  it.each([
+    ["only a city", "בני ברק", "הכתובת השמורה: בני ברק"],
+    ["words after the house number", "בית שמש | יחזקאל הנביא 27 בחניה", "הכתובת השמורה: יחזקאל הנביא 27 בחניה, בית שמש"],
+    ["'לא ידוע'", "לא ידוע", "לא שמורה כתובת ללקוח הזה"],
+  ])("asks for the address when the customer picked has %s", async (_label, address, said) => {
+    await renderForm({ customers: withAddress(address) });
+    tap("משכן משה");
+    expect(screen.getByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(said))).toBeInTheDocument();
+
+    // "עדכון הכתובת" opens the customer's details to add it.
+    fireEvent.click(screen.getByRole("button", { name: "עדכון הכתובת" }));
+    expect(screen.queryByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).not.toBeInTheDocument();
+    expect(screen.getByText("טופס עריכת לקוח")).toBeInTheDocument();
+  });
+
+  it("lets the order go on without an address, and keeps a reminder on the card", async () => {
+    await renderForm({ customers: withAddress("בני ברק") });
+    tap("משכן משה");
+    fireEvent.click(screen.getByRole("button", { name: "המשך בלי" }));
+    expect(screen.queryByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).not.toBeInTheDocument();
+    expect(screen.getByText("אין כתובת מלאה ללקוח הזה")).toBeInTheDocument();
+    expect(nextButton()).toBeEnabled();
+  });
+
+  it("says nothing for a customer with a full address", async () => {
+    await renderForm();
+    tap("משכן משה");
+    expect(screen.queryByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).not.toBeInTheDocument();
+    expect(screen.queryByText("אין כתובת מלאה ללקוח הזה")).not.toBeInTheDocument();
   });
 
   it("shows the server's load errors above the form", async () => {

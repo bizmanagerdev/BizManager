@@ -18,7 +18,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
-import { omitUnknownPlace } from "@/lib/ui/cities";
+import { addressQuality, omitUnknownPlace, plainAddress } from "@/lib/ui/cities";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { Badge } from "@/components/ui/badge";
 import { DateInput } from "@/components/ui/date-input";
@@ -328,6 +328,8 @@ export default function NewOrderClient({
   // Pay-ahead reminder shown at save when the customer requires prepayment and a
   // balance remains — the user acknowledges it to create the order anyway.
   const [prepaymentConfirmOpen, setPrepaymentConfirmOpen] = useState(false);
+  // The customer just picked, when their address isn't one Waze can use.
+  const [addressPromptFor, setAddressPromptFor] = useState<CustomerOption | null>(null);
 
   const actionLocked = submitting;
 
@@ -1175,6 +1177,27 @@ export default function NewOrderClient({
           void submitOrder(true);
         }}
       />
+      {/* Asked the moment the customer is picked, while they're still on the
+          phone (owner, 2026-10-16: "when I click a customer that doesn't have
+          a real address … it should say you gotta save the address"). */}
+      <ConfirmDialog
+        open={addressPromptFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddressPromptFor(null);
+        }}
+        title="צריך לעדכן כתובת ללקוח"
+        description={
+          addressPromptFor && plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })
+            ? `הכתובת השמורה: ${plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })}. אין בה רחוב ומספר בית, אז Waze לא יוכל לנווט. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה.`
+            : "לא שמורה כתובת ללקוח הזה. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה."
+        }
+        confirmLabel="עדכון הכתובת"
+        cancelLabel="המשך בלי"
+        onConfirm={() => {
+          setAddressPromptFor(null);
+          setEditingCustomer(true);
+        }}
+      />
       <StepWizard
         variant={embedded ? "dialog" : "page"}
         rootRef={topRef}
@@ -1324,7 +1347,12 @@ export default function NewOrderClient({
                           type="button"
                           disabled={actionLocked}
                           onClick={() => {
-                            if (customer.id !== customerId) setBranchId("");
+                            if (customer.id !== customerId) {
+                              setBranchId("");
+                              if (addressQuality({ address: customer.address, city: customer.city }) !== "clear") {
+                                setAddressPromptFor(customer);
+                              }
+                            }
                             setCustomerId(customer.id);
                             setPickedCustomer(customer);
                             setEditingCustomer(false);
@@ -1450,6 +1478,28 @@ export default function NewOrderClient({
                           )}
                         </div>
                       </div>
+
+                      {/* Stays after the pop-up, while the customer's on the phone
+                          (owner, 2026-10-15: "when you choose that customer, say
+                          there's no address here … please add address"). */}
+                      {!editingCustomer && addressQuality({ address: selectedCustomer.address, city: selectedCustomer.city }) !== "clear" ? (
+                        <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
+                          <WarningIcon className="h-4 w-4 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold">אין כתובת מלאה ללקוח הזה</p>
+                            <p>אם ההזמנה למשלוח, בקשו מהלקוח רחוב ומספר בית ושמרו אותם.</p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingCustomer(true)}
+                            disabled={actionLocked}
+                          >
+                            הוספת כתובת
+                          </Button>
+                        </div>
+                      ) : null}
 
                       {editingCustomer ? (
                         <CustomerForm
@@ -2290,6 +2340,12 @@ export default function NewOrderClient({
                     )
                   }
                 />
+                {selectedCustomer && addressQuality({ address: selectedCustomer.address, city: selectedCustomer.city }) !== "clear" ? (
+                  <p className="flex items-center gap-1.5 text-xs text-warning-soft-foreground">
+                    <WarningIcon className="h-3.5 w-3.5 shrink-0" />
+                    אין כתובת מלאה: במשלוח Waze לא יוכל לנווט.
+                  </p>
+                ) : null}
                 {selectedCustomer?.requiresPrepayment ? (
                   <div className="pt-1">
                     <Badge variant="warning">תשלום מראש</Badge>

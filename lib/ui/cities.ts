@@ -163,7 +163,15 @@ export function getCityRegion(city: string | null | undefined): DeliveryRegion |
   return CITY_REGION_MAP[city.trim()] ?? null;
 }
 
-const isBlankAddressPart = (value: string) => !value || value === "-" || value === "ללא עיר";
+// Every spelling of "unknown" on file (customers, 2026-10-15).
+const UNKNOWN_PLACE = new Set(["לא ידוע", "לא-ידוע", "לא ידועה", "לא יודע", "ל ידוע"]);
+const isUnknownPlace = (value: string) => UNKNOWN_PLACE.has(value.trim());
+
+const isBlankAddressPart = (value: string) =>
+  !value || value === "-" || value === "ללא עיר" || isUnknownPlace(value);
+
+/** A town name on its own — "בית שמש" saved as the whole address is a city, not a street. */
+const KNOWN_PLACES = new Set<string>([...CITY_OPTIONS.filter((c) => c !== "אחר"), ...Object.keys(CITY_REGION_MAP)]);
 
 // Street-type words that already stand in for "רחוב" — don't prefix these.
 const STREET_TYPE_PREFIX = /^(רחוב|רח['׳]|שדרות|שד['׳]|דרך|סמט|שכ|כיכר|ככר|מושב|קיבוץ|כביש|נתיב)/;
@@ -174,36 +182,82 @@ const STREET_TYPE_PREFIX = /^(רחוב|רח['׳]|שדרות|שד['׳]|דרך|ס�
  * own. Addresses are stored "city | street", which we split apart. Shared by
  * the deliveries cards and the shareable delivery image so both read alike.
  */
-export function formatDeliveryAddress(input: {
+function splitDeliveryAddress(input: {
   address?: string | null;
   city?: string | null;
-}): string {
+}): { street: string; city: string } {
   const raw = (input.address ?? "").trim();
   let city = (input.city ?? "").trim();
+  if (isBlankAddressPart(city)) city = "";
   let street = "";
 
   if (raw.includes("|")) {
     const segments = raw.split("|").map((part) => part.trim()).filter(Boolean);
-    if (isBlankAddressPart(city) && segments[0]) city = segments[0];
-    street = segments.slice(1).join(", ").trim();
-  } else if (!isBlankAddressPart(city) && raw.startsWith(city)) {
+    if (!city && segments[0] && !isBlankAddressPart(segments[0])) city = segments[0];
+    street = segments
+      .slice(1)
+      .filter((part) => !isBlankAddressPart(part))
+      .join(", ")
+      .trim();
+  } else if (city && raw.startsWith(city)) {
     street = raw.slice(city.length).replace(/^[\s,]+/, "").trim();
-  } else if (!isBlankAddressPart(city) && raw === city) {
-    street = "";
-  } else {
+  } else if (!city && KNOWN_PLACES.has(raw)) {
+    city = raw;
+  } else if (!isBlankAddressPart(raw)) {
+    // "-" is what the deliveries loader puts for no address at all.
     street = raw;
   }
 
-  const cityClean = isBlankAddressPart(city) ? "" : city;
   // Guard against a duplicated city trailing the street segment.
-  if (cityClean && street.endsWith(cityClean)) {
-    street = street.slice(0, -cityClean.length).replace(/[\s,]+$/, "").trim();
+  if (city && street.endsWith(city)) {
+    street = street.slice(0, -city.length).replace(/[\s,]+$/, "").trim();
   }
-  if (street && !STREET_TYPE_PREFIX.test(street)) {
-    street = `רחוב ${street}`;
-  }
+  return { street, city };
+}
 
-  return [street, cityClean].filter(Boolean).join(", ");
+export function formatDeliveryAddress(input: {
+  address?: string | null;
+  city?: string | null;
+}): string {
+  const { street, city } = splitDeliveryAddress(input);
+  const shown = street && !STREET_TYPE_PREFIX.test(street) ? `רחוב ${street}` : street;
+  return [shown, city].filter(Boolean).join(", ");
+}
+
+// A street and its house number, with at most a letter after it ("14ב",
+// "14 ב") — nothing else. "יחזקאל הנביא 27 בחניה" isn't one.
+const CLEAR_STREET = /^[^\d|,()/]+?\s*\d+(?:\s?[א-ת])?$/;
+
+/** "הרצל 5, ירושלים" / "הרצל 5 ירושלים" → "הרצל 5": a town at the end is fine. */
+function withoutTrailingPlace(street: string): string {
+  for (const place of KNOWN_PLACES) {
+    if (!street.endsWith(place)) continue;
+    const before = street.slice(0, -place.length);
+    if (/[\s,]$/.test(before)) return before.replace(/[\s,]+$/, "");
+  }
+  return street;
+}
+
+/**
+ * Whether Waze can be trusted with this address (owner, 2026-10-15/16):
+ * - "clear": a street and house number, with or without the city — navigate.
+ * - "unclear": a street, but no number or words after it ("27 בחניה",
+ *   "דירה 5", "קניון רמות קומה 2 …"). Waze guessed and sent drivers to the
+ *   wrong place, so it's blocked until the address is saved properly.
+ * - "none": a city alone, "לא ידוע", or nothing.
+ */
+export type AddressQuality = "none" | "unclear" | "clear";
+
+export function addressQuality(input: { address?: string | null; city?: string | null }): AddressQuality {
+  const { street } = splitDeliveryAddress(input);
+  if (!street) return "none";
+  return CLEAR_STREET.test(withoutTrailingPlace(street)) ? "clear" : "unclear";
+}
+
+/** What's saved, readable and ready to copy: "יחזקאל הנביא 27 בחניה, בית שמש". */
+export function plainAddress(input: { address?: string | null; city?: string | null }): string {
+  const { street, city } = splitDeliveryAddress(input);
+  return [street, city].filter(Boolean).join(", ");
 }
 
 /**
@@ -215,6 +269,6 @@ export function formatDeliveryAddress(input: {
 export function omitUnknownPlace(value: string | null | undefined): string | null {
   const trimmed = (value ?? "").trim();
   if (!trimmed) return null;
-  if (trimmed === "לא ידוע" || trimmed === "לא-ידוע" || trimmed === "לא ידועה") return null;
+  if (isUnknownPlace(trimmed)) return null;
   return trimmed;
 }

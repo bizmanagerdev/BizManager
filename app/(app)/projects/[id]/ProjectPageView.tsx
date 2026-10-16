@@ -273,6 +273,9 @@ export default function ProjectPageView({
       : null;
   const projectType = typeof overview?.project_type === "string" ? overview.project_type : null;
   const itemsToMove = Array.isArray(overview?.items_to_move) ? overview.items_to_move : [];
+  // Waze gets the bare address; the floor and lift are for reading, not a place.
+  const originAddress = typeof overview?.origin_address === "string" ? overview.origin_address : null;
+  const destinationAddress = typeof overview?.destination_address === "string" ? overview.destination_address : null;
   const moveOrigin = formatMovingEndpoint({
     address: overview?.origin_address ?? null,
     floor: overview?.origin_floor ?? null,
@@ -315,7 +318,7 @@ export default function ProjectPageView({
   const routeHeadline = hasRoute ? (
     <span className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-base font-bold leading-snug">
       {moveOrigin ? (
-        <AddressLink address={moveOrigin} className="flex min-w-0 items-center gap-2">
+        <AddressLink address={originAddress} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
             <WazeIcon className="h-3.5 w-3.5" />
           </span>
@@ -324,7 +327,7 @@ export default function ProjectPageView({
       ) : null}
       {moveOrigin && moveDestination ? <ArrowLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden /> : null}
       {moveDestination ? (
-        <AddressLink address={moveDestination} className="flex min-w-0 items-center gap-2">
+        <AddressLink address={destinationAddress} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
             <WazeIcon className="h-3.5 w-3.5" />
           </span>
@@ -419,7 +422,7 @@ export default function ProjectPageView({
           {hasRoute ? (
             <div className="space-y-2 lg:hidden">
               {moveOrigin ? (
-                <AddressLink address={moveOrigin} className="flex items-start gap-2 text-sm">
+                <AddressLink address={originAddress} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
                     <WazeIcon className="h-3.5 w-3.5" />
                   </span>
@@ -430,7 +433,7 @@ export default function ProjectPageView({
                 </AddressLink>
               ) : null}
               {moveDestination ? (
-                <AddressLink address={moveDestination} className="flex items-start gap-2 text-sm">
+                <AddressLink address={destinationAddress} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
                     <WazeIcon className="h-3.5 w-3.5" />
                   </span>

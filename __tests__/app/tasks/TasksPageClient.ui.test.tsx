@@ -473,8 +473,10 @@ describe("what a card shows", () => {
     expect(c.getByText("בניין A")).toBeInTheDocument();
     expect(c.getByText("דוד כהן")).toBeInTheDocument();
     expect(c.getByText("· 050-1234567")).toBeInTheDocument();
-    // The city opens navigation to it.
-    expect(c.getByRole("link", { name: "בני ברק" }).getAttribute("href")).toContain(encodeURIComponent("בני ברק"));
+    // A city alone isn't an address: the tap says so instead of opening Waze
+    // in the middle of town (owner, 2026-10-15).
+    expect(c.queryByRole("link", { name: "בני ברק" })).not.toBeInTheDocument();
+    expect(c.getByRole("button", { name: "בני ברק" })).toHaveAttribute("title", "אין כתובת מלאה לניווט");
     expect(c.getByTitle("משימה פרטית — רק את/ה רואה אותה")).toBeInTheDocument();
     expect(c.getByTitle("2 קבצים מצורפים")).toHaveTextContent("2");
     expect(c.getByText("3")).toBeInTheDocument();

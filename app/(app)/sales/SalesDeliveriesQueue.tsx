@@ -130,6 +130,9 @@ function groupDeliveries(deliveries: DeliveryItem[], regionFilter: string | null
 // see the load. The cap only exists to stop a huge order from burying the card.
 const DELIVERY_ITEMS_LIMIT = 8;
 
+/** The Waze button when Waze is blocked (no address, or not a full one): grey. */
+const NO_ADDRESS_WAZE = "bg-muted text-muted-foreground hover:!text-muted-foreground";
+
 /** The still-outstanding line items: drop what's already fully delivered, and
  * show the remaining quantity rather than the original ordered quantity — this
  * queue is what's left to load, not a record of what already went out. */
@@ -498,18 +501,20 @@ export default function SalesDeliveriesQueue({
                                       <WazeIcon className="h-3.5 w-3.5" />
                                       נקודה
                                     </a>
-                                  ) : displayAddress ? (
+                                  ) : (
                                     // The icon alone (owner, 2026-10-11: "remove the word waze …
                                     // leave just the icon") — the Waze glyph says it, as on the phone.
+                                    // Grey when the address isn't a full one: no Waze (components/ui/address-link.tsx).
                                     <AddressLink
                                       address={group.address}
                                       city={city}
                                       aria-label="נווט עם Waze"
                                       className="inline-flex shrink-0 items-center rounded-lg bg-secondary px-2 py-1 text-xs text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
+                                      unavailableClassName={NO_ADDRESS_WAZE}
                                     >
                                       <WazeIcon className="h-3.5 w-3.5" />
                                     </AddressLink>
-                                  ) : null}
+                                  )}
                                   <span className="min-w-0">{displayAddress || "—"}</span>
                                 </div>
                               </td>
@@ -670,15 +675,17 @@ export default function SalesDeliveriesQueue({
                                           <WazeIcon className="h-4 w-4" />
                                           <span className="text-[0.647rem] font-semibold leading-none">נקודה</span>
                                         </a>
-                                      ) : displayAddress ? (
+                                      ) : (
                                         <AddressLink
                                           address={group.address}
                                           city={city}
+                                          aria-label="נווט עם Waze"
                                           className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
+                                          unavailableClassName={NO_ADDRESS_WAZE}
                                         >
                                           <WazeIcon className="h-4 w-4" />
                                         </AddressLink>
-                                      ) : null}
+                                      )}
                                       <div className="min-w-0 flex-1">
                                         <div className={LIST_CARD_NAME}>{combinedCustomerName(group)}</div>
                                         {displayAddress ? <div className={LIST_CARD_META}>{displayAddress}</div> : null}
