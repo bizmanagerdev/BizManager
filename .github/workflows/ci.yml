@@ -122,10 +122,27 @@ jobs:
         # this CLI version - it silently still prints the plain banner).
         # Credentials are read afterward via `supabase status -o env`
         # instead, which the CLI genuinely honors - see the next step.
+        #
+        # The CLI pulls its images from public.ecr.aws, whose anonymous
+        # download allowance is shared by the runners' addresses: runs #677
+        # and #679 (2026-10-16) died on "toomanyrequests: Data limit
+        # exceeded" before any test ran. When a pull is refused like that,
+        # start once more from Docker Hub instead — the CLI's own
+        # SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io switch (read by CLI
+        # 2.107.0, which pulls "supabase/<image>" from there). Any other
+        # failure is reported as before.
         run: |
           set +e
           npx supabase start --yes --debug > /tmp/supabase-stdout.txt 2> /tmp/supabase-stderr.txt
           STATUS=$?
+          if [ $STATUS -ne 0 ] && grep -qiE "toomanyrequests|failed to pull docker image" /tmp/supabase-stdout.txt /tmp/supabase-stderr.txt; then
+            echo "::warning::public.ecr.aws refused the Supabase image download; starting again from Docker Hub."
+            npx supabase stop --no-backup > /dev/null 2>&1
+            export SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io
+            echo "SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io" >> "$GITHUB_ENV"
+            npx supabase start --yes --debug > /tmp/supabase-stdout.txt 2> /tmp/supabase-stderr.txt
+            STATUS=$?
+          fi
           if [ $STATUS -ne 0 ]; then
             {
               echo "### supabase start failed (exit $STATUS)"
