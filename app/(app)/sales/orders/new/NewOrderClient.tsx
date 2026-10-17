@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { pinFrom } from "@/lib/delivery-location";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -18,7 +19,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
-import { addressQuality, omitUnknownPlace, plainAddress } from "@/lib/ui/cities";
+import { addressQuality, omitUnknownPlace, orderCity, plainAddress } from "@/lib/ui/cities";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { Badge } from "@/components/ui/badge";
 import { DateInput } from "@/components/ui/date-input";
@@ -352,6 +353,7 @@ export default function NewOrderClient({
           address: getString(row, ["address"]),
           city: extractCityFromAddress(getString(row, ["address"])),
           requiresPrepayment: row.requires_prepayment === true,
+          pin: pinFrom(row.delivery_lat, row.delivery_lng),
         }))
         .filter((row) => row.id),
     [customers]
@@ -384,6 +386,21 @@ export default function NewOrderClient({
   // Which of the customer's branches this order is for — only asked about when
   // the customer actually has more than one (see the "branch" step gating below).
   const [branchId, setBranchId] = useState(initialOrder?.branch_id ?? restoredDraft?.branchId ?? "");
+  // Where the order goes: the branch's address when it's for a branch that has
+  // one, in the branch's city (lib/ui/cities.ts orderCity), else the customer's.
+  const orderBranch = branchId ? selectedCustomer?.branches?.find((b) => b.id === branchId) : undefined;
+  const orderAddress = orderBranch?.address?.trim()
+    ? orderBranch.address
+    : selectedCustomer?.address || selectedCustomer?.city || null;
+  const orderAddressCity = orderBranch?.address?.trim()
+    ? orderCity({
+        branchAddress: orderBranch.address,
+        customerAddress: selectedCustomer?.address,
+        customerCity: selectedCustomer?.city,
+      })
+    : selectedCustomer?.city ?? null;
+  // The customer's saved point — not for a branch that has its own address.
+  const orderPin = orderBranch?.address?.trim() ? null : selectedCustomer?.pin ?? null;
 
   useEffect(() => {
     if (prefillHandled.current && !isEditMode) return;
@@ -1349,7 +1366,7 @@ export default function NewOrderClient({
                           onClick={() => {
                             if (customer.id !== customerId) {
                               setBranchId("");
-                              if (addressQuality({ address: customer.address, city: customer.city }) !== "clear") {
+                              if (!customer.pin && addressQuality({ address: customer.address, city: customer.city }) !== "clear") {
                                 setAddressPromptFor(customer);
                               }
                             }
@@ -1482,7 +1499,7 @@ export default function NewOrderClient({
                       {/* Stays after the pop-up, while the customer's on the phone
                           (owner, 2026-10-15: "when you choose that customer, say
                           there's no address here … please add address"). */}
-                      {!editingCustomer && addressQuality({ address: selectedCustomer.address, city: selectedCustomer.city }) !== "clear" ? (
+                      {!editingCustomer && !selectedCustomer.pin && addressQuality({ address: selectedCustomer.address, city: selectedCustomer.city }) !== "clear" ? (
                         <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
                           <WarningIcon className="h-4 w-4 shrink-0" />
                           <div className="min-w-0 flex-1">
@@ -1527,6 +1544,7 @@ export default function NewOrderClient({
                                 row.isAddress ? (
                                   <AddressLink
                                     address={row.value}
+                                    pin={selectedCustomer.pin}
                                     className="inline-flex items-center gap-1 font-medium text-foreground"
                                   >
                                     <WazeIcon className="h-3.5 w-3.5 shrink-0" />
@@ -2325,22 +2343,19 @@ export default function NewOrderClient({
                 <SummaryRow label="טלפון" value={selectedCustomer?.phone || "—"} />
                 {selectedCustomer?.email ? <SummaryRow label="אימייל" value={selectedCustomer.email} /> : null}
                 <SummaryRow
-                  label="כתובת"
+                  label={orderBranch?.address?.trim() ? "כתובת הסניף" : "כתובת"}
                   value={
-                    selectedCustomer?.address || selectedCustomer?.city ? (
-                      <AddressLink
-                        address={selectedCustomer?.address || selectedCustomer?.city}
-                        className="inline-flex items-center gap-1"
-                      >
+                    orderAddress ? (
+                      <AddressLink address={orderAddress} city={orderAddressCity} pin={orderPin} className="inline-flex items-center gap-1">
                         <WazeIcon className="h-3.5 w-3.5 shrink-0" />
-                        {selectedCustomer?.address || selectedCustomer?.city}
+                        {plainAddress({ address: orderAddress, city: orderAddressCity }) || orderAddress}
                       </AddressLink>
                     ) : (
                       "—"
                     )
                   }
                 />
-                {selectedCustomer && addressQuality({ address: selectedCustomer.address, city: selectedCustomer.city }) !== "clear" ? (
+                {selectedCustomer && !orderPin && addressQuality({ address: orderAddress, city: orderAddressCity }) !== "clear" ? (
                   <p className="flex items-center gap-1.5 text-xs text-warning-soft-foreground">
                     <WarningIcon className="h-3.5 w-3.5 shrink-0" />
                     אין כתובת מלאה: במשלוח Waze לא יוכל לנווט.

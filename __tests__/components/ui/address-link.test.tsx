@@ -53,6 +53,21 @@ describe("AddressLink", () => {
     }
   );
 
+  it.each([
+    ["a full address", "בית שמש | יחזקאל הנביא 27"],
+    ["a partial one", "בית שמש | יחזקאל הנביא 27 בחניה"],
+    ["none at all", null],
+  ])("a saved point always wins over %s (owner, 2026-10-16)", (_label, address) => {
+    render(
+      <AddressLink address={address} pin={{ lat: 31.7468, lng: 34.9889 }}>
+        <span>icon</span>
+      </AddressLink>
+    );
+    const link = screen.getByRole("link");
+    expect(link.getAttribute("href")).toBe("https://waze.com/ul?ll=31.7468,34.9889&navigate=yes");
+    expect(link).toHaveAttribute("title", "נווט לנקודה השמורה");
+  });
+
   it("a tap on the notice doesn't reach the row underneath", () => {
     const rowClick = vi.fn();
     render(

@@ -596,6 +596,7 @@ export default function SalesDeliveriesQueue({
                                     label="שליחה לנהג"
                                     variant="outline"
                                     className="shrink-0 gap-1.5"
+                                    canEditAddress={canOpenOrder}
                                   />
                                   {/* ✓ אישור אספקה, the dialog's own name for it, in
                                       the list's outline (owner, 2026-08-18: a list
@@ -875,6 +876,7 @@ export default function SalesDeliveriesQueue({
                                             label="שליחה לנהג"
                                             variant="outline"
                                             className="gap-1.5"
+                                            canEditAddress={canOpenOrder}
                                           />
                                           <OrderConfirmDialog
                                             orderId={delivery.id}

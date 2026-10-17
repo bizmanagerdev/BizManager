@@ -34,6 +34,9 @@ type ConfirmDialogProps = {
   /** Shown above the buttons when the action failed. */
   error?: string;
   onConfirm: () => void;
+  /** When the second button is an action of its own ("עריכת הכתובת"), not just
+   *  "close". Closing with the X or Escape still only closes. */
+  onCancel?: () => void;
 };
 
 export function ConfirmDialog({
@@ -48,6 +51,7 @@ export function ConfirmDialog({
   loading = false,
   error,
   onConfirm,
+  onCancel,
 }: ConfirmDialogProps) {
   return (
     <Dialog
@@ -73,7 +77,7 @@ export function ConfirmDialog({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         <DialogFooter className="mt-2">
-          <Button type="button" variant="muted" disabled={loading} onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="muted" disabled={loading} onClick={() => (onCancel ? onCancel() : onOpenChange(false))}>
             {cancelLabel}
           </Button>
           <Button

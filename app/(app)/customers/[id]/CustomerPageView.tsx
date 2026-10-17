@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useCallback, useMemo, useState } from "react";
+import { Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
 import { HistoryIcon, NoteIcon, ReceiptIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
@@ -101,6 +101,20 @@ export default function CustomerPageView({
   const [notesEditRequest, setNotesEditRequest] = useState(0);
 
   const openEdit = useCallback(() => setEditOpen(true), []);
+  // "?edit=address" — sent here from a driver's slip whose address isn't full
+  // (DeliveryShareActions): open the edit form at once. Read after mount, so
+  // the server and the first browser paint agree; the flag is then dropped so
+  // a reload doesn't open it again.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("edit") !== "address") return;
+    // Syncing dialog state to a URL deep-link param, as LoansClient's ?repay.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditOpen(true);
+    params.delete("edit");
+    const query = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, []);
   const openNewTask = useCallback(() => setTaskCreateOpen(true), []);
   const openCollectionForm = useCallback((form: CollectionFormRequest["form"]) => {
     setCollectionRequest({ form, key: Date.now() });

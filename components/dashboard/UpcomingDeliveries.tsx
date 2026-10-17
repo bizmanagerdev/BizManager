@@ -191,6 +191,7 @@ export default function UpcomingDeliveries({
                       label=""
                       variant="ghost"
                       className="h-8 w-8 p-0 shadow-none max-md:min-h-[44px] max-md:min-w-[44px]"
+                      canEditAddress={canOpenOrder}
                     />
                     {/* "סופק", the dashboard's own short word, where every other
                         page says "✓ אישור אספקה" (owner, 2026-10-11: "change it

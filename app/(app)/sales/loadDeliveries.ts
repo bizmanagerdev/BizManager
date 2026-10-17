@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { orderCity } from "@/lib/ui/cities";
 import { derivePaymentStatus, type PaymentStatus } from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
@@ -143,7 +144,14 @@ export async function loadDeliveriesPage(
       // A branch's own address (when the order is for one) is where the
       // driver actually needs to go — falls back to the customer's own
       // address/city when the order isn't for a specific branch.
-      city: getString(row, "branch_city") ?? getString(row, "customer_city") ?? "ללא עיר",
+      // The branch's own city when its address names one, else the customer's
+      // (branch addresses are free text: "שמואל הנביא 52" isn't a city).
+      city:
+        orderCity({
+          branchAddress: getString(row, "branch_address"),
+          customerAddress: getString(row, "customer_address"),
+          customerCity: getString(row, "customer_city"),
+        }) ?? "ללא עיר",
       address: getString(row, "branch_address") ?? getString(row, "customer_address") ?? "-",
       items: [] as DeliveryOrderItem[],
       outOfStock: false,
@@ -170,15 +178,18 @@ export async function loadDeliveriesPage(
         if (customerIds.length === 0) return;
         const { data: customerRows } = await supabase
           .from("customers")
-          .select("id,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment")
+          .select("id,address,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment")
           .in("id", customerIds);
         const byId = new Map(((customerRows ?? []) as Row[]).map((row) => [getString(row, "id") ?? "", row]));
         for (const delivery of deliveries) {
           const row = byId.get(delivery.customerId);
           if (!row) continue;
           delivery.deliveryInstructions = getString(row, "delivery_instructions");
-          delivery.deliveryLat = getNumber(row, "delivery_lat");
-          delivery.deliveryLng = getNumber(row, "delivery_lng");
+          // The customer's point is where the customer is: not for an order
+          // going to a branch that has an address of its own.
+          const toOwnBranch = delivery.branchId !== null && delivery.address !== (getString(row, "address") ?? "-");
+          delivery.deliveryLat = toOwnBranch ? null : getNumber(row, "delivery_lat");
+          delivery.deliveryLng = toOwnBranch ? null : getNumber(row, "delivery_lng");
           delivery.requiresPrepayment = row.requires_prepayment === true;
         }
       })(),

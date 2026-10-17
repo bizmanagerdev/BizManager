@@ -1,4 +1,5 @@
 import { PAYMENT_TERMS_OPTIONS } from "@/lib/paymentTerms";
+import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import { omitUnknownPlace } from "@/lib/ui/cities";
 import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
@@ -34,6 +35,8 @@ export type CustomerOption = {
   city: string | null;
   address: string | null;
   requiresPrepayment: boolean;
+  /** The saved drop-off point: Waze goes there, and the address isn't asked for. */
+  pin?: DeliveryPin | null;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
   branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -120,6 +123,7 @@ export function mapCustomerSearchResult(row: Record<string, unknown>): CustomerO
     address: typeof row.address === "string" ? omitUnknownPlace(row.address) : null,
     city: typeof row.address === "string" ? omitUnknownPlace(extractCityFromAddress(row.address)) : null,
     requiresPrepayment: row.requires_prepayment === true,
+    pin: pinFrom(row.delivery_lat, row.delivery_lng),
     contacts,
     branches,
   };

@@ -273,6 +273,27 @@ export function addressQuality(input: { address?: string | null; city?: string |
   return CLEAR_STREET.test(withoutTrailingPlace(street)) ? "clear" : "unclear";
 }
 
+/**
+ * The city an order goes to. A branch order goes to the branch (owner,
+ * 2026-10-16: "branch order should use the city just like the orders"), but
+ * a branch's address is free text that usually names no city ("שמואל הנביא
+ * 52") — then the branch is taken to be in the customer's own city.
+ */
+export function orderCity(input: {
+  branchAddress?: string | null;
+  customerAddress?: string | null;
+  customerCity?: string | null;
+}): string | null {
+  const branchCity = input.branchAddress?.trim() ? splitDeliveryAddress({ address: input.branchAddress }).city : "";
+  if (branchCity) return branchCity;
+  const fromAddress = splitDeliveryAddress({ address: input.customerAddress }).city;
+  if (fromAddress) return fromAddress;
+  // The views' customer_city is the text before "|", so an address with no
+  // "|" ("זכריה הרופא 14") comes through as its "city": not one with a number.
+  const own = (input.customerCity ?? "").trim();
+  return own && !isBlankAddressPart(own) && !/\d/.test(own) ? own : null;
+}
+
 /** What's saved, readable and ready to copy: "יחזקאל הנביא 27 בחניה, בית שמש". */
 export function plainAddress(input: { address?: string | null; city?: string | null }): string {
   const { street, city } = splitDeliveryAddress(input);

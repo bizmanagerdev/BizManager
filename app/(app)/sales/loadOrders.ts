@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { orderCity } from "@/lib/ui/cities";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { fetchOrderDueDates } from "@/lib/collections";
 import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
@@ -198,6 +199,17 @@ async function fetchPrepaymentCustomerIds(
   );
 }
 
+/** Branch id → its address, for the orders that go to a branch. */
+async function fetchBranchAddresses(supabase: SupabaseClient, branchIds: string[]): Promise<Map<string, string | null>> {
+  if (branchIds.length === 0) return new Map();
+  const { data } = await supabase.from("customer_branches").select("id,address").in("id", branchIds);
+  return new Map(
+    ((data ?? []) as Row[])
+      .filter((r) => typeof r.id === "string")
+      .map((r) => [r.id as string, typeof r.address === "string" ? r.address : null] as const)
+  );
+}
+
 /**
  * Load one page of the orders list (open or closed), with each order's effective
  * due date attached for the late-status badge. Shared by the initial server
@@ -328,6 +340,9 @@ async function enrichOrderRows(supabase: SupabaseClient, rows: Row[]): Promise<R
       rows.map((r) => (typeof r.customer_id === "string" ? r.customer_id : "")).filter(Boolean)
     )
   );
+  const branchIds = Array.from(
+    new Set(rows.map((r) => (typeof r.branch_id === "string" ? r.branch_id : "")).filter(Boolean))
+  );
 
   // Single order_items read feeds BOTH the product summaries and the OOS flag.
   const itemRows = await fetchOrderItems(supabase, allOrderIds);
@@ -339,13 +354,14 @@ async function enrichOrderRows(supabase: SupabaseClient, rows: Row[]): Promise<R
     )
   );
 
-  const [orderDueById, availableByProduct, nameByProduct, pendingMethodsByOrder, prepaymentCustomerIds] =
+  const [orderDueById, availableByProduct, nameByProduct, pendingMethodsByOrder, prepaymentCustomerIds, branchAddressById] =
     await Promise.all([
       fetchOrderDueDates(supabase, allOrderIds),
       fetchInventoryAvailability(supabase, productIds),
       fetchProductNames(supabase, productIds),
       fetchOrderPendingMethods(supabase, allOrderIds),
       fetchPrepaymentCustomerIds(supabase, customerIds),
+      fetchBranchAddresses(supabase, branchIds),
     ]);
 
   const outOfStockByOrder = deriveOutOfStockDetails(itemRows, openOrderIds, availableByProduct, nameByProduct);
@@ -365,6 +381,12 @@ async function enrichOrderRows(supabase: SupabaseClient, rows: Row[]): Promise<R
       pending_payment_methods: pending?.methods ?? [],
       pending_check_number: pending?.checkNumber ?? null,
       customer_requires_prepayment: prepaymentCustomerIds.has(customerId),
+      // The city the order goes to: a branch order's branch (lib/ui/cities.ts).
+      customer_city: orderCity({
+        branchAddress: typeof r.branch_id === "string" ? branchAddressById.get(r.branch_id) : null,
+        customerAddress: typeof r.customer_address === "string" ? r.customer_address : null,
+        customerCity: typeof r.customer_city === "string" ? r.customer_city : null,
+      }),
     };
   });
 }

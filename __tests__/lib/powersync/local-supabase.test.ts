@@ -703,7 +703,7 @@ describe("the money views, worked out on the device", () => {
             "payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,vat_rate,business_domain,order_id,property_id,requires_split,recorded_by,notes,account_id,created_at,updated_at"
           ),
           salary_agreements: pad(tables.salary_agreements, "salary_type,hourly_rate,monthly_salary,notes,overtime_rate,standard_daily_hours"),
-          customers: pad(tables.customers, "name_for_invoice,email,address"),
+          customers: pad(tables.customers, "name_for_invoice,email,address,delivery_lat,delivery_lng"),
           customer_branches: [{ id: "b1", customer_id: "c1", name: "צפון", address: "חיפה", phone: "04" }],
           tasks: pad(
             [
@@ -763,7 +763,7 @@ describe("the money views, worked out on the device", () => {
 describe("the sales tabs, worked out on the device", () => {
   const tables = {
     customers: [
-      { id: "c1", name: "  ", name_for_invoice: "חברה", phone: "050", email: null, address: "חיפה|הרצל 1" },
+      { id: "c1", name: "  ", name_for_invoice: "חברה", phone: "050", email: null, address: "חיפה|הרצל 1", delivery_lat: null, delivery_lng: null },
     ],
     users: [{ id: "u1", full_name: "מנהל", email: "a@b.c" }],
     customer_branches: [],

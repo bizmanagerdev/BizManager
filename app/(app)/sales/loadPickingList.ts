@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { orderCity } from "@/lib/ui/cities";
 
 type Row = Record<string, unknown>;
 
@@ -56,13 +57,19 @@ export async function loadPickingListSource(
 ): Promise<PickingListDelivery[]> {
   const { data: deliveryRows } = await supabase
     .from("delivery_overview_view")
-    .select("order_id,customer_city,status")
+    .select("order_id,customer_city,customer_address,branch_address,status")
     .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`);
 
   const deliveries = ((deliveryRows ?? []) as Row[])
     .map((row) => ({
       orderId: getString(row, "order_id") ?? "",
-      city: getString(row, "customer_city") ?? "ללא עיר",
+      // A branch order counts under the branch's city (lib/ui/cities.ts orderCity).
+      city:
+        orderCity({
+          branchAddress: getString(row, "branch_address"),
+          customerAddress: getString(row, "customer_address"),
+          customerCity: getString(row, "customer_city"),
+        }) ?? "ללא עיר",
       items: [] as PickingListLine[],
     }))
     .filter((row) => row.orderId);

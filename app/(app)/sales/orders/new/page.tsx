@@ -118,7 +118,7 @@ export default async function NewSalesOrderPage({
     await Promise.all([
       supabase
         .from("customers")
-        .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment")
+        .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment,delivery_lat,delivery_lng")
         .order("name", { ascending: true })
         .range(0, 49),
       supabase
@@ -137,7 +137,7 @@ export default async function NewSalesOrderPage({
   if (prefillCustomerId && !customerList.some((row) => row.id === prefillCustomerId)) {
     const { data: prefillCustomer } = await supabase
       .from("customers")
-      .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment")
+      .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment,delivery_lat,delivery_lng")
       .eq("id", prefillCustomerId)
       .maybeSingle();
     if (prefillCustomer) {

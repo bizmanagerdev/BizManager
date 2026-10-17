@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { pinFrom } from "@/lib/delivery-location";
 import dynamic from "next/dynamic";
 import ProjectDetailsActions, { REMINDERS_SECTION_ID } from "@/app/(app)/projects/[id]/ProjectDetailsActions";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
@@ -263,6 +264,8 @@ export default function ProjectPageView({
   const customerWhatsapp = customerPhone;
   const customerEmail = cleanField(customerRow?.email);
   const customerAddress = cleanField(branchRow?.address) ?? cleanField(customerRow?.address);
+  // The saved drop-off point wins over the address, unless it's a branch's job.
+  const customerPin = cleanField(branchRow?.address) ? null : pinFrom(customerRow?.delivery_lat, customerRow?.delivery_lng);
   const customerInvoiceName = cleanField(customerRow?.name_for_invoice);
   const projectNotes = typeof overview?.notes === "string" && overview.notes.trim() ? overview.notes.trim() : null;
   const startDate = typeof overview?.start_date === "string" ? overview.start_date : null;
@@ -301,6 +304,7 @@ export default function ProjectPageView({
       whatsapp={customerWhatsapp}
       email={customerEmail}
       address={customerAddress}
+      pin={customerPin}
       entityType="project"
       entityId={id}
     />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
 import { EditButton, IconButton } from "@/components/ui/icon-button";
 import { Field } from "@/components/ui/field";
@@ -120,6 +121,8 @@ export type ProjectCustomerOption = {
   email: string | null;
   city: string | null;
   address: string | null;
+  /** The saved drop-off point: Waze goes there first. */
+  pin?: DeliveryPin | null;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
   branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -243,6 +246,7 @@ export function mapProjectCustomer(row: Row): ProjectCustomerOption | null {
     email: getString(row, ["email"]),
     address: omitUnknownPlace(address),
     city: omitUnknownPlace(getString(row, ["city"]) ?? extractCityFromAddress(address)),
+    pin: pinFrom(row.delivery_lat, row.delivery_lng),
     contacts,
     branches,
   };
@@ -1091,6 +1095,7 @@ export default function NewProjectClient({
                                 row.isAddress ? (
                                   <AddressLink
                                     address={row.value}
+                                    pin={selectedCustomer.pin}
                                     className="inline-flex items-center gap-1 font-medium text-foreground"
                                   >
                                     <WazeIcon className="h-3.5 w-3.5 shrink-0" />

@@ -89,14 +89,20 @@ export default function CustomerProfileCard({
       ),
     });
   }
-  if (address) {
+  if (address || customer.deliveryPin) {
     details.push({
       label: "כתובת",
       value: (
-        // The Waze mark is what says "tapping this navigates".
-        <AddressLink address={address} fallback="—" className="inline-flex items-center gap-1.5 hover:text-secondary">
+        // The Waze mark is what says "tapping this navigates". A saved
+        // drop-off point wins over the address (owner, 2026-10-16).
+        <AddressLink
+          address={address}
+          pin={customer.deliveryPin}
+          fallback="—"
+          className="inline-flex items-center gap-1.5 hover:text-secondary"
+        >
           <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 break-words">{address}</span>
+          <span className="min-w-0 break-words">{address || "נקודה שמורה"}</span>
         </AddressLink>
       ),
     });

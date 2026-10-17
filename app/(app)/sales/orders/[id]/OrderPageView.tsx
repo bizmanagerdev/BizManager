@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { pinFrom } from "@/lib/delivery-location";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
 import { CommentIcon, DeliveryIcon, DocumentIcon, HistoryIcon, OrderIcon, PaymentIcon, ReceiptIcon } from "@/components/ui/icons";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
@@ -168,6 +169,9 @@ export default function OrderPageView({
   const branchAddress = getString(branch ?? {}, "address");
   const branchPhone = getString(branch ?? {}, "phone");
   const effectiveAddress = branchAddress ? formatAddressForDisplay(branchAddress) : fullAddress;
+  // The customer's saved drop-off point wins over the address — unless the
+  // order goes to a branch somewhere else.
+  const orderPin = branchAddress ? null : pinFrom(customer?.delivery_lat, customer?.delivery_lng);
   const effectivePhone = branchPhone ?? customerPhone;
   const orderNotes = getString(order ?? {}, "notes");
 
@@ -399,6 +403,7 @@ export default function OrderPageView({
                 phone={effectivePhone}
                 email={customerEmail}
                 address={effectiveAddress}
+                pin={orderPin}
               />
             </div>
 
@@ -486,6 +491,7 @@ export default function OrderPageView({
                   phone={effectivePhone}
                   email={customerEmail}
                   address={effectiveAddress}
+                  pin={orderPin}
                 />
               </div>
 

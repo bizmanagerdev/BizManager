@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getCityRegion, addressQuality, formatDeliveryAddress, omitUnknownPlace, plainAddress } from "@/lib/ui/cities";
+import { getCityRegion, addressQuality, formatDeliveryAddress, omitUnknownPlace, orderCity, plainAddress } from "@/lib/ui/cities";
 
 describe("getCityRegion", () => {
   it("looks up a known city's delivery region", () => {
@@ -126,5 +126,28 @@ describe("plainAddress", () => {
     );
     expect(plainAddress({ address: "בית שמש", city: null })).toBe("בית שמש");
     expect(plainAddress({ address: "לא ידוע", city: "" })).toBe("");
+  });
+});
+
+describe("orderCity", () => {
+  it("a branch order goes to the branch's city when its address names one", () => {
+    expect(orderCity({ branchAddress: "חיפה | הרצל 5", customerAddress: "ירושלים | יפו 20" })).toBe("חיפה");
+    expect(orderCity({ branchAddress: "בני ברק", customerAddress: "ירושלים | יפו 20" })).toBe("בני ברק");
+  });
+
+  it("a branch address with no city is in the customer's city", () => {
+    expect(orderCity({ branchAddress: "שמואל הנביא 52", customerAddress: "ירושלים | שמואל הנביא 52" })).toBe("ירושלים");
+    expect(orderCity({ branchAddress: "כנפי נשרים", customerAddress: "בית שמש | רמה ג", customerCity: "בית שמש" })).toBe(
+      "בית שמש"
+    );
+  });
+
+  it("no branch: the customer's city, never a street read as a city", () => {
+    expect(orderCity({ customerAddress: "אלעד | שמעיה 8" })).toBe("אלעד");
+    expect(orderCity({ customerAddress: "אלעד" })).toBe("אלעד");
+    // delivery_overview_view's customer_city for an address with no "|".
+    expect(orderCity({ customerAddress: "זכריה הרופא 14", customerCity: "זכריה הרופא 14" })).toBeNull();
+    expect(orderCity({ customerAddress: null, customerCity: "מודיעין" })).toBe("מודיעין");
+    expect(orderCity({ customerAddress: null, customerCity: null })).toBeNull();
   });
 });

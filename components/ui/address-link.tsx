@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ViewDialog } from "@/components/ui/view-dialog";
+import { wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { addressQuality, plainAddress } from "@/lib/ui/cities";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
  * - a city alone, or a street with extra words ("27 בחניה"): a notice shows
  *   what's saved, to copy into Waze by hand or to save properly;
  * - nothing saved: the mark is grey and a tap says to save an address.
+ * A saved drop-off point (`pin`) skips all of that: Waze goes to the point.
  */
 export interface AddressLinkProps
   extends Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href"> {
@@ -31,6 +33,10 @@ export interface AddressLinkProps
   fallback?: React.ReactNode;
   /** Extra classes when Waze is blocked, e.g. a grey Waze button. */
   unavailableClassName?: string;
+  /** The customer's saved drop-off point. It always wins over the address
+   *  (owner, 2026-10-16: "if there's a saved point … we use the saved point
+   *  because that is the real address"). */
+  pin?: DeliveryPin | null;
 }
 
 function buildWazeUrl(query: string): string {
@@ -53,6 +59,7 @@ export function AddressLink({
   city,
   fallback = "-",
   unavailableClassName,
+  pin,
   children,
   className,
   onClick,
@@ -66,13 +73,13 @@ export function AddressLink({
   const quality = addressQuality({ address: addr, city: town });
   const saved = plainAddress({ address: addr, city: town });
 
-  if (quality === "clear") {
+  if (pin || quality === "clear") {
     return (
       <a
-        href={buildWazeUrl(query)}
+        href={pin ? wazeLinkForPin(pin) : buildWazeUrl(query)}
         target="_blank"
         rel="noopener noreferrer"
-        title="נווט עם Waze"
+        title={pin ? "נווט לנקודה השמורה" : "נווט עם Waze"}
         className={cn(
           "cursor-pointer transition-colors hover:text-primary hover:underline focus-visible:text-primary focus-visible:underline",
           className
@@ -84,7 +91,7 @@ export function AddressLink({
         }}
         {...props}
       >
-        {children ?? query}
+        {children ?? (query || saved)}
       </a>
     );
   }

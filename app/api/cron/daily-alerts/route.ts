@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { orderCity } from "@/lib/ui/cities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { deliverPush } from "@/lib/notifications/deliver";
 import { usersToAuthMap } from "@/lib/notifications/identity";
@@ -163,13 +164,18 @@ export async function GET(req: Request) {
         break;
       }
       case "deliveries": {
-        const { data } = await supabase.from("delivery_overview_view").select("customer_city,customer_address")
+        const { data } = await supabase.from("delivery_overview_view").select("customer_city,customer_address,branch_address")
           .in("status", ["out_for_delivery", "confirmed", "processing"]).range(0, 99);
         const rows = (data ?? []) as Row[];
         if (rows.length > 0) {
           const cityMap = new Map<string, number>();
           for (const r of rows) {
-            const city = getString(r, "customer_city") ?? getString(r, "customer_address") ?? "לא ידוע";
+            const city =
+              orderCity({
+                branchAddress: getString(r, "branch_address"),
+                customerAddress: getString(r, "customer_address"),
+                customerCity: getString(r, "customer_city"),
+              }) ?? "ללא עיר";
             cityMap.set(city, (cityMap.get(city) ?? 0) + 1);
           }
           const cityLines = [...cityMap.entries()].slice(0, 4).map(([city, count]) => `${city}: ${count}`);

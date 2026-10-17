@@ -55,7 +55,8 @@ const OVERVIEW_SELECT =
 // From the customers table: WhatsApp (the edit dialog's), the Morning link
 // (the Morning column) and the two flags the rows badge — plus the worker
 // link, through withLinkColumn.
-const CUSTOMER_SELECT = "id,whatsapp,morning_client_id,requires_prepayment";
+// The saved drop-off point too: the address column's Waze goes there first.
+const CUSTOMER_SELECT = "id,whatsapp,morning_client_id,requires_prepayment,delivery_lat,delivery_lng";
 
 type ReadResult = { data: Row[]; error: string | null };
 
@@ -251,6 +252,8 @@ async function enrichCustomerOverviewRows(
       morning_client_id: typeof customer?.morning_client_id === "string" ? customer.morning_client_id : null,
       requires_prepayment: customer?.requires_prepayment === true,
       linked_user_id: typeof customer?.linked_user_id === "string" ? customer.linked_user_id : null,
+      delivery_lat: customer?.delivery_lat ?? null,
+      delivery_lng: customer?.delivery_lng ?? null,
     };
   });
 
@@ -336,6 +339,9 @@ export type CustomerSearchIndexEntry = {
   address: string | null;
   active: boolean;
   requires_prepayment: boolean;
+  /** The saved drop-off point, for the wizards' Waze (lib/delivery-location.ts). */
+  delivery_lat: number | null;
+  delivery_lng: number | null;
   contacts: Array<{ full_name: string; phone: string | null; email: string | null; whatsapp: string | null }>;
   branches: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -356,7 +362,7 @@ export async function loadCustomerSearchIndexRows(
     fetchAllPagedResult((from, to) =>
       supabase
         .from("customers")
-        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment")
+        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng")
         .order("name", { ascending: true })
         .order("id")
         .range(from, to)
@@ -420,6 +426,8 @@ export async function loadCustomerSearchIndexRows(
       address: (row?.address as string | null) ?? null,
       active: row?.active !== false,
       requires_prepayment: row?.requires_prepayment === true,
+      delivery_lat: row?.delivery_lat == null ? null : Number(row.delivery_lat),
+      delivery_lng: row?.delivery_lng == null ? null : Number(row.delivery_lng),
       contacts: contactsByCustomer.get(id) ?? [],
       branches: branchesByCustomer.get(id) ?? [],
     };

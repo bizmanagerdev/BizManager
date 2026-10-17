@@ -57,6 +57,7 @@ import { CloseIcon, DownloadIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, 
 import { NativeSelect } from "@/components/ui/native-select";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { AddressLink } from "@/components/ui/address-link";
+import { pinFrom } from "@/lib/delivery-location";
 import { CallIconButton, ContactLink } from "@/components/ui/contact-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -992,6 +993,7 @@ export default function CustomersClient({
                   const phone = s(row, "phone");
                   const email = s(row, "email");
                   const address = s(row, "address");
+                  const pin = pinFrom(row.delivery_lat, row.delivery_lng);
                   const morningId = s(row, "morning_client_id");
                   const debt = n(row, "open_balance");
                   const pending = row[ENRICH_PENDING] === true;
@@ -1037,10 +1039,10 @@ export default function CustomersClient({
                       </td>
                       <td className={CUSTOMERS_CELL}>
                         <div className="text-muted-foreground [overflow-wrap:anywhere]">
-                          {address ? (
-                            <AddressLink address={address} className="inline-flex max-w-full items-center gap-1 align-middle">
+                          {address || pin ? (
+                            <AddressLink address={address} pin={pin} className="inline-flex max-w-full items-center gap-1 align-middle">
                               <WazeIcon className="h-3 w-3 shrink-0" />
-                              <span>{address}</span>
+                              <span>{address || "נקודה שמורה"}</span>
                             </AddressLink>
                           ) : (
                             "—"

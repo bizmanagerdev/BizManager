@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/money";
 import { toHebrewError } from "@/lib/error-messages";
-import { formatDeliveryAddress } from "@/lib/ui/cities";
+import { addressQuality, formatDeliveryAddress, plainAddress } from "@/lib/ui/cities";
+import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { isNativePlatform, shareImageNative } from "@/lib/native-share";
@@ -105,15 +108,23 @@ export default function DeliveryShareActions({
   className,
   label = "שיתוף",
   variant = "secondary",
+  canEditAddress = true,
 }: {
   delivery: DeliveryItem;
   className?: string;
   label?: string;
   /** "ghost" for a bare glyph with no button plate — see the dashboard card. */
   variant?: React.ComponentProps<typeof Button>["variant"];
+  /** Staff can go and fix the address; a worker can't open the customer page. */
+  canEditAddress?: boolean;
 }) {
+  const router = useRouter();
   const slipRef = useRef<HTMLDivElement>(null);
   const [renderingImage, setRenderingImage] = useState(false);
+  // No full address and no saved point: ask before the slip goes to a driver
+  // (owner, 2026-10-16: "this doesn't have a full address … do you want to
+  // share the slip anyways or not … if not, go and edit the address first").
+  const [addressCheckOpen, setAddressCheckOpen] = useState(false);
   // Guaranteed last-resort fallback (see the touch-path comment below): an
   // object URL for the captured slip, shown full-screen so the user can
   // long-press it to save/copy — doesn't depend on trusting any JS API.
@@ -335,15 +346,47 @@ export default function DeliveryShareActions({
 
   const address = formatDeliveryAddress({ address: delivery.address, city: delivery.city });
   const slipPin = pinFrom(delivery.deliveryLat, delivery.deliveryLng);
+  const fullAddress =
+    slipPin !== null || addressQuality({ address: delivery.address, city: delivery.city }) === "clear";
+  const savedAddress = plainAddress({ address: delivery.address, city: delivery.city });
 
   return (
     <>
+      <ConfirmDialog
+        open={addressCheckOpen}
+        onOpenChange={setAddressCheckOpen}
+        title="אין כתובת מלאה למשלוח"
+        description={
+          savedAddress
+            ? `הכתובת השמורה: ${savedAddress}. אין בה רחוב ומספר בית, אז הנהג לא יוכל לנווט אליה.`
+            : "לא שמורה כתובת למשלוח הזה, אז הנהג לא יוכל לנווט."
+        }
+        confirmLabel="שליחה בכל זאת"
+        cancelLabel={canEditAddress && delivery.customerId ? "עריכת הכתובת" : "ביטול"}
+        onCancel={
+          canEditAddress && delivery.customerId
+            ? () => {
+                setAddressCheckOpen(false);
+                emitNavigationStart();
+                router.push(`/customers/${delivery.customerId}?edit=address`);
+              }
+            : undefined
+        }
+        onConfirm={() => {
+          setAddressCheckOpen(false);
+          setRenderingImage(true);
+        }}
+      >
+        {canEditAddress ? null : (
+          <p className="text-sm text-muted-foreground">כדאי לבקש מהמשרד לעדכן את הכתובת.</p>
+        )}
+      </ConfirmDialog>
       <Button
         type="button"
         variant={variant}
         size="sm"
         className={cn("gap-1", className)}
-        onClick={() => setRenderingImage(true)}
+        onClick={() => (fullAddress ? setRenderingImage(true) : setAddressCheckOpen(true))}
         disabled={renderingImage}
       >
         {renderingImage ? (

@@ -4,6 +4,7 @@ import { UserIcon, WazeIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { CallIconButton, ContactTapZone } from "@/components/ui/contact-link";
 import { AddressLink } from "@/components/ui/address-link";
+import type { DeliveryPin } from "@/lib/delivery-location";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { MetaRow } from "@/components/ui/meta-row";
 import LogCommunicationButton, { type CommEntityType } from "@/components/communications/LogCommunicationButton";
@@ -28,6 +29,8 @@ export type CustomerContactCardProps = {
   whatsapp?: string | null;
   email?: string | null;
   address?: string | null;
+  /** The saved drop-off point: Waze goes there instead of to the address. */
+  pin?: DeliveryPin | null;
   /** When both are set, the card's own action becomes "תיעוד שיחה" for THIS
    *  entity (a project, an order…) instead of the plain link to the
    *  customer's page — which moves to a small corner arrow instead, so the
@@ -59,6 +62,7 @@ export function CustomerContactCard({
   whatsapp,
   email,
   address,
+  pin,
   entityType,
   entityId,
 }: CustomerContactCardProps) {
@@ -125,14 +129,14 @@ export function CustomerContactCard({
     });
   }
 
-  if (address) {
+  if (address || pin) {
     details.push({
       label: "כתובת",
       value: (
         // The Waze mark stays — it's what says "tapping this navigates".
-        <AddressLink address={address} className="flex items-center gap-1.5 hover:text-secondary">
+        <AddressLink address={address} pin={pin} className="flex items-center gap-1.5 hover:text-secondary">
           <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span>{address}</span>
+          <span>{address || "נקודה שמורה"}</span>
         </AddressLink>
       ),
     });
