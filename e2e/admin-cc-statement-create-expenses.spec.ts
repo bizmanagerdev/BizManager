@@ -9,7 +9,7 @@ import {
   deleteTestCardStatement,
 } from "./db";
 
-// /financial/statements/[id] ("יצירת הוצאות" flow). The XLSX/PDF upload +
+// /financial/statements/[id] (the "צור הוצאות" button of its first step, שיוך והוצאות). The XLSX/PDF upload +
 // parse wizard (app/(app)/financial/import/CardImportClient.tsx) already has
 // thorough unit coverage (__tests__/lib/financial/cardImport.test.ts —
 // parseAmount/parseDateToIso/findDuplicate/detectHeaderRow, incl. the
@@ -24,7 +24,8 @@ import {
 // eligibleRows' filter (StatementDetailClient.tsx: !expenseExists &&
 // !expenseId && include && isExpenseBusinessDomain(businessDomain) &&
 // amount > 0), so the seeded row is eligible for "צור הוצאות" with no row-
-// level UI interaction needed — just the two confirm clicks.
+// level UI interaction needed — just that one click (the statement steps,
+// 2026-10-13, dropped the confirm dialog that used to sit in front of it).
 test.describe("admin — CC statement import", () => {
   test("admin can create an expense from a staged statement row", async ({ page }) => {
     test.setTimeout(60_000);
@@ -37,16 +38,9 @@ test.describe("admin — CC statement import", () => {
       await loginAs(page, "admin");
       await page.goto(`/financial/statements/${statement.id}`);
 
-      // "יצירת הוצאות (N)" (opens the confirm dialog) vs. the dialog's own
-      // "צור הוצאות (N)" (the real submit) — distinct Hebrew phrases
-      // ("creation of" vs "create"), no substring overlap.
-      const openDialogButton = page.getByRole("button", { name: "יצירת הוצאות" });
-      await expect(openDialogButton).toBeVisible({ timeout: 15_000 });
-      await openDialogButton.click();
-
-      await expect(page.getByText("יצירת הוצאות").last()).toBeVisible();
+      // "צור הוצאות (N)" in the שיוך והוצאות step records the lines at once.
       const createButton = page.getByRole("button", { name: "צור הוצאות" });
-      await expect(createButton).toBeVisible();
+      await expect(createButton).toBeVisible({ timeout: 15_000 });
       await expect(createButton).toBeEnabled();
       const [response] = await Promise.all([
         page.waitForResponse(
