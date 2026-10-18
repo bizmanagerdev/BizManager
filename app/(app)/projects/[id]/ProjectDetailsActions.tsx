@@ -1,5 +1,6 @@
 ﻿"use client";
 import { toHebrewError } from "@/lib/error-messages";
+import type { StructuredAddress } from "@/lib/address/structured";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { uploadTogether } from "@/lib/upload-together";
 
@@ -87,6 +88,9 @@ type ProjectDetails = {
   destination_address?: string | null;
   destination_floor?: string | null;
   destination_has_elevator?: boolean | null;
+  /** The move's from / to as picked from Google. */
+  origin_structured?: StructuredAddress | null;
+  destination_structured?: StructuredAddress | null;
   /** Not in the edit form: sent back as they are (the update route takes the whole record). */
   branch_id?: string | null;
   payment_terms?: string | null;
@@ -235,11 +239,13 @@ export default function ProjectDetailsActions({
   const [editItemsToMove, setEditItemsToMove] = useState(itemsToMoveToText(project.items_to_move));
   const [editOrigin, setEditOrigin] = useState<MovingEndpointValue>({
     address: project.origin_address ?? "",
+    addr: project.origin_structured ?? null,
     floor: project.origin_floor ?? "",
     hasElevator: boolToElevator(project.origin_has_elevator),
   });
   const [editDestination, setEditDestination] = useState<MovingEndpointValue>({
     address: project.destination_address ?? "",
+    addr: project.destination_structured ?? null,
     floor: project.destination_floor ?? "",
     hasElevator: boolToElevator(project.destination_has_elevator),
   });
@@ -328,9 +334,11 @@ export default function ProjectDetailsActions({
         notes: editNotes.trim() || null,
         items_to_move: textToItemsToMove(editItemsToMove),
         origin_address: editOrigin.address.trim() || null,
+        origin_structured: editOrigin.addr ?? null,
         origin_floor: editOrigin.floor.trim() || null,
         origin_has_elevator: elevatorToBool(editOrigin.hasElevator),
         destination_address: editDestination.address.trim() || null,
+        destination_structured: editDestination.addr ?? null,
         destination_floor: editDestination.floor.trim() || null,
         destination_has_elevator: elevatorToBool(editDestination.hasElevator),
         // Not in this form, but sent back as they are (the update route takes

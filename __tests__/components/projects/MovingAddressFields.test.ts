@@ -25,6 +25,6 @@ describe("boolToElevator — the exact inverse of elevatorToBool", () => {
 
 describe("EMPTY_MOVING_ENDPOINT", () => {
   it("is a genuinely blank endpoint", () => {
-    expect(EMPTY_MOVING_ENDPOINT).toEqual({ address: "", floor: "", hasElevator: "" });
+    expect(EMPTY_MOVING_ENDPOINT).toEqual({ address: "", addr: null, floor: "", hasElevator: "" });
   });
 });

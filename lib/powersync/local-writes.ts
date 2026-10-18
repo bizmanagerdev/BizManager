@@ -1,4 +1,6 @@
 import type { AbstractPowerSyncDatabase, CrudEntry } from "@powersync/web";
+import type { AddressColumnRow } from "@/lib/address/columns";
+import { addressFromColumns } from "@/lib/address/columns";
 import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
 import {
   newCustomerRow,
@@ -51,7 +53,7 @@ export type TaskFields = {
   property_id: string | null;
   customer_id: string | null;
   is_private: boolean;
-};
+} & Partial<AddressColumnRow<"addr">>;
 
 /** What goes with a task's change that isn't a column of it. */
 export type TaskExtras = {
@@ -64,6 +66,8 @@ export type TaskExtras = {
 const TASK_FIELD_COLUMNS = [
   "subject", "description", "due_date", "due_time", "city", "address", "assigned_user_id", "priority", "status",
   "business_domain", "project_id", "property_id", "customer_id", "is_private",
+  // Its address picked from Google (lib/address/columns.ts).
+  "addr_city", "addr_street", "addr_house_number", "addr_unit", "addr_lat", "addr_lng", "addr_place_id", "addr_formatted",
 ] as const satisfies readonly (keyof TaskFields)[];
 
 const LINK_COLUMNS = ["business_domain", "project_id", "property_id"] as const;
@@ -92,7 +96,7 @@ export async function createTaskOnDevice(
   );
   const columns = [...TASK_FIELD_COLUMNS, "private_owner_id", "sort_order", "created_at", "_extras"];
   const values = [
-    ...TASK_FIELD_COLUMNS.map((column) => sqlValue(fields[column])),
+    ...TASK_FIELD_COLUMNS.map((column) => sqlValue(fields[column] ?? null)),
     task.creatorId,
     computeInsertSortOrder(null, top?.sort_order ?? null),
     new Date().toISOString(),
@@ -218,6 +222,8 @@ export async function createCustomerOnDevice(db: Db, customer: { id: string; inp
   const row = { ...newCustomerRow(input), linked_user_id: input.linked_user_id };
   const extras = {
     street: input.street,
+    // Picked from Google: the row's addr_* columns hold it (lib/address/columns.ts).
+    structured: input.structured_address !== undefined,
     tag_ids: input.tag_ids,
     contacts: input.contacts,
     branches: input.branches,
@@ -501,6 +507,8 @@ function customerCreateBody(id: string, data: Record<string, unknown>): Record<s
     email: data.email ?? null,
     city: data.city ?? "",
     address: typeof extras.street === "string" ? extras.street : null,
+    // A customer saved with the address picker sends that address (null for none).
+    ...(extras.structured === true ? { structured_address: addressFromColumns(data, "addr") } : {}),
     notes: data.notes ?? null,
     requires_prepayment: flag(data.requires_prepayment),
     linked_user_id: data.linked_user_id ?? null,

@@ -1,6 +1,8 @@
 "use client";
 
 import { useId } from "react";
+import { addressLine, type StructuredAddress } from "@/lib/address/structured";
+import { AddressPicker } from "@/components/ui/address-picker";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -10,12 +12,15 @@ export type Elevator = "" | "yes" | "no";
 
 /** One move endpoint (pickup or drop-off) as the create/edit forms hold it. */
 export type MovingEndpointValue = {
+  /** Its line: the picked address's, or as saved before the picker. */
   address: string;
+  /** Picked from Google (components/ui/address-picker.tsx). */
+  addr?: StructuredAddress | null;
   floor: string;
   hasElevator: Elevator;
 };
 
-export const EMPTY_MOVING_ENDPOINT: MovingEndpointValue = { address: "", floor: "", hasElevator: "" };
+export const EMPTY_MOVING_ENDPOINT: MovingEndpointValue = { address: "", addr: null, floor: "", hasElevator: "" };
 
 /** Map the form's tri-state select to the boolean|null the DB column stores. */
 export function elevatorToBool(value: Elevator): boolean | null {
@@ -50,12 +55,17 @@ export function MovingEndpointFields({
   return (
     <div className="space-y-2 rounded-xl border border-border/70 bg-background/60 p-3">
       <div className="text-sm font-medium">{title}</div>
+      {/* Picked from Google's list like every address (owner, 2026-10-16).
+          The floor and the lift stay their own fields, so no unit box here. */}
       <Field label="כתובת" size="xs" htmlFor={`${id}-address`}>
-        <Input
+        <AddressPicker
           id={`${id}-address`}
-          value={value.address}
+          ariaLabel={`כתובת ${title}`}
+          value={value.addr ?? null}
+          allowUnit={false}
           disabled={disabled}
-          onChange={(e) => onChange({ ...value, address: e.target.value })}
+          onChange={(next) => onChange({ ...value, addr: next, address: next ? addressLine(next) : "" })}
+          legacyText={value.addr ? null : value.address}
         />
       </Field>
       <div className="grid grid-cols-2 gap-2">

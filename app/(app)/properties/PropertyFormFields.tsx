@@ -16,6 +16,8 @@ import { CloseIcon } from "@/components/ui/icons";
 import { propertyHasRoomLayout, type Property } from "@/lib/properties";
 import { appendDictatedText } from "@/lib/dictation";
 import type { PropertyInput } from "./property-types";
+import { AddressPicker } from "@/components/ui/address-picker";
+import { addressLine } from "@/lib/address/structured";
 
 export type { PropertyInput };
 
@@ -43,6 +45,7 @@ export const FURNITURE_PRESET_ITEMS = [
 export const EMPTY_PROPERTY_FORM: PropertyInput = {
   name: "",
   address: "",
+  addr: null,
   asset_description: "",
   is_active: true,
   property_type: "",
@@ -77,6 +80,7 @@ export function propertyToForm(p: Property): PropertyInput {
   return {
     name: p.name ?? "",
     address: p.address ?? "",
+    addr: p.addr ?? null,
     asset_description: p.assetDescription ?? "",
     is_active: p.isActive,
     property_type: p.propertyType ?? "",
@@ -202,10 +206,18 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
         <span className="font-medium">שם הנכס *</span>
         <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="לדוגמה: דירה 3, ריבל שמח 29" />
       </label>
-      <label className="block space-y-1 text-sm">
+      {/* Picked from Google's list like every address (owner, 2026-10-16). */}
+      <div className="space-y-1 text-sm">
         <span className="font-medium">כתובת *</span>
-        <Input value={form.address} onChange={(e) => set("address", e.target.value)} />
-      </label>
+        <AddressPicker
+          value={form.addr}
+          onChange={(next) => {
+            set("addr", next);
+            set("address", next ? addressLine(next) : "");
+          }}
+          legacyText={form.addr ? null : form.address}
+        />
+      </div>
       <label className="block space-y-1 text-sm">
         <span className="font-medium">סוג נכס</span>
         <NativeSelect value={form.property_type} onChange={(e) => set("property_type", e.target.value)}>

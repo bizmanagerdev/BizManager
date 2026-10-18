@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { addressFromColumns } from "@/lib/address/columns";
 import { pinFrom } from "@/lib/delivery-location";
 import dynamic from "next/dynamic";
 import ProjectDetailsActions, { REMINDERS_SECTION_ID } from "@/app/(app)/projects/[id]/ProjectDetailsActions";
@@ -138,6 +139,8 @@ export default function ProjectPageView({
       destination_floor: typeof details?.destination_floor === "string" ? details.destination_floor : null,
       destination_has_elevator:
         typeof details?.destination_has_elevator === "boolean" ? details.destination_has_elevator : null,
+      origin_structured: addressFromColumns(details as Record<string, unknown> | null, "origin"),
+      destination_structured: addressFromColumns(details as Record<string, unknown> | null, "destination"),
       price_includes_vat: details?.price_includes_vat === true,
       no_charge: details?.no_charge === true,
       // Not shown in the edit form, but sent back with it (the update route

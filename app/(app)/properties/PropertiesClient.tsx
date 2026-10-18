@@ -38,6 +38,7 @@ function buildPropertyPatch(input: PropertyInput) {
   return {
     name: input.name.trim() || null,
     address: input.address.trim(),
+    addr: input.addr,
     assetDescription: input.asset_description.trim() || null,
     isActive: input.is_active,
     propertyType: input.property_type || null,

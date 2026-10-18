@@ -58,7 +58,7 @@ const CUSTOMER = {
   phone: "050-1111111",
   whatsapp: null,
   email: null,
-  address: null,
+  address: "ירושלים | יפו 20",
   notes: "הערה",
   active: true,
   requires_prepayment: false,

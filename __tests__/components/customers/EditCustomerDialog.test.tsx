@@ -42,7 +42,7 @@ const CUSTOMER = {
   phone: null,
   whatsapp: null,
   email: null,
-  address: null,
+  address: "ירושלים | יפו 20",
   notes: null,
   active: true,
   requires_prepayment: false,

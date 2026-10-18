@@ -5,9 +5,14 @@
 // production (Sentry: "ReferenceError: PropertyInput is not defined" on
 // POST /properties and /properties/[id]). Plain shared types belong in their
 // own directive-free module, not borrowed from either side.
+import type { StructuredAddress } from "@/lib/address/structured";
+
 export type PropertyInput = {
   name: string;
+  /** Its line: the picked address's, or as saved before the picker. */
   address: string;
+  /** Picked from Google (components/ui/address-picker.tsx). */
+  addr: StructuredAddress | null;
   asset_description: string;
   is_active: boolean;
   /** '' | 'building' | 'apartment' | 'house' | 'storage' */

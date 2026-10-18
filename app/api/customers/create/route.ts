@@ -5,7 +5,8 @@ import { withIdempotency } from "@/lib/idempotency";
 import { syncEntityTags, parseTagIds } from "@/lib/tags";
 import { CUSTOMER_CORE_SELECT, isMissingLinkColumn, type QueryError } from "@/lib/customers/workerLink";
 import { clientRowId } from "@/lib/client-row-id";
-import { newCustomerRow, parseNewCustomerBranches, parseNewCustomerContacts } from "@/lib/customers/new-customer";
+import { newBranchRow, newCustomerRow, parseNewCustomerBranches, parseNewCustomerContacts } from "@/lib/customers/new-customer";
+import { parseStructuredAddress } from "@/lib/address/columns";
 
 type CreateCustomerPayload = {
   /** The id the app gave it (saved on the phone first) — else the database picks one. */
@@ -18,6 +19,8 @@ type CreateCustomerPayload = {
   email?: string | null;
   city?: string | null;
   address?: string | null;
+  /** The address picked from Google (lib/address/structured.ts), or null for none. */
+  structured_address?: unknown;
   notes?: string | null;
   requires_prepayment?: boolean;
   /** The users row that is the same person as this customer (worker who buys from us). */
@@ -48,7 +51,12 @@ export async function POST(req: Request) {
     if (!name) {
       return NextResponse.json({ error: "שם לקוח הוא שדה חובה." }, { status: 400 });
     }
-    if (!city) {
+    // The address picked from Google (at least its city); a request from
+    // before the picker carries city/street instead.
+    const structuredAddress = parseStructuredAddress(body.structured_address);
+    // Every customer has a city, with or without a street (owner, 2026-10-18).
+    const savedCity = structuredAddress !== undefined ? structuredAddress?.city.trim() ?? "" : city;
+    if (!savedCity) {
       return NextResponse.json({ error: "עיר היא שדה חובה לתיאום משלוחים." }, { status: 400 });
     }
     // The same row the phone writes when it saves first (lib/customers/new-customer.ts).
@@ -63,6 +71,7 @@ export async function POST(req: Request) {
         email: typeof body.email === "string" ? body.email : null,
         city,
         street: typeof body.address === "string" ? body.address : null,
+        structured_address: structuredAddress,
         notes: typeof body.notes === "string" ? body.notes : null,
         requires_prepayment: body.requires_prepayment === true,
       }),
@@ -127,7 +136,7 @@ export async function POST(req: Request) {
     if (branches.length > 0) {
       const { error: branchesError } = await supabase
         .from("customer_branches")
-        .insert(branches.map((branch) => ({ customer_id: data.id, ...branch })));
+        .insert(branches.map((branch) => newBranchRow(data.id as string, branch)));
       if (branchesError) problems.push(`סניפים: ${toHebrewError(branchesError.message)}`);
     }
 

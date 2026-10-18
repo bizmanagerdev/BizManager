@@ -1,4 +1,5 @@
 import { readyDeviceSaves } from "@/lib/powersync/store";
+import { addressFromColumns, addressToColumns, type AddressColumnRow } from "@/lib/address/columns";
 import { offlineFetch, type OfflineFetchResult } from "@/lib/offline-queue";
 import {
   addCommentOnDevice,
@@ -39,11 +40,12 @@ type TaskFormPayload = Partial<{
   priority: string;
   status: string;
   is_private: boolean;
-}>;
+} & AddressColumnRow<"addr">>;
 
 const FIELD_KEYS = [
   "subject", "description", "due_date", "due_time", "city", "address", "assigned_user_id", "priority", "status",
   "business_domain", "project_id", "property_id", "customer_id", "is_private",
+  "addr_city", "addr_street", "addr_house_number", "addr_unit", "addr_lat", "addr_lng", "addr_place_id", "addr_formatted",
 ] as const;
 
 /** The row a new task gets — what the routes answer with, for the page's own "created" handling. */
@@ -85,6 +87,7 @@ export function deviceTaskSaves(): DeviceTaskSaves | null {
         property_id: payload.property_id ?? null,
         customer_id: payload.customer_id ?? null,
         is_private: payload.is_private === true,
+        ...addressToColumns(addressFromColumns(payload as Record<string, unknown>, "addr"), "addr"),
       };
       const extras: TaskExtras = {
         member_ids: payload.member_ids ?? [],

@@ -1,4 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
+import { addressColumns, sanitizeAddressColumn } from "@/lib/address/columns";
 ﻿import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -149,6 +150,8 @@ export async function POST(req: Request) {
         due_time: dueTime,
         city,
         address,
+        // Its address picked from Google, each field checked.
+        ...Object.fromEntries(addressColumns("addr").map((column) => [column, sanitizeAddressColumn(column, (body as Record<string, unknown>)[column])])),
         priority,
         status,
         is_private: isPrivate,

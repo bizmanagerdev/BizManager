@@ -175,6 +175,18 @@ describe("AddressPicker", () => {
     expect(screen.getByText("יחזקאל הנביא 27, בית שמש")).toBeInTheDocument();
   });
 
+  it("an address saved before the picker is shown, and 'חיפוש הכתובת הזו' searches for it street first", async () => {
+    autocomplete = () => ({
+      suggestions: [{ placeId: "ChIJ-yechezkel", main: "יחזקאל הנביא 27", secondary: "בית שמש", kind: "address" }],
+    });
+    render(<AddressPicker value={null} onChange={() => {}} legacyText="בית שמש | יחזקאל הנביא 27 בחניה" />);
+    expect(screen.getByText("בית שמש, יחזקאל הנביא 27 בחניה")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "חיפוש הכתובת הזו" }));
+    expect(box()).toHaveValue("יחזקאל הנביא 27 בחניה בית שמש");
+    await screen.findByRole("option", { name: /יחזקאל הנביא 27/ });
+    expect(calls[0].body.input).toBe("יחזקאל הנביא 27 בחניה בית שמש");
+  });
+
   it("shows Google being down as a sentence", async () => {
     vi.stubGlobal(
       "fetch",

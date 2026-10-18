@@ -49,7 +49,8 @@ import {
   getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
-import { CITY_OPTIONS } from "@/lib/ui/cities";
+import { addressFromColumns } from "@/lib/address/columns";
+import type { StructuredAddress } from "@/lib/address/structured";
 import {
   parseLegacyNotes,
   targetTypeForDomain,
@@ -275,8 +276,10 @@ export function TaskUpsertDialog(rawProps: Props) {
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [dueTime, setDueTime] = useState("");
+  // Its address, picked from Google (owner, 2026-10-16). A task saved before
+  // the picker keeps its own city and address until one is picked.
+  const [addr, setAddr] = useState<StructuredAddress | null>(null);
   const [city, setCity] = useState("");
-  const [cityOther, setCityOther] = useState(false); // free-text city ("אחר")
   const [address, setAddress] = useState("");
   const [assignedUserId, setAssignedUserId] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
@@ -454,9 +457,8 @@ export function TaskUpsertDialog(rawProps: Props) {
       // due_date may come back as a full timestamp — keep only the date part.
       setDueDate(typeof task.due_date === "string" ? task.due_date.slice(0, 10) : "");
       setDueTime(typeof task.due_time === "string" ? task.due_time : "");
-      const taskCity = typeof task.city === "string" ? task.city : "";
-      setCity(taskCity);
-      setCityOther(Boolean(taskCity) && !(CITY_OPTIONS as readonly string[]).includes(taskCity));
+      setAddr(addressFromColumns(task, "addr"));
+      setCity(typeof task.city === "string" ? task.city : "");
       setAddress(typeof task.address === "string" ? task.address : "");
       setAssignedUserId(typeof task.assigned_user_id === "string" ? task.assigned_user_id : "");
 
@@ -612,7 +614,7 @@ export function TaskUpsertDialog(rawProps: Props) {
     const draft = loadDraft<{
       projectId: string; propertyId: string; customerId: string; businessDomain: ExpenseBusinessDomain;
       subject: string; description: string; dueDate: string; dueTime: string;
-      city: string; address: string; assignedUserId: string; memberIds: string[];
+      city: string; address: string; addr?: StructuredAddress | null; assignedUserId: string; memberIds: string[];
       priority: TaskPriority; status: TaskStatus; isPrivate: boolean;
     }>("task-create");
 
@@ -648,9 +650,8 @@ export function TaskUpsertDialog(rawProps: Props) {
     setDescription(draft?.description ?? "");
     setDueDate(draft?.dueDate ?? props.defaultDueDate ?? "");
     setDueTime(draft?.dueTime ?? "");
-    const draftCity = draft?.city ?? "";
-    setCity(draftCity);
-    setCityOther(Boolean(draftCity) && !(CITY_OPTIONS as readonly string[]).includes(draftCity));
+    setAddr(draft?.addr ?? null);
+    setCity(draft?.city ?? "");
     setAddress(draft?.address ?? "");
     // Default the owner to the creator so a new task is never ownerless; a saved
     // draft assignee still wins, and the user can reassign before saving.
@@ -706,9 +707,9 @@ export function TaskUpsertDialog(rawProps: Props) {
     if (!props.open || props.mode !== "create" || activeTaskId) return;
     saveDraft("task-create", {
       projectId, propertyId, customerId, businessDomain, subject, description, dueDate, dueTime,
-      city, address, assignedUserId, memberIds, priority, status, isPrivate,
+      city, address, addr, assignedUserId, memberIds, priority, status, isPrivate,
     });
-  }, [props.open, props.mode, activeTaskId, projectId, propertyId, customerId, businessDomain, subject, description, dueDate, dueTime, city, address, assignedUserId, memberIds, priority, status, isPrivate]);
+  }, [props.open, props.mode, activeTaskId, projectId, propertyId, customerId, businessDomain, subject, description, dueDate, dueTime, city, address, addr, assignedUserId, memberIds, priority, status, isPrivate]);
 
   function handleBusinessDomainChange(nextDomain: ExpenseBusinessDomain | "") {
     setBusinessDomain(nextDomain);
@@ -743,10 +744,8 @@ export function TaskUpsertDialog(rawProps: Props) {
     if (f.priority) setPriority(f.priority as TaskPriority);
     if (f.assigned_user_id) setAssignedUserId(f.assigned_user_id);
     if (f.business_domain) handleBusinessDomainChange(f.business_domain as ExpenseBusinessDomain);
-    if (f.city) {
-      setCity(f.city);
-      setCityOther(!(CITY_OPTIONS as readonly string[]).includes(f.city));
-    }
+    // A dictated city, until an address is picked: the picker offers to look it up.
+    if (f.city && !addr) setCity(f.city);
   }
 
   // Privacy is a one-click action, not a staged field: persist it immediately when
@@ -803,6 +802,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       dueTime,
       city,
       address,
+      addr,
       assignedUserId,
       memberIds,
       tagIds,
@@ -1925,12 +1925,14 @@ export function TaskUpsertDialog(rawProps: Props) {
             rowRef={rowRefFor("location")}
           >
             <TaskLocationSection
-              city={city}
-              setCity={setCity}
-              cityOther={cityOther}
-              setCityOther={setCityOther}
-              address={address}
-              onAddressChange={setAddress}
+              addr={addr}
+              onAddrChange={(next) => {
+                setAddr(next);
+                // Picked or cleared, the old city and address give way to it.
+                setCity("");
+                setAddress("");
+              }}
+              legacyText={addr ? null : [address, city].map((v) => v.trim()).filter(Boolean).join(", ") || null}
               locale={props.locale}
             />
           </TaskSection>

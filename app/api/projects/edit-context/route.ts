@@ -11,7 +11,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 // The wizard reads the real row through here first.
 
 const PROJECT_EDIT_COLUMNS =
-  "id,customer_id,branch_id,name,project_type,status,agreed_base_price,actual_price,price_includes_vat,vat_rate,no_charge,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator";
+  "id,customer_id,branch_id,name,project_type,status,agreed_base_price,actual_price,price_includes_vat,vat_rate,no_charge,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,origin_city,origin_street,origin_house_number,origin_unit,origin_lat,origin_lng,origin_place_id,origin_formatted,destination_city,destination_street,destination_house_number,destination_unit,destination_lat,destination_lng,destination_place_id,destination_formatted";
 
 export async function GET(req: Request) {
   try {

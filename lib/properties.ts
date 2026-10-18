@@ -3,6 +3,8 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { israelDateKey } from "@/lib/timezone";
+import { addressFromColumns } from "@/lib/address/columns";
+import type { StructuredAddress } from "@/lib/address/structured";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Properties (נכסים) — a real estate asset with a lease history and its own
@@ -16,6 +18,8 @@ export type Property = {
   id: string;
   name: string | null;
   address: string;
+  /** Its address picked from Google (lib/address/structured.ts); null for one saved before the picker. */
+  addr: StructuredAddress | null;
   assetDescription: string | null;
   isActive: boolean;
   /** 'building' | 'apartment' | 'house' | 'storage' | null (unset) — see propertyTypeLabel(). */
@@ -140,6 +144,7 @@ function normalizeProperty(row: Row): Property {
     id: str(row.id) ?? "",
     name: str(row.name),
     address: str(row.address) ?? "",
+    addr: addressFromColumns(row, "addr"),
     assetDescription: str(row.asset_description),
     isActive: row.is_active !== false,
     propertyType: str(row.property_type),
@@ -324,7 +329,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
         supabase
           .from("properties")
           .select(
-        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at"
       )
           .range(lo, hi)
       )
@@ -420,7 +425,7 @@ export async function fetchProperty(
     const { data, error } = await supabase
       .from("properties")
       .select(
-        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at"
       )
       .eq("id", id)
       .maybeSingle();

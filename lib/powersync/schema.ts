@@ -14,6 +14,19 @@ const text = column.text;
 const int = column.integer;
 const real = column.real;
 
+// The structured address (lib/address/columns.ts, migration 20261018110000):
+// the same eight columns on every table that keeps an address.
+const addressColumns = (prefix: "addr" | "origin" | "destination") => ({
+  [`${prefix}_city`]: text,
+  [`${prefix}_street`]: text,
+  [`${prefix}_house_number`]: text,
+  [`${prefix}_unit`]: text,
+  [`${prefix}_lat`]: real,
+  [`${prefix}_lng`]: real,
+  [`${prefix}_place_id`]: text,
+  [`${prefix}_formatted`]: text,
+});
+
 /** People: names and colours (staff stream "people"). */
 const users = new Table(
   {
@@ -53,6 +66,7 @@ const tasks = new Table(
     due_time: text,
     city: text,
     address: text,
+    ...addressColumns("addr"),
     is_private: int,
     private_owner_id: text,
     customer_id: text,
@@ -151,6 +165,8 @@ const projects = new Table(
     destination_address: text,
     destination_floor: text,
     destination_has_elevator: int,
+    ...addressColumns("origin"),
+    ...addressColumns("destination"),
     branch_id: text,
     completed_at: text,
     // Local only (never synced): a change made on the phone first that goes up
@@ -219,6 +235,7 @@ const customers = new Table(
     delivery_instructions: text,
     delivery_lat: text,
     delivery_lng: text,
+    ...addressColumns("addr"),
     linked_user_id: text,
     // Local only (never synced): what a customer saved on the phone first
     // sends with it — its street, tags, contacts and branches
@@ -233,6 +250,7 @@ const customer_branches = new Table(
     customer_id: text,
     name: text,
     address: text,
+    ...addressColumns("addr"),
     phone: text,
     active: int,
     created_at: text,
@@ -354,6 +372,7 @@ const attendance_sessions = new Table(
 
 const properties = new Table({
   address: text,
+  ...addressColumns("addr"),
   asset_description: text,
   is_active: int,
   created_at: text,

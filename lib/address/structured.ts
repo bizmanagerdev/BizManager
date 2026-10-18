@@ -42,6 +42,22 @@ export function isFullAddress(address: StructuredAddress | null | undefined): bo
   return Boolean(address && address.city.trim() && address.street.trim() && address.houseNumber.trim());
 }
 
+/**
+ * Every customer has a city, address or not (owner, 2026-10-18: "even if there
+ * is no address for some customers still every single one needs a city — we
+ * need it for stuff"). The city a customer form would save: the picked
+ * address's, else (an untouched address saved before the picker) the city it
+ * already has. Empty means the form must ask for one.
+ */
+export function customerCityToSave(input: {
+  picked: StructuredAddress | null;
+  touched: boolean;
+  savedCity: string | null | undefined;
+}): string {
+  if (input.touched || input.picked) return input.picked?.city.trim() ?? "";
+  return (input.savedCity ?? "").trim();
+}
+
 /** "יחזקאל הנביא 27" */
 export function streetLine(address: StructuredAddress): string {
   return [address.street.trim(), address.houseNumber.trim()].filter(Boolean).join(" ");

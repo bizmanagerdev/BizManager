@@ -105,38 +105,29 @@ describe("TaskLabelsSection", () => {
 });
 
 describe("TaskLocationSection", () => {
-  it("switching the city select to the 'other' sentinel clears the city and shows a free-text field", () => {
-    const setCity = vi.fn();
-    const setCityOther = vi.fn();
-    const { rerender } = render(
-      <TaskLocationSection
-        city="תל אביב"
-        setCity={setCity}
-        cityOther={false}
-        setCityOther={setCityOther}
-        address=""
-        onAddressChange={() => {}}
-        locale="he"
-      />
-    );
-    const citySelect = screen.getByDisplayValue("תל אביב");
-    fireEvent.change(citySelect, { target: { value: "אחר" } });
-    expect(setCityOther).toHaveBeenCalledWith(true);
-    expect(setCity).toHaveBeenCalledWith("");
+  // The address is picked from Google like every address (owner, 2026-10-16);
+  // a task's city / address saved before the picker show with a way to look it up.
+  it("shows a task's old city and address, and searches for them", () => {
+    render(<TaskLocationSection addr={null} onAddrChange={() => {}} legacyText="הרצל 5, תל אביב" locale="he" />);
+    expect(screen.getByText("הכתובת שנשמרה עד היום:")).toBeInTheDocument();
+    expect(screen.getByText("הרצל 5, תל אביב")).toBeInTheDocument();
+    // Searching for it is the picker's own (__tests__/components/ui/address-picker.test.tsx).
+    expect(screen.getByRole("button", { name: "חיפוש הכתובת הזו" })).toBeInTheDocument();
+  });
 
-    // Once cityOther is true, a free-text city field appears.
-    rerender(
+  it("a picked address shows as its line, and ✕ clears it", () => {
+    const onAddrChange = vi.fn();
+    render(
       <TaskLocationSection
-        city=""
-        setCity={setCity}
-        cityOther
-        setCityOther={setCityOther}
-        address=""
-        onAddressChange={() => {}}
+        addr={{ city: "תל אביב", street: "הרצל", houseNumber: "5", unit: "", lat: 32.06, lng: 34.77, placeId: "ChIJ-herzl-5", formatted: "הרצל 5, תל אביב" }}
+        onAddrChange={onAddrChange}
+        legacyText={null}
         locale="he"
       />
     );
-    expect(screen.getAllByRole("textbox")).toHaveLength(2); // free-text city + address
+    expect(screen.getByText("הרצל 5, תל אביב")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "ניקוי הכתובת" }));
+    expect(onAddrChange).toHaveBeenCalledWith(null);
   });
 });
 

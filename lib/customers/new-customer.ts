@@ -1,4 +1,6 @@
 import { normalizeIsraeliPhone } from "@/lib/phone";
+import { addressToColumns, parseStructuredAddress } from "@/lib/address/columns";
+import { legacyAddressLine, type StructuredAddress } from "@/lib/address/structured";
 
 // A new customer, as the forms collect it — and the customers row it makes,
 // built the SAME way on the server (app/api/customers/create) and on the phone
@@ -23,6 +25,8 @@ export type NewCustomerBranch = {
   address: string | null;
   phone: string | null;
   active: boolean;
+  /** Picked from Google (components/ui/address-picker.tsx). When set, `address` is its old one-line form. */
+  structured_address?: StructuredAddress | null;
 };
 
 export type NewCustomerInput = {
@@ -35,6 +39,12 @@ export type NewCustomerInput = {
   city: string;
   /** Street and number — the row's address is "city | street". */
   street: string | null;
+  /**
+   * The address picked from Google (lib/address/structured.ts), null for none.
+   * When given it decides the city and the old address line too; left out
+   * (undefined) by a request from before the picker, which sends city/street.
+   */
+  structured_address?: StructuredAddress | null;
   notes: string | null;
   requires_prepayment: boolean;
   /** The users row that is the same person as this customer (a worker who buys from us). */
@@ -53,8 +63,12 @@ const text = (value: unknown): string | null => {
 /** The customers row a new customer gets (no id — the caller adds it). */
 export function newCustomerRow(input: Pick<NewCustomerInput, Exclude<keyof NewCustomerInput, "tag_ids" | "contacts" | "branches" | "linked_user_id">>) {
   const name = input.name.trim();
-  const city = input.city.trim();
+  const structured = input.structured_address;
+  const city = structured !== undefined ? (structured?.city ?? "").trim() : input.city.trim();
   const street = text(input.street);
+  // The old line, still written for everything that reads it: from the picked
+  // address when there is one, else "city | street" as before.
+  const address = structured !== undefined ? (structured ? legacyAddressLine(structured) : null) : street ? `${city} | ${street}` : city || null;
   return {
     name,
     name_for_invoice: text(input.name_for_invoice) ?? name,
@@ -63,11 +77,19 @@ export function newCustomerRow(input: Pick<NewCustomerInput, Exclude<keyof NewCu
     whatsapp: text(input.whatsapp),
     city,
     email: text(input.email),
-    address: street ? `${city} | ${street}` : city || null,
+    address,
     active: true,
     notes: text(input.notes),
     requires_prepayment: input.requires_prepayment === true,
+    ...(structured !== undefined ? addressToColumns(structured, "addr") : {}),
   };
+}
+
+/** A branch's row fields for its address: the picked one and its old line, or the typed line as before. */
+export function branchAddressFields(branch: { address?: string | null; structured_address?: unknown }): Record<string, unknown> {
+  const structured = parseStructuredAddress(branch.structured_address);
+  if (structured === undefined) return { address: text(branch.address) };
+  return { address: structured ? legacyAddressLine(structured) : null, ...addressToColumns(structured, "addr") };
 }
 
 /** The contacts sent with a new customer, cleaned up: named ones only, one primary at most. */
@@ -100,11 +122,20 @@ export function parseNewCustomerBranches(value: unknown): NewCustomerBranch[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((b): b is Record<string, unknown> => Boolean(b) && typeof b === "object")
-    .map((b) => ({
-      name: text(b.name) ?? "",
-      address: text(b.address),
-      phone: normalizeIsraeliPhone(text(b.phone)) ?? null,
-      active: b.active !== false,
-    }))
+    .map((b) => {
+      const structured = parseStructuredAddress(b.structured_address);
+      return {
+        name: text(b.name) ?? "",
+        address: text(b.address),
+        phone: normalizeIsraeliPhone(text(b.phone)) ?? null,
+        active: b.active !== false,
+        ...(structured !== undefined ? { structured_address: structured } : {}),
+      };
+    })
     .filter((b) => b.name);
+}
+
+/** A branch sent with a new customer, as its customer_branches row. */
+export function newBranchRow(customerId: string, branch: NewCustomerBranch): Record<string, unknown> {
+  return { customer_id: customerId, name: branch.name, phone: branch.phone, active: branch.active, ...branchAddressFields(branch) };
 }

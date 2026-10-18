@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { StructuredAddress } from "@/lib/address/structured";
 import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
 import { EditButton, IconButton } from "@/components/ui/icon-button";
@@ -156,6 +157,9 @@ export type InitialProject = {
   destination_address?: string | null;
   destination_floor?: string | null;
   destination_has_elevator?: boolean | null;
+  /** The move's from / to as picked from Google (its origin_* / destination_* columns). */
+  origin_structured?: StructuredAddress | null;
+  destination_structured?: StructuredAddress | null;
 };
 
 const DEFAULT_PROJECT_TYPE_OPTIONS = ["logistics", "moving", "construction"];
@@ -455,6 +459,7 @@ export default function NewProjectClient({
     initialProject
       ? {
           address: initialProject.origin_address ?? "",
+          addr: initialProject.origin_structured ?? null,
           floor: initialProject.origin_floor ?? "",
           hasElevator: boolToElevator(initialProject.origin_has_elevator),
         }
@@ -464,6 +469,7 @@ export default function NewProjectClient({
     initialProject
       ? {
           address: initialProject.destination_address ?? "",
+          addr: initialProject.destination_structured ?? null,
           floor: initialProject.destination_floor ?? "",
           hasElevator: boolToElevator(initialProject.destination_has_elevator),
         }
@@ -730,9 +736,11 @@ export default function NewProjectClient({
         notes: notes.trim() || null,
         items_to_move: isMovingProjectType(projectType) ? textToItemsToMove(itemsToMove) : null,
         origin_address: isMovingProjectType(projectType) ? origin.address.trim() || null : null,
+        origin_structured: isMovingProjectType(projectType) ? origin.addr ?? null : null,
         origin_floor: isMovingProjectType(projectType) ? origin.floor.trim() || null : null,
         origin_has_elevator: isMovingProjectType(projectType) ? elevatorToBool(origin.hasElevator) : null,
         destination_address: isMovingProjectType(projectType) ? destination.address.trim() || null : null,
+        destination_structured: isMovingProjectType(projectType) ? destination.addr ?? null : null,
         destination_floor: isMovingProjectType(projectType) ? destination.floor.trim() || null : null,
         destination_has_elevator: isMovingProjectType(projectType)
           ? elevatorToBool(destination.hasElevator)

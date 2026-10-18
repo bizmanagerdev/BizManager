@@ -5,14 +5,16 @@ import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { MetaRow } from "@/components/ui/meta-row";
 import { DeleteButton } from "@/components/ui/icon-button";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
-import { CITY_OPTIONS } from "@/lib/ui/cities";
+import { AddressPicker } from "@/components/ui/address-picker";
+import { addressFromColumns } from "@/lib/address/columns";
+import { addressLine, type StructuredAddress } from "@/lib/address/structured";
+import { branchAddressFields } from "@/lib/customers/new-customer";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
@@ -20,6 +22,8 @@ import { TagIcon } from "@/components/ui/icons";
 import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
 import { deviceCustomerSaves } from "@/lib/customers/device-customer-saves";
 import { fetchCustomerContactsDirect, fetchCustomerBranchesDirect, updateCustomerBranchDirect } from "@/lib/customers/branchesContacts";
+import { customerCityToSave } from "@/lib/address/structured";
+import { orderCity } from "@/lib/ui/cities";
 
 export type CustomerRecord = {
   id: string;
@@ -129,7 +133,12 @@ type BranchDraft = {
   key: string;
   id: string | null;
   name: string;
+  /** The address as it was saved before the picker — shown, never sent back. */
   address: string;
+  /** Picked from Google (components/ui/address-picker.tsx). */
+  addr: StructuredAddress | null;
+  /** Only a branch whose address was changed (or a new one) sends it. */
+  addrTouched: boolean;
   phone: string;
   active: boolean;
   _deleted: boolean;
@@ -147,6 +156,8 @@ function branchRowToDraft(row: Row): BranchDraft {
     id: typeof row.id === "string" && row.id ? row.id : null,
     name: s(row, "name"),
     address: s(row, "address"),
+    addr: addressFromColumns(row, "addr"),
+    addrTouched: false,
     phone: s(row, "phone"),
     active: row.active !== false,
     _deleted: false,
@@ -159,17 +170,17 @@ function emptyBranchDraft(): BranchDraft {
     id: null,
     name: "",
     address: "",
+    addr: null,
+    addrTouched: true,
     phone: "",
     active: true,
     _deleted: false,
   };
 }
 
-function splitAddress(address: string | null): { city: string; street: string } {
-  if (!address) return { city: "", street: "" };
-  const idx = address.indexOf("|");
-  if (idx === -1) return { city: address.trim(), street: "" };
-  return { city: address.slice(0, idx).trim(), street: address.slice(idx + 1).trim() };
+/** What a branch sends for its address: the picked one when it was changed, nothing otherwise. */
+function branchAddressPayload(branch: BranchDraft): { structured_address?: StructuredAddress | null } {
+  return branch.addrTouched ? { structured_address: branch.addr } : {};
 }
 
 export interface CustomerFormProps {
@@ -197,9 +208,13 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
   const [email, setEmail] = useState(initial?.email ?? "");
   const [invoiceName, setInvoiceName] = useState(initial?.name_for_invoice ?? "");
   const [reg, setReg] = useState(initial?.registration_number ?? "");
-  const [city, setCity] = useState("");
-  const [cityOther, setCityOther] = useState("");
-  const [address, setAddress] = useState("");
+  // The address, picked from Google's list (owner, 2026-10-16). An edit that
+  // doesn't touch it leaves the saved address exactly as it was; the line
+  // saved before the picker is shown with a button that looks it up.
+  const [addr, setAddr] = useState<StructuredAddress | null>(null);
+  const [addrTouched, setAddrTouched] = useState(mode === "create");
+  const [legacyAddress, setLegacyAddress] = useState(initial?.address ?? "");
+  const [legacyCity, setLegacyCity] = useState("");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [active, setActive] = useState(initial?.active ?? true);
   const [requiresPrepayment, setRequiresPrepayment] = useState(initial?.requires_prepayment ?? false);
@@ -217,11 +232,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
   // scrolls to it and focuses it — on a phone the form is long, and the message
   // at the bottom by the button sat far from the field (owner, 2026-10-07:
   // "choose a city" seemed to do nothing).
-  const [missingField, setMissingField] = useState<"name" | "phone" | "city" | null>(null);
+  const [missingField, setMissingField] = useState<"name" | "phone" | "address" | null>(null);
+  const addressRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
-  const cityRef = useRef<HTMLSelectElement>(null);
-  const cityOtherRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -252,15 +266,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
             setPhone(c.phone ?? "");
             setWhatsapp(typeof c.whatsapp === "number" ? String(c.whatsapp) : (c.whatsapp ?? ""));
             setEmail(c.email ?? "");
-            const { city: parsedCity, street } = splitAddress(c.address ?? null);
-            if (parsedCity && (CITY_OPTIONS as readonly string[]).includes(parsedCity)) {
-              setCity(parsedCity);
-              setCityOther("");
-            } else if (parsedCity) {
-              setCity("אחר");
-              setCityOther(parsedCity);
-            }
-            setAddress(street);
+            setAddr(addressFromColumns(c as unknown as Record<string, unknown>, "addr"));
+            setLegacyAddress(c.address ?? "");
+            setLegacyCity(typeof (c as unknown as Row).city === "string" ? ((c as unknown as Row).city as string) : "");
+            setAddrTouched(false);
             setNotes(c.notes ?? "");
             setActive(c.active !== false);
             setRequiresPrepayment(c.requires_prepayment === true);
@@ -287,13 +296,14 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
   const similarTerms = useMemo(() => {
     if (isEdit) return [];
     const unique = new Set<string>();
-    for (const value of [name, invoiceName, reg, phone, whatsapp, email, address, ...contactSearchValues]) {
+    const addressText = addr ? addressLine(addr, { withUnit: false }) : "";
+    for (const value of [name, invoiceName, reg, phone, whatsapp, email, addressText, ...contactSearchValues]) {
       const trimmed = value.trim();
       if (trimmed.length >= 2) unique.add(trimmed);
     }
     return Array.from(unique);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit, name, invoiceName, reg, phone, whatsapp, email, address, contactSearchKey]);
+  }, [isEdit, name, invoiceName, reg, phone, whatsapp, email, addr, contactSearchKey]);
   const similarTermsKey = similarTerms.join("|");
 
   useEffect(() => {
@@ -380,11 +390,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
     (onUseExisting ?? onSaved)(result);
   }
 
-  function showMissing(field: "name" | "phone" | "city", message: string) {
+  function showMissing(field: "name" | "phone" | "address", message: string) {
     setError(message);
     setMissingField(field);
-    const target =
-      field === "name" ? nameRef.current : field === "phone" ? phoneRef.current : city === "אחר" ? cityOtherRef.current : cityRef.current;
+    const target = field === "name" ? nameRef.current : field === "phone" ? phoneRef.current : addressRef.current;
     requestAnimationFrame(() => {
       target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
       target?.focus({ preventScroll: true });
@@ -398,14 +407,16 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
 
     const trimName = name.trim();
     const trimPhone = phone.trim();
-    const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
-    const street = address.trim();
 
     if (!trimName) return showMissing("name", "יש להזין שם לקוח.");
-    if (!isEdit) {
-      if (!trimPhone) return showMissing("phone", "יש להזין מספר טלפון.");
-      if (!finalCity) return showMissing("city", "יש לבחור עיר.");
-    }
+    if (!isEdit && !trimPhone) return showMissing("phone", "יש להזין מספר טלפון.");
+    // No street is allowed (a pickup customer), but every customer has a city.
+    const cityToSave = customerCityToSave({
+      picked: addr,
+      touched: addrTouched,
+      savedCity: orderCity({ customerAddress: legacyAddress, customerCity: legacyCity }),
+    });
+    if (!cityToSave) return showMissing("address", "יש לבחור עיר: כתובת מלאה, או רק העיר מהרשימה.");
 
     const visible = contacts.filter((c) => !c._deleted);
     const missing = visible.find((c) => !c.full_name.trim());
@@ -432,8 +443,9 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
           phone: trimPhone || null,
           whatsapp: whatsapp.trim() || null,
           email: email.trim() || null,
-          city: finalCity,
-          street: street || null,
+          city: addr?.city ?? "",
+          street: null,
+          structured_address: addr,
           notes: notes.trim() || null,
           requires_prepayment: requiresPrepayment,
           linked_user_id: linkedUserId || null,
@@ -450,9 +462,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
           })),
           branches: branchesToSave.map((b) => ({
             name: b.name.trim(),
-            address: b.address.trim() || null,
+            address: null,
             phone: b.phone.trim() || null,
             active: b.active,
+            structured_address: b.addr,
           })),
         });
         invalidateCustomerSearchIndex();
@@ -471,7 +484,6 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
       let savedCustomer: CustomerRecord | null = null;
 
       if (isEdit) {
-        const combinedAddress = finalCity ? (street ? `${finalCity} | ${street}` : finalCity) : street || null;
         const res = await fetch("/api/customers/update", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -483,8 +495,9 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
             phone: trimPhone || null,
             whatsapp: whatsapp.trim() || null,
             email: email.trim() || null,
-            city: finalCity || null,
-            address: combinedAddress,
+            // Only an address that was changed is sent; the server then
+            // writes its city and old line too.
+            ...(addrTouched ? { structured_address: addr } : {}),
             notes: notes.trim() || null,
             active,
             requires_prepayment: requiresPrepayment,
@@ -507,8 +520,8 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
             phone: trimPhone || null,
             whatsapp: whatsapp.trim() || null,
             email: email.trim() || null,
-            city: finalCity,
-            address: street || null,
+            city: addr?.city ?? "",
+            structured_address: addr,
             notes: notes.trim() || null,
             requires_prepayment: requiresPrepayment,
             linked_user_id: linkedUserId || null,
@@ -563,17 +576,19 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
         }
         const payload = {
           name: branch.name.trim(),
-          address: branch.address.trim() || null,
           phone: branch.phone.trim() || null,
           active: branch.active,
         };
         if (branch.id) {
-          await updateCustomerBranchDirect(branch.id, payload);
+          await updateCustomerBranchDirect(branch.id, {
+            ...payload,
+            ...(branch.addrTouched ? branchAddressFields({ address: null, structured_address: branch.addr }) : {}),
+          });
         } else {
           await fetch("/api/customer-branches/create", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ customer_id: customerId, ...payload }),
+            body: JSON.stringify({ customer_id: customerId, ...payload, ...branchAddressPayload(branch) }),
           });
         }
       }
@@ -678,30 +693,19 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
           <Input value={reg} onChange={(e) => setReg(e.target.value)} />
         </Field>
 
-        <Field label={isEdit ? "עיר" : "עיר *"}>
-          <NativeSelect
-            ref={cityRef}
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-            aria-invalid={(missingField === "city" && city !== "אחר") || undefined}
-          >
-            <option value="">בחר עיר...</option>
-            {CITY_OPTIONS.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </NativeSelect>
-          {missingField === "city" && city !== "אחר" && error ? <p className="text-sm text-destructive">{error}</p> : null}
-        </Field>
-
-        {city === "אחר" ? (
-          <Field label="עיר (הקלדה חופשית) *">
-            <Input ref={cityOtherRef} value={cityOther} onChange={(e) => setCityOther(e.target.value)} aria-invalid={missingField === "city" || undefined} />
-            {missingField === "city" && error ? <p className="text-sm text-destructive">{error}</p> : null}
-          </Field>
-        ) : null}
-
-        <Field label="כתובת">
-          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="רחוב ומספר" />
+        <Field label="כתובת *" hint="לפחות עיר">
+          <div ref={addressRef} tabIndex={-1} className="outline-none">
+            <AddressPicker
+              value={addr}
+              onChange={(next) => {
+                setAddr(next);
+                setAddrTouched(true);
+              }}
+              placeholder="רחוב ומספר בית, או רק העיר"
+              legacyText={addrTouched ? null : legacyAddress}
+            />
+          </div>
+          {missingField === "address" && error ? <p className="text-sm text-destructive">{error}</p> : null}
         </Field>
 
         <label className="flex items-center gap-2 text-sm">
@@ -852,7 +856,12 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
                     <Input value={branch.name} onChange={(e) => updateBranch(branch.key, { name: e.target.value })} />
                   </Field>
                   <Field label="כתובת">
-                    <Input value={branch.address} onChange={(e) => updateBranch(branch.key, { address: e.target.value })} />
+                    <AddressPicker
+                      ariaLabel={"כתובת סניף " + (index + 1)}
+                      value={branch.addr}
+                      onChange={(next) => updateBranch(branch.key, { addr: next, addrTouched: true })}
+                      legacyText={branch.addrTouched ? null : branch.address}
+                    />
                   </Field>
                   <Field label="טלפון">
                     <Input value={branch.phone} onChange={(e) => updateBranch(branch.key, { phone: e.target.value })} />

@@ -1,4 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
+import { branchAddressFields } from "@/lib/customers/new-customer";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
@@ -8,6 +9,8 @@ type CreateCustomerBranchPayload = {
   customer_id?: string;
   name?: string;
   address?: string | null;
+  /** The address picked from Google (lib/address/structured.ts), or null for none. */
+  structured_address?: unknown;
   phone?: string | null;
   active?: boolean;
 };
@@ -49,7 +52,7 @@ export async function POST(req: Request) {
 
       const { data, error } = await supabase
         .from("customer_branches")
-        .insert({ customer_id: customerId, name, address, phone, active })
+        .insert({ customer_id: customerId, name, phone, active, ...branchAddressFields({ address, structured_address: body.structured_address }) })
         .select("id,customer_id,name,address,phone,active")
         .maybeSingle();
 

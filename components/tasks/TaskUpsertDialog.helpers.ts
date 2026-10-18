@@ -6,6 +6,8 @@ import {
   EXPENSE_BUSINESS_DOMAINS,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
+import { addressToColumns } from "@/lib/address/columns";
+import { streetLine, type StructuredAddress } from "@/lib/address/structured";
 
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
@@ -130,8 +132,11 @@ export type TaskPayloadInput = {
   description: string;
   dueDate: string;
   dueTime: string;
+  /** As saved before the picker: kept as they are while nothing is picked. */
   city: string;
   address: string;
+  /** Picked from Google (components/ui/address-picker.tsx). */
+  addr?: StructuredAddress | null;
   assignedUserId: string;
   memberIds: string[];
   tagIds: string[];
@@ -155,8 +160,15 @@ export function buildTaskPayload(input: TaskPayloadInput) {
     description: input.description.trim() ? input.description.trim() : null,
     due_date: input.dueDate || null,
     due_time: input.dueTime || null,
-    city: input.city.trim() ? input.city.trim() : null,
-    address: input.address.trim() ? input.address.trim() : null,
+    // A picked address decides the city and the street line; none picked
+    // keeps the task's own (a task saved before the picker).
+    city: input.addr ? input.addr.city || null : input.city.trim() ? input.city.trim() : null,
+    address: input.addr
+      ? [streetLine(input.addr), input.addr.unit.trim()].filter(Boolean).join(" · ") || null
+      : input.address.trim()
+        ? input.address.trim()
+        : null,
+    ...addressToColumns(input.addr ?? null, "addr"),
     assigned_user_id: input.assignedUserId || null,
     member_ids: input.memberIds,
     tag_ids: input.tagIds,
@@ -188,6 +200,14 @@ const AUTOSAVE_KEYS = [
   "due_time",
   "city",
   "address",
+  "addr_city",
+  "addr_street",
+  "addr_house_number",
+  "addr_unit",
+  "addr_lat",
+  "addr_lng",
+  "addr_place_id",
+  "addr_formatted",
   "assigned_user_id",
   "member_ids",
   "tag_ids",

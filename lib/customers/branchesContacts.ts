@@ -33,7 +33,14 @@ export async function fetchCustomerBranchesDirect(customerId: string, signal?: A
   return (data ?? []) as Row[];
 }
 
-export type BranchPatch = { name?: string; address?: string | null; phone?: string | null; active?: boolean };
+export type BranchPatch = {
+  name?: string;
+  address?: string | null;
+  phone?: string | null;
+  active?: boolean;
+  /** The structured address (lib/address/columns.ts). */
+  [column: `addr_${string}`]: string | number | null | undefined;
+};
 
 /**
  * RLS ("customer_branches_office_manage", admin/office) matches the old

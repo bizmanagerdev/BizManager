@@ -687,7 +687,7 @@ describe("the money views, worked out on the device", () => {
           ),
           projects: pad(
             tables.projects.map((p) => (p.id === "p1" ? { ...p, notes: "קומה 3", items_to_move: '["ספה"]', branch_id: "b1", project_type: "moving" } : p)),
-            "project_type,start_date,end_date,expenses_billed_separately,project_manager_id,created_at,updated_at,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,payment_terms,due_date,no_charge,branch_id"
+            "project_type,start_date,end_date,expenses_billed_separately,project_manager_id,created_at,updated_at,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,payment_terms,due_date,no_charge,branch_id,origin_city,origin_street,origin_house_number,origin_unit,origin_lat,origin_lng,origin_place_id,origin_formatted,destination_city,destination_street,destination_house_number,destination_unit,destination_lat,destination_lng,destination_place_id,destination_formatted"
           ),
           expenses: pad(
             [

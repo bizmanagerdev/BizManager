@@ -1,4 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
+import { addressToColumns, parseStructuredAddress } from "@/lib/address/columns";
+import { legacyAddressLine } from "@/lib/address/structured";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { syncEntityTags, parseTagIds } from "@/lib/tags";
@@ -69,6 +71,21 @@ export async function POST(req: Request) {
       if (city) patch.city = city;
     }
     if ("address" in body) patch.address = trimOrNull(body.address);
+    // The address picked from Google (or null for none): it decides the city
+    // and the old one-line address too. Left out by an edit that didn't touch
+    // the address, which then stays as it was.
+    if ("structured_address" in body) {
+      const structured = parseStructuredAddress(body.structured_address) ?? null;
+      Object.assign(patch, addressToColumns(structured, "addr"));
+      // None picked: the old line and city given with it are kept — that's
+      // how an undo puts back an address saved before the picker.
+      patch.address = structured ? legacyAddressLine(structured) : trimOrNull(body.address);
+      patch.city = structured ? structured.city : (trimOrNull(body.city) ?? "");
+      // Every customer keeps a city, with or without a street (owner, 2026-10-18).
+      if (!String(patch.city).trim()) {
+        return NextResponse.json({ error: "לכל לקוח צריכה להיות עיר: כתובת מלאה, או רק העיר." }, { status: 400 });
+      }
+    }
     if ("notes" in body) patch.notes = trimOrNull(body.notes);
     if ("active" in body) patch.active = body.active === true;
     if ("requires_prepayment" in body) patch.requires_prepayment = body.requires_prepayment === true;

@@ -7,7 +7,6 @@ import {
 } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DeleteButton } from "@/components/ui/icon-button";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
@@ -15,7 +14,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { FormDialog } from "@/components/ui/form-dialog";
-import { CITY_OPTIONS } from "@/lib/ui/cities";
+import { AddressPicker } from "@/components/ui/address-picker";
+import { addressFromColumns, addressToColumns } from "@/lib/address/columns";
+import type { StructuredAddress } from "@/lib/address/structured";
+import { branchAddressFields } from "@/lib/customers/new-customer";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
@@ -29,6 +31,8 @@ import { TagIcon } from "@/components/ui/icons";
 import { registerReversibleAction } from "@/lib/undo-engine";
 import { enqueue, offlineFetch } from "@/lib/offline-queue";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import { customerCityToSave } from "@/lib/address/structured";
+import { orderCity } from "@/lib/ui/cities";
 
 /** No connection right now (the browser knows it) — the save waits in the app's queue. */
 function isOffline() {
@@ -48,15 +52,6 @@ const TAGS_NOT_LOADED = "אין חיבור — את התגיות אפשר לער
 const BRANCHES_NEED_CONNECTION =
   "אין חיבור — שינוי בסניפים קיימים נשמר רק עם חיבור. בטלו את השינוי בסניפים, או נסו שוב כשיחזור החיבור.";
 
-function splitAddressIntoCityAndStreet(address: string | null): { city: string; street: string } {
-  if (!address) return { city: "", street: "" };
-  const idx = address.indexOf("|");
-  if (idx === -1) return { city: address.trim(), street: "" };
-  return {
-    city: address.slice(0, idx).trim(),
-    street: address.slice(idx + 1).trim(),
-  };
-}
 
 type Row = Record<string, unknown>;
 
@@ -193,7 +188,12 @@ type EditBranchDraft = {
   key: string;
   id: string | null;
   name: string;
+  /** The address line as saved (before the picker, the only one) — shown, and put back by an undo. */
   address: string;
+  /** Picked from Google (components/ui/address-picker.tsx). */
+  addr: StructuredAddress | null;
+  /** Only a branch whose address was changed (or a new one) writes it. */
+  addrTouched: boolean;
   phone: string;
   active: boolean;
   _deleted: boolean;
@@ -211,19 +211,36 @@ function branchRowToDraft(row: Row): EditBranchDraft {
     id: typeof row.id === "string" && row.id ? row.id : null,
     name: s(row, "name"),
     address: s(row, "address"),
+    addr: addressFromColumns(row, "addr"),
+    addrTouched: false,
     phone: s(row, "phone"),
     active: row.active !== false,
     _deleted: false,
   };
 }
 
-/** What a save writes for a branch — also how an edit is compared to the loaded original. */
-function branchPayload(branch: EditBranchDraft) {
+/**
+ * What a save writes for a branch — also how an edit is compared to the
+ * loaded original. Its address only when it was changed: then the picked one
+ * and its old line (lib/customers/new-customer.ts branchAddressFields).
+ */
+function branchPayload(branch: EditBranchDraft): BranchPatch {
   return {
     name: branch.name.trim(),
-    address: branch.address.trim() || null,
     phone: branch.phone.trim() || null,
     active: branch.active,
+    ...(branch.addrTouched ? branchAddressFields({ address: null, structured_address: branch.addr }) : {}),
+  };
+}
+
+/** A branch as it was loaded, address included — what an undo writes back. */
+function branchRestorePatch(branch: EditBranchDraft): BranchPatch {
+  return {
+    name: branch.name.trim(),
+    phone: branch.phone.trim() || null,
+    active: branch.active,
+    address: branch.address.trim() || null,
+    ...addressToColumns(branch.addr, "addr"),
   };
 }
 
@@ -238,6 +255,8 @@ function emptyBranchDraft(): EditBranchDraft {
     id: null,
     name: "",
     address: "",
+    addr: null,
+    addrTouched: true,
     phone: "",
     active: true,
     _deleted: false,
@@ -276,9 +295,18 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
   const [phone, setPhone] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
-  const [city, setCity] = useState("");
-  const [cityOther, setCityOther] = useState("");
-  const [address, setAddress] = useState("");
+  // The address, picked from Google's list (owner, 2026-10-16). A save that
+  // doesn't touch it leaves the saved address exactly as it was; one saved
+  // before the picker shows with a button that looks it up.
+  const [addr, setAddr] = useState<StructuredAddress | null>(null);
+  const [addrTouched, setAddrTouched] = useState(false);
+  const addrTouchedRef = useRef(false);
+  // The address as loaded, for an undo: the picked one, or the old line and city.
+  const originalAddressRef = useRef<{ structured: StructuredAddress | null; address: string | null; city: string | null }>({
+    structured: null,
+    address: null,
+    city: null,
+  });
   const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
   const [requiresPrepayment, setRequiresPrepayment] = useState(false);
@@ -310,18 +338,11 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
     setPhone(customer.phone ?? "");
     setWhatsapp(typeof customer.whatsapp === "number" ? String(customer.whatsapp) : (customer.whatsapp ?? ""));
     setEmail(customer.email ?? "");
-    const { city: parsedCity, street: parsedStreet } = splitAddressIntoCityAndStreet(customer.address ?? null);
-    if (parsedCity && (CITY_OPTIONS as readonly string[]).includes(parsedCity)) {
-      setCity(parsedCity);
-      setCityOther("");
-    } else if (parsedCity) {
-      setCity("אחר");
-      setCityOther(parsedCity);
-    } else {
-      setCity("");
-      setCityOther("");
-    }
-    setAddress(parsedStreet);
+    const handedAddress = addressFromColumns(customer as unknown as Row, "addr");
+    setAddr(handedAddress);
+    setAddrTouched(false);
+    addrTouchedRef.current = false;
+    originalAddressRef.current = { structured: handedAddress, address: customer.address ?? null, city: null };
     setNotes(customer.notes ?? "");
     setActive(customer.active);
     setRequiresPrepayment(customer.requires_prepayment);
@@ -374,6 +395,14 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
         if (!row) return;
         const linked = (row as Row).linked_user_id;
         const linkedId = typeof linked === "string" ? linked : "";
+        // The saved address, picked or old, as the database has it now.
+        const loadedAddress = addressFromColumns(row as Row, "addr");
+        originalAddressRef.current = {
+          structured: loadedAddress,
+          address: typeof (row as Row).address === "string" ? ((row as Row).address as string) : null,
+          city: typeof (row as Row).city === "string" ? ((row as Row).city as string) : null,
+        };
+        if (!addrTouchedRef.current) setAddr(loadedAddress);
         setLinkedUserId(linkedId);
         setLinkLoaded(true);
         if (originalCustomerRef.current) {
@@ -469,14 +498,16 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
     const visibleBranches = branches.filter((b) => !b._deleted);
     const missingBranchName = visibleBranches.find((b) => !b.name.trim());
     if (missingBranchName) return setErr("יש למלא שם בכל סניף.");
-
-    const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
-    const trimmedStreet = address.trim();
-    const combinedAddress = finalCity
-      ? trimmedStreet
-        ? `${finalCity} | ${trimmedStreet}`
-        : finalCity
-      : trimmedStreet || null;
+    // No street is allowed, but every customer has a city.
+    const cityToSave = customerCityToSave({
+      picked: addr,
+      touched: addrTouched,
+      savedCity: orderCity({
+        customerAddress: originalAddressRef.current.address ?? customer.address,
+        customerCity: originalAddressRef.current.city,
+      }),
+    });
+    if (!cityToSave) return setErr("יש לבחור עיר: כתובת מלאה, או רק העיר מהרשימה.");
 
     const loadedTagIds = originalCustomerRef.current?.tag_ids ?? [];
     const tagsChanged =
@@ -492,7 +523,9 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
       phone: phone.trim() || null,
       whatsapp: whatsapp.trim() || null,
       email: email.trim() || null,
-      address: combinedAddress,
+      // Only an address that was changed is sent; the server then writes its
+      // city and old line too.
+      ...(addrTouched ? { structured_address: addr } : {}),
       notes: notes.trim() || null,
       active,
       requires_prepayment: requiresPrepayment,
@@ -540,7 +573,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
     const contactUndoOps: ({ kind: "un-create"; id: string } | { kind: "restore"; id: string; original: ContactOriginal })[] = [];
     const branchUndoOps: (
       | { kind: "un-create"; id: string }
-      | { kind: "restore"; id: string; original: { name: string; address: string | null; phone: string | null; active: boolean } }
+      | { kind: "restore"; id: string; original: BranchPatch }
     )[] = [];
     const restoreContact = (id: string) => {
       const original = originalContactsRef.current.find((c) => c.id === id);
@@ -548,7 +581,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
     };
     const restoreBranch = (id: string) => {
       const original = originalBranchesRef.current.find((b) => b.id === id);
-      if (original) branchUndoOps.push({ kind: "restore", id, original: branchPayload(original) });
+      if (original) branchUndoOps.push({ kind: "restore", id, original: branchRestorePatch(original) });
     };
     // New branches the server numbered — kept on their drafts if the save stops
     // part-way, so saving again doesn't create them twice.
@@ -644,10 +677,10 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
       });
     });
     for (const branch of newBranches) {
-      const payload = branchPayload(branch);
+      const payload = { name: branch.name.trim(), phone: branch.phone.trim() || null, active: branch.active };
       writes.push({
         url: "/api/customer-branches/create",
-        body: { customer_id: customerId, ...payload },
+        body: { customer_id: customerId, ...payload, structured_address: branch.addr },
         label: "סניף חדש",
         idempotent: true,
         failure: `יצירת סניף נכשלה (${payload.name}).`,
@@ -739,6 +772,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
       invalidateCustomerSearchIndex();
 
       const originalFields = originalCustomerRef.current;
+      const originalAddress = originalAddressRef.current;
       const originalContacts = originalContactsRef.current;
       registerReversibleAction({
         key: `customer-edit:${customerId}:${Date.now()}`,
@@ -767,7 +801,15 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
                 phone: originalFields.phone,
                 whatsapp: originalFields.whatsapp,
                 email: originalFields.email,
-                address: originalFields.address,
+                // Only if this save changed it: the picked address as it was,
+                // or (none picked) the old line and city.
+                ...(addrTouched
+                  ? {
+                      structured_address: originalAddress.structured,
+                      address: originalAddress.address,
+                      city: originalAddress.city,
+                    }
+                  : {}),
                 notes: originalFields.notes,
                 active: originalFields.active,
                 requires_prepayment: originalFields.requires_prepayment,
@@ -865,24 +907,17 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
             <Field label="ח.פ / ת.ז">
               <Input value={reg} onChange={(e) => setReg(e.target.value)} />
             </Field>
-            <Field label="עיר">
-              <NativeSelect
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-              >
-                <option value="">בחר עיר...</option>
-                {CITY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </NativeSelect>
-            </Field>
-            {city === "אחר" ? (
-              <Field label="עיר (הקלדה חופשית)">
-                <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
-              </Field>
-            ) : null}
-            <Field label="כתובת">
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="רחוב ומספר" />
+            <Field label="כתובת *" hint="לפחות עיר">
+              <AddressPicker
+                placeholder="רחוב ומספר בית, או רק העיר"
+                value={addr}
+                onChange={(next) => {
+                  setAddr(next);
+                  setAddrTouched(true);
+                  addrTouchedRef.current = true;
+                }}
+                legacyText={addrTouched || addr ? null : (customer?.address ?? null)}
+              />
             </Field>
             <Field label="הערות">
               <div className="relative">
@@ -1070,9 +1105,11 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
                       />
                     </Field>
                     <Field label="כתובת">
-                      <Input
-                        value={branch.address}
-                        onChange={(e) => updateBranch(branch.key, { address: e.target.value })}
+                      <AddressPicker
+                        ariaLabel={"כתובת סניף " + (index + 1)}
+                        value={branch.addr}
+                        onChange={(next) => updateBranch(branch.key, { addr: next, addrTouched: true })}
+                        legacyText={branch.addrTouched ? null : branch.address}
                       />
                     </Field>
                     <Field label="טלפון">

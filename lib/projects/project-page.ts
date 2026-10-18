@@ -179,7 +179,7 @@ export function startProjectPageReads(supabase: SupabaseClient, id: string): Pro
     supabase
       .from("projects")
       .select(
-        "id,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,payment_terms,due_date,price_includes_vat,no_charge,vat_rate,branch_id"
+        "id,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,origin_city,origin_street,origin_house_number,origin_unit,origin_lat,origin_lng,origin_place_id,origin_formatted,destination_city,destination_street,destination_house_number,destination_unit,destination_lat,destination_lng,destination_place_id,destination_formatted,payment_terms,due_date,price_includes_vat,no_charge,vat_rate,branch_id"
       )
       .eq("id", id)
       .maybeSingle()

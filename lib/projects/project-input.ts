@@ -1,4 +1,6 @@
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
+import { addressToColumns, structuredFromRequest, type AddressColumnRow } from "@/lib/address/columns";
+import { addressLine } from "@/lib/address/structured";
 
 // A project's row as the project forms send it — built the SAME way on the
 // server (app/api/projects/create, app/api/projects/update) and on the phone
@@ -36,7 +38,8 @@ export type ProjectRowFields = {
   destination_address: string | null;
   destination_floor: string | null;
   destination_has_elevator: boolean | null;
-};
+} & AddressColumnRow<"origin"> &
+  AddressColumnRow<"destination">;
 
 /** The row's columns, in a fixed order. */
 export const PROJECT_ROW_COLUMNS = [
@@ -44,6 +47,10 @@ export const PROJECT_ROW_COLUMNS = [
   "price_includes_vat", "no_charge", "expenses_billed_separately", "project_manager_id", "start_date", "end_date",
   "payment_terms", "due_date", "notes", "items_to_move", "origin_address", "origin_floor", "origin_has_elevator",
   "destination_address", "destination_floor", "destination_has_elevator",
+  // A move's from / to, picked from Google (lib/address/columns.ts).
+  "origin_city", "origin_street", "origin_house_number", "origin_unit", "origin_lat", "origin_lng", "origin_place_id", "origin_formatted",
+  "destination_city", "destination_street", "destination_house_number", "destination_unit", "destination_lat", "destination_lng",
+  "destination_place_id", "destination_formatted",
 ] as const satisfies readonly (keyof ProjectRowFields)[];
 
 function toNumber(value: unknown) {
@@ -123,6 +130,10 @@ export function projectRowFrom(body: Record<string, unknown>): { row: ProjectRow
       : computeDueDate(startDate, paymentTerms);
   // Moving-only origin → destination addresses (each: address + floor + elevator).
   const isMoving = projectType === "moving";
+  // Each picked from Google; its line still written for what reads the old
+  // column. None picked: the line as it was (a move saved before the picker).
+  const origin = isMoving ? structuredFromRequest(body, "origin") : null;
+  const destination = isMoving ? structuredFromRequest(body, "destination") : null;
 
   if (!customerId || !name || !projectType || !status) return { error: "Missing required fields" };
   if (!PROJECT_TYPES.has(projectType)) return { error: "Invalid project_type" };
@@ -149,12 +160,14 @@ export function projectRowFrom(body: Record<string, unknown>): { row: ProjectRow
       due_date: dueDate,
       notes: typeof body.notes === "string" ? body.notes.trim() : null,
       items_to_move: isMoving ? sanitizeStringArray(body.items_to_move) : null,
-      origin_address: isMoving ? toTrimmedOrNull(body.origin_address) : null,
+      origin_address: isMoving ? (origin ? addressLine(origin) : toTrimmedOrNull(body.origin_address)) : null,
       origin_floor: isMoving ? toTrimmedOrNull(body.origin_floor) : null,
       origin_has_elevator: isMoving ? toBoolOrNull(body.origin_has_elevator) : null,
-      destination_address: isMoving ? toTrimmedOrNull(body.destination_address) : null,
+      destination_address: isMoving ? (destination ? addressLine(destination) : toTrimmedOrNull(body.destination_address)) : null,
       destination_floor: isMoving ? toTrimmedOrNull(body.destination_floor) : null,
       destination_has_elevator: isMoving ? toBoolOrNull(body.destination_has_elevator) : null,
+      ...addressToColumns(origin, "origin"),
+      ...addressToColumns(destination, "destination"),
     },
   };
 }

@@ -29,6 +29,12 @@ import { cn } from "@/lib/utils";
  */
 
 const MIN_CHARS = 2;
+
+/** "בית שמש | יחזקאל הנביא 27 בחניה" → "יחזקאל הנביא 27 בית שמש": street first, as Google likes it. */
+function legacySearchText(legacy: string): string {
+  const parts = legacy.split("|").map((p) => p.trim()).filter(Boolean);
+  return (parts.length > 1 ? [...parts.slice(1), parts[0]] : parts).join(" ");
+}
 const DEBOUNCE_MS = 250;
 
 function newSessionToken(): string {
@@ -58,6 +64,11 @@ export type AddressPickerProps = {
   placeholder?: string;
   /** The "דירה / כניסה" box under a picked address. */
   allowUnit?: boolean;
+  /**
+   * The address as it was saved before the picker ("בית שמש | יחזקאל הנביא 27
+   * בחניה"), shown while nothing is picked, with a button that searches for it.
+   */
+  legacyText?: string | null;
   disabled?: boolean;
   className?: string;
 };
@@ -69,6 +80,7 @@ export function AddressPicker({
   ariaLabel = "כתובת",
   placeholder = "התחילו להקליד רחוב ומספר בית",
   allowUnit = true,
+  legacyText = null,
   disabled = false,
   className,
 }: AddressPickerProps) {
@@ -421,6 +433,24 @@ export function AddressPicker({
       </Popover.Root>
       {!online ? (
         <p className="text-xs text-muted-foreground">אין חיבור לאינטרנט: אי אפשר לחפש כתובת עכשיו.</p>
+      ) : null}
+      {legacyText?.trim() && !value && !trimmed ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted/50 px-3 py-2 text-xs">
+          <span className="text-muted-foreground">הכתובת שנשמרה עד היום:</span>
+          <span className="font-medium text-foreground">{legacyText.replace(/\s*\|\s*/g, ", ")}</span>
+          <button
+            type="button"
+            className="font-medium text-secondary underline-offset-4 hover:underline"
+            onClick={() => {
+              setQuery(legacySearchText(legacyText));
+              setFocused(true);
+              inputRef.current?.focus();
+            }}
+            disabled={disabled}
+          >
+            חיפוש הכתובת הזו
+          </button>
+        </div>
       ) : null}
       {value ? (
         <button

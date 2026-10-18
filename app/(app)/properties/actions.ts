@@ -5,6 +5,8 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
 import { buildPaymentInsert, PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import type { PropertyInput } from "./property-types";
+import { addressToColumns, parseStructuredAddress } from "@/lib/address/columns";
+import { addressLine } from "@/lib/address/structured";
 
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 
@@ -48,9 +50,13 @@ function revalidateProperties(id?: string) {
 }
 
 function propertyFields(input: PropertyInput) {
+  // The address picked from Google, checked; its line still written for what
+  // reads the old column. None picked: the line as it was (saved before the picker).
+  const addr = parseStructuredAddress(input.addr) ?? null;
   return {
     name: clean(input.name),
-    address: clean(input.address) ?? "",
+    address: addr ? addressLine(addr) : clean(input.address) ?? "",
+    ...addressToColumns(addr, "addr"),
     asset_description: clean(input.asset_description),
     is_active: input.is_active,
     property_type: clean(input.property_type),

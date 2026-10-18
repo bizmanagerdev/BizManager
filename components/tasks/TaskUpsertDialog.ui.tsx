@@ -28,11 +28,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { formatShortDateTime } from "@/lib/date";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
-import { CITY_OPTIONS } from "@/lib/ui/cities";
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
 import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
+import { AddressPicker } from "@/components/ui/address-picker";
+import type { StructuredAddress } from "@/lib/address/structured";
 import {
   PRIORITY_OPTIONS,
   STATUS_OPTIONS,
@@ -380,63 +381,25 @@ export function TaskPeopleSection({
 }
 
 export function TaskLocationSection({
-  city,
-  setCity,
-  cityOther,
-  setCityOther,
-  address,
-  onAddressChange,
+  addr,
+  onAddrChange,
+  legacyText,
   locale,
 }: {
-  city: string;
-  setCity: (value: string) => void;
-  cityOther: boolean;
-  setCityOther: (value: boolean) => void;
-  address: string;
-  onAddressChange: (value: string) => void;
+  /** Picked from Google (components/ui/address-picker.tsx), like every address. */
+  addr: StructuredAddress | null;
+  onAddrChange: (next: StructuredAddress | null) => void;
+  /** The city / address as saved before the picker, shown while nothing is picked. */
+  legacyText: string | null;
   locale: Locale;
 }) {
   return (
-    <div className="space-y-3">
-      <AdaptiveGrid variant="formTwo">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1 text-sm font-medium">
-            <LocationIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            {t(tasksDict, locale, "cityLabel")}
-          </div>
-          {/* "אחר" (Other) is a sentinel value taken from CITY_OPTIONS' own data
-              (lib/ui/cities, out of scope) — not UI chrome text, left as-is. */}
-          <NativeSelect
-            value={cityOther ? "אחר" : city}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === "אחר") {
-                setCityOther(true);
-                setCity("");
-              } else {
-                setCityOther(false);
-                setCity(value);
-              }
-            }}
-          >
-            <option value="">{t(tasksDict, locale, "chooseCityOption")}</option>
-            {CITY_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
-        <Field label={t(tasksDict, locale, "addressLabel")}>
-          <Input value={address} onChange={(e) => onAddressChange(e.target.value)} />
-        </Field>
-      </AdaptiveGrid>
-
-      {cityOther ? (
-        <Field label={t(tasksDict, locale, "cityFreeTextLabel")}>
-          <Input value={city} onChange={(e) => setCity(e.target.value)} />
-        </Field>
-      ) : null}
+    <div className="space-y-1">
+      <div className="flex items-center gap-1 text-sm font-medium">
+        <LocationIcon className="h-3.5 w-3.5 text-muted-foreground" />
+        {t(tasksDict, locale, "addressLabel")}
+      </div>
+      <AddressPicker value={addr} onChange={onAddrChange} legacyText={legacyText} ariaLabel={t(tasksDict, locale, "addressLabel")} />
     </div>
   );
 }

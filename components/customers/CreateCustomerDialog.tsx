@@ -22,6 +22,8 @@ import { appendDictatedText } from "@/lib/dictation";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { offlineFetch, enqueueAfter } from "@/lib/offline-queue";
 import { deviceCustomerSaves } from "@/lib/customers/device-customer-saves";
+import { AddressPicker } from "@/components/ui/address-picker";
+import { addressLine, type StructuredAddress } from "@/lib/address/structured";
 
 export type CreatedCustomer = {
   id: string;
@@ -61,24 +63,19 @@ type ContactDraft = {
 // carry multiple branches, each with its own delivery address/phone.
 type BranchDraft = {
   name: string;
-  address: string;
+  /** Picked from Google (components/ui/address-picker.tsx), or none. */
+  addr: StructuredAddress | null;
   phone: string;
   active: boolean;
 };
-
-import { CITY_OPTIONS } from "@/lib/ui/cities";
-
-export const CREATE_CUSTOMER_CITY_OPTIONS = CITY_OPTIONS;
 
 type WizardStep =
   | "name"
   | "contact"
   | "email"
-  | "city"
-  | "cityOther"
+  | "address"
   | "nameForInvoice"
   | "regNumber"
-  | "address"
   | "prepayment"
   | "notes"
   | "contacts"
@@ -89,11 +86,9 @@ const STEP_LABEL: Record<WizardStep, string> = {
   name: "שם",
   contact: "פרטי קשר",
   email: "אימייל",
-  city: "עיר",
-  cityOther: "עיר",
+  address: "כתובת",
   nameForInvoice: "חשבונית",
   regNumber: "ח.פ/ת.ז",
-  address: "כתובת",
   prepayment: "תשלום מראש",
   notes: "הערות",
   contacts: "אנשי קשר",
@@ -115,7 +110,7 @@ function makeEmptyContact(): ContactDraft {
 }
 
 function makeEmptyBranch(): BranchDraft {
-  return { name: "", address: "", phone: "", active: true };
+  return { name: "", addr: null, phone: "", active: true };
 }
 
 export interface CreateCustomerDialogProps {
@@ -129,10 +124,9 @@ export function CreateCustomerDialog({
   open,
   onOpenChange,
   onCreated,
-  description = "שדות חובה: שם, טלפון ועיר.",
+  description = "שדות חובה: שם וטלפון.",
 }: CreateCustomerDialogProps) {
   const router = useRouter();
-  const [cityQuery, setCityQuery] = useState("");
   const [stepId, setStepId] = useState<WizardStep>("name");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -140,9 +134,8 @@ export function CreateCustomerDialog({
   const [email, setEmail] = useState("");
   const [nameForInvoice, setNameForInvoice] = useState("");
   const [regNumber, setRegNumber] = useState("");
-  const [city, setCity] = useState("");
-  const [cityOther, setCityOther] = useState("");
-  const [address, setAddress] = useState("");
+  // Picked from Google's list (owner, 2026-10-16); none is allowed (a pickup customer).
+  const [addr, setAddr] = useState<StructuredAddress | null>(null);
   const [notes, setNotes] = useState("");
   const [requiresPrepayment, setRequiresPrepayment] = useState(false);
   const [linkedUserId, setLinkedUserId] = useState("");
@@ -160,6 +153,7 @@ export function CreateCustomerDialog({
 
   const similarTerms = useMemo(() => {
     const unique = new Set<string>();
+    const address = addr ? addressLine(addr, { withUnit: false }) : "";
     for (const value of [name, nameForInvoice, regNumber, phone, whatsapp, email, address, ...contactSearchValues]) {
       const trimmed = value.trim();
       if (trimmed.length >= 2) unique.add(trimmed);
@@ -167,7 +161,7 @@ export function CreateCustomerDialog({
     return Array.from(unique);
     // contactSearchKey captures all contact field changes without depending on the array reference
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, nameForInvoice, regNumber, phone, whatsapp, email, address, contactSearchKey]);
+  }, [name, nameForInvoice, regNumber, phone, whatsapp, email, addr, contactSearchKey]);
 
   const similarTermsKey = similarTerms.join("|");
 
@@ -241,16 +235,13 @@ export function CreateCustomerDialog({
 
   function reset() {
     setStepId("name");
-    setCityQuery("");
     setName("");
     setPhone("");
     setWhatsapp("");
     setEmail("");
     setNameForInvoice("");
     setRegNumber("");
-    setCity("");
-    setCityOther("");
-    setAddress("");
+    setAddr(null);
     setNotes("");
     setRequiresPrepayment(false);
     setLinkedUserId("");
@@ -310,21 +301,11 @@ export function CreateCustomerDialog({
     setBranches((prev) => prev.filter((_, i) => i !== index));
   }
 
-  const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
-
-  const stepIds = useMemo<WizardStep[]>(() => {
-    const ids: WizardStep[] = ["name", "contact", "email", "city"];
-    if (city === "אחר") ids.push("cityOther");
-    ids.push("nameForInvoice", "regNumber", "address", "prepayment", "notes", "contacts", "branches", "summary");
-    return ids;
-  }, [city]);
+  const stepIds = useMemo<WizardStep[]>(
+    () => ["name", "contact", "email", "address", "nameForInvoice", "regNumber", "prepayment", "notes", "contacts", "branches", "summary"],
+    []
+  );
   const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
-
-  const filteredCities = useMemo(() => {
-    const q = cityQuery.trim().toLowerCase();
-    if (!q) return CREATE_CUSTOMER_CITY_OPTIONS;
-    return CREATE_CUSTOMER_CITY_OPTIONS.filter((c) => c.toLowerCase().includes(q));
-  }, [cityQuery]);
 
   const incompleteContactIndex = contacts.findIndex(
     (c) =>
@@ -332,7 +313,7 @@ export function CreateCustomerDialog({
       (c.role.trim() || c.phone.trim() || c.email.trim() || c.whatsapp.trim() || c.notes.trim())
   );
   const incompleteBranchIndex = branches.findIndex(
-    (b) => !b.name.trim() && (b.address.trim() || b.phone.trim())
+    (b) => !b.name.trim() && (b.addr || b.phone.trim())
   );
 
   function isSatisfied(id: WizardStep): boolean {
@@ -341,18 +322,16 @@ export function CreateCustomerDialog({
         return Boolean(name.trim());
       case "contact":
         return Boolean(phone.trim());
-      case "city":
-        return Boolean(city);
-      case "cityOther":
-        return Boolean(cityOther.trim());
       case "contacts":
         return incompleteContactIndex < 0;
       case "branches":
         return incompleteBranchIndex < 0;
+      case "address":
+        // Every customer has a city — an address, or just the city.
+        return Boolean(addr?.city.trim());
       case "email":
       case "nameForInvoice":
       case "regNumber":
-      case "address":
       case "prepayment":
       case "notes":
       case "summary":
@@ -391,23 +370,16 @@ export function CreateCustomerDialog({
           ? "יש להזין שם לקוח."
           : stepId === "contact"
             ? "יש להזין מספר טלפון."
-            : stepId === "city"
-              ? "יש לבחור עיר."
-              : stepId === "cityOther"
-                ? "יש לבחור עיר."
-                : stepId === "branches"
-                  ? `סניף ${incompleteBranchIndex + 1} חייב לכלול שם.`
-                  : `איש קשר ${incompleteContactIndex + 1} חייב לכלול שם מלא.`
+            : stepId === "address"
+              ? "יש לבחור עיר: כתובת מלאה, או רק העיר מהרשימה."
+              : stepId === "branches"
+              ? `סניף ${incompleteBranchIndex + 1} חייב לכלול שם.`
+              : `איש קשר ${incompleteContactIndex + 1} חייב לכלול שם מלא.`
       );
       return;
     }
     setError(null);
     flow.goNext();
-  }
-
-  function pickCity(value: string) {
-    setCity(value);
-    advanceTo(value === "אחר" ? "cityOther" : "nameForInvoice");
   }
 
   async function submit() {
@@ -427,9 +399,9 @@ export function CreateCustomerDialog({
       setError("יש להזין מספר טלפון.");
       return;
     }
-    if (!finalCity) {
-      setStepId("city");
-      setError("יש לבחור עיר.");
+    if (!addr?.city.trim()) {
+      setStepId("address");
+      setError("יש לבחור עיר: כתובת מלאה, או רק העיר מהרשימה.");
       return;
     }
     if (incompleteContactIndex >= 0) {
@@ -446,9 +418,10 @@ export function CreateCustomerDialog({
     const preparedBranches = branches
       .map((b) => ({
         name: b.name.trim(),
-        address: b.address.trim() || null,
+        address: null,
         phone: b.phone.trim() || null,
         active: b.active,
+        structured_address: b.addr,
       }))
       .filter((b) => b.name);
 
@@ -485,8 +458,9 @@ export function CreateCustomerDialog({
           phone: trimPhone || null,
           whatsapp: whatsapp.trim() || null,
           email: email.trim() || null,
-          city: finalCity,
-          street: address.trim() || null,
+          city: addr?.city ?? "",
+          street: null,
+          structured_address: addr,
           notes: notes.trim() || null,
           requires_prepayment: requiresPrepayment,
           linked_user_id: linkedUserId || null,
@@ -510,8 +484,8 @@ export function CreateCustomerDialog({
           phone: trimPhone || null,
           whatsapp: whatsapp.trim() || null,
           email: email.trim() || null,
-          city: finalCity,
-          address: address.trim() || null,
+          city: addr?.city ?? "",
+          structured_address: addr,
           notes: notes.trim() || null,
           requires_prepayment: requiresPrepayment,
           linked_user_id: linkedUserId || null,
@@ -781,23 +755,10 @@ export function CreateCustomerDialog({
                 <StepHeading title="אימייל?" sub="לא חובה" />
                 <Input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
               </>
-            ) : stepId === "city" ? (
+            ) : stepId === "address" ? (
               <>
-                <StepHeading title="באיזו עיר?" />
-                <div className="grid gap-3">
-                  <Input value={cityQuery} onChange={(e) => setCityQuery(e.target.value)} placeholder="חיפוש עיר..." />
-                  <div className="space-y-1">
-                    {filteredCities.map((c) => (
-                      <OptionRow key={c} label={c} selected={city === c} onClick={() => pickCity(c)} />
-                    ))}
-                    <OptionRow label="אחר" selected={city === "אחר"} onClick={() => pickCity("אחר")} />
-                  </div>
-                </div>
-              </>
-            ) : stepId === "cityOther" ? (
-              <>
-                <StepHeading title="שם העיר?" />
-                <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} autoFocus />
+                <StepHeading title="מה הכתובת?" sub="מתחילים להקליד ובוחרים מהרשימה · אפשר רק עיר" />
+                <AddressPicker value={addr} onChange={setAddr} placeholder="רחוב ומספר בית, או רק העיר" />
               </>
             ) : stepId === "nameForInvoice" ? (
               <>
@@ -808,16 +769,6 @@ export function CreateCustomerDialog({
               <>
                 <StepHeading title="ח.פ / ת.ז?" sub="לא חובה" />
                 <Input autoFocus value={regNumber} onChange={(e) => setRegNumber(e.target.value)} inputMode="numeric" />
-              </>
-            ) : stepId === "address" ? (
-              <>
-                <StepHeading title="כתובת?" sub="לא חובה" />
-                <Input
-                  autoFocus
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="רחוב, מספר, שכונה"
-                />
               </>
             ) : stepId === "prepayment" ? (
               <>
@@ -987,9 +938,10 @@ export function CreateCustomerDialog({
                       />
                     </Field>
                     <Field label="כתובת" hint="רשות">
-                      <Input
-                        value={branch.address}
-                        onChange={(e) => updateBranch(index, { address: e.target.value })}
+                      <AddressPicker
+                        ariaLabel={"כתובת סניף " + (index + 1)}
+                        value={branch.addr}
+                        onChange={(next) => updateBranch(index, { addr: next })}
                       />
                     </Field>
                     <Field label="טלפון" hint="רשות">
@@ -1024,7 +976,6 @@ export function CreateCustomerDialog({
                   <SummaryRow label="טלפון" value={phone.trim()} />
                   <SummaryRow label="וואטסאפ" value={whatsapp.trim()} />
                   <SummaryRow label="אימייל" value={email.trim()} />
-                  <SummaryRow label="עיר" value={finalCity} />
                   {linkedUserId ? (
                     <SummaryRow label="עובד בעסק" value={linkedUserName || "מקושר"} />
                   ) : null}
@@ -1033,7 +984,7 @@ export function CreateCustomerDialog({
                 <SummarySection icon={<CardIcon className="h-4 w-4" />} title="חיוב וכתובת" onEdit={() => goToStep("nameForInvoice")} editDisabled={submitting}>
                   <SummaryRow label="שם לחשבונית" value={nameForInvoice.trim()} />
                   <SummaryRow label="ח.פ / ת.ז" value={regNumber.trim()} />
-                  <SummaryRow label="כתובת" value={address.trim()} />
+                  <SummaryRow label="כתובת" value={addr ? addressLine(addr) : "אין כתובת"} />
                   <SummaryRow
                     label="תשלום מראש"
                     value={requiresPrepayment ? "כן — חיוב לפני אספקה" : "לא"}
@@ -1063,7 +1014,7 @@ export function CreateCustomerDialog({
                       <SummaryRow
                         key={`summary-branch-${i}`}
                         label={`סניף ${i + 1}`}
-                        value={<MetaRow as="span" className="justify-end" items={[b.name.trim(), b.address.trim()]} />}
+                        value={<MetaRow as="span" className="justify-end" items={[b.name.trim(), b.addr ? addressLine(b.addr) : null]} />}
                       />
                     ))
                   )}

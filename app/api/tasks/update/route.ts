@@ -1,4 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
+import { addressColumns, sanitizeAddressColumn } from "@/lib/address/columns";
 import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -125,6 +126,11 @@ export async function POST(req: Request) {
     if ("address" in body) {
       update.address =
         typeof body.address === "string" && body.address.trim() ? body.address.trim() : null;
+    }
+
+    // Its address picked from Google: only the fields that changed are sent.
+    for (const column of addressColumns("addr")) {
+      if (column in body) update[column] = sanitizeAddressColumn(column, (body as Record<string, unknown>)[column]);
     }
 
     if ("assigned_user_id" in body) {

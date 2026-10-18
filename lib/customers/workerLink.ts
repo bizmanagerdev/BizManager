@@ -14,7 +14,9 @@ import { normalizePhone } from "@/lib/search/customerMatch";
 
 /** The customer columns every caller already selected before the link existed. */
 export const CUSTOMER_CORE_SELECT =
-  "id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment";
+  "id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,city,active,notes,requires_prepayment," +
+  // The structured address (lib/address/columns.ts), for the edit forms.
+  "addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted";
 
 /** The shape of a PostgREST error, narrowed to what these helpers look at. */
 export type QueryError = { code?: string; message?: string } | null;

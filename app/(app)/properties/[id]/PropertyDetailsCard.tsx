@@ -17,6 +17,7 @@ import { scheduleDeferredAction } from "@/lib/undo-engine";
 const BASIC_KEYS = [
   "name",
   "address",
+  "addr",
   "asset_description",
   "is_active",
   "property_type",
@@ -53,6 +54,7 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
   return {
     name: input.name.trim() || null,
     address: input.address.trim(),
+    addr: input.addr,
     assetDescription: input.asset_description.trim() || null,
     isActive: input.is_active,
     propertyType: input.property_type.trim() || null,
