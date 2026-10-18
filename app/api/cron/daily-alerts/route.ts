@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { orderCity } from "@/lib/ui/cities";
+import { CLOSED_ORDER_STATUSES } from "@/app/(app)/sales/loadDeliveries";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { deliverPush } from "@/lib/notifications/deliver";
 import { usersToAuthMap } from "@/lib/notifications/identity";
@@ -164,8 +165,11 @@ export async function GET(req: Request) {
         break;
       }
       case "deliveries": {
+        // The same open orders the deliveries list shows. It asked for
+        // "out_for_delivery" / "confirmed" / "processing", which no order has
+        // (an open order is "draft"), so this push never went out.
         const { data } = await supabase.from("delivery_overview_view").select("customer_city,customer_address,branch_address")
-          .in("status", ["out_for_delivery", "confirmed", "processing"]).range(0, 99);
+          .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`).range(0, 99);
         const rows = (data ?? []) as Row[];
         if (rows.length > 0) {
           const cityMap = new Map<string, number>();

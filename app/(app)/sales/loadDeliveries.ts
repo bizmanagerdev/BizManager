@@ -6,7 +6,8 @@ type Row = Record<string, unknown>;
 
 export const DELIVERIES_PAGE_SIZE = 50;
 
-const CLOSED_ORDER_STATUSES = [
+/** An order in none of these is still to be delivered — the deliveries list, and its 17:00 push. */
+export const CLOSED_ORDER_STATUSES = [
   "delivered",
   "completed",
   "closed",
