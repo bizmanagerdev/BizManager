@@ -73,6 +73,11 @@ function monthLabel(monthKey: string) {
 
 // Which register rows to show, by their "נבדק מול הבנק" tick.
 type CheckFilter = "all" | "unchecked" | "checked";
+// A cash box has no statement to compare with, so it has no ticks at all — no
+// checkbox, count or filter (owner, 2026-10-18: "we have no way to compare the
+// cash account"). Bank and card accounts keep them.
+const hasBankChecks = (account: Pick<AccountWithLedger, "kind">) => account.kind !== "cash";
+
 const CHECK_FILTERS: Array<{ value: CheckFilter; label: string }> = [
   { value: "all", label: "הכל" },
   { value: "unchecked", label: "לא נבדקו" },
@@ -194,6 +199,7 @@ function AccountSummaryCard({
             (user, 2026-09-17). */}
       </button>
       {hasRows &&
+        hasBankChecks(account) &&
         (uncheckedCount > 0 ? (
           <button
             type="button"
@@ -742,11 +748,14 @@ export default function BankClient({
   // The rows the "נבדק מול הבנק" filter lets through. A month's totals and
   // closing balance stay the whole month's (the filter only picks rows), and a
   // month with no such rows drops out while filtering.
+  // A cash box shows every row: it has no ticks to filter by.
+  const checksOn = hasBankChecks(selected);
+  const activeFilter: CheckFilter = checksOn ? checkFilter : "all";
   const showRow = (row: AccountLedgerEntry) =>
     !hiddenLedgerRowIds.has(row.id) &&
-    (checkFilter === "all" || isRowChecked(selected.id, row) === (checkFilter === "checked"));
+    (activeFilter === "all" || isRowChecked(selected.id, row) === (activeFilter === "checked"));
   const groups = allGroups.filter(
-    (g) => (!monthFilter || g.month === monthFilter) && (checkFilter === "all" || g.items.some(showRow))
+    (g) => (!monthFilter || g.month === monthFilter) && (activeFilter === "all" || g.items.some(showRow))
   );
   // THIS calendar month open by default, older (and any newer — a post-dated
   // check can group under next month) ones folded, until the reader says
@@ -759,7 +768,7 @@ export default function BankClient({
   // Filtered by the tick, every month that's left opens: it's a list to work
   // through, not a history to browse.
   const isMonthOpen = (month: string, index: number) =>
-    openMonths[month] ?? (checkFilter !== "all" || (hasCurrentMonth ? month === currentMonth : index === 0));
+    openMonths[month] ?? (activeFilter !== "all" || (hasCurrentMonth ? month === currentMonth : index === 0));
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
@@ -831,7 +840,7 @@ export default function BankClient({
                 <div className="font-medium">{selected.name}</div>
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Rows by their "נבדק מול הבנק" tick (owner, 2026-10-18). */}
-                  {actualLedger.length > 0 && (
+                  {checksOn && actualLedger.length > 0 && (
                     <div
                       role="group"
                       aria-label="סינון לפי בדיקה מול הבנק"
@@ -884,7 +893,7 @@ export default function BankClient({
               </div>
             ) : groups.length === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
-                {checkFilter === "unchecked"
+                {activeFilter === "unchecked"
                   ? "כל התנועות כאן נבדקו מול הבנק."
                   : "עדיין לא סומנו כאן תנועות כנבדקות מול הבנק."}
               </div>
@@ -938,7 +947,7 @@ export default function BankClient({
                     </span>
                     <span className="text-muted-foreground/70">({group.items.length})</span>
                     {/* What's left to compare with the bank in this month. */}
-                    {group.unchecked > 0 ? (
+                    {!checksOn ? null : group.unchecked > 0 ? (
                       <span className="whitespace-nowrap rounded-full bg-background px-1.5 py-px text-[0.688rem] font-medium tabular-nums text-foreground/80">
                         {group.unchecked} לא נבדקו
                       </span>
@@ -1118,18 +1127,20 @@ export default function BankClient({
                         {/* "נבדק מול הבנק": ticked once this row was found on
                             the bank statement (owner, 2026-10-18). The label
                             round it makes a finger-sized target. */}
-                        <label
-                          className="-my-1.5 -ms-1.5 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center"
-                          title={rowChecked ? "נבדק מול הבנק" : "לסמן: נבדק מול הבנק"}
-                        >
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 cursor-pointer accent-secondary"
-                            checked={rowChecked}
-                            onChange={(e) => setRowChecked(selected.id, row, e.target.checked)}
-                            aria-label={`נבדק מול הבנק: ${rowLabel}`}
-                          />
-                        </label>
+                        {checksOn && (
+                          <label
+                            className="-my-1.5 -ms-1.5 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center"
+                            title={rowChecked ? "נבדק מול הבנק" : "לסמן: נבדק מול הבנק"}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 cursor-pointer accent-secondary"
+                              checked={rowChecked}
+                              onChange={(e) => setRowChecked(selected.id, row, e.target.checked)}
+                              aria-label={`נבדק מול הבנק: ${rowLabel}`}
+                            />
+                          </label>
+                        )}
                         {content}
                         {/* Desktop: a single "⋮" menu instead of separate
                             edit/delete icon buttons (user, 2026-08-31) — same

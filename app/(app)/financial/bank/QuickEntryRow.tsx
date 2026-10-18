@@ -29,7 +29,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { AddIcon, HelpIcon, RemoveIcon, SpinnerIcon } from "@/components/ui/icons";
+import { AddIcon, ChevronDownIcon, ChevronUpIcon, HelpIcon, RemoveIcon, SpinnerIcon } from "@/components/ui/icons";
 import { CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +58,11 @@ const subscribeClient = () => () => {};
 // a ? next to the bar").
 const HINT_STORAGE_KEY = "bizh:quickEntryHintSessions";
 const HINT_MAX_SESSIONS = 3;
+
+// Folded down to a small tab when it isn't needed (owner, 2026-10-18: "the
+// quick add should have an arrow down to close when not necessary"), and kept
+// that way on this computer until it's opened again.
+const FOLDED_STORAGE_KEY = "bizh:quickEntryFolded";
 
 export default function QuickEntryRow({
   account,
@@ -96,6 +101,28 @@ export default function QuickEntryRow({
   const [busy, setBusy] = useState<"income" | "expense" | null>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
   const hintPanel = useHoverPanel();
+
+  // Read on mount, like the hint count below: the bar is portaled in on the
+  // client re-render, so nothing has painted yet when this lands. Folding only
+  // hides the fields — what's typed stays.
+  const [folded, setFolded] = useState(false);
+  useEffect(() => {
+    try {
+      setFolded(localStorage.getItem(FOLDED_STORAGE_KEY) === "1");
+    } catch {
+      // Storage unavailable: start open.
+    }
+  }, []);
+  function fold(next: boolean) {
+    setFolded(next);
+    try {
+      if (next) localStorage.setItem(FOLDED_STORAGE_KEY, "1");
+      else localStorage.removeItem(FOLDED_STORAGE_KEY);
+    } catch {
+      // Not remembered — it just opens again next time.
+    }
+    if (!next) requestAnimationFrame(() => descriptionRef.current?.focus());
+  }
 
   // Defaults to showing the full hint (matches the pre-collapse behavior)
   // until this effect reads the real count on mount — by then onClient above
@@ -298,6 +325,17 @@ export default function QuickEntryRow({
           corners so it sits flush against the true screen edge instead of
           leaving rounded slivers of page visible under it. */}
       <div className="w-fit max-w-full rounded-t-2xl border-2 border-primary bg-muted text-card-foreground shadow-[0_-8px_24px_rgba(0,0,0,0.18)]">
+        {folded ? (
+          <button
+            type="button"
+            onClick={() => fold(false)}
+            aria-expanded={false}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors hover:text-primary"
+          >
+            <ChevronUpIcon className="h-4 w-4" aria-hidden="true" />
+            הוספה מהירה ל{account.name}
+          </button>
+        ) : (
         <CardContent className="space-y-2 p-2.5">
             <div className="flex flex-wrap items-center gap-x-2 text-xs">
               <span className="text-sm font-medium">הוספה מהירה ל{account.name}</span>
@@ -324,6 +362,18 @@ export default function QuickEntryRow({
                   </HoverPanelContent>
                 </HoverPanel>
               )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="ms-auto h-6 w-6 text-muted-foreground hover:text-foreground"
+                onClick={() => fold(true)}
+                aria-expanded={true}
+                aria-label="הסתרת ההוספה המהירה"
+                title="הסתרה"
+              >
+                <ChevronDownIcon className="h-4 w-4" />
+              </Button>
             </div>
 
             {/* Flex-wrap, not a fixed grid template — every field gets a real
@@ -445,6 +495,7 @@ export default function QuickEntryRow({
               </div>
             </div>
           </CardContent>
+        )}
         </div>
       </div>
   );

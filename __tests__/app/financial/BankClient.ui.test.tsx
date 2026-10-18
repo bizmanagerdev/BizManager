@@ -151,6 +151,22 @@ describe("BankClient — נבדק מול הבנק", () => {
     expect(screen.getByRole("button", { name: "לא נבדקו" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("a cash box has no ticks: no checkbox, no count on its card, no filter", () => {
+    const cash = account({
+      id: "acc9",
+      name: "קופה",
+      kind: "cash",
+      ledger: [row({ id: "e:5", label: "דלק" }), row({ id: "p:5", label: "תקבול מזומן", type: "in" })],
+    });
+    render(<BankClient accounts={[cash, business]} loans={[]} />);
+    expect(screen.getAllByText("דלק").length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.queryByRole("group", { name: "סינון לפי בדיקה מול הבנק" })).not.toBeInTheDocument();
+    // Only the bank account's card has a count.
+    expect(screen.getAllByRole("button", { name: /^\d+ לא נבדקו$/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "2 לא נבדקו" })).toBeInTheDocument();
+  });
+
   it("the register's filter shows just the ticked rows, and says when there are none", () => {
     render(<BankClient accounts={[business, home]} loans={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "נבדקו" }));
