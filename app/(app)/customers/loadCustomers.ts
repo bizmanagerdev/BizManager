@@ -343,6 +343,11 @@ export type CustomerSearchIndexEntry = {
   /** The saved drop-off point, for the wizards' Waze (lib/delivery-location.ts). */
   delivery_lat: number | null;
   delivery_lng: number | null;
+  /** The address as Google found it (lib/address/columns.ts): the order wizard asks for
+   *  one unless city, street and house number are all there. */
+  addr_city: string | null;
+  addr_street: string | null;
+  addr_house_number: string | null;
   /** "not_found" when the saved address wasn't found on Google Maps (lib/address/columns.ts). */
   addr_place_id: string | null;
   contacts: Array<{ full_name: string; phone: string | null; email: string | null; whatsapp: string | null }>;
@@ -365,7 +370,7 @@ export async function loadCustomerSearchIndexRows(
     fetchAllPagedResult((from, to) =>
       supabase
         .from("customers")
-        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng,addr_place_id")
+        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng,addr_city,addr_street,addr_house_number,addr_place_id")
         .order("name", { ascending: true })
         .order("id")
         .range(from, to)
@@ -429,6 +434,9 @@ export async function loadCustomerSearchIndexRows(
       address: (row?.address as string | null) ?? null,
       active: row?.active !== false,
       requires_prepayment: row?.requires_prepayment === true,
+      addr_city: (row?.addr_city as string | null) ?? null,
+      addr_street: (row?.addr_street as string | null) ?? null,
+      addr_house_number: (row?.addr_house_number as string | null) ?? null,
       addr_place_id: (row?.addr_place_id as string | null) ?? null,
       delivery_lat: row?.delivery_lat == null ? null : Number(row.delivery_lat),
       delivery_lng: row?.delivery_lng == null ? null : Number(row.delivery_lng),

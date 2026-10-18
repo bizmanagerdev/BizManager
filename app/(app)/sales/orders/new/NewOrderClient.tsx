@@ -54,6 +54,7 @@ import {
   type CustomerOption,
   type Step,
   ORDER_STATUS_OPTIONS,
+  customerAddressHelp,
   STEP_LABEL,
   extractCityFromAddress,
   formatCurrency,
@@ -69,7 +70,9 @@ import { AddressLink } from "@/components/ui/address-link";
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
 import { formatShortDate } from "@/lib/date";
 import { ORDER_NOT_SENT_YET, deviceOrderSaves } from "@/lib/orders/device-order-saves";
-import { addressNotFound } from "@/lib/address/columns";
+import { addressNotFound, addressVerified } from "@/lib/address/columns";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import { isFullAddress } from "@/lib/address/structured";
 
 type Row = Record<string, unknown>;
 
@@ -339,14 +342,30 @@ export default function NewOrderClient({
     onActionLockedChange?.(actionLocked);
   }, [actionLocked, onActionLockedChange]);
 
-  const initialCustomerOptions = useMemo(
-    () =>
-      customers
-        .map((row) => ({
-          id: getString(row, ["id", "customer_id"]) ?? "",
-          name:
-            getString(row, ["name", "customer_name", "name_for_invoice", "email", "phone"]) ??
-            "לקוח",
+  // The + menu's first page of customers comes without the saved point and
+  // Google's fields; the customer index (loaded for the search anyway) has
+  // them for everyone, so only those are taken from it.
+  const { entries: customerIndexEntries } = useCustomerSearchIndex();
+  const initialCustomerOptions = useMemo(() => {
+    const indexed = new Map(customerIndexEntries.map((entry) => [entry.id, entry]));
+    return customers
+      .map((source) => {
+        const id = getString(source, ["id", "customer_id"]) ?? "";
+        const entry = source.addr_city === undefined ? indexed.get(id) : undefined;
+        const row: Row = entry
+          ? {
+              ...source,
+              delivery_lat: entry.delivery_lat,
+              delivery_lng: entry.delivery_lng,
+              addr_city: entry.addr_city,
+              addr_street: entry.addr_street,
+              addr_house_number: entry.addr_house_number,
+              addr_place_id: entry.addr_place_id,
+            }
+          : source;
+        return {
+          id,
+          name: getString(row, ["name", "customer_name", "name_for_invoice", "email", "phone"]) ?? "לקוח",
           nameForInvoice: getString(row, ["name_for_invoice"]),
           phone: getString(row, ["phone", "mobile", "tel"]),
           whatsapp: getString(row, ["whatsapp"]),
@@ -356,10 +375,11 @@ export default function NewOrderClient({
           requiresPrepayment: row.requires_prepayment === true,
           pin: pinFrom(row.delivery_lat, row.delivery_lng),
           addressNotFound: addressNotFound(row),
-        }))
-        .filter((row) => row.id),
-    [customers]
-  );
+          addressVerified: addressVerified(row),
+        };
+      })
+      .filter((row) => row.id);
+  }, [customers, customerIndexEntries]);
 
   const {
     customerId,
@@ -415,6 +435,7 @@ export default function NewOrderClient({
         setCustomerId(matchedInitial.id);
         setCustomerQuery(matchedInitial.name);
         setPickedCustomer(matchedInitial);
+        if (!isEditMode && customerAddressHelp(matchedInitial)) setAddressPromptFor(matchedInitial);
         prefillHandled.current = true;
         return;
       }
@@ -434,6 +455,8 @@ export default function NewOrderClient({
       setCustomerQuery(matched.name);
       setPickedCustomer(matched);
       setStep("items");
+      // Started from the customer's page, so the pick happened there: asked now.
+      if (customerAddressHelp(matched)) setAddressPromptFor(matched);
     }
 
     prefillHandled.current = true;
@@ -1169,6 +1192,9 @@ export default function NewOrderClient({
       address: customer.address,
       city: extractCityFromAddress(customer.address),
       requiresPrepayment: customer.requires_prepayment,
+      pin: selectedCustomer?.id === customer.id ? selectedCustomer.pin ?? null : null,
+      addressNotFound: customer.address_not_found === true,
+      addressVerified: customer.structured_address === undefined ? undefined : isFullAddress(customer.structured_address),
     });
     setCustomerQuery(customer.name);
   }
@@ -1205,12 +1231,12 @@ export default function NewOrderClient({
         onOpenChange={(open) => {
           if (!open) setAddressPromptFor(null);
         }}
-        title={addressPromptFor?.addressNotFound ? "הכתובת של הלקוח לא נמצאה במפות" : "צריך לעדכן כתובת ללקוח"}
+        title={customerAddressHelp(addressPromptFor) === "not_found" ? "הכתובת של הלקוח לא נמצאה במפות" : "צריך לעדכן כתובת ללקוח"}
         description={
-          addressPromptFor?.addressNotFound
-            ? `הכתובת השמורה${addressPromptFor.address ? `: ${plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })}` : ""} לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך להזין כתובת חדשה.`
-            : addressPromptFor && plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })
-            ? `הכתובת השמורה: ${plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })}. אין בה רחוב ומספר בית, אז Waze לא יוכל לנווט. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה.`
+          customerAddressHelp(addressPromptFor) === "not_found"
+            ? `הכתובת השמורה${addressPromptFor?.address ? `: ${plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })}` : ""} לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך להזין כתובת חדשה.`
+            : customerAddressHelp(addressPromptFor) === "partial"
+            ? `הכתובת השמורה: ${plainAddress({ address: addressPromptFor?.address, city: addressPromptFor?.city })}. אין בה רחוב ומספר בית שנמצאו ב-Google Maps, אז Waze לא יוכל לנווט. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה.`
             : "לא שמורה כתובת ללקוח הזה. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה."
         }
         confirmLabel="עדכון הכתובת"
@@ -1218,6 +1244,8 @@ export default function NewOrderClient({
         onConfirm={() => {
           setAddressPromptFor(null);
           setEditingCustomer(true);
+          // Asked on arrival from the customer's page, the wizard is past this step.
+          setStep("customer");
         }}
       />
       <StepWizard
@@ -1371,12 +1399,7 @@ export default function NewOrderClient({
                           onClick={() => {
                             if (customer.id !== customerId) {
                               setBranchId("");
-                              if (
-                                !customer.pin &&
-                                (customer.addressNotFound || addressQuality({ address: customer.address, city: customer.city }) !== "clear")
-                              ) {
-                                setAddressPromptFor(customer);
-                              }
+                              if (customerAddressHelp(customer)) setAddressPromptFor(customer);
                             }
                             setCustomerId(customer.id);
                             setPickedCustomer(customer);
@@ -1507,12 +1530,12 @@ export default function NewOrderClient({
                       {/* Stays after the pop-up, while the customer's on the phone
                           (owner, 2026-10-15: "when you choose that customer, say
                           there's no address here … please add address"). */}
-                      {!editingCustomer && !selectedCustomer.pin && (selectedCustomer.addressNotFound || addressQuality({ address: selectedCustomer.address, city: selectedCustomer.city }) !== "clear") ? (
+                      {!editingCustomer && customerAddressHelp(selectedCustomer) ? (
                         <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
                           <WarningIcon className="h-4 w-4 shrink-0" />
                           <div className="min-w-0 flex-1">
                             <p className="font-semibold">
-                              {selectedCustomer.addressNotFound ? "הכתובת של הלקוח לא נמצאה ב-Google Maps" : "אין כתובת מלאה ללקוח הזה"}
+                              {customerAddressHelp(selectedCustomer) === "not_found" ? "הכתובת של הלקוח לא נמצאה ב-Google Maps" : "אין כתובת מלאה ללקוח הזה"}
                             </p>
                             <p>אם ההזמנה למשלוח, בקשו מהלקוח רחוב ומספר בית ושמרו אותם.</p>
                           </div>
@@ -2366,7 +2389,10 @@ export default function NewOrderClient({
                     )
                   }
                 />
-                {selectedCustomer && !orderPin && (orderAddressNotFound || addressQuality({ address: orderAddress, city: orderAddressCity }) !== "clear") ? (
+                {selectedCustomer &&
+                (orderBranch?.address?.trim()
+                  ? addressQuality({ address: orderAddress, city: orderAddressCity }) !== "clear"
+                  : customerAddressHelp(selectedCustomer)) ? (
                   <p className="flex items-center gap-1.5 text-xs text-warning-soft-foreground">
                     <WarningIcon className="h-3.5 w-3.5 shrink-0" />
                     אין כתובת מלאה: במשלוח Waze לא יוכל לנווט.

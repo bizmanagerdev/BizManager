@@ -3,7 +3,7 @@
 // (migration 20261018110000) — addr_* on customers, customer_branches, tasks
 // and properties, origin_* / destination_* on projects.
 
-import { hebrewPlaceName, type StructuredAddress } from "@/lib/address/structured";
+import { hebrewPlaceName, isFullAddress, type StructuredAddress } from "@/lib/address/structured";
 
 export type AddressPrefix = "addr" | "origin" | "destination";
 
@@ -25,6 +25,17 @@ export const ADDRESS_NOT_FOUND = "not_found";
 
 export function addressNotFound(row: Record<string, unknown> | null | undefined, prefix: AddressPrefix = "addr"): boolean {
   return row?.[`${prefix}_place_id`] === ADDRESS_NOT_FOUND;
+}
+
+/**
+ * A full address Google found: city, street and house number in its own
+ * fields (only the picker and the Google backfill write them). Undefined when
+ * the row doesn't carry those fields at all, so a caller can tell "not found"
+ * from "not read".
+ */
+export function addressVerified(row: Record<string, unknown> | null | undefined, prefix: AddressPrefix = "addr"): boolean | undefined {
+  if (!row || !(`${prefix}_city` in row)) return undefined;
+  return isFullAddress(addressFromColumns(row, prefix));
 }
 
 /** "addr_city,addr_street,…" for a select. */

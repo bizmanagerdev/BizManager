@@ -39,6 +39,11 @@ export type CustomerRecord = {
   requires_prepayment: boolean;
   /** Set when this customer is the same person as a worker (users row). */
   linked_user_id?: string | null;
+  /** Handed back by the form: the address as it stands after the save (null:
+   *  none picked) and whether it's still marked not found — for a wizard's
+   *  "needs an address" note. */
+  structured_address?: StructuredAddress | null;
+  address_not_found?: boolean;
 };
 
 export type CustomerFormResult = {
@@ -472,7 +477,7 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
           })),
         });
         invalidateCustomerSearchIndex();
-        onSaved(result);
+        onSaved({ ...result, customer: { ...result.customer, structured_address: addr, address_not_found: false } });
       } catch (e: unknown) {
         setError(toHebrewError(e, "יצירת לקוח נכשלה."));
       } finally {
@@ -597,7 +602,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
       }
 
       invalidateCustomerSearchIndex();
-      onSaved({ customer: savedCustomer, contacts: savedContacts.filter((c) => c.active !== false) });
+      onSaved({
+        customer: { ...savedCustomer, structured_address: addr, address_not_found: addrNotFound && !addrTouched },
+        contacts: savedContacts.filter((c) => c.active !== false),
+      });
     } catch (e: unknown) {
       setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {

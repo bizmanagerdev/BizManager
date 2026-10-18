@@ -400,6 +400,47 @@ describe("the new-order wizard — the first step", () => {
     expect(screen.getByText("הכתובת של הלקוח לא נמצאה ב-Google Maps")).toBeInTheDocument();
   });
 
+  // Owner, 2026-10-18: "If his address is good, it doesn't say anything. If his
+  // address is not one of the ones Google found already … it should tell me."
+  describe("judged by what Google found", () => {
+    const google = (fields: Record<string, unknown>) => {
+      const rows = [{ ...CUSTOMER_ROWS[0], addr_city: null, addr_street: null, addr_house_number: null, addr_place_id: null, ...fields }, CUSTOMER_ROWS[1]];
+      server.customerIndex = rows.map((row) => indexEntry(row));
+      return rows;
+    };
+
+    it("a full address Google found: nothing to ask", async () => {
+      await renderForm({ customers: google({ addr_city: "בני ברק", addr_street: "רבי עקיבא", addr_house_number: "10", addr_place_id: "ChIJ-akiva-10" }) });
+      tap("משכן משה");
+      expect(screen.queryByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).not.toBeInTheDocument();
+      expect(screen.queryByText("אין כתובת מלאה ללקוח הזה")).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ["only the city", { addr_city: "בני ברק", addr_place_id: "ChIJ-bnei-brak" }],
+      ["a street with no house number", { addr_city: "בני ברק", addr_street: "רבי עקיבא", addr_place_id: "ChIJ-akiva" }],
+      ["nothing", {}],
+    ])("Google found %s: asks, even though the saved line looks full", async (_label, fields) => {
+      await renderForm({ customers: google(fields) });
+      tap("משכן משה");
+      expect(screen.getByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).toBeInTheDocument();
+      expect(screen.getByText(/הכתובת השמורה: רבי עקיבא 10, בני ברק\. אין בה רחוב ומספר בית שנמצאו ב-Google Maps/)).toBeInTheDocument();
+    });
+
+    it("a saved drop-off point: nothing to ask", async () => {
+      await renderForm({ customers: google({ delivery_lat: 32.08, delivery_lng: 34.83 }) });
+      tap("משכן משה");
+      expect(screen.queryByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).not.toBeInTheDocument();
+    });
+
+    it("the + menu's list, which comes without Google's fields: taken from the customer index", async () => {
+      server.customerIndex = [indexEntry(CUSTOMER_ROWS[0], { addr_city: "בני ברק", addr_street: null, addr_house_number: null, addr_place_id: "ChIJ-bnei-brak" })];
+      await renderForm({ customers: [{ id: "c1", name: "משכן משה", phone: "052-1234567", email: null, address: "בני ברק | רבי עקיבא 10" }] });
+      tap("משכן משה");
+      expect(screen.getByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).toBeInTheDocument();
+    });
+  });
+
   it("lets the order go on without an address, and keeps a reminder on the card", async () => {
     await renderForm({ customers: withAddress("בני ברק") });
     tap("משכן משה");
@@ -1119,6 +1160,27 @@ describe("the draft", () => {
 });
 
 describe("opened for a customer (?customer_id=)", () => {
+  // The customer was picked on their own page, so the wizard asks on arrival.
+  it("asks about a customer with only a city, and 'עדכון הכתובת' goes back to the customer", async () => {
+    nav.params = new URLSearchParams("customer_id=c1");
+    const rows = [{ ...CUSTOMER_ROWS[0], address: "בני ברק", addr_city: "בני ברק", addr_street: null, addr_house_number: null, addr_place_id: "ChIJ-bnei-brak" }, CUSTOMER_ROWS[1]];
+    server.customerIndex = rows.map((row) => indexEntry(row));
+    await renderForm({ customers: rows });
+    expect(screen.getByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "עדכון הכתובת" }));
+    expectStep("איזה לקוח?");
+    expect(screen.getByText("טופס עריכת לקוח")).toBeInTheDocument();
+  });
+
+  it("says nothing for a customer whose address Google found", async () => {
+    nav.params = new URLSearchParams("customer_id=c1");
+    const rows = [{ ...CUSTOMER_ROWS[0], addr_city: "בני ברק", addr_street: "רבי עקיבא", addr_house_number: "10", addr_place_id: "ChIJ-akiva-10" }, CUSTOMER_ROWS[1]];
+    server.customerIndex = rows.map((row) => indexEntry(row));
+    await renderForm({ customers: rows });
+    expect(screen.queryByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).not.toBeInTheDocument();
+    expectStep("אילו מוצרים?");
+  });
+
   it("starts on the products step with that customer chosen", async () => {
     nav.params = new URLSearchParams("customer_id=c2");
     await renderForm();
