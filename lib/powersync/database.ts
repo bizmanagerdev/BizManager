@@ -13,7 +13,13 @@ import { isConnectionDrop } from "./connection-drop";
 import { POWERSYNC_ASSETS_BASE } from "./config";
 import { AppSchema } from "./schema";
 import { setLocalDatabase, setLocalSyncStatus, type LocalSyncStatus } from "./store";
-import { createTransportWatch, storedTransport, type SyncTransport, type TransportWatch } from "./sync-transport";
+import {
+  createTransportWatch,
+  storedTransport,
+  watchStoredTransport,
+  type SyncTransport,
+  type TransportWatch,
+} from "./sync-transport";
 
 // Opens, connects and closes the on-device database. Browser only — loaded
 // through LocalDataHost (dynamic import, ssr: false), never on the server.
@@ -104,6 +110,50 @@ const logger: PowerSyncLogger = {
   },
 };
 
+/**
+ * May this tab decide how the device connects? Only one on screen, in front
+ * and online: every tab shares the one connection (sync-transport.ts), and a
+ * failure while asleep, offline or in the background says nothing about the
+ * way of connecting.
+ */
+function tabMayDecide(): boolean {
+  return (
+    document.visibilityState === "visible" &&
+    (typeof document.hasFocus !== "function" || document.hasFocus()) &&
+    navigator.onLine !== false
+  );
+}
+
+/** A tick this late means the device was asleep. */
+const WAKE_GAP_MS = 20_000;
+
+/**
+ * Start the failure count over whenever the device was away — back on screen,
+ * back online, or awake after a sleep (a tick far later than set) — and take
+ * the way another tab switched to. Returns a stop function.
+ */
+function followTransport(watch: TransportWatch): () => void {
+  const reset = () => watch.reset();
+  const onVisible = () => {
+    if (document.visibilityState === "visible") reset();
+  };
+  let lastTick = Date.now();
+  const tick = window.setInterval(() => {
+    const now = Date.now();
+    if (now - lastTick > WAKE_GAP_MS) reset();
+    lastTick = now;
+  }, 5000);
+  document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("online", reset);
+  const stopFollowing = watchStoredTransport((next) => watch.adopt(next));
+  return () => {
+    window.clearInterval(tick);
+    document.removeEventListener("visibilitychange", onVisible);
+    window.removeEventListener("online", reset);
+    stopFollowing();
+  };
+}
+
 function connectOptions(transport: SyncTransport) {
   return {
     connectionMethod: transport === "http" ? SyncStreamConnectionMethod.HTTP : SyncStreamConnectionMethod.WEB_SOCKET,
@@ -163,22 +213,28 @@ export async function openLocalDatabase(authUid: string): Promise<CommonPowerSyn
     void navigator.storage?.persist?.().catch(() => {});
 
     // The WebSocket, unless this device found it doesn't work here; a few
-    // failed connections in a row switch to the other way (sync-transport.ts).
+    // failed connections in a row — in the tab on screen — switch to the
+    // other way, and every tab follows (sync-transport.ts).
     const connector = new BizConnector();
-    const watch = createTransportWatch(storedTransport(), (next) => {
-      withSentry((Sentry) =>
-        Sentry.captureMessage(`PowerSync: switched the sync to ${next === "http" ? "HTTP streaming" : "the WebSocket"}`, {
-          level: "info",
-          tags: { area: "powersync" },
-          fingerprint: ["powersync", "transport-switch", next],
-        })
-      );
-      // A second connect() replaces the running one.
-      void db.connect(connector, connectOptions(next));
-    });
+    const watch = createTransportWatch(
+      storedTransport(),
+      (next) => {
+        withSentry((Sentry) =>
+          Sentry.captureMessage(`PowerSync: switched the sync to ${next === "http" ? "HTTP streaming" : "the WebSocket"}`, {
+            level: "info",
+            tags: { area: "powersync" },
+            fingerprint: ["powersync", "transport-switch", next],
+          })
+        );
+        // A second connect() replaces the running one.
+        void db.connect(connector, connectOptions(next));
+      },
+      tabMayDecide
+    );
     transportWatch = watch;
+    const stopFollowing = followTransport(watch);
 
-    const stopListening = db.registerListener({
+    const unregister = db.registerListener({
       statusChanged: (status) => {
         setLocalSyncStatus(toLocalStatus(status));
         if (status.connected) watch.connected();
@@ -188,6 +244,10 @@ export async function openLocalDatabase(authUid: string): Promise<CommonPowerSyn
         }
       },
     });
+    const stopListening = () => {
+      unregister();
+      stopFollowing();
+    };
     setLocalSyncStatus(toLocalStatus(db.currentStatus));
 
     // Connect once for the session. connect() reports trouble through the

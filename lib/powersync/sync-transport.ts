@@ -44,20 +44,39 @@ export type TransportWatch = {
   connected(): void;
   /** A connection failed (from the sync's log or its status). */
   failed(now?: number): void;
+  /** Another tab on this device switched: take its way, without reconnecting (they share one connection). */
+  adopt(next: SyncTransport): void;
+  /** The device was away — asleep, offline, the tab in the background: the count starts over. */
+  reset(): void;
 };
 
 /**
  * Counts failed connections in a row and switches the way — once a session, so
  * two ways that both fail don't take turns forever. `onSwitch` reconnects.
+ *
+ * Every tab of the app on a device shares one sync connection (the sync
+ * worker), so they share one decision: only the tab `mayDecide` lets — on
+ * screen, in front, online — counts failures and switches; the others take
+ * its way (`adopt`, from watchStoredTransport). On 2026-10-18 four tabs on the
+ * owner's computer switched in the same second, pulling the one connection
+ * different ways ("No iteration is active" in Sentry), after failures logged
+ * while the computer slept.
  */
 export function createTransportWatch(
   initial: SyncTransport,
-  onSwitch: (next: SyncTransport) => void
+  onSwitch: (next: SyncTransport) => void,
+  mayDecide: () => boolean = () => true
 ): TransportWatch {
   let transport = initial;
   let failures = 0;
   let lastFailureAt = -Infinity;
   let switched = false;
+  const adopt = (next: SyncTransport) => {
+    if (next === transport) return;
+    transport = next;
+    failures = 0;
+    switched = true;
+  };
   return {
     get transport() {
       return transport;
@@ -66,6 +85,7 @@ export function createTransportWatch(
       failures = 0;
     },
     failed(now = Date.now()) {
+      if (!mayDecide()) return;
       if (now - lastFailureAt < SAME_FAILURE_MS) return;
       lastFailureAt = now;
       failures += 1;
@@ -76,5 +96,21 @@ export function createTransportWatch(
       rememberTransport(transport, now);
       onSwitch(transport);
     },
+    adopt,
+    reset() {
+      failures = 0;
+      lastFailureAt = -Infinity;
+    },
   };
+}
+
+/** Tell `onChange` whenever another tab on this device switches the way. Returns a stop function. */
+export function watchStoredTransport(onChange: (transport: SyncTransport) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  // `storage` fires only in the OTHER tabs — the one that switched has already acted.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === KEY || event.key === null) onChange(storedTransport());
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
 }
