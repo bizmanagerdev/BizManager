@@ -51,6 +51,9 @@ export type Account = {
   isActive: boolean;
   sortOrder: number;
   notes: string | null;
+  /** The bank's number for it ("594-249395"), as typed in ניהול חשבונות.
+   *  Absent where it isn't loaded (the account pickers' fallback). */
+  accountNumber?: string | null;
 };
 
 /**
@@ -138,6 +141,10 @@ export type AccountLedgerEntry = {
   enteredAt: string | null;
   enteredByName: string | null;
   runningBalance: number | null; // posted-only running balance; null for pending rows
+  /** Ticked "נבדק מול הבנק" (account_ledger_checks), and the row still has
+   *  the amount and date it had when ticked — an edited row needs checking
+   *  again (owner, 2026-10-18). Always false for a pending row. */
+  bankChecked: boolean;
   /** Set only on העברה בין חשבונות rows — the whole transfer this leg belongs
    *  to, so the register can edit or delete it (both legs move together)
    *  without a second round trip for the other side's id. */
@@ -262,11 +269,12 @@ function mapAccount(row: Row): Account {
     isActive: row.is_active !== false,
     sortOrder: num(row.sort_order),
     notes: str(row.notes),
+    accountNumber: str(row.account_number)?.trim() || null,
   };
 }
 
 const ACCOUNT_COLUMNS =
-  "id,name,kind,opening_balance,opening_date,is_active,sort_order,notes";
+  "id,name,kind,opening_balance,opening_date,is_active,sort_order,notes,account_number";
 
 /** All accounts, active first then by sort_order then name. */
 export async function loadAccounts(
@@ -1270,6 +1278,55 @@ function withScanCompleteness<T extends unknown[]>(list: T, failedTables: string
   });
 }
 
+/** A register row's amount as its tick records it: what the row adds to the
+ *  running balance (money in positive, out negative), to the agora. */
+export function ledgerSignedAmount(type: "in" | "out", amount: number) {
+  return Math.round((type === "in" ? amount : -amount) * 100) / 100;
+}
+
+/** A register row's day as its tick records it. payments.payment_date and
+ *  expenses.expense_date are timestamptz, so those rows' `date` arrives as
+ *  "2026-10-13T00:00:00+00:00"; the tick keeps the day. */
+export function ledgerDay(date: string) {
+  return date.slice(0, 10);
+}
+
+function ledgerCheckKey(accountId: string, entryKey: string) {
+  return `${accountId}|${entryKey}`;
+}
+
+/** Every "נבדק מול הבנק" tick, keyed by account + register row, with the
+ *  amount and date the row had when it was ticked. */
+async function loadLedgerChecks(supabase: SupabaseClient) {
+  const checks = new Map<string, { amount: number; date: string }>();
+  const { data, error } = await fetchAllPagedResult<Row>((from, to) =>
+    supabase
+      .from("account_ledger_checks")
+      .select("account_id,entry_key,amount_at_check,date_at_check")
+      .order("id")
+      .range(from, to)
+  );
+  // Unreadable (or not migrated yet): every row shows as not checked. The
+  // ticks never touch a balance, so the page itself stays right — but report
+  // it, or a lost read looks like lost work.
+  if (error) {
+    const readError = new Error(`[accounts] ledger checks read failed: ${error.message}`);
+    withSentry((Sentry) => Sentry.captureException(readError, { tags: { area: "accounts", table: "account_ledger_checks" } }));
+    return checks;
+  }
+  for (const row of data) {
+    const accountId = str(row.account_id);
+    const entryKey = str(row.entry_key);
+    const date = str(row.date_at_check);
+    if (!accountId || !entryKey || !date) continue;
+    checks.set(ledgerCheckKey(accountId, entryKey), {
+      amount: Math.round(num(row.amount_at_check) * 100) / 100,
+      date: date.slice(0, 10),
+    });
+  }
+  return checks;
+}
+
 /** Per-account live balances (no ledger rows) — the cheap overview. */
 export async function loadAccountBalances(
   supabase: SupabaseClient
@@ -1302,7 +1359,10 @@ export async function loadAccountsOverview(
 ): Promise<AccountWithLedger[] & AccountScanCompleteness> {
   const accounts = await loadAccounts(supabase);
   if (accounts.length === 0) return withScanCompleteness([], []);
-  const { buckets, failedTables } = await scanAccountActivity(supabase, accounts);
+  const [{ buckets, failedTables }, checks] = await Promise.all([
+    scanAccountActivity(supabase, accounts),
+    loadLedgerChecks(supabase),
+  ]);
 
   const result = accounts.map((a) => {
     const b = buckets.get(a.id)!;
@@ -1315,9 +1375,14 @@ export async function loadAccountsOverview(
       const recordedDate = row.recordedDate ?? null;
       const enteredAt = row.enteredAt ?? null;
       const enteredByName = row.enteredByName ?? null;
-      if (!row.posted) return { ...row, recordedDate, enteredAt, enteredByName, runningBalance: null };
+      if (!row.posted) {
+        return { ...row, recordedDate, enteredAt, enteredByName, runningBalance: null, bankChecked: false };
+      }
       running += row.type === "in" ? row.amount : -row.amount;
-      return { ...row, recordedDate, enteredAt, enteredByName, runningBalance: running };
+      const check = checks.get(ledgerCheckKey(a.id, row.id));
+      const bankChecked =
+        !!check && check.date === ledgerDay(row.date) && check.amount === ledgerSignedAmount(row.type, row.amount);
+      return { ...row, recordedDate, enteredAt, enteredByName, runningBalance: running, bankChecked };
     });
     return {
       ...a,

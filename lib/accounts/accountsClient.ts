@@ -47,6 +47,7 @@ export type SaveAccountInput = {
   is_active?: boolean;
   sort_order?: number;
   notes?: string | null;
+  account_number?: string | null;
 };
 
 export async function saveAccountDirect(
@@ -68,6 +69,7 @@ export async function saveAccountDirect(
         is_active: input.is_active !== false,
         sort_order: input.sort_order ?? 0,
         notes: input.notes?.trim() || null,
+        account_number: input.account_number?.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", input.id);
@@ -83,6 +85,7 @@ export async function saveAccountDirect(
       opening_balance: input.opening_balance,
       opening_date: input.opening_date,
       notes: input.notes?.trim() || null,
+      account_number: input.account_number?.trim() || null,
       sort_order: input.sort_order ?? 0,
     })
     .select("id")

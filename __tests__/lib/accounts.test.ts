@@ -4,6 +4,7 @@ import {
   defaultAccountForMethod,
   getAccountKindLabel,
   loadAccountBalances,
+  ledgerSignedAmount,
   loadAccountsOverview,
 } from "@/lib/accounts";
 
@@ -787,5 +788,91 @@ describe("loadAccountsOverview — running balance & register", () => {
     expect(byId["p:p2"].sublabel).toBe("תחום: שוטף");
     expect(byId["e:e1"].sublabel).toBe("תחום: ניהול נכסים · נכס: הרצל 5, תל אביב");
     expect(byId["l:l1"].sublabel).toBe("תחום: מכירות · מלווה: בנק הפועלים");
+  });
+});
+
+describe("loadAccountsOverview — נבדק מול הבנק ticks", () => {
+  const tick = (entryKey: string, amount: number, date: string, accountId = "acc1") => ({
+    account_id: accountId,
+    entry_key: entryKey,
+    amount_at_check: amount,
+    date_at_check: date,
+  });
+
+  it("a ticked row with its amount and date unchanged is checked; the rest are not", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        payments: [
+          // payment_date is timestamptz: PostgREST hands back a timestamp
+          { id: "p1", account_id: "acc1", payment_date: "2024-02-01T00:00:00+00:00", amount_total: 500, payment_status: "collected" },
+          { id: "p2", account_id: "acc1", payment_date: "2024-02-02", amount_total: 70, payment_status: "collected" },
+        ],
+        expenses: [
+          { id: "e1", account_id: "acc1", expense_date: "2024-03-01", amount: 200.5, payment_status: "paid" },
+          { id: "e2", account_id: "acc1", expense_date: "2024-04-01", amount: 100, payment_status: "not_paid" },
+        ],
+        // numeric comes back from PostgREST as a string
+        account_ledger_checks: [tick("p:p1", 500, "2024-02-01"), tick("e:e1", "-200.50" as never, "2024-03-01"), tick("e:e2:p", -100, "2024-04-01")],
+      })
+    );
+    const byId = Object.fromEntries(overview.ledger.map((l) => [l.id, l.bankChecked]));
+    expect(byId).toEqual({ "p:p1": true, "p:p2": false, "e:e1": true, "e:e2:p": false });
+  });
+
+  it("an edited row needs checking again: a changed amount or date drops the tick", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        payments: [
+          { id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 550, payment_status: "collected" },
+          { id: "p2", account_id: "acc1", payment_date: "2024-02-09", amount_total: 70, payment_status: "collected" },
+          { id: "p3", account_id: "acc1", payment_date: "2024-02-10", amount_total: -30, payment_status: "collected" },
+        ],
+        account_ledger_checks: [
+          tick("p:p1", 500, "2024-02-01"), // amount changed
+          tick("p:p2", 70, "2024-02-02"), // date changed
+          tick("p:p3", 30, "2024-02-10"), // ticked as money in, but it's a refund (out)
+        ],
+      })
+    );
+    expect(overview.ledger.every((l) => !l.bankChecked)).toBe(true);
+  });
+
+  it("a transfer's two legs are ticked separately, each in its own account", async () => {
+    const overview = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account(), account({ id: "acc2", name: "מזומן", kind: "cash" })],
+        account_transfers: [{ id: "t1", from_account_id: "acc1", to_account_id: "acc2", amount: 400, transfer_date: "2024-02-05" }],
+        account_ledger_checks: [tick("t:t1:out", -400, "2024-02-05")],
+      })
+    );
+    const leg = (accountId: string) => overview.find((a) => a.id === accountId)!.ledger[0];
+    expect(leg("acc1").bankChecked).toBe(true);
+    expect(leg("acc2").bankChecked).toBe(false);
+  });
+
+  it("an unreadable ticks table shows every row as not checked, and the balances stay complete", async () => {
+    const result = await loadAccountsOverview(
+      makeSupabase(
+        {
+          accounts: [account()],
+          payments: [{ id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "collected" }],
+          account_ledger_checks: [tick("p:p1", 500, "2024-02-01")],
+        },
+        ["account_ledger_checks"]
+      )
+    );
+    expect(result[0].ledger[0].bankChecked).toBe(false);
+    expect(result[0].currentBalance).toBe(1500);
+    expect(result.dataIncomplete).toBe(false);
+  });
+});
+
+describe("ledgerSignedAmount", () => {
+  it("is what the row adds to the running balance, to the agora", () => {
+    expect(ledgerSignedAmount("in", 500)).toBe(500);
+    expect(ledgerSignedAmount("out", 200.5)).toBe(-200.5);
+    expect(ledgerSignedAmount("out", 0.1 + 0.2)).toBe(-0.3);
   });
 });

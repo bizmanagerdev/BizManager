@@ -4,7 +4,7 @@ import { Fragment, useLayoutEffect, useMemo, useRef, useState, useTransition } f
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon } from "@/components/ui/icons";
+import { CheckIcon, ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,18 +14,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { NativeSelect } from "@/components/ui/native-select";
+import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
 import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
 import { useSetHeaderAction, useSetHeaderTrailingAction } from "@/components/layout/page-title-context";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
+import { toast } from "sonner";
 import QuickEntryRow from "./QuickEntryRow";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import {
   getAccountKindLabel,
+  ledgerDay,
+  ledgerSignedAmount,
   type AccountDeleteRef,
   type AccountEditRef,
+  type AccountLedgerEntry,
   type AccountTransferRef,
   type AccountWithLedger,
 } from "@/lib/accounts";
@@ -66,18 +71,38 @@ function monthLabel(monthKey: string) {
   return `${month}/${year.slice(-2)}`;
 }
 
+// Which register rows to show, by their "נבדק מול הבנק" tick.
+type CheckFilter = "all" | "unchecked" | "checked";
+const CHECK_FILTERS: Array<{ value: CheckFilter; label: string }> = [
+  { value: "all", label: "הכל" },
+  { value: "unchecked", label: "לא נבדקו" },
+  { value: "checked", label: "נבדקו" },
+];
+
 function AccountSummaryCard({
   account,
   selected,
   onSelect,
+  uncheckedCount,
+  showingUnchecked,
+  onToggleUnchecked,
 }: {
   account: AccountWithLedger;
   selected: boolean;
   onSelect: () => void;
+  /** Rows on its register not yet ticked "נבדק מול הבנק". */
+  uncheckedCount: number;
+  /** This account is open with only its unchecked rows showing. */
+  showingUnchecked: boolean;
+  onToggleUnchecked: () => void;
 }) {
   const kindLabel = getAccountKindLabel(account.kind);
+  const hasRows = account.ledger.some((row) => row.posted);
   return (
-    // The whole card selects the account. הכנסה / הוצאה moved onto the tab bar
+    // The card selects the account; its "N לא נבדקו" line below opens it on
+    // just the rows not yet compared with the bank, and again shows them all
+    // (owner, 2026-10-18). Two buttons in one frame — a button can't hold
+    // another. הכנסה / הוצאה moved onto the tab bar
     // below, where they act on the account that's actually open — one place to
     // record money instead of a pair of glyphs on every card.
     // Corner/center/bottom layout (user, 2026-08-31): name + kind badge pinned
@@ -86,11 +111,9 @@ function AccountSummaryCard({
     // the bottom. h-full so every card in a flex-wrap row stretches to match
     // the tallest one, and the middle flex-1 row centers within whatever
     // height that leaves.
-    <button
-      type="button"
-      onClick={onSelect}
+    <div
       className={cn(
-        "flex h-full w-full flex-col items-stretch gap-1.5 rounded-lg border bg-background p-3 text-right transition-colors",
+        "flex h-full w-full flex-col items-stretch rounded-lg border bg-background text-right transition-colors",
         // Inverted — navy fill, white text — not just a border, after a
         // round of borders (white fill/secondary border, then a plain
         // thicker primary border) that a reviewer correctly called a "weak
@@ -103,52 +126,103 @@ function AccountSummaryCard({
           : "hover:border-foreground/30"
       )}
     >
-      <span className="flex w-full items-start justify-between gap-2">
-        <span className="min-w-0 flex-1 text-sm font-medium">{account.name}</span>
-        {/* Hidden when it just repeats the name — e.g. a cash account named
-            "מזומן" showing a "מזומן" kind badge says nothing a bank account's
-            "בנק" badge (distinct from ITS name) actually does (2026-08-31
-            design review: "the type badge is the odd one out ... Hide the
-            badge when it duplicates the name"). */}
-        {kindLabel.trim() !== account.name.trim() && (
-          <span
-            className={cn(
-              "shrink-0 rounded-full border px-1.5 py-0 text-[0.588rem]",
-              selected ? "border-primary-foreground/30 text-primary-foreground/80" : "text-muted-foreground"
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className="flex flex-1 flex-col items-stretch gap-1.5 p-3 pb-2 text-right"
+      >
+        <span className="flex w-full items-start justify-between gap-2">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">{account.name}</span>
+            {/* The bank's number for it, as set in ניהול חשבונות (owner,
+                2026-10-18). */}
+            {account.accountNumber && (
+              <span
+                dir="ltr"
+                className={cn(
+                  "block text-right text-[0.688rem] tabular-nums",
+                  selected ? "text-primary-foreground/75" : "text-muted-foreground"
+                )}
+              >
+                {account.accountNumber}
+              </span>
             )}
-          >
-            {kindLabel}
           </span>
-        )}
-      </span>
-      <span className="flex flex-1 items-center justify-center">
-        {/* Only the sign is red/green — the figure itself stays neutral text.
-            Red/green on the WHOLE number would double as this card's only
-            "danger" signal, but red already means danger everywhere else in
-            the app (delete, destructive badges, errors) — a negative balance
-            isn't that (user, 2026-08-31: "colour is overloaded... red means
-            danger everywhere else"). */}
-        <span dir="ltr" className="block text-xl font-semibold tabular-nums">
-          {/* Bigger than the digits — at the same size a bare "-"/"+" glyph
-              is visually thin/short next to full-height digits and barely
-              registers (user, 2026-08-31: "the minus and plus need to be
-              bigger"). */}
-          <span
-            className={cn(
-              "text-2xl",
-              account.currentBalance < 0 ? "text-destructive" : "text-success"
-            )}
-          >
-            {account.currentBalance < 0 ? "-" : "+"}
-          </span>
-          {formatMoneyRounded(Math.abs(account.currentBalance))}
+          {/* Hidden when it just repeats the name — e.g. a cash account named
+              "מזומן" showing a "מזומן" kind badge says nothing a bank account's
+              "בנק" badge (distinct from ITS name) actually does (2026-08-31
+              design review: "the type badge is the odd one out ... Hide the
+              badge when it duplicates the name"). */}
+          {kindLabel.trim() !== account.name.trim() && (
+            <span
+              className={cn(
+                "shrink-0 rounded-full border px-1.5 py-0 text-[0.588rem]",
+                selected ? "border-primary-foreground/30 text-primary-foreground/80" : "text-muted-foreground"
+              )}
+            >
+              {kindLabel}
+            </span>
+          )}
         </span>
-      </span>
-      {/* No expected amounts here any more. An account shows what actually
-          moved and where it stands now; money that is still expected lives on
-          צפי תזרים, where it can be seen by day and in both directions
-          (user, 2026-09-17). */}
-    </button>
+        <span className="flex flex-1 items-center justify-center">
+          {/* Only the sign is red/green — the figure itself stays neutral text.
+              Red/green on the WHOLE number would double as this card's only
+              "danger" signal, but red already means danger everywhere else in
+              the app (delete, destructive badges, errors) — a negative balance
+              isn't that (user, 2026-08-31: "colour is overloaded... red means
+              danger everywhere else"). */}
+          <span dir="ltr" className="block text-xl font-semibold tabular-nums">
+            {/* Bigger than the digits — at the same size a bare "-"/"+" glyph
+                is visually thin/short next to full-height digits and barely
+                registers (user, 2026-08-31: "the minus and plus need to be
+                bigger"). */}
+            <span
+              className={cn(
+                "text-2xl",
+                account.currentBalance < 0 ? "text-destructive" : "text-success"
+              )}
+            >
+              {account.currentBalance < 0 ? "-" : "+"}
+            </span>
+            {formatMoneyRounded(Math.abs(account.currentBalance))}
+          </span>
+        </span>
+        {/* No expected amounts here any more. An account shows what actually
+            moved and where it stands now; money that is still expected lives on
+            צפי תזרים, where it can be seen by day and in both directions
+            (user, 2026-09-17). */}
+      </button>
+      {hasRows &&
+        (uncheckedCount > 0 ? (
+          <button
+            type="button"
+            onClick={onToggleUnchecked}
+            aria-pressed={showingUnchecked}
+            title={showingUnchecked ? "הצגת כל התנועות" : "הצגת התנועות שעוד לא נבדקו מול הבנק"}
+            className={cn(
+              "mx-2 mb-2 self-center rounded-full border px-2 py-0.5 text-[0.688rem] font-medium tabular-nums transition-colors",
+              showingUnchecked
+                ? cn(TOGGLE_ON, "border-secondary")
+                : selected
+                  ? "border-primary-foreground/30 text-primary-foreground/90 hover:bg-primary-foreground/10"
+                  : "text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+            )}
+          >
+            {uncheckedCount} לא נבדקו
+          </button>
+        ) : (
+          <span
+            className={cn(
+              "mx-2 mb-2 flex items-center justify-center gap-1 py-0.5 text-[0.688rem] font-medium",
+              selected ? "text-primary-foreground/90" : "text-success"
+            )}
+          >
+            <CheckIcon className="h-3 w-3" aria-hidden="true" />
+            הכל נבדק
+          </span>
+        ))}
+    </div>
   );
 }
 
@@ -298,6 +372,9 @@ export default function BankClient({
   const [selectedId, setSelectedId] = useState<string>(
     accounts.find((a) => a.id === initialAccountId)?.id ?? accounts[0]?.id ?? ""
   );
+  // The register's "נבדק מול הבנק" filter — kept when switching accounts: a
+  // reconciliation goes account by account looking at what's left.
+  const [checkFilter, setCheckFilter] = useState<CheckFilter>("all");
 
   // The account strip scrolls horizontally now (see below) — on a phone, the
   // selected card can land anywhere in it, off to one side, depending on
@@ -360,12 +437,18 @@ export default function BankClient({
   const [quickEntryHeight, setQuickEntryHeight] = useState(0);
   useLayoutEffect(() => {
     const container = registerScrollRef.current;
+    if (!container) return;
     const target = monthNodeRefs.current.get(currentMonth);
-    if (!container || !target) return;
+    // This month has nothing to show (filtered out, or nothing in it): start
+    // at the top rather than wherever the last account or filter left it.
+    if (!target) {
+      container.scrollTop = 0;
+      return;
+    }
     const headerHeight = registerHeaderRef.current?.offsetHeight ?? 0;
     const offset = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
     container.scrollTop += offset - headerHeight;
-  }, [selectedId, currentMonth]);
+  }, [selectedId, currentMonth, checkFilter]);
 
   function selectAccount(accountId: string) {
     setSelectedId(accountId);
@@ -400,6 +483,63 @@ export default function BankClient({
   // reconstruct an EDITED row's derived label/sublabel/amount client-side — only
   // hiding a deleted row (which needs no reconstruction at all) is done here.
   const [hiddenLedgerRowIds, setHiddenLedgerRowIds] = useState<Set<string>>(new Set());
+
+  // ── "נבדק מול הבנק" ticks (owner, 2026-10-18: "then I always know what's
+  // not worked on yet"). A tick shows at once and saves in the background; it
+  // moves no money, so nothing else on the page reloads. The server keeps it
+  // with the row's amount and date, and an edited row comes back unticked —
+  // the local copy is keyed the same way, so it can't outlive an edit either.
+  const [localChecks, setLocalChecks] = useState<Map<string, boolean>>(() => new Map());
+  // One save at a time per row, in click order: a quick tick-untick has to end
+  // unticked, whichever request the network happens to finish first.
+  const checkQueue = useRef(new Map<string, Promise<void>>());
+  const localCheckKey = (accountId: string, row: AccountLedgerEntry) =>
+    `${accountId}|${row.id}|${ledgerSignedAmount(row.type, row.amount)}|${row.date}`;
+  const isRowChecked = (accountId: string, row: AccountLedgerEntry) =>
+    localChecks.get(localCheckKey(accountId, row)) ?? row.bankChecked;
+  const uncheckedCount = (account: AccountWithLedger) =>
+    account.ledger.filter((row) => row.posted && !hiddenLedgerRowIds.has(row.id) && !isRowChecked(account.id, row))
+      .length;
+
+  function setRowChecked(accountId: string, row: AccountLedgerEntry, checked: boolean) {
+    const key = localCheckKey(accountId, row);
+    const previous = isRowChecked(accountId, row);
+    setLocalChecks((prev) => new Map(prev).set(key, checked));
+    const queueKey = `${accountId}|${row.id}`;
+    const save = (checkQueue.current.get(queueKey) ?? Promise.resolve()).then(async () => {
+      try {
+        const res = await fetch("/api/accounts/ledger-checks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            account_id: accountId,
+            entry_key: row.id,
+            amount: ledgerSignedAmount(row.type, row.amount),
+            date: ledgerDay(row.date),
+            checked,
+          }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(json.error || "שמירת הסימון נכשלה.");
+      } catch (error: unknown) {
+        setLocalChecks((prev) => new Map(prev).set(key, previous));
+        toast.error(toHebrewError(error, "שמירת הסימון נכשלה."));
+      }
+    });
+    checkQueue.current.set(queueKey, save);
+  }
+
+  // The card's "N לא נבדקו": opens that account on just those rows; on the
+  // account already showing them, back to all of them.
+  function toggleUncheckedFor(accountId: string) {
+    const openId = accounts.some((a) => a.id === selectedId) ? selectedId : accounts[0]?.id;
+    if (accountId === openId && checkFilter === "unchecked") {
+      setCheckFilter("all");
+      return;
+    }
+    if (accountId !== openId) selectAccount(accountId);
+    setCheckFilter("unchecked");
+  }
 
   function confirmDeleteTransfer() {
     if (!transferToDelete) return;
@@ -571,6 +711,7 @@ export default function BankClient({
     in: number;
     out: number;
     closing: number; // balance at the end of that month
+    unchecked: number; // rows not yet ticked "נבדק מול הבנק"
   }> = [];
   for (const row of actualLedger) {
     const month = row.date.slice(0, 7);
@@ -579,11 +720,12 @@ export default function BankClient({
       last && last.month === month
         ? last
         : (allGroups[
-            allGroups.push({ month, items: [], in: 0, out: 0, closing: 0 }) - 1
+            allGroups.push({ month, items: [], in: 0, out: 0, closing: 0, unchecked: 0 }) - 1
           ] as (typeof allGroups)[number]);
     group.items.push(row);
     if (row.type === "in") group.in += row.amount;
     else group.out += row.amount;
+    if (!hiddenLedgerRowIds.has(row.id) && !isRowChecked(selected.id, row)) group.unchecked += 1;
   }
   // End-of-month balance: the running balance of that month's last row. Walk
   // oldest→newest (the list is newest-first) carrying the last known figure
@@ -597,7 +739,15 @@ export default function BankClient({
     if (lastPosted) carriedBalance = lastPosted.runningBalance as number;
     group.closing = carriedBalance;
   }
-  const groups = monthFilter ? allGroups.filter((g) => g.month === monthFilter) : allGroups;
+  // The rows the "נבדק מול הבנק" filter lets through. A month's totals and
+  // closing balance stay the whole month's (the filter only picks rows), and a
+  // month with no such rows drops out while filtering.
+  const showRow = (row: AccountLedgerEntry) =>
+    !hiddenLedgerRowIds.has(row.id) &&
+    (checkFilter === "all" || isRowChecked(selected.id, row) === (checkFilter === "checked"));
+  const groups = allGroups.filter(
+    (g) => (!monthFilter || g.month === monthFilter) && (checkFilter === "all" || g.items.some(showRow))
+  );
   // THIS calendar month open by default, older (and any newer — a post-dated
   // check can group under next month) ones folded, until the reader says
   // otherwise. Local date parts, not UTC, so this doesn't slip a day/month
@@ -606,8 +756,10 @@ export default function BankClient({
   // filtered there's exactly one group, and it always opens.
   // (`now`/`currentMonth` are computed above, before the early return.)
   const hasCurrentMonth = groups.some((g) => g.month === currentMonth);
+  // Filtered by the tick, every month that's left opens: it's a list to work
+  // through, not a history to browse.
   const isMonthOpen = (month: string, index: number) =>
-    openMonths[month] ?? (hasCurrentMonth ? month === currentMonth : index === 0);
+    openMonths[month] ?? (checkFilter !== "all" || (hasCurrentMonth ? month === currentMonth : index === 0));
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
@@ -641,6 +793,9 @@ export default function BankClient({
               account={account}
               selected={account.id === selected.id}
               onSelect={() => selectAccount(account.id)}
+              uncheckedCount={uncheckedCount(account)}
+              showingUnchecked={account.id === selected.id && checkFilter === "unchecked"}
+              onToggleUnchecked={() => toggleUncheckedFor(account.id)}
             />
           </div>
         ))}
@@ -674,25 +829,51 @@ export default function BankClient({
                   THAT was pushing the dropdown off onto its own line. */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="font-medium">{selected.name}</div>
-                {allGroups.length > 0 && (
-                  // No "חודש" label — the dropdown's own options (כל החודשים /
-                  // a specific month) already say what it filters (user,
-                  // 2026-08-31: "it's clear what the dropdown is").
-                  <NativeSelect
-                    dense
-                    className="w-auto max-w-full"
-                    aria-label="סינון לפי חודש"
-                    value={monthFilter}
-                    onChange={(e) => setMonthFilter(e.target.value)}
-                  >
-                    <option value="">כל החודשים</option>
-                    {allGroups.map((group) => (
-                      <option key={group.month} value={group.month}>
-                        {monthLabel(group.month)}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Rows by their "נבדק מול הבנק" tick (owner, 2026-10-18). */}
+                  {actualLedger.length > 0 && (
+                    <div
+                      role="group"
+                      aria-label="סינון לפי בדיקה מול הבנק"
+                      className={cn(SEGMENTED_GROUP, "h-9 rounded-lg p-0.5 shadow-none")}
+                    >
+                      {CHECK_FILTERS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={checkFilter === option.value}
+                          onClick={() => setCheckFilter(option.value)}
+                          className={cn(
+                            SEGMENT,
+                            "flex items-center rounded-md px-2.5 py-0 text-xs",
+                            checkFilter === option.value ? TOGGLE_ON : TOGGLE_OFF
+                          )}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {allGroups.length > 0 && (
+                    // No "חודש" label — the dropdown's own options (כל החודשים /
+                    // a specific month) already say what it filters (user,
+                    // 2026-08-31: "it's clear what the dropdown is").
+                    <NativeSelect
+                      dense
+                      className="w-auto max-w-full"
+                      aria-label="סינון לפי חודש"
+                      value={monthFilter}
+                      onChange={(e) => setMonthFilter(e.target.value)}
+                    >
+                      <option value="">כל החודשים</option>
+                      {allGroups.map((group) => (
+                        <option key={group.month} value={group.month}>
+                          {monthLabel(group.month)}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -700,6 +881,12 @@ export default function BankClient({
               <div className="py-10 text-center text-sm text-muted-foreground">
                 אין תנועות משויכות לחשבון זה עדיין. תנועות יופיעו כאן ברגע שתשייך תקבולים והוצאות
                 לחשבון.
+              </div>
+            ) : groups.length === 0 ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                {checkFilter === "unchecked"
+                  ? "כל התנועות כאן נבדקו מול הבנק."
+                  : "עדיין לא סומנו כאן תנועות כנבדקות מול הבנק."}
               </div>
             ) : (
               <div className="divide-y divide-border/60">
@@ -750,6 +937,17 @@ export default function BankClient({
                       {monthLabel(group.month)}
                     </span>
                     <span className="text-muted-foreground/70">({group.items.length})</span>
+                    {/* What's left to compare with the bank in this month. */}
+                    {group.unchecked > 0 ? (
+                      <span className="whitespace-nowrap rounded-full bg-background px-1.5 py-px text-[0.688rem] font-medium tabular-nums text-foreground/80">
+                        {group.unchecked} לא נבדקו
+                      </span>
+                    ) : (
+                      <span className="flex items-center text-success" title="כל התנועות בחודש נבדקו מול הבנק">
+                        <CheckIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span className="sr-only">כל התנועות בחודש נבדקו מול הבנק</span>
+                      </span>
+                    )}
                     <span className="ms-auto flex items-center gap-2">
                       {/* Hidden on the smallest screens, not just squeezed —
                           at phone width this row was cramming chevron/month/
@@ -781,7 +979,7 @@ export default function BankClient({
                   </button>
                   {open &&
                   group.items
-                    .filter((row) => !hiddenLedgerRowIds.has(row.id))
+                    .filter(showRow)
                     .map((row) => {
                     const hasBreakdown = Boolean(row.breakdown && row.breakdown.length > 0);
                     const breakdownOpen = expandedBreakdownIds.has(row.id);
@@ -911,11 +1109,27 @@ export default function BankClient({
                             ]
                           : []),
                     ];
+                    const rowChecked = isRowChecked(selected.id, row);
                     const rowContent = (
                       <div
                         data-focus-id={transfer?.id}
                         className="flex items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50"
                       >
+                        {/* "נבדק מול הבנק": ticked once this row was found on
+                            the bank statement (owner, 2026-10-18). The label
+                            round it makes a finger-sized target. */}
+                        <label
+                          className="-my-1.5 -ms-1.5 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center"
+                          title={rowChecked ? "נבדק מול הבנק" : "לסמן: נבדק מול הבנק"}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 cursor-pointer accent-secondary"
+                            checked={rowChecked}
+                            onChange={(e) => setRowChecked(selected.id, row, e.target.checked)}
+                            aria-label={`נבדק מול הבנק: ${rowLabel}`}
+                          />
+                        </label>
                         {content}
                         {/* Desktop: a single "⋮" menu instead of separate
                             edit/delete icon buttons (user, 2026-08-31) — same

@@ -30,10 +30,11 @@ type FormState = {
   openingDate: string;
   isActive: boolean;
   notes: string;
+  accountNumber: string;
 };
 
 function emptyForm(): FormState {
-  return { id: null, name: "", kind: "bank", openingBalance: "", openingDate: "", isActive: true, notes: "" };
+  return { id: null, name: "", kind: "bank", openingBalance: "", openingDate: "", isActive: true, notes: "", accountNumber: "" };
 }
 
 function toForm(account: Account): FormState {
@@ -45,6 +46,7 @@ function toForm(account: Account): FormState {
     openingDate: account.openingDate,
     isActive: account.isActive,
     notes: account.notes ?? "",
+    accountNumber: account.accountNumber ?? "",
   };
 }
 
@@ -86,6 +88,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
       opening_date: form.openingDate,
       is_active: form.isActive,
       notes: form.notes.trim() || null,
+      account_number: form.accountNumber.trim() || null,
     };
 
     if (form.id) {
@@ -98,6 +101,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
         openingDate: payload.opening_date,
         isActive: payload.is_active,
         notes: payload.notes,
+        accountNumber: payload.account_number,
       };
       setDialogOpen(false);
       scheduleDeferredAction({
@@ -210,6 +214,11 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
                     )}
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
+                    {account.accountNumber && (
+                      <>
+                        <span dir="ltr">{account.accountNumber}</span> ·{" "}
+                      </>
+                    )}
                     יתרת פתיחה {ils.format(account.openingBalance)} · נכון ל-{account.openingDate}
                   </div>
                 </div>
@@ -246,6 +255,20 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 autoFocus
+              />
+            </div>
+
+            {/* As the bank writes it — shown on the account's card on the
+                חשבונות page (owner, 2026-10-18). */}
+            <div className="space-y-1">
+              <label htmlFor="account-number" className="text-sm font-medium">מספר חשבון</label>
+              <Input
+                id="account-number"
+                dir="ltr"
+                className="text-right"
+                placeholder="594-249395"
+                value={form.accountNumber}
+                onChange={(e) => setForm((f) => ({ ...f, accountNumber: e.target.value }))}
               />
             </div>
 

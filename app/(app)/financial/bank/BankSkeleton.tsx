@@ -3,10 +3,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TextLineSkeleton } from "@/components/layout/loading-skeletons";
 
 // The accounts page before its data, from BankClient's own classes: the
-// account strip (w-36 tiles, the w-48 total at its end — the tiles stretch to
-// its height, as on the page), then the open account's register — its sticky
-// name/month header, this month's rows under its month header and the older
-// months folded, the opening-balance footnote — and the paragraph under it.
+// account strip (w-36 tiles with the account number and the "N לא נבדקו"
+// pill, the w-48 total at its end — the tiles stretch to its height, as on the
+// page), then the open account's register — its sticky name / tick filter /
+// month header, this month's rows (each with its tick) under its month header
+// and the older months folded, the opening-balance footnote — and the
+// paragraph under it.
 // Shown while the page streams (loading.tsx) and while BankClient's code loads
 // (the page's dynamic() fallback). The desktop quick-entry bar is fixed to the
 // window, so it moves nothing when it arrives.
@@ -31,14 +33,20 @@ export default function BankSkeleton({ routeLoading = false }: { routeLoading?: 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="w-36 shrink-0">
-            <div className="flex h-full w-full flex-col items-stretch gap-1.5 rounded-lg border bg-background p-3">
-              <span className="flex w-full items-start justify-between gap-2 text-sm">
-                <TextLineSkeleton barClassName="w-16" />
-                <Skeleton className="h-3.5 w-8 rounded-full" />
+            <div className="flex h-full w-full flex-col items-stretch rounded-lg border bg-background">
+              <span className="flex flex-1 flex-col items-stretch gap-1.5 p-3 pb-2">
+                <span className="flex w-full items-start justify-between gap-2">
+                  <span className="min-w-0 flex-1">
+                    <TextLineSkeleton className="text-sm" barClassName="w-16" />
+                    <TextLineSkeleton className="text-[0.688rem]" barClassName="w-14" />
+                  </span>
+                  <Skeleton className="h-3.5 w-8 rounded-full" />
+                </span>
+                <span className="flex flex-1 items-center justify-center text-2xl">
+                  <Skeleton className="h-6 w-20" />
+                </span>
               </span>
-              <span className="flex flex-1 items-center justify-center text-2xl">
-                <Skeleton className="h-6 w-20" />
-              </span>
+              <Skeleton className="mx-2 mb-2 h-[22px] w-16 self-center rounded-full" />
             </div>
           </div>
         ))}
@@ -62,13 +70,19 @@ export default function BankSkeleton({ routeLoading = false }: { routeLoading?: 
             <div className="space-y-1 border-b bg-muted px-3 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <TextLineSkeleton barClassName="w-28 bg-background/70" />
-                <Skeleton className="h-9 w-28 rounded-lg bg-background/70" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Skeleton className="h-9 w-40 rounded-lg bg-background/70" />
+                  <Skeleton className="h-9 w-28 rounded-lg bg-background/70" />
+                </div>
               </div>
             </div>
             <div className="divide-y divide-border/60">
               <MonthHeader />
               {Array.from({ length: 10 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                  <span className="-my-1.5 -ms-1.5 flex h-9 w-9 shrink-0 items-center justify-center">
+                    <Skeleton className="h-4 w-4 rounded-sm" />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <TextLineSkeleton barClassName="w-36" />
                     <TextLineSkeleton className="text-xs" barClassName="w-24" />
