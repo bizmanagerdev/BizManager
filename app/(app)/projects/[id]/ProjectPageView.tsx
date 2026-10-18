@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { addressFromColumns } from "@/lib/address/columns";
 import { pinFrom } from "@/lib/delivery-location";
 import dynamic from "next/dynamic";
 import ProjectDetailsActions, { REMINDERS_SECTION_ID } from "@/app/(app)/projects/[id]/ProjectDetailsActions";
@@ -38,6 +37,7 @@ import { formatShortDate } from "@/lib/date";
 import type { ProjectPageCore } from "@/lib/projects/project-page";
 import type { ProjectPageExtras } from "@/app/(app)/projects/[id]/loadProjectPageExtras";
 import { useSettled } from "@/hooks/useSettled";
+import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 
 // A project's page, from what was read for it: the project itself
 // (lib/projects/project-page.ts) and the parts only the server reads
@@ -140,6 +140,8 @@ export default function ProjectPageView({
       destination_has_elevator:
         typeof details?.destination_has_elevator === "boolean" ? details.destination_has_elevator : null,
       origin_structured: addressFromColumns(details as Record<string, unknown> | null, "origin"),
+      origin_not_found: addressNotFound(details as Record<string, unknown> | null, "origin"),
+      destination_not_found: addressNotFound(details as Record<string, unknown> | null, "destination"),
       destination_structured: addressFromColumns(details as Record<string, unknown> | null, "destination"),
       price_includes_vat: details?.price_includes_vat === true,
       no_charge: details?.no_charge === true,
@@ -308,6 +310,7 @@ export default function ProjectPageView({
       email={customerEmail}
       address={customerAddress}
       pin={customerPin}
+      addressNotFound={!cleanField(branchRow?.address) && addressNotFound(customerRow as Record<string, unknown> | null)}
       entityType="project"
       entityId={id}
     />
@@ -325,7 +328,7 @@ export default function ProjectPageView({
   const routeHeadline = hasRoute ? (
     <span className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-base font-bold leading-snug">
       {moveOrigin ? (
-        <AddressLink address={originAddress} className="flex min-w-0 items-center gap-2">
+        <AddressLink address={originAddress} notFound={overview?.origin_not_found} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
             <WazeIcon className="h-3.5 w-3.5" />
           </span>
@@ -334,7 +337,7 @@ export default function ProjectPageView({
       ) : null}
       {moveOrigin && moveDestination ? <ArrowLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden /> : null}
       {moveDestination ? (
-        <AddressLink address={destinationAddress} className="flex min-w-0 items-center gap-2">
+        <AddressLink address={destinationAddress} notFound={overview?.destination_not_found} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
             <WazeIcon className="h-3.5 w-3.5" />
           </span>
@@ -429,7 +432,7 @@ export default function ProjectPageView({
           {hasRoute ? (
             <div className="space-y-2 lg:hidden">
               {moveOrigin ? (
-                <AddressLink address={originAddress} className="flex items-start gap-2 text-sm">
+                <AddressLink address={originAddress} notFound={overview?.origin_not_found} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
                     <WazeIcon className="h-3.5 w-3.5" />
                   </span>
@@ -440,7 +443,7 @@ export default function ProjectPageView({
                 </AddressLink>
               ) : null}
               {moveDestination ? (
-                <AddressLink address={destinationAddress} className="flex items-start gap-2 text-sm">
+                <AddressLink address={destinationAddress} notFound={overview?.destination_not_found} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
                     <WazeIcon className="h-3.5 w-3.5" />
                   </span>

@@ -18,6 +18,7 @@ const BASIC_KEYS = [
   "name",
   "address",
   "addr",
+  "addr_not_found",
   "asset_description",
   "is_active",
   "property_type",

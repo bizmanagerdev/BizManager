@@ -15,6 +15,7 @@ import {
 import { pinFrom } from "@/lib/delivery-location";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { MorningLocalDocument } from "@/lib/morning/types";
+import { addressNotFound } from "@/lib/address/columns";
 import {
   buildOrderRows,
   buildProjectRows,
@@ -59,7 +60,7 @@ const IN_BATCH = 150;
 export const DOCUMENTS_SHOWN = 10;
 
 const CUSTOMER_SELECT =
-  "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,delivery_instructions,delivery_lat,delivery_lng,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error";
+  "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,addr_place_id,delivery_instructions,delivery_lat,delivery_lng,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error";
 
 type Page = (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>;
 
@@ -370,6 +371,7 @@ export function startCustomerPageReads(
           address: str(customerRow, "address") || null,
           deliveryInstructions: str(customerRow, "delivery_instructions") || null,
           deliveryPin: pinFrom(customerRow.delivery_lat, customerRow.delivery_lng),
+          addressNotFound: addressNotFound(customerRow as Record<string, unknown>),
           notes: str(customerRow, "notes") || null,
           active: customerRow.active !== false,
           requiresPrepayment: customerRow.requires_prepayment === true,

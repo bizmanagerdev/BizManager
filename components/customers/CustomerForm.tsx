@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { AddressPicker } from "@/components/ui/address-picker";
-import { addressFromColumns } from "@/lib/address/columns";
+import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 import { addressLine, type StructuredAddress } from "@/lib/address/structured";
 import { branchAddressFields } from "@/lib/customers/new-customer";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
@@ -213,6 +213,8 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
   // saved before the picker is shown with a button that looks it up.
   const [addr, setAddr] = useState<StructuredAddress | null>(null);
   const [addrTouched, setAddrTouched] = useState(mode === "create");
+  // The saved address was not found on Google Maps (lib/address/columns.ts).
+  const [addrNotFound, setAddrNotFound] = useState(false);
   const [legacyAddress, setLegacyAddress] = useState(initial?.address ?? "");
   const [legacyCity, setLegacyCity] = useState("");
   const [notes, setNotes] = useState(initial?.notes ?? "");
@@ -267,6 +269,7 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
             setWhatsapp(typeof c.whatsapp === "number" ? String(c.whatsapp) : (c.whatsapp ?? ""));
             setEmail(c.email ?? "");
             setAddr(addressFromColumns(c as unknown as Record<string, unknown>, "addr"));
+            setAddrNotFound(addressNotFound(c as unknown as Record<string, unknown>));
             setLegacyAddress(c.address ?? "");
             setLegacyCity(typeof (c as unknown as Row).city === "string" ? ((c as unknown as Row).city as string) : "");
             setAddrTouched(false);
@@ -705,6 +708,7 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
               legacyText={addrTouched ? null : legacyAddress}
             />
           </div>
+          {addrNotFound && !addrTouched ? <p className="text-xs font-medium text-destructive">הכתובת השמורה לא נמצאה ב-Google Maps · צריך לבחור כתובת חדשה</p> : null}
           {missingField === "address" && error ? <p className="text-sm text-destructive">{error}</p> : null}
         </Field>
 

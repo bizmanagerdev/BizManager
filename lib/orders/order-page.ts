@@ -102,7 +102,7 @@ export async function loadOrderPageCore(
     if (!customerId) return null;
     const { data } = await supabase
       .from("customers")
-      .select("id,name,name_for_invoice,registration_number,email,phone,address,delivery_lat,delivery_lng")
+      .select("id,name,name_for_invoice,registration_number,email,phone,address,addr_place_id,delivery_lat,delivery_lng")
       .eq("id", customerId)
       .maybeSingle();
     return (data ?? null) as Row | null;

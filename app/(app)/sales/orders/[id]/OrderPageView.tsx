@@ -28,6 +28,7 @@ import type { OrderPageCore } from "@/lib/orders/order-page";
 import type { OrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPageExtras";
 import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
+import { addressNotFound } from "@/lib/address/columns";
 
 // An order's page, from what was read for it: the order itself
 // (lib/orders/order-page.ts — from the server, or from the device copy) and
@@ -172,6 +173,7 @@ export default function OrderPageView({
   // The customer's saved drop-off point wins over the address — unless the
   // order goes to a branch somewhere else.
   const orderPin = branchAddress ? null : pinFrom(customer?.delivery_lat, customer?.delivery_lng);
+  const orderAddressNotFound = !branchAddress && addressNotFound(customer);
   const effectivePhone = branchPhone ?? customerPhone;
   const orderNotes = getString(order ?? {}, "notes");
 
@@ -403,7 +405,7 @@ export default function OrderPageView({
                 phone={effectivePhone}
                 email={customerEmail}
                 address={effectiveAddress}
-                pin={orderPin}
+                pin={orderPin} addressNotFound={orderAddressNotFound}
               />
             </div>
 
@@ -491,7 +493,7 @@ export default function OrderPageView({
                   phone={effectivePhone}
                   email={customerEmail}
                   address={effectiveAddress}
-                  pin={orderPin}
+                  pin={orderPin} addressNotFound={orderAddressNotFound}
                 />
               </div>
 

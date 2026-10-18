@@ -98,12 +98,22 @@ export default function CustomerProfileCard({
         <AddressLink
           address={address}
           pin={customer.deliveryPin}
+          notFound={customer.addressNotFound}
           fallback="—"
           className="inline-flex items-center gap-1.5 hover:text-secondary"
         >
           <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 break-words">{address || "נקודה שמורה"}</span>
         </AddressLink>
+      ),
+    });
+  }
+  if (customer.addressNotFound && !customer.deliveryPin) {
+    details.push({
+      label: "",
+      value: (
+        // Said where the address is, so it gets fixed (owner, 2026-10-18).
+        <span className="text-xs font-medium text-destructive">הכתובת לא נמצאה ב-Google Maps · צריך להזין כתובת חדשה</span>
       ),
     });
   }

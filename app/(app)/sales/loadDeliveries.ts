@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { orderCity } from "@/lib/ui/cities";
 import { derivePaymentStatus, type PaymentStatus } from "@/lib/orders/paymentStatus";
+import { addressNotFound } from "@/lib/address/columns";
 
 type Row = Record<string, unknown>;
 
@@ -63,6 +64,8 @@ export type DeliveryItem = {
   /** The saved drop-off pin — navigation prefers it over the address string. */
   deliveryLat: number | null;
   deliveryLng: number | null;
+  /** The customer's saved address was not found on Google Maps: no Waze, no driver's slip. */
+  addressNotFound?: boolean;
 };
 
 export type DeliveriesFilters = { customerId: string | null };
@@ -160,6 +163,7 @@ export async function loadDeliveriesPage(
       deliveryInstructions: null as string | null,
       deliveryLat: null as number | null,
       deliveryLng: null as number | null,
+      addressNotFound: false,
     }))
     .filter((row) => row.id);
 
@@ -179,7 +183,7 @@ export async function loadDeliveriesPage(
         if (customerIds.length === 0) return;
         const { data: customerRows } = await supabase
           .from("customers")
-          .select("id,address,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment")
+          .select("id,address,addr_place_id,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment")
           .in("id", customerIds);
         const byId = new Map(((customerRows ?? []) as Row[]).map((row) => [getString(row, "id") ?? "", row]));
         for (const delivery of deliveries) {
@@ -191,6 +195,7 @@ export async function loadDeliveriesPage(
           const toOwnBranch = delivery.branchId !== null && delivery.address !== (getString(row, "address") ?? "-");
           delivery.deliveryLat = toOwnBranch ? null : getNumber(row, "delivery_lat");
           delivery.deliveryLng = toOwnBranch ? null : getNumber(row, "delivery_lng");
+          delivery.addressNotFound = !toOwnBranch && addressNotFound(row);
           delivery.requiresPrepayment = row.requires_prepayment === true;
         }
       })(),

@@ -1,6 +1,6 @@
 ﻿"use client";
 import { toHebrewError } from "@/lib/error-messages";
-import { addressFromColumns } from "@/lib/address/columns";
+import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -151,6 +151,8 @@ function toInitialProject(row: ProjectRow): InitialProject {
       row["destination_has_elevator"] === true ? true : row["destination_has_elevator"] === false ? false : null,
     origin_structured: addressFromColumns(row, "origin"),
     destination_structured: addressFromColumns(row, "destination"),
+    origin_not_found: addressNotFound(row, "origin"),
+    destination_not_found: addressNotFound(row, "destination"),
   };
 }
 

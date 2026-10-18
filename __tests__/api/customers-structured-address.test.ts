@@ -170,6 +170,20 @@ describe("editing a customer", () => {
       addr_street: null,
     });
   });
+
+  // Owner, 2026-10-18: an address Google couldn't find stays marked until a
+  // real one is picked — an undo of that pick puts the mark back.
+  it("an undo puts back a 'not found on Google Maps' mark too", async () => {
+    await updateCustomer(
+      req("/api/customers/update", { id: "c1", structured_address: null, address: "ביתר | הרב קוק 5", city: "ביתר עילית", addr_not_found: true })
+    );
+    expect(written("customers", "update")).toMatchObject({ address: "ביתר | הרב קוק 5", addr_place_id: "not_found", addr_city: null });
+  });
+
+  it("a picked address replaces the mark", async () => {
+    await updateCustomer(req("/api/customers/update", { id: "c1", structured_address: PICKED, addr_not_found: true }));
+    expect(written("customers", "update")).toMatchObject({ addr_place_id: PICKED_COLUMNS.addr_place_id });
+  });
 });
 
 describe("a branch on its own", () => {
@@ -225,5 +239,13 @@ describe("a customer saved on the phone first", () => {
     const row = Object.fromEntries(columns.map((c, i) => [c, params[i]]));
     const request = await requestForChange({ table: "customers", op: "PUT", id: row.id, opData: row } as never, async () => null);
     expect(request?.body).toHaveProperty("structured_address", null);
+  });
+});
+
+describe("a town name in every language", () => {
+  it("is written as its Hebrew name only", async () => {
+    const broken = { ...PICKED, city: "• ירושלים, القدس, Jerusalem, Yerushalayim, Ерусалим" };
+    await updateCustomer(req("/api/customers/update", { id: "c1", structured_address: broken }));
+    expect(written("customers", "update")).toMatchObject({ city: "ירושלים", addr_city: "ירושלים", address: "ירושלים | יחזקאל הנביא 27" });
   });
 });

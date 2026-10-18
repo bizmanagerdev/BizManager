@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
  *   what's saved, to copy into Waze by hand or to save properly;
  * - nothing saved: the mark is grey and a tap says to save an address.
  * A saved drop-off point (`pin`) skips all of that: Waze goes to the point.
+ * An address marked as not found on Google Maps (`notFound`) never opens Waze.
  */
 export interface AddressLinkProps
   extends Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href"> {
@@ -37,6 +38,8 @@ export interface AddressLinkProps
    *  (owner, 2026-10-16: "if there's a saved point … we use the saved point
    *  because that is the real address"). */
   pin?: DeliveryPin | null;
+  /** The saved address is marked as not found on Google Maps (lib/address/columns.ts): no Waze. */
+  notFound?: boolean;
 }
 
 function buildWazeUrl(query: string): string {
@@ -60,6 +63,7 @@ export function AddressLink({
   fallback = "-",
   unavailableClassName,
   pin,
+  notFound = false,
   children,
   className,
   onClick,
@@ -73,7 +77,7 @@ export function AddressLink({
   const quality = addressQuality({ address: addr, city: town });
   const saved = plainAddress({ address: addr, city: town });
 
-  if (pin || quality === "clear") {
+  if (pin || (quality === "clear" && !notFound)) {
     return (
       <a
         href={pin ? wazeLinkForPin(pin) : buildWazeUrl(query)}
@@ -93,6 +97,34 @@ export function AddressLink({
       >
         {children ?? (query || saved)}
       </a>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <span className="contents" onClick={stop} onKeyDown={stop}>
+        <button
+          type="button"
+          title="הכתובת לא נמצאה במפות"
+          aria-label={props["aria-label"]}
+          className={cn("cursor-pointer text-start", className, unavailableClassName)}
+          onClick={() => setNoticeOpen(true)}
+        >
+          {children ?? (saved || query)}
+        </button>
+        <ViewDialog open={noticeOpen} onOpenChange={setNoticeOpen} title="הכתובת לא נמצאה במפות" size="formSm">
+          <div className="space-y-2 text-sm">
+            {saved || query ? (
+              <p>
+                הכתובת השמורה: <span className="font-semibold">{saved || query}</span>
+              </p>
+            ) : null}
+            <p className="text-muted-foreground">
+              הכתובת הזו לא נמצאה ב-Google Maps, אז היא כנראה שגויה ואי אפשר לנווט אליה. צריך להזין כתובת חדשה.
+            </p>
+          </div>
+        </ViewDialog>
+      </span>
     );
   }
 

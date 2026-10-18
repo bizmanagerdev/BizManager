@@ -31,6 +31,8 @@ export type CustomerContactCardProps = {
   address?: string | null;
   /** The saved drop-off point: Waze goes there instead of to the address. */
   pin?: DeliveryPin | null;
+  /** The saved address was not found on Google Maps: Waze says so instead of opening. */
+  addressNotFound?: boolean;
   /** When both are set, the card's own action becomes "תיעוד שיחה" for THIS
    *  entity (a project, an order…) instead of the plain link to the
    *  customer's page — which moves to a small corner arrow instead, so the
@@ -63,6 +65,7 @@ export function CustomerContactCard({
   email,
   address,
   pin,
+  addressNotFound = false,
   entityType,
   entityId,
 }: CustomerContactCardProps) {
@@ -134,7 +137,7 @@ export function CustomerContactCard({
       label: "כתובת",
       value: (
         // The Waze mark stays — it's what says "tapping this navigates".
-        <AddressLink address={address} pin={pin} className="flex items-center gap-1.5 hover:text-secondary">
+        <AddressLink address={address} pin={pin} notFound={addressNotFound} className="flex items-center gap-1.5 hover:text-secondary">
           <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span>{address || "נקודה שמורה"}</span>
         </AddressLink>

@@ -102,4 +102,40 @@ describe("the driver's slip", () => {
     expect(asked()).not.toBeInTheDocument();
     expect(push).not.toHaveBeenCalledWith("/customers/c1?edit=address");
   });
+
+  // Owner, 2026-10-18: an address not found on Google Maps is wrong — no slip
+  // goes out with it, not even "anyway".
+  describe("an address not found on Google Maps", () => {
+    const wrong = () => screen.queryByRole("heading", { name: "אי אפשר לשלוח לנהג" });
+
+    it("makes no slip, and offers to edit the address", () => {
+      render(<DeliveryShareActions delivery={delivery({ addressNotFound: true })} label="שליחה לנהג" />);
+      tapShare();
+      expect(wrong()).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "שליחה בכל זאת" })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "עריכת הכתובת" }));
+      expect(push).toHaveBeenCalledWith("/customers/c1?edit=address");
+      expect(screen.getByRole("button", { name: "שליחה לנהג" })).toBeEnabled();
+    });
+
+    it("a worker is told to ask the office", () => {
+      render(<DeliveryShareActions delivery={delivery({ addressNotFound: true })} label="שליחה לנהג" canEditAddress={false} />);
+      tapShare();
+      expect(wrong()).toBeInTheDocument();
+      expect(screen.getByText(/צריך לבקש מהמשרד כתובת חדשה/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "עריכת הכתובת" })).not.toBeInTheDocument();
+    });
+
+    it("a saved point still makes the slip", () => {
+      render(
+        <DeliveryShareActions
+          delivery={delivery({ addressNotFound: true, deliveryLat: 31.75, deliveryLng: 34.99 })}
+          label="שליחה לנהג"
+        />
+      );
+      tapShare();
+      expect(wrong()).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "שליחה לנהג" })).toBeDisabled();
+    });
+  });
 });

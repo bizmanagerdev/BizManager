@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hebrewPlaceName,
   addressFromGooglePlace,
   addressLine,
   EMPTY_ADDRESS,
@@ -83,5 +84,61 @@ describe("the address's lines", () => {
     expect(legacyAddressLine(picked)).toBe("בית שמש | יחזקאל הנביא 27");
     expect(legacyAddressLine(addressFromGooglePlace(SETTLEMENT))).toBe("אלומה");
     expect(legacyAddressLine(EMPTY_ADDRESS)).toBeNull();
+  });
+});
+
+describe("a broken Google entry (owner, 2026-10-18: \"why isn't all … only in Hebrew?\")", () => {
+  // What Google sent for שדרות גולדה מאיר 255, ירושלים: its town in every language at once.
+  const BROKEN = "• ירושלים, القدس, Jerusalem, Yerushalayim, أورشليم, י-ם, जेरूसलम, జేరుసలం, Ерусалим, Jeruzalém, Jérusalem";
+
+  it("keeps only the Hebrew name of the town, and builds a Hebrew line", () => {
+    const a = addressFromGooglePlace({
+      id: "ChIJa6DLFAvWAhURBbxiDq4gJvI",
+      shortFormattedAddress: `שדרות גולדה מאיר 255, ${BROKEN}`,
+      addressComponents: [
+        { longText: "255", types: ["street_number"] },
+        { longText: "שדרות גולדה מאיר", types: ["route"] },
+        { longText: BROKEN, shortText: BROKEN, types: ["locality", "political"] },
+      ],
+      location: { latitude: 31.8177725, longitude: 35.1944093 },
+    });
+    expect(a).toMatchObject({ city: "ירושלים", street: "שדרות גולדה מאיר", houseNumber: "255", formatted: "שדרות גולדה מאיר 255, ירושלים" });
+  });
+
+  it("hebrewPlaceName: the Hebrew part, or nothing", () => {
+    expect(hebrewPlaceName(BROKEN)).toBe("ירושלים");
+    expect(hebrewPlaceName("תל אביב-יפו")).toBe("תל אביב-יפו");
+    expect(hebrewPlaceName('האדמו"ר מבעלזא')).toBe('האדמו"ר מבעלזא');
+    expect(hebrewPlaceName("Jerusalem")).toBe("");
+    expect(hebrewPlaceName(null)).toBe("");
+  });
+
+  it("a name with no Hebrew falls back to the next one Google gave", () => {
+    const a = addressFromGooglePlace({
+      addressComponents: [
+        { longText: "Beit Shemesh", types: ["locality"] },
+        { longText: "בית שמש", types: ["administrative_area_level_2"] },
+      ],
+    });
+    expect(a.city).toBe("בית שמש");
+  });
+});
+
+describe("Google's names, tidied", () => {
+  it("no vowel marks, no 'רח'' in front, and the line built from the parts", () => {
+    const a = addressFromGooglePlace({
+      shortFormattedAddress: "רח' אַבְרָהָם רֵיקָנָטי 60, ירושלים",
+      addressComponents: [
+        { longText: "60", types: ["street_number"] },
+        { longText: "רח' אַבְרָהָם רֵיקָנָטי", types: ["route"] },
+        { longText: "ירושלים", types: ["locality"] },
+      ],
+    });
+    expect(a).toMatchObject({ street: "אברהם ריקנטי", houseNumber: "60", city: "ירושלים", formatted: "אברהם ריקנטי 60, ירושלים" });
+  });
+
+  it("keeps a 'שדרות' — that one is part of the name", () => {
+    const a = addressFromGooglePlace({ addressComponents: [{ longText: "שדרות רבי יהודה הנשיא", types: ["route"] }] });
+    expect(a.street).toBe("שדרות רבי יהודה הנשיא");
   });
 });

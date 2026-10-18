@@ -347,7 +347,7 @@ export function startProjectPageReads(supabase: SupabaseClient, id: string): Pro
   const customerRead = dashboardRead.then(async ({ data }) => {
     const customerId = getString(data as Row | null, "customer_id");
     if (!customerId) return null;
-    const { data: row } = await supabase.from("customers").select("phone,email,address,name_for_invoice,delivery_lat,delivery_lng").eq("id", customerId).maybeSingle();
+    const { data: row } = await supabase.from("customers").select("phone,email,address,addr_place_id,name_for_invoice,delivery_lat,delivery_lng").eq("id", customerId).maybeSingle();
     return (row ?? null) as Row | null;
   });
   const branchRead = detailsRead.then(async ({ data }) => {

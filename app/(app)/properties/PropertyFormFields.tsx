@@ -81,6 +81,7 @@ export function propertyToForm(p: Property): PropertyInput {
     name: p.name ?? "",
     address: p.address ?? "",
     addr: p.addr ?? null,
+    addr_not_found: p.addrNotFound === true,
     asset_description: p.assetDescription ?? "",
     is_active: p.isActive,
     property_type: p.propertyType ?? "",
@@ -214,9 +215,13 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
           onChange={(next) => {
             set("addr", next);
             set("address", next ? addressLine(next) : "");
+            set("addr_not_found", false);
           }}
           legacyText={form.addr ? null : form.address}
         />
+        {form.addr_not_found && !form.addr ? (
+          <p className="text-xs font-medium text-destructive">הכתובת השמורה לא נמצאה ב-Google Maps · צריך לבחור כתובת חדשה</p>
+        ) : null}
       </div>
       <label className="block space-y-1 text-sm">
         <span className="font-medium">סוג נכס</span>

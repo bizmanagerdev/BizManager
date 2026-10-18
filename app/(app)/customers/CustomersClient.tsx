@@ -70,6 +70,7 @@ import { TOGGLE_OFF, TOGGLE_ON, TOGGLE_ON_HOVER } from "@/components/ui/filter-c
 import { formatMoneyRounded } from "@/lib/money";
 import { ordersHe, projectsHe } from "@/lib/i18n/pluralHe";
 import { cn } from "@/lib/utils";
+import { addressNotFound } from "@/lib/address/columns";
 
 type Row = Record<string, unknown>;
 
@@ -1040,7 +1041,7 @@ export default function CustomersClient({
                       <td className={CUSTOMERS_CELL}>
                         <div className="text-muted-foreground [overflow-wrap:anywhere]">
                           {address || pin ? (
-                            <AddressLink address={address} pin={pin} className="inline-flex max-w-full items-center gap-1 align-middle">
+                            <AddressLink address={address} pin={pin} notFound={addressNotFound(row)} className="inline-flex max-w-full items-center gap-1 align-middle">
                               <WazeIcon className="h-3 w-3 shrink-0" />
                               <span>{address || "נקודה שמורה"}</span>
                             </AddressLink>

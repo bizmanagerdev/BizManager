@@ -69,6 +69,7 @@ import { AddressLink } from "@/components/ui/address-link";
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
 import { formatShortDate } from "@/lib/date";
 import { ORDER_NOT_SENT_YET, deviceOrderSaves } from "@/lib/orders/device-order-saves";
+import { addressNotFound } from "@/lib/address/columns";
 
 type Row = Record<string, unknown>;
 
@@ -354,6 +355,7 @@ export default function NewOrderClient({
           city: extractCityFromAddress(getString(row, ["address"])),
           requiresPrepayment: row.requires_prepayment === true,
           pin: pinFrom(row.delivery_lat, row.delivery_lng),
+          addressNotFound: addressNotFound(row),
         }))
         .filter((row) => row.id),
     [customers]
@@ -401,6 +403,7 @@ export default function NewOrderClient({
     : selectedCustomer?.city ?? null;
   // The customer's saved point — not for a branch that has its own address.
   const orderPin = orderBranch?.address?.trim() ? null : selectedCustomer?.pin ?? null;
+  const orderAddressNotFound = !orderBranch?.address?.trim() && selectedCustomer?.addressNotFound === true;
 
   useEffect(() => {
     if (prefillHandled.current && !isEditMode) return;
@@ -1202,9 +1205,11 @@ export default function NewOrderClient({
         onOpenChange={(open) => {
           if (!open) setAddressPromptFor(null);
         }}
-        title="צריך לעדכן כתובת ללקוח"
+        title={addressPromptFor?.addressNotFound ? "הכתובת של הלקוח לא נמצאה במפות" : "צריך לעדכן כתובת ללקוח"}
         description={
-          addressPromptFor && plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })
+          addressPromptFor?.addressNotFound
+            ? `הכתובת השמורה${addressPromptFor.address ? `: ${plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })}` : ""} לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך להזין כתובת חדשה.`
+            : addressPromptFor && plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })
             ? `הכתובת השמורה: ${plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })}. אין בה רחוב ומספר בית, אז Waze לא יוכל לנווט. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה.`
             : "לא שמורה כתובת ללקוח הזה. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה."
         }
@@ -1366,7 +1371,10 @@ export default function NewOrderClient({
                           onClick={() => {
                             if (customer.id !== customerId) {
                               setBranchId("");
-                              if (!customer.pin && addressQuality({ address: customer.address, city: customer.city }) !== "clear") {
+                              if (
+                                !customer.pin &&
+                                (customer.addressNotFound || addressQuality({ address: customer.address, city: customer.city }) !== "clear")
+                              ) {
                                 setAddressPromptFor(customer);
                               }
                             }
@@ -1499,11 +1507,13 @@ export default function NewOrderClient({
                       {/* Stays after the pop-up, while the customer's on the phone
                           (owner, 2026-10-15: "when you choose that customer, say
                           there's no address here … please add address"). */}
-                      {!editingCustomer && !selectedCustomer.pin && addressQuality({ address: selectedCustomer.address, city: selectedCustomer.city }) !== "clear" ? (
+                      {!editingCustomer && !selectedCustomer.pin && (selectedCustomer.addressNotFound || addressQuality({ address: selectedCustomer.address, city: selectedCustomer.city }) !== "clear") ? (
                         <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
                           <WarningIcon className="h-4 w-4 shrink-0" />
                           <div className="min-w-0 flex-1">
-                            <p className="font-semibold">אין כתובת מלאה ללקוח הזה</p>
+                            <p className="font-semibold">
+                              {selectedCustomer.addressNotFound ? "הכתובת של הלקוח לא נמצאה ב-Google Maps" : "אין כתובת מלאה ללקוח הזה"}
+                            </p>
                             <p>אם ההזמנה למשלוח, בקשו מהלקוח רחוב ומספר בית ושמרו אותם.</p>
                           </div>
                           <Button
@@ -1545,6 +1555,7 @@ export default function NewOrderClient({
                                   <AddressLink
                                     address={row.value}
                                     pin={selectedCustomer.pin}
+                                    notFound={selectedCustomer.addressNotFound}
                                     className="inline-flex items-center gap-1 font-medium text-foreground"
                                   >
                                     <WazeIcon className="h-3.5 w-3.5 shrink-0" />
@@ -2346,7 +2357,7 @@ export default function NewOrderClient({
                   label={orderBranch?.address?.trim() ? "כתובת הסניף" : "כתובת"}
                   value={
                     orderAddress ? (
-                      <AddressLink address={orderAddress} city={orderAddressCity} pin={orderPin} className="inline-flex items-center gap-1">
+                      <AddressLink address={orderAddress} city={orderAddressCity} pin={orderPin} notFound={orderAddressNotFound} className="inline-flex items-center gap-1">
                         <WazeIcon className="h-3.5 w-3.5 shrink-0" />
                         {plainAddress({ address: orderAddress, city: orderAddressCity }) || orderAddress}
                       </AddressLink>
@@ -2355,7 +2366,7 @@ export default function NewOrderClient({
                     )
                   }
                 />
-                {selectedCustomer && !orderPin && addressQuality({ address: orderAddress, city: orderAddressCity }) !== "clear" ? (
+                {selectedCustomer && !orderPin && (orderAddressNotFound || addressQuality({ address: orderAddress, city: orderAddressCity }) !== "clear") ? (
                   <p className="flex items-center gap-1.5 text-xs text-warning-soft-foreground">
                     <WarningIcon className="h-3.5 w-3.5 shrink-0" />
                     אין כתובת מלאה: במשלוח Waze לא יוכל לנווט.

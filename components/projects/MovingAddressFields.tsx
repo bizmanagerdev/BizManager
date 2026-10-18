@@ -16,6 +16,8 @@ export type MovingEndpointValue = {
   address: string;
   /** Picked from Google (components/ui/address-picker.tsx). */
   addr?: StructuredAddress | null;
+  /** The saved one was not found on Google Maps: kept marked until a new one is picked. */
+  notFound?: boolean;
   floor: string;
   hasElevator: Elevator;
 };
@@ -64,9 +66,12 @@ export function MovingEndpointFields({
           value={value.addr ?? null}
           allowUnit={false}
           disabled={disabled}
-          onChange={(next) => onChange({ ...value, addr: next, address: next ? addressLine(next) : "" })}
+          onChange={(next) => onChange({ ...value, addr: next, address: next ? addressLine(next) : "", notFound: false })}
           legacyText={value.addr ? null : value.address}
         />
+        {value.notFound && !value.addr ? (
+          <p className="mt-1 text-xs font-medium text-destructive">הכתובת השמורה לא נמצאה ב-Google Maps · צריך לבחור כתובת חדשה</p>
+        ) : null}
       </Field>
       <div className="grid grid-cols-2 gap-2">
         <Field label="קומה" size="xs" htmlFor={`${id}-floor`}>

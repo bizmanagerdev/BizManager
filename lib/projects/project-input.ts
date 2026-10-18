@@ -1,5 +1,10 @@
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
-import { addressToColumns, structuredFromRequest, type AddressColumnRow } from "@/lib/address/columns";
+import {
+  ADDRESS_NOT_FOUND,
+  addressColumnsKeepingMark,
+  structuredFromRequest,
+  type AddressColumnRow,
+} from "@/lib/address/columns";
 import { addressLine } from "@/lib/address/structured";
 
 // A project's row as the project forms send it — built the SAME way on the
@@ -166,8 +171,18 @@ export function projectRowFrom(body: Record<string, unknown>): { row: ProjectRow
       destination_address: isMoving ? (destination ? addressLine(destination) : toTrimmedOrNull(body.destination_address)) : null,
       destination_floor: isMoving ? toTrimmedOrNull(body.destination_floor) : null,
       destination_has_elevator: isMoving ? toBoolOrNull(body.destination_has_elevator) : null,
-      ...addressToColumns(origin, "origin"),
-      ...addressToColumns(destination, "destination"),
+      // A form says the saved one was marked not found (origin_not_found); a
+      // phone's queued row still carries the mark itself.
+      ...addressColumnsKeepingMark(
+        origin,
+        "origin",
+        isMoving && (body.origin_not_found === true || body.origin_place_id === ADDRESS_NOT_FOUND)
+      ),
+      ...addressColumnsKeepingMark(
+        destination,
+        "destination",
+        isMoving && (body.destination_not_found === true || body.destination_place_id === ADDRESS_NOT_FOUND)
+      ),
     },
   };
 }

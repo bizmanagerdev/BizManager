@@ -64,3 +64,27 @@ describe("a move's addresses", () => {
     expect(rowOf(body)).toMatchObject({ origin_address: "זכריה הרופא 14, ירושלים", origin_place_id: "ChIJ-zecharia-14", origin_lat: 31.79 });
   });
 });
+
+// Owner, 2026-10-18: a from / to Google couldn't find is marked, and stays
+// marked through an edit of anything else until a real address is picked.
+describe("a move end not found on Google Maps", () => {
+  const marked = { ...base, origin_structured: null, origin_address: "ביתר | הרב קוק", origin_not_found: true };
+
+  it("an edit that doesn't pick a new one keeps the mark and the old line", () => {
+    expect(rowOf(marked)).toMatchObject({ origin_address: "ביתר | הרב קוק", origin_place_id: "not_found", origin_city: null });
+    expect(rowOf(marked).destination_place_id).toBeNull();
+  });
+
+  it("a picked address replaces it", () => {
+    expect(rowOf({ ...marked, origin_structured: FROM })).toMatchObject({ origin_place_id: "ChIJ-zecharia-14", origin_city: "ירושלים" });
+  });
+
+  it("a phone's queued row keeps it too", () => {
+    const stored = { ...rowOf(marked), origin_has_elevator: 1, items_to_move: null } as unknown as Record<string, unknown>;
+    expect(rowOf(deviceProjectBody("p1", stored))).toMatchObject({ origin_place_id: "not_found" });
+  });
+
+  it("a project that isn't a move keeps no mark", () => {
+    expect(rowOf({ ...marked, project_type: "construction" }).origin_place_id).toBeNull();
+  });
+});

@@ -13,6 +13,8 @@ export type PropertyInput = {
   address: string;
   /** Picked from Google (components/ui/address-picker.tsx). */
   addr: StructuredAddress | null;
+  /** The saved address was not found on Google Maps: kept marked until a new one is picked. */
+  addr_not_found?: boolean;
   asset_description: string;
   is_active: boolean;
   /** '' | 'building' | 'apartment' | 'house' | 'storage' */

@@ -16,6 +16,7 @@ import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-locati
 import { isNativePlatform, shareImageNative } from "@/lib/native-share";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { combinedCustomerName, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
+import { ViewDialog } from "@/components/ui/view-dialog";
 
 // ₪ first, as on the screen (owner, 2026-10-11: money is written the
 // dashboard's way) — the shared slip and its text too. A missing value is "—".
@@ -125,6 +126,10 @@ export default function DeliveryShareActions({
   // (owner, 2026-10-16: "this doesn't have a full address … do you want to
   // share the slip anyways or not … if not, go and edit the address first").
   const [addressCheckOpen, setAddressCheckOpen] = useState(false);
+  // An address marked as not found on Google Maps is wrong: no slip at all
+  // until it's replaced (owner, 2026-10-18: "it should not let him click the
+  // Waze or click the share button").
+  const [wrongAddressOpen, setWrongAddressOpen] = useState(false);
   // Guaranteed last-resort fallback (see the touch-path comment below): an
   // object URL for the captured slip, shown full-screen so the user can
   // long-press it to save/copy — doesn't depend on trusting any JS API.
@@ -349,9 +354,33 @@ export default function DeliveryShareActions({
   const fullAddress =
     slipPin !== null || addressQuality({ address: delivery.address, city: delivery.city }) === "clear";
   const savedAddress = plainAddress({ address: delivery.address, city: delivery.city });
+  const wrongAddress = slipPin === null && delivery.addressNotFound === true;
+  const editAddress = () => {
+    setAddressCheckOpen(false);
+    setWrongAddressOpen(false);
+    emitNavigationStart();
+    router.push(`/customers/${delivery.customerId}?edit=address`);
+  };
 
   return (
     <>
+      {canEditAddress && delivery.customerId ? (
+        <ConfirmDialog
+          open={wrongAddressOpen}
+          onOpenChange={setWrongAddressOpen}
+          title="אי אפשר לשלוח לנהג"
+          description={`הכתובת ${savedAddress ? `"${savedAddress}" ` : ""}לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך להזין כתובת חדשה לפני השליחה.`}
+          confirmLabel="עריכת הכתובת"
+          cancelLabel="סגירה"
+          onConfirm={editAddress}
+        />
+      ) : (
+        <ViewDialog open={wrongAddressOpen} onOpenChange={setWrongAddressOpen} title="אי אפשר לשלוח לנהג" size="formSm">
+          <p className="text-sm">
+            הכתובת {savedAddress ? `"${savedAddress}" ` : ""}לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך לבקש מהמשרד כתובת חדשה.
+          </p>
+        </ViewDialog>
+      )}
       <ConfirmDialog
         open={addressCheckOpen}
         onOpenChange={setAddressCheckOpen}
@@ -363,15 +392,7 @@ export default function DeliveryShareActions({
         }
         confirmLabel="שליחה בכל זאת"
         cancelLabel={canEditAddress && delivery.customerId ? "עריכת הכתובת" : "ביטול"}
-        onCancel={
-          canEditAddress && delivery.customerId
-            ? () => {
-                setAddressCheckOpen(false);
-                emitNavigationStart();
-                router.push(`/customers/${delivery.customerId}?edit=address`);
-              }
-            : undefined
-        }
+        onCancel={canEditAddress && delivery.customerId ? editAddress : undefined}
         onConfirm={() => {
           setAddressCheckOpen(false);
           setRenderingImage(true);
@@ -386,7 +407,9 @@ export default function DeliveryShareActions({
         variant={variant}
         size="sm"
         className={cn("gap-1", className)}
-        onClick={() => (fullAddress ? setRenderingImage(true) : setAddressCheckOpen(true))}
+        onClick={() =>
+          wrongAddress ? setWrongAddressOpen(true) : fullAddress ? setRenderingImage(true) : setAddressCheckOpen(true)
+        }
         disabled={renderingImage}
       >
         {renderingImage ? (

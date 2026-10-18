@@ -387,6 +387,19 @@ describe("the new-order wizard — the first step", () => {
     expect(screen.getByText("טופס עריכת לקוח")).toBeInTheDocument();
   });
 
+  // Owner, 2026-10-18: "when you add an order for them … say that the address
+  // cannot be found on Google Maps. So we need to enter a new address."
+  it("a full-looking address marked not found on Google Maps still asks for a new one", async () => {
+    const rows = [{ ...CUSTOMER_ROWS[0], addr_place_id: "not_found" }, CUSTOMER_ROWS[1]];
+    server.customerIndex = rows.map((row) => indexEntry(row));
+    await renderForm({ customers: rows });
+    tap("משכן משה");
+    expect(screen.getByRole("heading", { name: "הכתובת של הלקוח לא נמצאה במפות" })).toBeInTheDocument();
+    expect(screen.getByText(/רבי עקיבא 10, בני ברק לא נמצאה ב-Google Maps/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "המשך בלי" }));
+    expect(screen.getByText("הכתובת של הלקוח לא נמצאה ב-Google Maps")).toBeInTheDocument();
+  });
+
   it("lets the order go on without an address, and keeps a reminder on the card", async () => {
     await renderForm({ customers: withAddress("בני ברק") });
     tap("משכן משה");

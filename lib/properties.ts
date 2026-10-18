@@ -3,7 +3,7 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { israelDateKey } from "@/lib/timezone";
-import { addressFromColumns } from "@/lib/address/columns";
+import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 import type { StructuredAddress } from "@/lib/address/structured";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -20,6 +20,8 @@ export type Property = {
   address: string;
   /** Its address picked from Google (lib/address/structured.ts); null for one saved before the picker. */
   addr: StructuredAddress | null;
+  /** The saved address was not found on Google Maps (lib/address/columns.ts). */
+  addrNotFound?: boolean;
   assetDescription: string | null;
   isActive: boolean;
   /** 'building' | 'apartment' | 'house' | 'storage' | null (unset) — see propertyTypeLabel(). */
@@ -145,6 +147,7 @@ function normalizeProperty(row: Row): Property {
     name: str(row.name),
     address: str(row.address) ?? "",
     addr: addressFromColumns(row, "addr"),
+    addrNotFound: addressNotFound(row),
     assetDescription: str(row.asset_description),
     isActive: row.is_active !== false,
     propertyType: str(row.property_type),

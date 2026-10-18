@@ -7,7 +7,7 @@
 // so a session is up to 12 billed suggestion calls plus one Place Details
 // Essentials call — 10,000 of each free a month, far above what BizH types.
 
-import { addressFromGooglePlace, type GooglePlaceDetails, type StructuredAddress } from "@/lib/address/structured";
+import { addressFromGooglePlace, hebrewPlaceName, type GooglePlaceDetails, type StructuredAddress } from "@/lib/address/structured";
 
 const BASE = "https://places.googleapis.com/v1";
 
@@ -64,7 +64,10 @@ export async function autocompleteAddresses(input: string, sessionToken: string)
       input,
       sessionToken,
       languageCode: "he",
-      includedRegionCodes: ["il"],
+      // "ps" too: Google files ביתר עילית, מודיעין עילית, קרית ספר and the
+      // other towns over the green line under it — with "il" alone they were
+      // never offered (found matching the saved addresses, 2026-10-18).
+      includedRegionCodes: ["il", "ps"],
       // Addresses and streets, and a settlement on its own for a moshav or a
       // kibbutz that has no street names.
       includedPrimaryTypes: ["street_address", "premise", "subpremise", "route", "locality"],
@@ -88,7 +91,12 @@ export async function autocompleteAddresses(input: string, sessionToken: string)
     .map((p) => ({
       placeId: p.placeId!,
       main: p.structuredFormat?.mainText?.text ?? p.text?.text ?? "",
-      secondary: p.structuredFormat?.secondaryText?.text ?? "",
+      // The list shows only the Hebrew of it (a broken Google entry can carry every language).
+      secondary: (p.structuredFormat?.secondaryText?.text ?? "")
+        .split(",")
+        .map((part) => hebrewPlaceName(part))
+        .filter(Boolean)
+        .join(", "),
       kind: kindOf(p.types),
     }))
     .filter((s) => s.main);

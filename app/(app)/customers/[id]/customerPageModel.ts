@@ -56,6 +56,8 @@ export type CustomerProfile = {
   address: string | null;
   deliveryInstructions: string | null;
   deliveryPin: DeliveryPin | null;
+  /** The saved address was not found on Google Maps (lib/address/columns.ts). */
+  addressNotFound?: boolean;
   notes: string | null;
   active: boolean;
   requiresPrepayment: boolean;

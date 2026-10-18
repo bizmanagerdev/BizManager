@@ -56,6 +56,7 @@ type CustomerGroup = {
   deliveryInstructions: string | null;
   deliveryLat: number | null;
   deliveryLng: number | null;
+  addressNotFound?: boolean;
 };
 
 type RegionLink = {
@@ -94,6 +95,7 @@ function buildCustomerGroups(cityDeliveries: DeliveryItem[]) {
         deliveryInstructions: delivery.deliveryInstructions,
         deliveryLat: delivery.deliveryLat,
         deliveryLng: delivery.deliveryLng,
+        addressNotFound: delivery.addressNotFound,
       });
       return map;
     }, new Map<string, CustomerGroup>())
@@ -508,6 +510,7 @@ export default function SalesDeliveriesQueue({
                                     <AddressLink
                                       address={group.address}
                                       city={city}
+                                      notFound={group.addressNotFound}
                                       aria-label="נווט עם Waze"
                                       className="inline-flex shrink-0 items-center rounded-lg bg-secondary px-2 py-1 text-xs text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
                                       unavailableClassName={NO_ADDRESS_WAZE}
@@ -680,6 +683,7 @@ export default function SalesDeliveriesQueue({
                                         <AddressLink
                                           address={group.address}
                                           city={city}
+                                          notFound={group.addressNotFound}
                                           aria-label="נווט עם Waze"
                                           className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
                                           unavailableClassName={NO_ADDRESS_WAZE}

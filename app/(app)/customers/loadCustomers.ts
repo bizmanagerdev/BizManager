@@ -56,7 +56,7 @@ const OVERVIEW_SELECT =
 // (the Morning column) and the two flags the rows badge — plus the worker
 // link, through withLinkColumn.
 // The saved drop-off point too: the address column's Waze goes there first.
-const CUSTOMER_SELECT = "id,whatsapp,morning_client_id,requires_prepayment,delivery_lat,delivery_lng";
+const CUSTOMER_SELECT = "id,whatsapp,morning_client_id,requires_prepayment,delivery_lat,delivery_lng,addr_place_id";
 
 type ReadResult = { data: Row[]; error: string | null };
 
@@ -254,6 +254,7 @@ async function enrichCustomerOverviewRows(
       linked_user_id: typeof customer?.linked_user_id === "string" ? customer.linked_user_id : null,
       delivery_lat: customer?.delivery_lat ?? null,
       delivery_lng: customer?.delivery_lng ?? null,
+      addr_place_id: customer?.addr_place_id ?? null,
     };
   });
 
@@ -342,6 +343,8 @@ export type CustomerSearchIndexEntry = {
   /** The saved drop-off point, for the wizards' Waze (lib/delivery-location.ts). */
   delivery_lat: number | null;
   delivery_lng: number | null;
+  /** "not_found" when the saved address wasn't found on Google Maps (lib/address/columns.ts). */
+  addr_place_id: string | null;
   contacts: Array<{ full_name: string; phone: string | null; email: string | null; whatsapp: string | null }>;
   branches: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -362,7 +365,7 @@ export async function loadCustomerSearchIndexRows(
     fetchAllPagedResult((from, to) =>
       supabase
         .from("customers")
-        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng")
+        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng,addr_place_id")
         .order("name", { ascending: true })
         .order("id")
         .range(from, to)
@@ -426,6 +429,7 @@ export async function loadCustomerSearchIndexRows(
       address: (row?.address as string | null) ?? null,
       active: row?.active !== false,
       requires_prepayment: row?.requires_prepayment === true,
+      addr_place_id: (row?.addr_place_id as string | null) ?? null,
       delivery_lat: row?.delivery_lat == null ? null : Number(row.delivery_lat),
       delivery_lng: row?.delivery_lng == null ? null : Number(row.delivery_lng),
       contacts: contactsByCustomer.get(id) ?? [],

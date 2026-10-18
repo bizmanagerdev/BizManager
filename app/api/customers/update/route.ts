@@ -1,5 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
-import { addressToColumns, parseStructuredAddress } from "@/lib/address/columns";
+import { addressColumnsKeepingMark, parseStructuredAddress } from "@/lib/address/columns";
 import { legacyAddressLine } from "@/lib/address/structured";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -22,6 +22,8 @@ type UpdateCustomerPayload = {
   email?: string | null;
   city?: string | null;
   address?: string | null;
+  /** With no address picked: keep the "not found on Google Maps" mark (an undo). */
+  addr_not_found?: boolean;
   notes?: string | null;
   active?: boolean;
   requires_prepayment?: boolean;
@@ -76,7 +78,8 @@ export async function POST(req: Request) {
     // the address, which then stays as it was.
     if ("structured_address" in body) {
       const structured = parseStructuredAddress(body.structured_address) ?? null;
-      Object.assign(patch, addressToColumns(structured, "addr"));
+      // An undo puts back a "not found" mark too (addr_not_found).
+      Object.assign(patch, addressColumnsKeepingMark(structured, "addr", body.addr_not_found === true));
       // None picked: the old line and city given with it are kept — that's
       // how an undo puts back an address saved before the picker.
       patch.address = structured ? legacyAddressLine(structured) : trimOrNull(body.address);

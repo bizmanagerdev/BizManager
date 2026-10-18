@@ -91,10 +91,34 @@ export type GooglePlaceDetails = {
   location?: { latitude?: number; longitude?: number };
 };
 
+// Hebrew letters, digits and what a Hebrew place name is written with.
+const HEBREW_NAME = /^[֐-׿0-9\s"'״׳\-–.()]+$/;
+const HAS_HEBREW = /[א-ת]/;
+
+/**
+ * A place name from Google, Hebrew only (owner, 2026-10-18: "why isn't all
+ * … only in Hebrew?"). Google Maps' own entry for a place can be broken: for
+ * שדרות גולדה מאיר 255 its town came as "• ירושלים, القدس, Jerusalem,
+ * Yerushalayim, …" — every language at once — and was saved as the city. The
+ * Hebrew part is kept ("ירושלים"); a name with no Hebrew in it is dropped.
+ */
+export function hebrewPlaceName(value: string | null | undefined): string {
+  const parts = (value ?? "")
+    // Vowel marks and direction marks Google sometimes adds ("רֵיקָנָטי").
+    .replace(/[֑-ׇ‎‏‪-‮]/g, "")
+    .split(/[,،|]/)
+    .map((part) => part.replace(/[•·*▪●◦]/g, "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const hebrew = parts.find((part) => HAS_HEBREW.test(part) && HEBREW_NAME.test(part) && part.length <= 60);
+  return hebrew ?? "";
+}
+
 function component(components: GoogleComponent[], ...types: string[]): string {
   for (const type of types) {
-    const hit = components.find((c) => c.types?.includes(type));
-    if (hit?.longText?.trim()) return hit.longText.trim();
+    for (const hit of components.filter((c) => c.types?.includes(type))) {
+      const name = hebrewPlaceName(hit.longText) || hebrewPlaceName(hit.shortText);
+      if (name) return name;
+    }
   }
   return "";
 }
@@ -109,11 +133,16 @@ export function addressFromGooglePlace(place: GooglePlaceDetails): StructuredAdd
   const lat = place.location?.latitude;
   const lng = place.location?.longitude;
   const city = component(components, "locality", "postal_town", "sublocality", "administrative_area_level_2");
-  const street = component(components, "route");
-  const houseNumber = component(components, "street_number");
-  const formatted =
-    (place.shortFormattedAddress ?? "").trim() ||
-    [[street, houseNumber].filter(Boolean).join(" "), city].filter(Boolean).join(", ");
+  // "רח' יוסף שכטמן" is "יוסף שכטמן": the word for street isn't part of its name.
+  const street = component(components, "route").replace(/^(רחוב|רח['׳]|רח\.)\s+/, "");
+  const houseNumber = (components.find((c) => c.types?.includes("street_number"))?.longText ?? "").trim().slice(0, 20);
+  // Google's own line only when it's all Hebrew; else built from the parts.
+  const short = (place.shortFormattedAddress ?? "").trim();
+  const ownLine =
+    short && !/[֑-ׇ‎‏]|^(רחוב|רח['׳])\s/.test(short) && short.split(",").every((part) => HEBREW_NAME.test(part.trim()))
+      ? short
+      : "";
+  const formatted = ownLine || [[street, houseNumber].filter(Boolean).join(" "), city].filter(Boolean).join(", ");
   return {
     city,
     street,

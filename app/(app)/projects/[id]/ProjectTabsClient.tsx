@@ -152,6 +152,9 @@ export type ProjectOverview = {
   destination_address: string | null;
   destination_floor: string | null;
   destination_has_elevator: boolean | null;
+  /** The saved end was not found on Google Maps: Waze says so instead of opening. */
+  origin_not_found?: boolean;
+  destination_not_found?: boolean;
   /** Not on the page's tabs — the edit form sends them back as they are. */
   branch_id?: string | null;
   payment_terms?: string | null;

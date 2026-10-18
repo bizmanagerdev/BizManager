@@ -15,7 +15,7 @@ import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { AddressPicker } from "@/components/ui/address-picker";
-import { addressFromColumns, addressToColumns } from "@/lib/address/columns";
+import { addressFromColumns, addressNotFound, addressToColumns } from "@/lib/address/columns";
 import type { StructuredAddress } from "@/lib/address/structured";
 import { branchAddressFields } from "@/lib/customers/new-customer";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
@@ -302,11 +302,19 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
   const [addrTouched, setAddrTouched] = useState(false);
   const addrTouchedRef = useRef(false);
   // The address as loaded, for an undo: the picked one, or the old line and city.
-  const originalAddressRef = useRef<{ structured: StructuredAddress | null; address: string | null; city: string | null }>({
+  const originalAddressRef = useRef<{
+    structured: StructuredAddress | null;
+    address: string | null;
+    city: string | null;
+    notFound: boolean;
+  }>({
     structured: null,
     address: null,
     city: null,
+    notFound: false,
   });
+  // The saved address was not found on Google Maps (lib/address/columns.ts).
+  const [addrNotFound, setAddrNotFound] = useState(false);
   const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
   const [requiresPrepayment, setRequiresPrepayment] = useState(false);
@@ -342,7 +350,9 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
     setAddr(handedAddress);
     setAddrTouched(false);
     addrTouchedRef.current = false;
-    originalAddressRef.current = { structured: handedAddress, address: customer.address ?? null, city: null };
+    const handedNotFound = addressNotFound(customer as unknown as Row);
+    setAddrNotFound(handedNotFound);
+    originalAddressRef.current = { structured: handedAddress, address: customer.address ?? null, city: null, notFound: handedNotFound };
     setNotes(customer.notes ?? "");
     setActive(customer.active);
     setRequiresPrepayment(customer.requires_prepayment);
@@ -401,7 +411,9 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
           structured: loadedAddress,
           address: typeof (row as Row).address === "string" ? ((row as Row).address as string) : null,
           city: typeof (row as Row).city === "string" ? ((row as Row).city as string) : null,
+          notFound: addressNotFound(row as Row),
         };
+        setAddrNotFound(addressNotFound(row as Row));
         if (!addrTouchedRef.current) setAddr(loadedAddress);
         setLinkedUserId(linkedId);
         setLinkLoaded(true);
@@ -808,6 +820,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
                       structured_address: originalAddress.structured,
                       address: originalAddress.address,
                       city: originalAddress.city,
+                      addr_not_found: originalAddress.notFound,
                     }
                   : {}),
                 notes: originalFields.notes,
@@ -918,6 +931,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved, onUn
                 }}
                 legacyText={addrTouched || addr ? null : (customer?.address ?? null)}
               />
+              {addrNotFound && !addrTouched ? <p className="text-xs font-medium text-destructive">הכתובת השמורה לא נמצאה ב-Google Maps · צריך לבחור כתובת חדשה</p> : null}
             </Field>
             <Field label="הערות">
               <div className="relative">

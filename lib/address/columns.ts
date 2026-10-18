@@ -3,7 +3,7 @@
 // (migration 20261018110000) — addr_* on customers, customer_branches, tasks
 // and properties, origin_* / destination_* on projects.
 
-import type { StructuredAddress } from "@/lib/address/structured";
+import { hebrewPlaceName, type StructuredAddress } from "@/lib/address/structured";
 
 export type AddressPrefix = "addr" | "origin" | "destination";
 
@@ -14,6 +14,19 @@ export type AddressColumnRow<P extends AddressPrefix> = {
   [K in `${P}_${"city" | "street" | "house_number" | "unit" | "place_id" | "formatted"}`]: string | null;
 } & { [K in `${P}_${"lat" | "lng"}`]: number | null };
 
+/**
+ * A saved address Google couldn't find, or found somewhere else (owner,
+ * 2026-10-18: "these addresses are wrong … it should not let him click the
+ * Waze or click the share button"). Kept in the place-id column, which a
+ * picked address always overwrites — so picking a real one clears it. The old
+ * address line stays as it was.
+ */
+export const ADDRESS_NOT_FOUND = "not_found";
+
+export function addressNotFound(row: Record<string, unknown> | null | undefined, prefix: AddressPrefix = "addr"): boolean {
+  return row?.[`${prefix}_place_id`] === ADDRESS_NOT_FOUND;
+}
+
 /** "addr_city,addr_street,…" for a select. */
 export function addressColumns(prefix: AddressPrefix): string[] {
   return PARTS.map((part) => `${prefix}_${part}`);
@@ -23,6 +36,10 @@ export function addressSelect(prefix: AddressPrefix): string {
 }
 
 const text = (value: unknown, max: number): string => (typeof value === "string" ? value.trim().slice(0, max) : "");
+// A name that carries other languages (a broken Google entry, lib/address/structured.ts
+// hebrewPlaceName) is cut down to its Hebrew part before it's written.
+const FOREIGN = /[A-Za-zͰ-ϿЀ-ӿ؀-ۿऀ-෿•,]/;
+const hebrewOnly = (value: string): string => (FOREIGN.test(value) ? hebrewPlaceName(value) : value);
 const coord = (value: unknown, limit: number): number | null => {
   const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
   return Number.isFinite(n) && Math.abs(n) <= limit && n !== 0 ? n : null;
@@ -42,6 +59,21 @@ export function addressToColumns<P extends AddressPrefix>(address: StructuredAdd
     [`${prefix}_place_id`]: a ? nullIfEmpty((a.placeId ?? "").trim()) : null,
     [`${prefix}_formatted`]: a ? nullIfEmpty(a.formatted.trim()) : null,
   } as AddressColumnRow<P>;
+}
+
+/**
+ * The columns a save writes: the picked address — or, when none was picked
+ * and the saved one is marked not found, that mark kept, so an edit of
+ * something else (a price, a note) doesn't quietly drop the warning.
+ */
+export function addressColumnsKeepingMark<P extends AddressPrefix>(
+  address: StructuredAddress | null,
+  prefix: P,
+  keepMark: boolean
+): AddressColumnRow<P> {
+  const columns = addressToColumns(address, prefix);
+  if (!address && keepMark) (columns as Record<string, unknown>)[`${prefix}_place_id`] = ADDRESS_NOT_FOUND;
+  return columns;
 }
 
 /**
@@ -98,8 +130,8 @@ export function parseStructuredAddress(value: unknown): StructuredAddress | null
   const v = value as Record<string, unknown>;
   const placeId = text(v.placeId, 300);
   const address: StructuredAddress = {
-    city: text(v.city, 120),
-    street: text(v.street, 200),
+    city: hebrewOnly(text(v.city, 120)),
+    street: hebrewOnly(text(v.street, 200)),
     houseNumber: text(v.houseNumber, 20),
     unit: text(v.unit, 200),
     lat: coord(v.lat, 90),

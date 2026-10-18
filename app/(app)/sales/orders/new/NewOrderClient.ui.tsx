@@ -3,6 +3,7 @@ import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import { omitUnknownPlace } from "@/lib/ui/cities";
 import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
+import { addressNotFound } from "@/lib/address/columns";
 
 // Pure helpers and option constants, lifted out of NewOrderClient so the
 // component file holds wizard state + orchestration only. No component state
@@ -37,6 +38,8 @@ export type CustomerOption = {
   requiresPrepayment: boolean;
   /** The saved drop-off point: Waze goes there, and the address isn't asked for. */
   pin?: DeliveryPin | null;
+  /** The saved address was not found on Google Maps: ask for a new one. */
+  addressNotFound?: boolean;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
   branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -124,6 +127,7 @@ export function mapCustomerSearchResult(row: Record<string, unknown>): CustomerO
     city: typeof row.address === "string" ? omitUnknownPlace(extractCityFromAddress(row.address)) : null,
     requiresPrepayment: row.requires_prepayment === true,
     pin: pinFrom(row.delivery_lat, row.delivery_lng),
+    addressNotFound: addressNotFound(row),
     contacts,
     branches,
   };

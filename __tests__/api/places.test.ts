@@ -67,7 +67,7 @@ describe("POST /api/places/autocomplete", () => {
       input: "יחזקאל הנביא 27",
       sessionToken: TOKEN,
       languageCode: "he",
-      includedRegionCodes: ["il"],
+      includedRegionCodes: ["il", "ps"],
     });
   });
 

@@ -91,6 +91,9 @@ type ProjectDetails = {
   /** The move's from / to as picked from Google. */
   origin_structured?: StructuredAddress | null;
   destination_structured?: StructuredAddress | null;
+  /** The saved end was not found on Google Maps (lib/address/columns.ts). */
+  origin_not_found?: boolean;
+  destination_not_found?: boolean;
   /** Not in the edit form: sent back as they are (the update route takes the whole record). */
   branch_id?: string | null;
   payment_terms?: string | null;
@@ -240,12 +243,14 @@ export default function ProjectDetailsActions({
   const [editOrigin, setEditOrigin] = useState<MovingEndpointValue>({
     address: project.origin_address ?? "",
     addr: project.origin_structured ?? null,
+    notFound: project.origin_not_found === true,
     floor: project.origin_floor ?? "",
     hasElevator: boolToElevator(project.origin_has_elevator),
   });
   const [editDestination, setEditDestination] = useState<MovingEndpointValue>({
     address: project.destination_address ?? "",
     addr: project.destination_structured ?? null,
+    notFound: project.destination_not_found === true,
     floor: project.destination_floor ?? "",
     hasElevator: boolToElevator(project.destination_has_elevator),
   });
@@ -335,10 +340,12 @@ export default function ProjectDetailsActions({
         items_to_move: textToItemsToMove(editItemsToMove),
         origin_address: editOrigin.address.trim() || null,
         origin_structured: editOrigin.addr ?? null,
+        origin_not_found: !editOrigin.addr && editOrigin.notFound === true,
         origin_floor: editOrigin.floor.trim() || null,
         origin_has_elevator: elevatorToBool(editOrigin.hasElevator),
         destination_address: editDestination.address.trim() || null,
         destination_structured: editDestination.addr ?? null,
+        destination_not_found: !editDestination.addr && editDestination.notFound === true,
         destination_floor: editDestination.floor.trim() || null,
         destination_has_elevator: elevatorToBool(editDestination.hasElevator),
         // Not in this form, but sent back as they are (the update route takes

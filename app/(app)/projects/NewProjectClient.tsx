@@ -47,6 +47,8 @@ import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
 import type { ProjectRowFields } from "@/lib/projects/project-input";
 import { israelDateKey } from "@/lib/timezone";
 import { offlineUpload, queueUploadsAfter } from "@/lib/offline-upload";
+import { addressNotFound } from "@/lib/address/columns";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Row = Record<string, unknown>;
 type Step =
@@ -124,6 +126,8 @@ export type ProjectCustomerOption = {
   address: string | null;
   /** The saved drop-off point: Waze goes there first. */
   pin?: DeliveryPin | null;
+  /** The saved address was not found on Google Maps: ask for a new one. */
+  addressNotFound?: boolean;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
   branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -160,6 +164,9 @@ export type InitialProject = {
   /** The move's from / to as picked from Google (its origin_* / destination_* columns). */
   origin_structured?: StructuredAddress | null;
   destination_structured?: StructuredAddress | null;
+  /** The saved end was not found on Google Maps (lib/address/columns.ts). */
+  origin_not_found?: boolean;
+  destination_not_found?: boolean;
 };
 
 const DEFAULT_PROJECT_TYPE_OPTIONS = ["logistics", "moving", "construction"];
@@ -251,6 +258,7 @@ export function mapProjectCustomer(row: Row): ProjectCustomerOption | null {
     address: omitUnknownPlace(address),
     city: omitUnknownPlace(getString(row, ["city"]) ?? extractCityFromAddress(address)),
     pin: pinFrom(row.delivery_lat, row.delivery_lng),
+    addressNotFound: addressNotFound(row),
     contacts,
     branches,
   };
@@ -387,6 +395,8 @@ export default function NewProjectClient({
 
   // Which of the customer's branches this project is for — only asked about
   // when the customer actually has more than one (see the "branch" step gating).
+  // The customer just picked, when their saved address wasn't found on Google Maps.
+  const [wrongAddressFor, setWrongAddressFor] = useState<ProjectCustomerOption | null>(null);
   const [branchId, setBranchId] = useState(initialProject?.branch_id ?? restoredDraft?.branchId ?? "");
 
   // ---- Project details ---------------------------------------------------------
@@ -460,6 +470,7 @@ export default function NewProjectClient({
       ? {
           address: initialProject.origin_address ?? "",
           addr: initialProject.origin_structured ?? null,
+          notFound: initialProject.origin_not_found === true,
           floor: initialProject.origin_floor ?? "",
           hasElevator: boolToElevator(initialProject.origin_has_elevator),
         }
@@ -470,6 +481,7 @@ export default function NewProjectClient({
       ? {
           address: initialProject.destination_address ?? "",
           addr: initialProject.destination_structured ?? null,
+          notFound: initialProject.destination_not_found === true,
           floor: initialProject.destination_floor ?? "",
           hasElevator: boolToElevator(initialProject.destination_has_elevator),
         }
@@ -737,10 +749,12 @@ export default function NewProjectClient({
         items_to_move: isMovingProjectType(projectType) ? textToItemsToMove(itemsToMove) : null,
         origin_address: isMovingProjectType(projectType) ? origin.address.trim() || null : null,
         origin_structured: isMovingProjectType(projectType) ? origin.addr ?? null : null,
+        origin_not_found: isMovingProjectType(projectType) && !origin.addr && origin.notFound === true,
         origin_floor: isMovingProjectType(projectType) ? origin.floor.trim() || null : null,
         origin_has_elevator: isMovingProjectType(projectType) ? elevatorToBool(origin.hasElevator) : null,
         destination_address: isMovingProjectType(projectType) ? destination.address.trim() || null : null,
         destination_structured: isMovingProjectType(projectType) ? destination.addr ?? null : null,
+        destination_not_found: isMovingProjectType(projectType) && !destination.addr && destination.notFound === true,
         destination_floor: isMovingProjectType(projectType) ? destination.floor.trim() || null : null,
         destination_has_elevator: isMovingProjectType(projectType)
           ? elevatorToBool(destination.hasElevator)
@@ -971,7 +985,10 @@ export default function NewProjectClient({
                           type="button"
                           disabled={actionLocked}
                           onClick={() => {
-                            if (customer.id !== customerId) setBranchId("");
+                            if (customer.id !== customerId) {
+                              setBranchId("");
+                              if (customer.addressNotFound && !customer.pin) setWrongAddressFor(customer);
+                            }
                             setCustomerId(customer.id);
                             setPickedCustomer(customer);
                             setCustomerQuery("");
@@ -1078,6 +1095,24 @@ export default function NewProjectClient({
                         </div>
                       </div>
 
+                      {/* The address saved for this customer was not found on
+                          Google Maps (owner, 2026-10-18: "when you add an order for
+                          them or a project for them … say that the address cannot be
+                          found … we need to enter a new address"). */}
+                      <ConfirmDialog
+                        open={wrongAddressFor !== null}
+                        onOpenChange={(open) => {
+                          if (!open) setWrongAddressFor(null);
+                        }}
+                        title="הכתובת של הלקוח לא נמצאה במפות"
+                        description={`הכתובת השמורה${wrongAddressFor?.address ? `: ${wrongAddressFor.address.replace(/\s*\|\s*/g, ", ")}` : ""} לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך להזין כתובת חדשה.`}
+                        confirmLabel="עדכון הכתובת"
+                        cancelLabel="המשך בלי"
+                        onConfirm={() => {
+                          setWrongAddressFor(null);
+                          setEditingCustomer(true);
+                        }}
+                      />
                       {editingCustomer ? (
                         <CustomerForm
                           key={selectedCustomer.id}
@@ -1104,6 +1139,7 @@ export default function NewProjectClient({
                                   <AddressLink
                                     address={row.value}
                                     pin={selectedCustomer.pin}
+                                    notFound={selectedCustomer.addressNotFound}
                                     className="inline-flex items-center gap-1 font-medium text-foreground"
                                   >
                                     <WazeIcon className="h-3.5 w-3.5 shrink-0" />

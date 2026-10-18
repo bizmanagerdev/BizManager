@@ -13,6 +13,20 @@ import { AddressLink } from "@/components/ui/address-link";
 // Nothing saved: the mark is grey and does nothing.
 
 describe("AddressLink", () => {
+  // Owner, 2026-10-18: "it should not let him click the Waze … these addresses are wrong."
+  it("an address marked not found on Google Maps: no Waze, a tap says a new one is needed", () => {
+    render(<AddressLink address="ביתר | הרב קוק 5" notFound />);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByRole("heading", { name: "הכתובת לא נמצאה במפות" })).toBeInTheDocument();
+    expect(screen.getByText(/צריך להזין כתובת חדשה/)).toBeInTheDocument();
+  });
+
+  it("a saved point still wins over the mark", () => {
+    render(<AddressLink address="ביתר | הרב קוק 5" notFound pin={{ lat: 31.7, lng: 35.1 }} />);
+    expect(screen.getByRole("link").getAttribute("href")).toContain("ll=31.7,35.1");
+  });
+
   it("links to Waze for a street and house number", () => {
     render(<AddressLink address="בית שמש | יחזקאל הנביא 27" />);
     expect(screen.getByRole("link").getAttribute("href")).toContain("waze.com/ul?q=");
