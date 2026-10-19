@@ -25,6 +25,10 @@ const POWERSYNC_VERSION = (
 ).version;
 
 const nextConfig: NextConfig = {
+  // A second `next dev` in this folder (another chat's preview) can't share
+  // .next/dev — Next locks it — so it builds into its own folder instead
+  // (.claude/launch.json sets NEXT_DIST_DIR). Unset everywhere else.
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
     NEXT_PUBLIC_POWERSYNC_ASSETS: `/powersync/${POWERSYNC_VERSION}`,
