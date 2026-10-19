@@ -1047,12 +1047,25 @@ export default function ProjectsClient({
     }
   }
 
+  // While a search is on, every count says how many it FOUND, not how many the
+  // tab holds (owner, 2026-10-19: "it's not clear how many were found").
+  const tabTotal = activeTab === "quotes" ? tabCounts?.quotes : activeTab === "closed" ? tabCounts?.closed : tabCounts?.projects;
+  const tabTitle = activeTab === "quotes" ? "הצעות מחיר" : activeTab === "closed" ? "פרויקטים סגורים" : "פרויקטים";
+  const foundCount = rows.length;
+  const foundLine =
+    activeTab === "quotes"
+      ? foundCount === 1 ? "נמצאה הצעת מחיר אחת" : foundCount === 0 ? "לא נמצאו הצעות מחיר" : `נמצאו ${foundCount} הצעות מחיר`
+      : foundCount === 1 ? "נמצא פרויקט אחד" : foundCount === 0 ? "לא נמצאו פרויקטים" : `נמצאו ${foundCount} פרויקטים`;
+  const ofTotal = tabTotal != null && tabTotal !== foundCount ? ` מתוך ${tabTotal}` : "";
+
   // Names the page in the mobile top bar and carries the count as the subtitle,
   // so the tab you're on and how much is in it are both visible without the page
   // repeating them.
   useSetPageTitle(
-    activeTab === "quotes" ? "הצעות מחיר" : activeTab === "closed" ? "פרויקטים סגורים" : "פרויקטים",
-    `${(activeTab === "quotes" ? tabCounts?.quotes : activeTab === "closed" ? tabCounts?.closed : tabCounts?.projects) ?? rows.length} ${activeTab === "quotes" ? "הצעות" : "פרויקטים"}`
+    tabTitle,
+    trimmedQuery
+      ? `נמצאו ${foundCount}${ofTotal}`
+      : `${tabTotal ?? rows.length} ${activeTab === "quotes" ? "הצעות" : "פרויקטים"}`
   );
 
   return (
@@ -1245,11 +1258,18 @@ export default function ProjectsClient({
       </AdaptiveStack>
 
       <div className="hidden text-sm text-muted-foreground md:block">
-        {activeTab === "quotes"
-          ? `נמצאו ${tabCounts?.quotes ?? rows.length} הצעות מחיר`
-          : activeTab === "closed"
-            ? `נמצאו ${tabCounts?.closed ?? rows.length} פרויקטים סגורים`
-            : `נמצאו ${tabCounts?.projects ?? rows.length} פרויקטים`}
+        {trimmedQuery ? (
+          <>
+            <span className="font-medium text-foreground">{foundLine}</span>
+            {ofTotal ? ` (${ofTotal.trim()} ב${tabTitle})` : null}
+          </>
+        ) : activeTab === "quotes" ? (
+          `נמצאו ${tabCounts?.quotes ?? rows.length} הצעות מחיר`
+        ) : activeTab === "closed" ? (
+          `נמצאו ${tabCounts?.closed ?? rows.length} פרויקטים סגורים`
+        ) : (
+          `נמצאו ${tabCounts?.projects ?? rows.length} פרויקטים`
+        )}
       </div>
 
       {/* The same search finds projects in the other tabs too — say so, one tap
@@ -1738,7 +1758,9 @@ export default function ProjectsClient({
         <div className="pt-1 text-center text-xs text-muted-foreground">
           {loadingMore
             ? "טוען…"
-            : `מציג ${rows.length}${shown.totalCount != null ? ` מתוך ${shown.totalCount}` : ""} פרויקטים`}
+            : trimmedQuery
+              ? `${foundLine} בחיפוש`
+              : `מציג ${rows.length}${shown.totalCount != null ? ` מתוך ${shown.totalCount}` : ""} פרויקטים`}
         </div>
       ) : null}
 

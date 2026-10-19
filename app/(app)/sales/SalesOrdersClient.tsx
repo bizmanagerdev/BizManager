@@ -805,8 +805,19 @@ export default function SalesOrdersClient({
     );
   }, [offline, query, visibleOrderRows]);
 
+  // While a search is on, every count says how many it FOUND, not how many the
+  // tab holds (owner, 2026-10-19: "it still says the amount of open orders …
+  // it's not clear how many were found").
+  const foundCount = filteredRows.length;
+  const foundLine =
+    foundCount === 1 ? "נמצאה הזמנה אחת" : foundCount === 0 ? "לא נמצאו הזמנות" : `נמצאו ${foundCount} הזמנות`;
+  const ofTotal = totalCount != null && totalCount !== foundCount ? ` מתוך ${totalCount}` : "";
+
   // Names the page in the mobile top bar, with the count as the subtitle.
-  useSetPageTitle(tabLabel, `${totalCount ?? filteredRows.length} הזמנות`);
+  useSetPageTitle(
+    tabLabel,
+    trimmedQuery ? `נמצאו ${foundCount}${ofTotal}` : `${totalCount ?? filteredRows.length} הזמנות`
+  );
 
   // Only surface the stock column/badge when at least one shown order is short.
   const anyOutOfStock = filteredRows.some((row) => row.outOfStock);
@@ -850,7 +861,16 @@ export default function SalesOrdersClient({
       </div>
 
       {/* The header subtitle carries this count on mobile. */}
-      <div className="hidden text-sm text-muted-foreground xl:block">נמצאו {totalCount ?? filteredRows.length} הזמנות</div>
+      <div className="hidden text-sm text-muted-foreground xl:block">
+        {trimmedQuery ? (
+          <>
+            <span className="font-medium text-foreground">{foundLine}</span>
+            {ofTotal ? ` (${ofTotal.trim()} ב${tabLabel})` : null}
+          </>
+        ) : (
+          `נמצאו ${totalCount ?? filteredRows.length} הזמנות`
+        )}
+      </div>
 
       {/* The same search finds orders in the other tab too — say so, one tap
           away (the box keeps what's typed there). */}
@@ -1372,7 +1392,9 @@ export default function SalesOrdersClient({
           <div className="pt-3 text-center text-xs text-muted-foreground">
             {loadingMore
               ? "טוען…"
-              : `מציג ${filteredRows.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} הזמנות`}
+              : trimmedQuery
+                ? `${foundLine} בחיפוש`
+                : `מציג ${filteredRows.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} הזמנות`}
           </div>
         </div>
       )}

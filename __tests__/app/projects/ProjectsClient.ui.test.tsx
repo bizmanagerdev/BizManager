@@ -233,3 +233,15 @@ describe("ProjectsClient — one search for every tab", () => {
     for (const input of screen.getAllByPlaceholderText(/חיפוש/)) expect((input as HTMLInputElement).value).toBe("1447");
   });
 });
+
+describe("ProjectsClient — the count while searching", () => {
+  it("says how many the search found, out of the tab's total (owner, 2026-10-19)", () => {
+    renderList();
+    expect(screen.getByText("נמצאו 1 פרויקטים")).toBeInTheDocument();
+    const [box] = screen.getAllByPlaceholderText(/חיפוש/);
+    fireEvent.change(box, { target: { value: "אין כזה" } });
+    expect(screen.getByText("לא נמצאו פרויקטים")).toBeInTheDocument();
+    expect(screen.getByText(/\(מתוך 1 בפרויקטים\)/)).toBeInTheDocument();
+    expect(screen.queryByText("נמצאו 1 פרויקטים")).toBeNull();
+  });
+});
