@@ -33,6 +33,9 @@ function formatOrderDate(value: string | null) {
   return match ? `${match[3]}/${match[2]}/${match[1].slice(-2)}` : null;
 }
 
+/** Projects, orders and properties offered in the + dialogs: all of them (the database's one-read cap). */
+const PICKER_MAX = 1000;
+
 /**
  * Loads the quick-action dropdown data. Resolves to EMPTY_QUICK_ACTIONS-shaped
  * data and NEVER rejects, so it can be passed unawaited from the dashboard page
@@ -70,19 +73,21 @@ export async function loadQuickActionsData(
         .from("project_dashboard_view")
         .select("id,name,project_type,status,customer_id,customer_name,open_tasks,start_date,updated_at")
         .order("updated_at", { ascending: false })
-        .range(0, 99)
+        // Every one (owner, 2026-10-19: "the + menu only offers the latest 100
+        // projects and orders") — the dialogs' searches look through all of them.
+        .range(0, PICKER_MAX - 1)
         .then(read),
       supabase
         .from("order_overview_view")
         .select("order_id,customer_name,order_date,status")
         .order("order_date", { ascending: false })
-        .range(0, 99)
+        .range(0, PICKER_MAX - 1)
         .then(read),
       supabase
         .rpc("property_directory")
         .eq("is_active", true)
         .order("address", { ascending: true })
-        .range(0, 99)
+        .range(0, PICKER_MAX - 1)
         .then(read),
       // Live stock (on-hand − reserved) is attached as soon as the products
       // arrive, still inside this round, so the quick-create order dialog's

@@ -560,19 +560,22 @@ type SearchOptions = {
   limitPerGroup?: number;
   /** Only this kind of record (the "show all" view of one group). */
   kind?: GlobalSearchKind | null;
+  /**
+   * These kinds, whatever the role's search box lists — for a picker inside a
+   * page the viewer already has (the database's own rights still decide).
+   */
+  kinds?: GlobalSearchKind[];
 };
 
-export async function performGlobalSearch(
-  supabase: SupabaseClient,
-  options: SearchOptions
-): Promise<GlobalSearchResponse> {
+/** The database's rows for a query, and the words to paint — null when there's nothing to search. */
+async function queryGlobalSearch(supabase: SupabaseClient, options: SearchOptions) {
   const query = options.query.trim();
   const parsed = parseGlobalQuery(query);
-  if (!query || parsed.tokens.length === 0) return { query, ...EMPTY };
+  if (!query || parsed.tokens.length === 0) return null;
 
   const roleKinds = kindsForRole(options.viewerRole);
-  if (options.kind && roleKinds && !roleKinds.includes(options.kind)) return { query, ...EMPTY };
-  const kinds = options.kind ? [options.kind] : roleKinds;
+  if (!options.kinds && options.kind && roleKinds && !roleKinds.includes(options.kind)) return null;
+  const kinds = options.kinds ?? (options.kind ? [options.kind] : roleKinds);
 
   // Close spellings for a word that doesn't exist as typed.
   const corrections: string[] = [];
@@ -596,19 +599,80 @@ export async function performGlobalSearch(
   });
   if (error) throw new Error(error.message || "Global search failed");
 
-  const rows = (data ?? []) as Row[];
-  const groups = buildGroups(rows, options.viewerRole);
   const terms = Array.from(
     new Set(tokens.flatMap((token) => [...(token.t ?? []), ...(token.h ? [token.h] : [])].filter((term) => term.length > 0)))
   );
   return {
     query,
-    totalResults: groups.reduce((sum, group) => sum + group.total, 0),
+    rows: (data ?? []) as Row[],
     terms,
     understood: parsed.understood,
     corrections: Array.from(new Set(corrections)),
+  };
+}
+
+export async function performGlobalSearch(
+  supabase: SupabaseClient,
+  options: SearchOptions
+): Promise<GlobalSearchResponse> {
+  const found = await queryGlobalSearch(supabase, options);
+  if (!found) return { query: options.query.trim(), ...EMPTY };
+  const groups = buildGroups(found.rows, options.viewerRole);
+  return {
+    query: found.query,
+    totalResults: groups.reduce((sum, group) => sum + group.total, 0),
+    terms: found.terms,
+    understood: found.understood,
+    corrections: found.corrections,
     groups,
   };
+}
+
+/** One record a picker found: what the search returns for it, its amount and day, and why. */
+export type FoundRecord = {
+  kind: GlobalSearchKind;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  amount: number | null;
+  /** The record's own day (an expense's date, a payment's date). */
+  date: string | null;
+  reasons: GlobalSearchReason[];
+};
+
+/**
+ * The global search for a picker (owner, 2026-10-19: linking a document to a
+ * payment or expense "only the newest 40 of each can ever be found"): every
+ * kind asked for, best match first, up to `limit` each.
+ */
+export async function findRecords(
+  supabase: SupabaseClient,
+  options: { query: string; kinds: GlobalSearchKind[]; viewerRole: UserRole; viewerId?: string | null; limit?: number }
+): Promise<{ records: FoundRecord[]; terms: string[] }> {
+  const found = await queryGlobalSearch(supabase, {
+    query: options.query,
+    viewerRole: options.viewerRole,
+    viewerId: options.viewerId,
+    kinds: options.kinds,
+    limitPerGroup: options.limit ?? 25,
+  });
+  if (!found) return { records: [], terms: [] };
+  const records = found.rows
+    .filter((row) => isGlobalSearchKind(row.kind) && row.id)
+    .sort((left, right) => (left.rank ?? 3) - (right.rank ?? 3) || str(right.at).localeCompare(str(left.at)))
+    .map((row) => {
+      const info = row.info ?? {};
+      return {
+        kind: row.kind as GlobalSearchKind,
+        id: row.id,
+        title: str(row.title),
+        subtitle: str(row.subtitle) || null,
+        amount: num(info.amount),
+        date: str(info.date) || str(row.at) || null,
+        reasons: (row.reasons ?? []).map(formatReason).filter((reason): reason is GlobalSearchReason => reason !== null),
+      };
+    });
+  return { records, terms: found.terms };
 }
 
 /** What a list page (orders, projects) needs from the search: which rows, and why. */

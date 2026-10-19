@@ -1,4 +1,5 @@
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { GlobalSearchReason } from "@/lib/global-search";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Money documents ↔ the ledger.
@@ -39,6 +40,8 @@ export type LedgerCandidate = {
   label: string;
   date: string | null;
   amount: number | null;
+  /** Why a search found it (findLedgerDocumentMatches). */
+  reasons?: GlobalSearchReason[];
 };
 
 function num(value: unknown): number | null {
@@ -51,14 +54,13 @@ function str(value: unknown): string | null {
 }
 
 /**
- * Expenses and payments that could be the transaction behind a document.
- * Ordered newest-first; `query` matches the free-text description/vendor, and
- * an amount typed into the same box matches the figure.
+ * The newest expenses and payments — what the link dialog offers before
+ * anything is typed. A typed search goes to the global search instead
+ * (app/(app)/documents/actions.ts → findLedgerDocumentMatches), which finds any
+ * of them, not only these.
  */
-export async function findLedgerCandidates(query: string): Promise<LedgerCandidate[]> {
+export async function findLedgerCandidates(): Promise<LedgerCandidate[]> {
   const supabase = createSupabaseBrowserClient();
-  const text = query.trim();
-  const asAmount = num(text.replace(/[^\d.]/g, ""));
 
   const [expensesRes, paymentsRes] = await Promise.all([
     supabase
@@ -100,15 +102,7 @@ export async function findLedgerCandidates(query: string): Promise<LedgerCandida
     });
   }
 
-  const filtered = text
-    ? candidates.filter((c) => {
-        if (c.label.includes(text)) return true;
-        // Typing "1200" should find the ₪1,200 row, not just text matches.
-        return asAmount !== null && c.amount !== null && Math.abs(c.amount - asAmount) < 0.01;
-      })
-    : candidates;
-
-  return filtered
+  return candidates
     .sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")))
     .slice(0, 25);
 }

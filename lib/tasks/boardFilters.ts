@@ -1,4 +1,6 @@
 import type { TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
+import { searchList, type SearchRecord } from "@/lib/search/listSearch";
+import { taskSearchRecord } from "@/lib/tasks/search";
 
 // The task board's filters, as the URL carries them.
 export type TaskBoardFilters = {
@@ -27,8 +29,7 @@ export function filterBoardLocally(
   current: TaskBoardFilters,
   userId: string
 ): TaskBoardItem[] {
-  const query = next.q.trim().toLowerCase();
-  const byQuery = next.q !== current.q && query !== "";
+  const byQuery = next.q !== current.q && next.q.trim() !== "";
   const byPriority = next.priority !== current.priority && next.priority !== "";
   const byDomain = next.domain !== current.domain && next.domain !== "";
   const linkColumn =
@@ -37,20 +38,30 @@ export function filterBoardLocally(
   const byMine = next.scope === "mine" && current.scope === "all";
   if (!byQuery && !byPriority && !byDomain && !byLink && !byMine) return tasks;
 
-  return tasks.filter((task) => {
-    if (byPriority && task.priority !== next.priority) return false;
-    if (byDomain && task.business_domain !== next.domain) return false;
-    if (byLink && linkColumn && task[linkColumn] !== next.linkedId) return false;
-    if (byQuery) {
-      const subjects = [task.subject, task.subject_he, task.subject_ar];
-      if (!subjects.some((subject) => subject?.toLowerCase().includes(query))) return false;
-    }
+  // The search by the board's own rules (lib/tasks/search.ts), on what the
+  // cards carry — and what an earlier search found in a task (its description,
+  // a reply), so typing on doesn't drop it — until the server's answer.
+  const found = byQuery ? searchList(tasks, localRecord, next.q) : null;
+
+  return tasks.flatMap((task) => {
+    if (byPriority && task.priority !== next.priority) return [];
+    if (byDomain && task.business_domain !== next.domain) return [];
+    if (byLink && linkColumn && task[linkColumn] !== next.linkedId) return [];
+    if (found && !found.reasons.has(task)) return [];
     if (byMine) {
       // A private task on the board is always the viewer's own (RLS).
       const mine =
         task.is_private || task.assigned_user_id === userId || task.members.some((member) => member.id === userId);
-      if (!mine) return false;
+      if (!mine) return [];
     }
-    return true;
+    return [found ? { ...task, search_reasons: found.reasons.get(task) ?? [] } : task];
   });
+}
+
+function localRecord(task: TaskBoardItem): SearchRecord {
+  const record = taskSearchRecord(task);
+  const known = (task.search_reasons ?? [])
+    .filter((reason) => reason.kind === "text")
+    .map((reason) => [reason.label, reason.value] as const);
+  return { ...record, text: [...(record.text ?? []), ...known] };
 }

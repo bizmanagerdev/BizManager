@@ -65,6 +65,24 @@ describe("filterBoardLocally", () => {
     expect(ids(filterBoardLocally(TASKS, { ...NONE, q: "לקוח" }, NONE, ME))).toEqual(["a"]);
   });
 
+  it("searches by the global search's rules: a phone however it's typed, the due day, who it's on", () => {
+    const board = [
+      task({ id: "p", customer_name: "משה", customer_phone: "050-1234567" }),
+      task({ id: "d", due_date: "2026-10-15" }),
+      task({ id: "w", assigned_user_id: "u2", assigned_user_name: "דנה" }),
+    ];
+    const search = (q: string) => filterBoardLocally(board, { ...NONE, q }, NONE, ME);
+    expect(ids(search("0501234567"))).toEqual(["p"]);
+    expect(ids(search("15/10/26"))).toEqual(["d"]);
+    expect(search("דנה")).toEqual([expect.objectContaining({ id: "w", search_reasons: [{ kind: "text", label: "אחראי", value: "דנה" }] })]);
+  });
+
+  it("typing on keeps a task an earlier search found in its description", () => {
+    const found = [task({ id: "x", subject: "לטפל", search_reasons: [{ kind: "text", label: "תיאור", value: "להביא מפתחות" }] })];
+    const before = { ...NONE, q: "מפתח" };
+    expect(ids(filterBoardLocally(found, { ...NONE, q: "מפתחות" }, before, ME))).toEqual(["x"]);
+  });
+
   it("narrows everyone's board to mine: assigned, a member, or private", () => {
     const all = { ...NONE, scope: "all" as const };
     expect(ids(filterBoardLocally(TASKS, NONE, all, ME))).toEqual(["a", "c", "d"]);

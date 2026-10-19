@@ -30,11 +30,11 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { highlightText } from "@/components/search/highlightMatch";
+import { searchList } from "@/lib/search/listSearch";
 import { EmptyState } from "@/components/ui/empty-state";
 import { calendarDict, type CalendarKey } from "@/lib/i18n/dictionaries/calendar";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
@@ -325,13 +325,29 @@ export default function CalendarView({
   // Search across the calendar's items (from the ⋮ menu) → jump to the match's day.
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const searchResults = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return shownEntries
-      .filter((e) => `${e.title} ${e.subtitle ?? ""}`.toLowerCase().includes(q))
-      .slice(0, 60);
-  }, [query, shownEntries]);
+  // By the global search's rules: a word (misspelt too), or a day — "15/10"
+  // finds what starts or ends on it.
+  const found = useMemo(
+    () =>
+      searchList(
+        shownEntries,
+        (e) => ({
+          text: [
+            [null, e.title],
+            [null, e.subtitle],
+            [null, kindLabel(locale, e.kind)],
+          ],
+          dates: [
+            [null, e.startDate],
+            [null, e.endDate],
+          ],
+        }),
+        query
+      ),
+    [query, shownEntries, locale]
+  );
+  const searchResults = useMemo(() => (found ? found.items.slice(0, 60) : []), [found]);
+  const paintResult = (text: string) => (found ? highlightText(text, found.search.terms) : text);
   function jumpToEntry(entry: CalendarEntry) {
     const d = toDateOnly(entry.startDate);
     if (d) {
@@ -602,10 +618,10 @@ export default function CalendarView({
                   >
                     <span className={`h-2 w-2 shrink-0 rounded-full ${KIND_META[e.kind].dot}`} />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium">{e.title}</span>
+                      <span className="block text-sm font-medium">{paintResult(e.title)}</span>
                       <span className="block text-xs text-muted-foreground">
                         {d ? fmtFullDay(d) : ""} · {kindLabel(locale, e.kind)}
-                        {e.subtitle ? ` · ${e.subtitle}` : ""}
+                        {e.subtitle ? <> · {paintResult(e.subtitle)}</> : ""}
                       </span>
                     </span>
                   </button>
@@ -646,6 +662,21 @@ function HeaderMenu({
   locale: Locale;
 }) {
   return (
+    <div className="flex items-center">
+    {/* Search on the bar itself, not only inside ⋮ (owner, 2026-10-19: "the
+        calendar's search is hidden behind the ⋮ menu"). */}
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      onClick={onSearch}
+      aria-label={t(commonDict, locale, "search")}
+      title={t(commonDict, locale, "search")}
+      className={`${TOPBAR_ICON_BUTTON} !h-[34px] !w-[34px]`}
+    >
+      <SearchIcon strokeWidth={TOPBAR_ICON_STROKE} />
+    </Button>
+    {canToggleScope ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {/* The bar's own icon button (topbar-icon.ts), in fixed px: a rem-sized
@@ -664,13 +695,6 @@ function HeaderMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="text-right">
-        <DropdownMenuItem onSelect={onSearch} className="gap-2">
-          <SearchIcon className="h-4 w-4" />
-          {t(commonDict, locale, "search")}
-        </DropdownMenuItem>
-        {canToggleScope ? (
-          <>
-            <DropdownMenuSeparator />
             <div className="flex gap-1 rounded-full bg-muted p-1">
               {(["mine", "all"] as const).map((s) => (
                 <button
@@ -687,10 +711,10 @@ function HeaderMenu({
                 </button>
               ))}
             </div>
-          </>
-        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+    ) : null}
+    </div>
   );
 }
 

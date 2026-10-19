@@ -25,6 +25,7 @@ import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDate, hebrewWeekday } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
+import { Painted } from "@/components/search/Painted";
 import { withViewTransition } from "@/lib/ui/view-transition";
 import type { PendingPhoneReport } from "@/lib/attendance/phone-reports";
 import { attendanceSourceLabel } from "@/lib/attendance/my-shift";
@@ -137,14 +138,14 @@ export function WorkerHead({
               href={`/payroll/workers/${userId}`}
               className="relative text-sm font-medium text-foreground hover:underline"
             >
-              {name ?? "עובד לא ידוע"}
+              <Painted text={name ?? "עובד לא ידוע"} />
             </Link>
           ) : (
-            <span className="text-sm font-medium text-foreground">{name ?? "עובד לא ידוע"}</span>
+            <span className="text-sm font-medium text-foreground"><Painted text={name ?? "עובד לא ידוע"} /></span>
           )}
           {phone ? (
             <span className="shrink-0 text-xs text-muted-foreground" dir="ltr">
-              {phone}
+              <Painted text={phone} />
             </span>
           ) : null}
           {/* The shift's numbers own the opposite corner, STACKED: how long on
@@ -153,7 +154,7 @@ export function WorkerHead({
           <span className="ms-auto shrink-0 text-end leading-tight">
             <span className="block text-xs font-semibold tabular-nums text-foreground">{duration}</span>
             <span className="block text-[0.647rem] tabular-nums text-muted-foreground">
-              {shiftHoursText(clockIn, clockOut)}
+              <Painted text={shiftHoursText(clockIn, clockOut)} />
             </span>
           </span>
           {chips ? <span className="flex shrink-0 items-center gap-1.5">{chips}</span> : null}
@@ -497,14 +498,14 @@ export default function PendingReportCard({
         chips={
           flat ? null : (
             <span className="text-xs text-muted-foreground">
-              {hebrewWeekday(report.clock_in)} {formatShortDate(report.clock_in)}
+              {hebrewWeekday(report.clock_in)} <Painted text={formatShortDate(report.clock_in)} />
             </span>
           )
         }
         cost={
           report.labor_cost != null ? (
             <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-sm font-semibold text-foreground">
-              {formatCurrency(report.labor_cost)}
+              <Painted text={formatCurrency(report.labor_cost)} />
             </span>
           ) : null
         }

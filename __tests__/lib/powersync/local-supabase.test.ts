@@ -898,13 +898,14 @@ describe("the tasks board, worked out on the device", () => {
     subject_he: null, subject_ar: null, priority: "medium", due_date: null, due_time: null, city: null,
     address: null, addr_city: null, addr_street: null, addr_house_number: null, addr_lat: null, addr_lng: null,
     business_domain: null, project_id: null, property_id: null, customer_id: null, is_private: 0,
-    private_owner_id: null, sort_order: null, updated_at: "2026-10-01T08:00:00.000000", ...row,
+    private_owner_id: null, sort_order: null, updated_at: "2026-10-01T08:00:00.000000",
+    description: null, notes: null, completed_at: null, ...row,
   });
   const tables = {
     tasks: [
       task({ id: "t1", subject: "שלי", status: "todo", assigned_user_id: "me", sort_order: 2, created_at: "2026-10-05T10:00:00.000000", due_date: "2026-01-01" }),
       task({ id: "t2", subject: "חבר", status: "in_progress", assigned_user_id: "u2", sort_order: 1, created_at: "2026-10-04T10:00:00.000000", property_id: "pr1", customer_id: "c1" }),
-      task({ id: "t3", subject: "של אחר", status: null, assigned_user_id: "u2", created_at: "2026-10-03T10:00:00.000000" }),
+      task({ id: "t3", subject: "של אחר", status: null, assigned_user_id: "u2", created_at: "2026-10-03T10:00:00.000000", description: "להביא את המפתחות מהשכן" }),
       task({ id: "t4", subject: "סגורה", status: "done", assigned_user_id: "me", created_at: "2026-09-01T10:00:00.000000", updated_at: "2026-10-05T12:00:00.000000" }),
       task({ id: "t5", subject: "פרטית", status: "todo", assigned_user_id: null, is_private: 1, private_owner_id: "me", created_at: "2026-10-06T10:00:00.000000" }),
       task({ id: "t6", subject: "בוטלה", status: "cancelled", assigned_user_id: "me", created_at: "2026-10-06T11:00:00.000000" }),
@@ -917,8 +918,8 @@ describe("the tasks board, worked out on the device", () => {
     customers: [{ id: "c1", name: "לקוח", phone: "050" }],
     properties: [{ id: "pr1", name: null, address: "רחוב 1", is_active: 1 }],
     task_comments: [
-      { id: "cm1", task_id: "t1" },
-      { id: "cm2", task_id: "t1" },
+      { id: "cm1", task_id: "t1", body: "דיברתי איתו, חוזר אליי מחר" },
+      { id: "cm2", task_id: "t1", body: null },
     ],
     reminders: [
       { id: "r1", task_id: "t2", remind_at: "2026-10-07T08:00:00.000000", status: "pending" },
@@ -960,7 +961,25 @@ describe("the tasks board, worked out on the device", () => {
     const all = await loadTasksBoard(db, { filters: { ...filters, scope: "all" }, userId: "me", canSeeAll: true });
     expect(all.items.map((t) => t.id)).toEqual(["t2", "t1", "t5", "t3", "t4"]);
     const search = await loadTasksBoard(db, { filters: { ...filters, q: "חבר", scope: "all" }, userId: "me", canSeeAll: true });
+    expect(search.error).toBeNull();
     expect(search.items.map((t) => t.id)).toEqual(["t2"]);
+  });
+
+  it("a search finds a task by its description, a reply or who it's on — and says which", async () => {
+    const db = createLocalSupabase(fakeReader(tables));
+    const find = (q: string) => loadTasksBoard(db, { filters: { ...filters, q, scope: "all" }, userId: "me", canSeeAll: true });
+    const byDescription = await find("מפתחות");
+    expect(byDescription.items.map((t) => [t.id, t.search_reasons])).toEqual([
+      ["t3", [{ kind: "text", label: "תיאור", value: "להביא את המפתחות מהשכן" }]],
+    ]);
+    const byReply = await find("מחר");
+    expect(byReply.items.map((t) => [t.id, t.search_reasons])).toEqual([
+      ["t1", [{ kind: "text", label: "תגובה", value: "דיברתי איתו, חוזר אליי מחר" }]],
+    ]);
+    // דנה: the one it's on (t3), and the member-only card (t2) too.
+    const byPerson = await find("דנה");
+    expect(byPerson.items.map((t) => t.id)).toEqual(["t2", "t3"]);
+    expect(byPerson.items[0].search_reasons).toEqual([{ kind: "text", label: "אחראי", value: "דנה" }]);
   });
 });
 

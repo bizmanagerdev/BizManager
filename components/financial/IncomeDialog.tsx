@@ -54,6 +54,14 @@ import { buildIncomePayload, validateIncomeForm } from "@/app/(app)/dashboard/Da
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { formatCurrency } from "@/lib/payroll";
 import { cn } from "@/lib/utils";
+import { highlightText } from "@/components/search/highlightMatch";
+import { filterByText, prepareListSearch } from "@/lib/search/listSearch";
+
+/** What a step's search matched, painted yellow (nothing typed: the text as is). */
+function paintQuery(text: string, query: string) {
+  const terms = prepareListSearch(query)?.terms;
+  return terms ? highlightText(text, terms) : text;
+}
 
 type Row = Record<string, unknown>;
 type IncomeStepId =
@@ -155,6 +163,9 @@ export function IncomeDialog({
   const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
   const [projectId, setProjectId] = useState("");
   const [projectQuery, setProjectQuery] = useState("");
+  // The order and property steps' searches (owner, 2026-10-19: those pickers had none).
+  const [orderQuery, setOrderQuery] = useState("");
+  const [propertyQuery, setPropertyQuery] = useState("");
   const [orderId, setOrderId] = useState("");
   const [propertyId, setPropertyId] = useState("");
   const [amount, setAmount] = useState("");
@@ -203,14 +214,19 @@ export function IncomeDialog({
   const effectivePropertyId = lockedPropertyId ?? (effectiveDomain === "property_management" ? propertyId : "");
 
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
-  const filteredProjects = useMemo(() => {
-    const q = projectQuery.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(
-      (project) =>
-        project.name.toLowerCase().includes(q) || project.customerName.toLowerCase().includes(q)
-    );
-  }, [projectQuery, projects]);
+  // By the global search's rules (lib/search/listSearch.filterByText).
+  const filteredProjects = useMemo(
+    () => filterByText(projects, (project) => [project.name, project.customerName, project.startDate], projectQuery),
+    [projectQuery, projects]
+  );
+  const filteredOrders = useMemo(
+    () => filterByText(orders, (order) => [order.name, order.subtitle], orderQuery),
+    [orderQuery, orders]
+  );
+  const filteredProperties = useMemo(
+    () => filterByText(properties, (property) => [property.name, property.subtitle], propertyQuery),
+    [propertyQuery, properties]
+  );
 
   // ── Dynamic step list — mirrors ExpenseDialog's expressSteps ───────────────
   // Locked (opened from a property page): domain/property are already decided,
@@ -299,6 +315,8 @@ export function IncomeDialog({
     setBusinessDomain("");
     setProjectId("");
     setProjectQuery("");
+    setOrderQuery("");
+    setPropertyQuery("");
     setOrderId("");
     setPropertyId("");
     setAmount("");
@@ -572,7 +590,7 @@ export function IncomeDialog({
                 )}
               >
                 <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-medium">{project.name}</span>
+                  <span className="font-medium">{paintQuery(project.name, projectQuery)}</span>
                   {project.customerName ? (
                     <span
                       className={cn(
@@ -580,7 +598,7 @@ export function IncomeDialog({
                         project.id === projectId ? "text-primary-foreground/70" : "text-muted-foreground"
                       )}
                     >
-                      · {project.customerName}
+                      · {paintQuery(project.customerName, projectQuery)}
                     </span>
                   ) : null}
                   {normalizeDateOnly(project.startDate) ? (
@@ -609,19 +627,28 @@ export function IncomeDialog({
             sub="אפשר גם בלי הזמנה"
           />
           <div className="grid gap-2">
-          <OptionRow
-            label="ללא הזמנה"
-            selected={orderId === ""}
-            onClick={() => {
-              setOrderId("");
-              advanceTo("amount");
-            }}
-          />
-          {orders.map((order) => (
+          {orders.length > 6 ? (
+            <Input
+              value={orderQuery}
+              onChange={(e) => setOrderQuery(e.target.value)}
+              placeholder="חיפוש הזמנה — לקוח, תאריך..."
+            />
+          ) : null}
+          {orderQuery.trim() ? null : (
+            <OptionRow
+              label="ללא הזמנה"
+              selected={orderId === ""}
+              onClick={() => {
+                setOrderId("");
+                advanceTo("amount");
+              }}
+            />
+          )}
+          {filteredOrders.map((order) => (
             <OptionRow
               key={order.id}
-              label={order.name}
-              sub={order.subtitle}
+              label={paintQuery(order.name, orderQuery)}
+              sub={order.subtitle ? paintQuery(order.subtitle, orderQuery) : undefined}
               selected={orderId === order.id}
               onClick={() => {
                 setOrderId(order.id);
@@ -629,17 +656,27 @@ export function IncomeDialog({
               }}
             />
           ))}
+          {orderQuery.trim() && filteredOrders.length === 0 ? (
+            <div className="p-2 text-sm text-muted-foreground">לא נמצאו הזמנות לחיפוש הזה.</div>
+          ) : null}
           </div>
         </>
       ) : stepId === "property" ? (
         <>
           <StepHeading title="לאיזה נכס לשייך?" />
           <div className="grid gap-2">
-          {properties.map((property) => (
+          {properties.length > 6 ? (
+            <Input
+              value={propertyQuery}
+              onChange={(e) => setPropertyQuery(e.target.value)}
+              placeholder="חיפוש נכס..."
+            />
+          ) : null}
+          {filteredProperties.map((property) => (
             <OptionRow
               key={property.id}
-              label={property.name}
-              sub={property.subtitle}
+              label={paintQuery(property.name, propertyQuery)}
+              sub={property.subtitle ? paintQuery(property.subtitle, propertyQuery) : undefined}
               selected={propertyId === property.id}
               onClick={() => {
                 setPropertyId(property.id);
@@ -649,6 +686,8 @@ export function IncomeDialog({
           ))}
           {properties.length === 0 ? (
             <div className="p-2 text-sm text-muted-foreground">אין נכסים זמינים — יש להוסיף נכס תחילה.</div>
+          ) : propertyQuery.trim() && filteredProperties.length === 0 ? (
+            <div className="p-2 text-sm text-muted-foreground">לא נמצאו נכסים לחיפוש הזה.</div>
           ) : null}
           </div>
         </>

@@ -140,6 +140,12 @@ export type CustomerSearchContact = {
   email?: string | null;
 };
 
+export type CustomerSearchBranch = {
+  name?: string | null;
+  address?: string | null;
+  phone?: string | null;
+};
+
 export type CustomerSearchFields = {
   name?: string | null;
   name_for_invoice?: string | null;
@@ -149,6 +155,8 @@ export type CustomerSearchFields = {
   address?: string | null;
   registration_number?: string | null;
   contacts?: CustomerSearchContact[] | null;
+  /** The customer's branches — found by a branch's name, address or phone (owner, 2026-10-19). */
+  branches?: CustomerSearchBranch[] | null;
 };
 
 /** Does this customer (and its contacts) match the query? */
@@ -172,6 +180,17 @@ export function customerMatchesQuery(fields: CustomerSearchFields, query: string
       fuzzyTextMatch(contact.full_name, query) ||
       substringMatch(contact.email, query) ||
       phoneMatchesQuery([contact.phone, contact.whatsapp], query)
+    ) {
+      return true;
+    }
+  }
+
+  for (const branch of fields.branches ?? []) {
+    if (!branch) continue;
+    if (
+      fuzzyTextMatch(branch.name, query) ||
+      substringMatch(branch.address, query) ||
+      phoneMatchesQuery([branch.phone], query)
     ) {
       return true;
     }

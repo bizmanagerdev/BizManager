@@ -1,5 +1,7 @@
 import { getBusinessDomainLabel, isGeneratedRecurringExpense } from "@/lib/expenses";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { ledgerQuery, ledgerSearchRecord } from "@/lib/financial/search";
+import { matchSearchRecord, type ListSearchQuery } from "@/lib/search/listSearch";
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import type { Loan } from "@/lib/loans";
 import {
@@ -768,6 +770,8 @@ export function matchesEntryFilters(
     stage: "actual" | "future" | "pending" | null;
     query: string;
     referenceDate: string;
+    /** `query` already read (with spelling fixes from the whole ledger); read here when absent. */
+    search?: ListSearchQuery | null;
   }
 ) {
   if (filters.from && entry.flowDate < filters.from) return false;
@@ -779,7 +783,9 @@ export function matchesEntryFilters(
   if (filters.stage === "future" && !isFutureEntry(entry, filters.referenceDate)) return false;
   if (filters.stage === "pending" && entry.stage !== "pending") return false;
   if (!filters.query) return true;
-  return entry.searchText.includes(filters.query);
+  // The global search's rules: words, amounts, dates, hours (lib/financial/search.ts).
+  const search = filters.search ?? ledgerQuery(filters.query);
+  return search ? matchSearchRecord(ledgerSearchRecord(entry), search) !== null : true;
 }
 
 export function paginateEntries(entries: FinancialEntry[], page: number, pageSize: number) {
@@ -871,6 +877,7 @@ export function buildPaymentEntries(args: {
       recordedByName: typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
       createdAt: row.created_at ?? null,
       customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? null,
+      notes: row.notes?.trim() || null,
       searchText: [description, source.label, reference ?? "", row.notes ?? "", row.payment_method ?? "",
         row.payment_status ?? "", getBusinessDomainLabel(businessDomain),
         typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? "" : ""]
@@ -1044,6 +1051,7 @@ export function buildLoanEntries(loans: Loan[], referenceDate: string): Financia
         paymentStatus: null,
         recordedByName: null,
         customerId: loan.counterparty_customer_id,
+        notes: loan.notes?.trim() || null,
         searchText: [description, counterparty ?? "", loan.notes ?? "", domainName]
           .join(" ")
           .toLowerCase(),
@@ -1309,6 +1317,7 @@ export function buildWorkerPaymentEntries(args: {
       recordedByName: typeof workerPayment.recorded_by === "string" ? recordedByNames[workerPayment.recorded_by] ?? null : null,
       createdAt: workerPayment.created_at ?? null,
       customerId: linkedProject?.customer_id ?? null,
+      notes: workerPayment.notes?.trim() || null,
       searchText: [description, source.label, reference ?? "", workerPayment.notes ?? "", paymentMethodValue ?? "",
         workerName ?? "", getBusinessDomainLabel(businessDomain),
         typeof workerPayment.recorded_by === "string" ? recordedByNames[workerPayment.recorded_by] ?? "" : ""]

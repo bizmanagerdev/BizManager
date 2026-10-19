@@ -130,6 +130,18 @@ import {
 import { buildWorkerSummaryPrintDocument, openWorkerSummaryPrintWindow } from "@/lib/payroll/workerSummaryPrint";
 import { formatEnteredLabel } from "@/lib/date";
 import { israelDateKey, israelParts } from "@/lib/timezone";
+import { Painted, SearchReasons, SearchTermsProvider } from "@/components/search/Painted";
+import { searchList, type SearchRecord } from "@/lib/search/listSearch";
+
+// A worker's pay figures, as the search names them (see workerSearch below).
+const WORKER_OWED = "יתרה כוללת";
+const WORKER_PAID = "שולם כולל";
+const WORKER_MONTH_COST = "עלות עבודה החודש";
+const WORKER_SALARY = "משכורת נוכחית";
+const WORKER_PAYSLIP = "תלוש אחרון";
+/** Shown as columns of the עובדים / פועלים tables — painted there, not said again. */
+const WORKER_TABLE_LABELS = [WORKER_OWED, WORKER_PAID, WORKER_MONTH_COST, WORKER_SALARY, WORKER_PAYSLIP];
+const LABOR_TABLE_LABELS = [WORKER_OWED, WORKER_PAID];
 
 const DEFAULT_SESSION_FORM: SessionFormState = {
   session_id: "",
@@ -738,21 +750,57 @@ export default function SalaryCenterClient({
     setWorkerForm(workerFormFromUser(selectedWorker));
   }, [selectedWorker]);
 
-  const filteredWorkers = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return publicUsers.filter((user) => {
-      const isWorker =
-        user.role === "admin" ||
-        user.role === "office" ||
-        user.role === "worker" ||
-        user.role === "worker_no_access";
-      if (!isWorker) return false;
-      if (user.active === false) return false;
-      if (!query) return true;
-      const haystack = [user.full_name ?? "", user.email ?? "", user.phone ?? ""].join(" ").toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [publicUsers, search]);
+  // The search, by the global search's rules (owner, 2026-10-19: "names and raw
+  // phones only — no amounts"): a name, email or phone however it's typed, and —
+  // only while the salary lock is open, so a search can't tell what's behind it
+  // — what each worker is owed, was paid, costs this month, earns, and their
+  // last payslip.
+  const workerSearch = useMemo(() => {
+    const workers = publicUsers.filter(
+      (user) =>
+        (user.role === "admin" || user.role === "office" || user.role === "worker" || user.role === "worker_no_access") &&
+        user.active !== false
+    );
+    const record = (user: (typeof workers)[number]): SearchRecord => {
+      if (!salaryUnlocked) return { text: [[null, user.full_name], [null, user.email]], phones: [[null, user.phone]] };
+      const balance = effectiveWorkerBalancesByUserId.get(user.id) ?? null;
+      const agreement = getCurrentSalaryAgreement(agreementsByUserId.get(user.id) ?? []);
+      const latestPayslip = [...(payslipsByUserId.get(user.id) ?? [])].sort((a, b) =>
+        (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(
+          periodsById.get(a.payroll_period_id)?.period_month ?? ""
+        )
+      )[0];
+      return {
+        text: [[null, user.full_name], [null, user.email]],
+        phones: [[null, user.phone]],
+        amounts: [
+          [WORKER_OWED, toNumber(balance?.owed_amount)],
+          [WORKER_PAID, toNumber(balance?.paid_amount)],
+          [WORKER_MONTH_COST, currentMonthPayrollStatsByUserId.get(user.id)?.totalAmount],
+          [
+            WORKER_SALARY,
+            agreement ? toNumber(agreement.salary_type === "hourly" ? agreement.hourly_rate : agreement.monthly_salary) : null,
+          ],
+          [WORKER_PAYSLIP, latestPayslip ? toNumber(latestPayslip.gross_salary) : null],
+        ],
+      };
+    };
+    return { workers, found: searchList(workers, record, search) };
+  }, [
+    publicUsers,
+    search,
+    salaryUnlocked,
+    effectiveWorkerBalancesByUserId,
+    agreementsByUserId,
+    payslipsByUserId,
+    periodsById,
+    currentMonthPayrollStatsByUserId,
+  ]);
+  const workerFound = workerSearch.found;
+  const filteredWorkers = useMemo(
+    () => (workerFound ? workerFound.items : workerSearch.workers),
+    [workerFound, workerSearch.workers]
+  );
 
   const employeeWorkers = useMemo(
     () => filteredWorkers.filter((user) => user.role === "admin" || user.role === "office" || user.role === "worker"),
@@ -2567,7 +2615,7 @@ export default function SalaryCenterClient({
           name="payroll_worker_search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="חיפוש עובד לפי שם, אימייל או טלפון"
+          placeholder="חיפוש עובד — שם, טלפון, אימייל או סכום"
           autoComplete="off"
           spellCheck={false}
           data-lpignore="true"
@@ -2647,6 +2695,7 @@ export default function SalaryCenterClient({
         </Card>
       </SalaryProtected>
 
+      <SearchTermsProvider terms={workerFound?.search.terms ?? null}>
       <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
         <TabsList variant="underline" className="sm:justify-center">
           <TabsTrigger value="employees"><UsersIcon className="h-4 w-4" />עובדים</TabsTrigger>
@@ -2684,10 +2733,11 @@ export default function SalaryCenterClient({
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
-                                {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
-                                {worker.email ? <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]" dir="ltr">{worker.email}</div> : null}
+                                <div className="font-semibold"><Painted text={worker.full_name ?? worker.email ?? "עובד"} /></div>
+                                {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr"><Painted text={worker.phone} /></div> : null}
+                                {worker.email ? <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]" dir="ltr"><Painted text={worker.email} /></div> : null}
                                 {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
+                                <SearchReasons reasons={workerFound?.reasons.get(worker)} className="mt-1" />
                               </div>
                               <StatusPill tone={worker.active === false ? "muted" : "success"}>
                                 {worker.active === false ? "לא פעיל" : "פעיל"}
@@ -2794,12 +2844,16 @@ export default function SalaryCenterClient({
                               >
                                 <td className="px-2 py-2 font-medium w-[180px]">
                                   <div className="flex flex-col items-center gap-1">
-                                    <div>{worker.full_name ?? worker.email ?? "עובד"}</div>
+                                    <div><Painted text={worker.full_name ?? worker.email ?? "עובד"} /></div>
                                     <div className="flex flex-col items-center text-muted-foreground break-all">
-                                      {worker.email ? <div dir="ltr">{worker.email}</div> : null}
-                                      {worker.phone ? <div dir="ltr">{worker.phone}</div> : null}
+                                      {worker.email ? <div dir="ltr"><Painted text={worker.email} /></div> : null}
+                                      {worker.phone ? <div dir="ltr"><Painted text={worker.phone} /></div> : null}
                                       {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
                                     </div>
+                                    <SearchReasons
+                                      reasons={workerFound?.reasons.get(worker)}
+                                      hideLabels={WORKER_TABLE_LABELS}
+                                    />
                                   </div>
                                 </td>
                                 <td className="px-2 py-2">
@@ -2828,9 +2882,13 @@ export default function SalaryCenterClient({
                                     {protectedLoading ? (
                                       <LoadingDots />
                                     ) : currentAgreement ? (
-                                      currentAgreement.salary_type === "hourly"
-                                        ? `${formatCurrency(currentAgreement.hourly_rate)} / שעה`
-                                        : formatCurrency(currentAgreement.monthly_salary)
+                                      <Painted
+                                        text={
+                                          currentAgreement.salary_type === "hourly"
+                                            ? `${formatCurrency(currentAgreement.hourly_rate)} / שעה`
+                                            : formatCurrency(currentAgreement.monthly_salary)
+                                        }
+                                      />
                                     ) : (
                                       "-"
                                     )}
@@ -2844,10 +2902,10 @@ export default function SalaryCenterClient({
                                     onUnlockSuccess={loadProtectedData}
                                     fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                                   >
-                                    {protectedLoading ? <LoadingDots /> : formatCurrency(monthlyLaborCost)}
+                                    {protectedLoading ? <LoadingDots /> : <Painted text={formatCurrency(monthlyLaborCost)} />}
                                   </SalaryProtected>
                                 </td>
-                                <td className="px-2 py-2 whitespace-nowrap">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
+                                <td className="px-2 py-2 whitespace-nowrap">{latestPayslip ? <Painted text={formatCurrency(latestPayslip.gross_salary)} /> : "-"}</td>
                                 <td className="px-2 py-2">
                                   <SalaryProtected
                                     unlocked={salaryUnlocked}
@@ -2867,7 +2925,7 @@ export default function SalaryCenterClient({
                                     onUnlockSuccess={loadProtectedData}
                                     fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                                   >
-                                    {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.paid_amount ?? 0)}
+                                    {protectedLoading ? <LoadingDots /> : <Painted text={formatCurrency(balance?.paid_amount ?? 0)} />}
                                   </SalaryProtected>
                                 </td>
                                 <td className="px-3 py-3">
@@ -2878,7 +2936,7 @@ export default function SalaryCenterClient({
                                     onUnlockSuccess={loadProtectedData}
                                     fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                                   >
-                                    {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.owed_amount ?? 0)}
+                                    {protectedLoading ? <LoadingDots /> : <Painted text={formatCurrency(balance?.owed_amount ?? 0)} />}
                                   </SalaryProtected>
                                 </td>
                                 <td className="px-3 py-3">
@@ -2928,10 +2986,11 @@ export default function SalaryCenterClient({
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <div className="font-semibold">{worker.full_name ?? worker.email ?? "פועל"}</div>
-                                {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
-                                {worker.email ? <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]" dir="ltr">{worker.email}</div> : null}
+                                <div className="font-semibold"><Painted text={worker.full_name ?? worker.email ?? "פועל"} /></div>
+                                {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr"><Painted text={worker.phone} /></div> : null}
+                                {worker.email ? <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]" dir="ltr"><Painted text={worker.email} /></div> : null}
                                 {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
+                                <SearchReasons reasons={workerFound?.reasons.get(worker)} className="mt-1" />
                               </div>
                               <StatusPill tone={worker.active === false ? "muted" : "success"}>
                                 {worker.active === false ? "לא פעיל" : "פעיל"}
@@ -3028,12 +3087,16 @@ export default function SalaryCenterClient({
                               >
                                 <td className="px-2 py-2 font-medium w-[180px]">
                                   <div className="flex flex-col items-center gap-1">
-                                    <div>{worker.full_name ?? worker.email ?? "פועל"}</div>
+                                    <div><Painted text={worker.full_name ?? worker.email ?? "פועל"} /></div>
                                     <div className="flex flex-col items-center text-muted-foreground break-all">
-                                      {worker.email ? <div dir="ltr">{worker.email}</div> : null}
-                                      {worker.phone ? <div dir="ltr">{worker.phone}</div> : null}
+                                      {worker.email ? <div dir="ltr"><Painted text={worker.email} /></div> : null}
+                                      {worker.phone ? <div dir="ltr"><Painted text={worker.phone} /></div> : null}
                                       {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
                                     </div>
+                                    <SearchReasons
+                                      reasons={workerFound?.reasons.get(worker)}
+                                      hideLabels={LABOR_TABLE_LABELS}
+                                    />
                                   </div>
                                 </td>
                                 <td className="px-2 py-2">
@@ -3070,7 +3133,7 @@ export default function SalaryCenterClient({
                                     onUnlockSuccess={loadProtectedData}
                                     fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                                   >
-                                    {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.paid_amount ?? 0)}
+                                    {protectedLoading ? <LoadingDots /> : <Painted text={formatCurrency(balance?.paid_amount ?? 0)} />}
                                   </SalaryProtected>
                                 </td>
                                 <td className="px-2 py-2 whitespace-nowrap">
@@ -3081,7 +3144,7 @@ export default function SalaryCenterClient({
                                     onUnlockSuccess={loadProtectedData}
                                     fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                                   >
-                                    {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.owed_amount ?? 0)}
+                                    {protectedLoading ? <LoadingDots /> : <Painted text={formatCurrency(balance?.owed_amount ?? 0)} />}
                                   </SalaryProtected>
                                 </td>
                                 <td className="px-2 py-2">
@@ -3959,6 +4022,7 @@ export default function SalaryCenterClient({
           </SalaryProtected>
         </TabsContent>
       </Tabs>
+      </SearchTermsProvider>
       </> : null}
 
       {isWorkerDetailMode && !selectedWorker ? (

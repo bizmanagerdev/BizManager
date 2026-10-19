@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,28 @@ import { StatementRowSplit, emptySplitPart } from "./StatementRowSplit";
 import { StatementSteps, StatusChip, firstOpenStep, type StatementStepId } from "./StatementSteps";
 import { israelDateKey } from "@/lib/timezone";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { Painted, SearchReasons, SearchTermsProvider } from "@/components/search/Painted";
+import { searchList, type SearchRecord } from "@/lib/search/listSearch";
+
+// The lines' search (owner, 2026-10-19: "credit-card statement lines … no
+// search"), by the global search's rules: the merchant, amount, day, category
+// and card are on the line and painted there; a note is said under it.
+function statementLineSearchRecord(row: StatementRowView): SearchRecord {
+  return {
+    text: [
+      [null, row.description],
+      [null, row.category],
+      [null, row.cardLabel],
+      [null, row.assignmentRaw],
+      ["הערה", row.notes],
+    ],
+    amounts: [[null, row.amount]],
+    dates: [
+      [null, row.expenseDate],
+      ["תאריך עסקה", row.transactionDate],
+    ],
+  };
+}
 
 type Option = { id: string; name: string };
 
@@ -191,6 +213,12 @@ export default function StatementDetailClient({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [rows, setRows] = useState<StatementRowView[]>(initialRows);
+  const [lineSearch, setLineSearch] = useState("");
+  const deferredLineSearch = useDeferredValue(lineSearch);
+  const foundLines = useMemo(
+    () => searchList(rows, statementLineSearchRecord, deferredLineSearch),
+    [rows, deferredLineSearch]
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<StatementRowView | null>(null);
   // Set while the line is being split across domains (null = a single domain).
@@ -1307,6 +1335,24 @@ export default function StatementDetailClient({
         ) : null}
       </FormDialog>
 
+      <div className="space-y-1">
+        <Input
+          value={lineSearch}
+          onChange={(e) => setLineSearch(e.target.value)}
+          placeholder="חיפוש שורה — בית עסק, סכום, תאריך, קטגוריה..."
+          aria-label="חיפוש שורה בפירוט"
+          className="h-10"
+        />
+        {foundLines ? (
+          <div className="text-sm text-muted-foreground">
+            {foundLines.items.length === 1
+              ? "נמצאה שורה אחת"
+              : `נמצאו ${foundLines.items.length} שורות מתוך ${rows.length}`}
+          </div>
+        ) : null}
+      </div>
+
+      <SearchTermsProvider terms={foundLines?.search.terms ?? null}>
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-auto">
@@ -1327,7 +1373,7 @@ export default function StatementDetailClient({
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {rows.map((row) => {
+                {(foundLines ? foundLines.items : rows).map((row) => {
                   const mode = rowMode(row);
                   const isRefund = row.amount < 0;
                   const dup = mode === "draft" && !isRefund ? dupByRowId[row.id] : null;
@@ -1404,12 +1450,15 @@ export default function StatementDetailClient({
                           </div>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2">{formatIsoDisplay(row.expenseDate)}</td>
-                      <td className="px-3 py-2">{row.description || "—"}</td>
-                      <td className={`whitespace-nowrap px-3 py-2 font-medium ${isRefund ? "text-success-soft-foreground" : ""}`}>
-                        {formatCurrency(row.amount)}
+                      <td className="whitespace-nowrap px-3 py-2"><Painted text={formatIsoDisplay(row.expenseDate)} /></td>
+                      <td className="px-3 py-2">
+                        {row.description ? <Painted text={row.description} /> : "—"}
+                        <SearchReasons reasons={foundLines?.reasons.get(row)} className="mt-0.5" />
                       </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">{row.category || "—"}</td>
+                      <td className={`whitespace-nowrap px-3 py-2 font-medium ${isRefund ? "text-success-soft-foreground" : ""}`}>
+                        <Painted text={formatCurrency(row.amount)} />
+                      </td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{row.category ? <Painted text={row.category} /> : "—"}</td>
                       {showAssignmentRef ? (
                         <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">{row.assignmentRaw || "—"}</td>
                       ) : null}
@@ -1585,6 +1634,7 @@ export default function StatementDetailClient({
           </div>
         </CardContent>
       </Card>
+      </SearchTermsProvider>
 
       {/* Leave-page guard dialog */}
       <ConfirmDialog

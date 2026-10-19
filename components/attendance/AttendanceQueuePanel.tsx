@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ApprovedUserIcon,
@@ -33,6 +33,28 @@ import { AttendanceGuideDialog } from "@/components/attendance/AttendanceGuideDi
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { SearchTermsProvider } from "@/components/search/Painted";
+import { hourOf, searchList, type SearchRecord } from "@/lib/search/listSearch";
+
+// The queue's search (owner, 2026-10-19: "the hours-approval queue … no
+// search"), by the global search's rules: the worker and phone, what was done,
+// who filed it, the day and hours, and (for those who may see it) the cost.
+function reportSearchRecord(report: OpenPhoneReport | PendingPhoneReport): SearchRecord {
+  return {
+    text: [
+      [null, report.worker_name],
+      [null, report.notes_he],
+      [null, report.notes],
+      [null, report.reported_by_name],
+      [null, hourOf(report.clock_in)],
+      [null, "clock_out" in report ? hourOf(report.clock_out) : null],
+    ],
+    amounts: [[null, "labor_cost" in report ? report.labor_cost : null]],
+    dates: [[null, report.clock_in]],
+    phones: [[null, report.worker_phone]],
+  };
+}
 import type { OpenPhoneReport, PendingPhoneReport } from "@/lib/attendance/phone-reports";
 import type { SalaryCenterProjectOption } from "@/lib/payroll-center";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
@@ -132,8 +154,25 @@ export default function AttendanceQueuePanel({
     return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1], "he"));
   }, [pending, open]);
 
-  const shownPending = workerFilter ? pending.filter((r) => r.user_id === workerFilter) : pending;
-  const shownOpen = workerFilter ? open.filter((r) => r.user_id === workerFilter) : open;
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  const foundPending = useMemo(() => searchList(pending, reportSearchRecord, deferredSearch), [pending, deferredSearch]);
+  const foundOpen = useMemo(() => searchList(open, reportSearchRecord, deferredSearch), [open, deferredSearch]);
+  const searchTerms = foundPending?.search.terms ?? foundOpen?.search.terms ?? null;
+  const shownPending = (foundPending ? foundPending.items : pending).filter(
+    (r) => !workerFilter || r.user_id === workerFilter
+  );
+  const shownOpen = (foundOpen ? foundOpen.items : open).filter((r) => !workerFilter || r.user_id === workerFilter);
+  const searchBox = (className: string) =>
+    pending.length + open.length > 0 ? (
+      <Input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="חיפוש — עובד, תאריך, שעה..."
+        aria-label="חיפוש בדיווחים"
+        className={className}
+      />
+    ) : null;
   const openUserIds = useMemo(() => new Set(open.map((r) => r.user_id)), [open]);
 
   const pendingMinutes = pending.reduce(
@@ -167,6 +206,7 @@ export default function AttendanceQueuePanel({
           "דיווח נוכחות" is a tile in the app's one quick-create +. */}
       <PageHeaderToolbar>
         <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
+          {searchBox("h-10 min-w-0 flex-1 rounded-xl")}
           {workerFilterSelect ? (
             <NativeSelect
               value={workerFilter}
@@ -224,6 +264,7 @@ export default function AttendanceQueuePanel({
             above (PageHeaderToolbar is md:hidden). Adding a report itself lives in
             the app's one quick-create + ("דיווח נוכחות"). */}
         <div className="hidden items-center gap-2 md:flex">
+          {searchBox("h-9 w-56")}
           {workerFilterSelect ? (
             <NativeSelect
               dense
@@ -242,6 +283,13 @@ export default function AttendanceQueuePanel({
         </div>
       </div>
 
+      {searchTerms && shownOpen.length === 0 && shownPending.length === 0 ? (
+        <div className="rounded-2xl border px-4 py-6 text-center text-sm text-muted-foreground">
+          לא נמצאו דיווחים לחיפוש הזה.
+        </div>
+      ) : null}
+
+      <SearchTermsProvider terms={searchTerms}>
       {shownOpen.length > 0 ? (
         <section className="space-y-2">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
@@ -280,8 +328,9 @@ export default function AttendanceQueuePanel({
           </div>
         </section>
       ) : null}
+      </SearchTermsProvider>
 
-      {shownPending.length === 0 && shownOpen.length === 0 ? (
+      {shownPending.length === 0 && shownOpen.length === 0 && !searchTerms ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-success/40 bg-success-soft px-4 py-8 text-center">
           <SuccessIcon className="h-6 w-6 text-success" />
           <p className="text-sm font-medium text-success-soft-foreground">

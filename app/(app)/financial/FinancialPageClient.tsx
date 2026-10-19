@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, SuccessIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
@@ -65,6 +65,10 @@ import {
   typeVariant,
 } from "./FinancialPage.ui";
 import { cn } from "@/lib/utils";
+import { highlightText } from "@/components/search/highlightMatch";
+import { SearchMatchLine } from "@/components/search/SearchMatchLine";
+import { LEDGER_DESKTOP_DETAIL_LABELS, LEDGER_MOBILE_DETAIL_LABELS, ledgerSearchRecord } from "@/lib/financial/search";
+import { searchList } from "@/lib/search/listSearch";
 import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
@@ -178,19 +182,6 @@ function formatCurrency(value: number) {
 
 function isEditableExpenseEntry(entry: FinancialEntry): entry is EditableExpenseEntry {
   return entry.origin === "expense" && typeof entry.expenseId === "string" && entry.expenseId.length > 0;
-}
-
-// Ledger/History tab search. Match on the entry's full searchText (notes,
-// category, payment method/status, domain, payer — the same rich field the
-// server-side filter uses), falling back to the display fields if it's absent.
-// `q` is expected already trimmed + lowercased.
-function entryMatchesQuery(entry: FinancialEntry, q: string): boolean {
-  if (typeof entry.searchText === "string" && entry.searchText) {
-    return entry.searchText.includes(q);
-  }
-  return [entry.description, entry.domainName, entry.sourceLabel, entry.reference, entry.recordedByName].some(
-    (v) => typeof v === "string" && v.toLowerCase().includes(q)
-  );
 }
 
 function createIncomeFormState(): IncomeCreateFormState {
@@ -441,11 +432,34 @@ export default function FinancialPageClient({
     return Array.from(set).sort().reverse();
   }, [ledgerEntries]);
 
+  // The search, by the global search's rules (lib/financial/search.ts): an
+  // amount, a day, an hour or words — what matched is painted on the row, and
+  // what the row doesn't show is said under it. The server already filtered
+  // the lists by the `q` in the URL (before they were cut to the newest), so
+  // while the box still holds that same text, every row here is a match.
+  const deferredLedgerSearch = useDeferredValue(ledgerSearch);
+  const ledgerFind = useMemo(
+    () => searchList(ledgerEntries, ledgerSearchRecord, deferredLedgerSearch, { today: data.todayIso }),
+    [ledgerEntries, deferredLedgerSearch, data.todayIso]
+  );
+  const serverFilteredBySearch = deferredLedgerSearch.trim() === initialFilters.q.trim();
+  const ledgerTerms = ledgerFind?.search.terms ?? [];
+  const paintLedger = (text: string | null | undefined) =>
+    text && ledgerFind ? highlightText(text, ledgerTerms) : (text ?? "");
+  const ledgerReasons = (entry: FinancialEntry, hideLabels?: readonly string[]) =>
+    ledgerFind ? (
+      <SearchMatchLine
+        reasons={ledgerFind.reasons.get(entry)}
+        terms={ledgerTerms}
+        hideLabels={hideLabels}
+        className="mt-1 text-right"
+      />
+    ) : null;
+
   const displayLedger = useMemo(() => {
-    const q = ledgerSearch.trim().toLowerCase();
     let list = ledgerEntries;
     if (ledgerMonth) list = list.filter((e) => (e.flowDate ?? "").slice(0, 7) === ledgerMonth);
-    if (q) list = list.filter((e) => entryMatchesQuery(e, q));
+    if (ledgerFind && !serverFilteredBySearch) list = list.filter((e) => ledgerFind.reasons.has(e));
     const { key, dir } = ledgerSort;
     const sorted = [...list].sort((a, b) => {
       let cmp = 0;
@@ -456,19 +470,19 @@ export default function FinancialPageClient({
       return dir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [ledgerEntries, ledgerSearch, ledgerMonth, ledgerSort]);
+  }, [ledgerEntries, ledgerFind, serverFilteredBySearch, ledgerMonth, ledgerSort]);
 
   const filteredEntries = { length: displayLedger.length };
 
+  // The היסטוריה box is the same search (applySearch sets both).
   const displayHistory = useMemo(() => {
-    const q = historySearch.trim().toLowerCase();
     let list = ledgerEntries.filter((e) => (e.flowDate ?? "") <= data.todayIso);
-    if (q) list = list.filter((e) => entryMatchesQuery(e, q));
+    if (ledgerFind && !serverFilteredBySearch) list = list.filter((e) => ledgerFind.reasons.has(e));
     return [...list].sort((a, b) => {
       const cmp = (b.flowDate ?? "").localeCompare(a.flowDate ?? "");
       return cmp !== 0 ? cmp : b.id.localeCompare(a.id);
     });
-  }, [ledgerEntries, historySearch, data.todayIso]);
+  }, [ledgerEntries, ledgerFind, serverFilteredBySearch, data.todayIso]);
 
   // Back/forward changes the URL's `q` without remounting this component —
   // mirror it into the boxes, unless the user is mid-typing (debounce pending).
@@ -1170,7 +1184,7 @@ export default function FinancialPageClient({
               <Input
                 value={query}
                 onChange={(event) => applySearch(event.target.value)}
-                placeholder="חפש לפי תיאור, מקור, תחום או אסמכתא..."
+                placeholder="סכום, תאריך, שעה, אסמכתא או מילה..."
                 className="pr-9"
               />
             </div>
@@ -1563,7 +1577,7 @@ export default function FinancialPageClient({
               <Input
                 value={historySearch}
                 onChange={(e) => applySearch(e.target.value)}
-                placeholder="חיפוש (פירוט, מקור, תחום)"
+                placeholder="חיפוש — סכום, תאריך, שעה או מילה"
                 className="h-9 pr-9"
               />
             </div>
@@ -1601,7 +1615,7 @@ export default function FinancialPageClient({
                   >
                     <div className="flex items-start justify-between gap-3 sm:flex-row-reverse">
                       <div className="space-y-1">
-                        <div dir="ltr" className="text-sm font-medium tabular-nums">{formatShortDate(entry.flowDate)}</div>
+                        <div dir="ltr" className="text-sm font-medium tabular-nums">{paintLedger(formatShortDate(entry.flowDate))}</div>
                         {isToday ? (
                           <div className="text-xs font-semibold text-primary">היום</div>
                         ) : (
@@ -1614,20 +1628,21 @@ export default function FinancialPageClient({
                       </div>
                     </div>
                     <div className="mt-3 space-y-2 text-sm">
-                      <div className="font-medium">{entry.description}</div>
-                      <div className="text-muted-foreground">{entry.domainName}</div>
+                      <div className="font-medium">{paintLedger(entry.description)}</div>
+                      {ledgerReasons(entry)}
+                      <div className="text-muted-foreground">{paintLedger(entry.domainName)}</div>
                       <div className="text-muted-foreground">
                         {entry.sourceHref ? (
                           <Link href={entry.sourceHref} className="transition-colors hover:text-foreground" onClick={(event) => { event.stopPropagation(); emitNavigationStart(); }}>
-                            <span dir="auto">{entry.sourceLabel}</span>
+                            <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                           </Link>
                         ) : (
-                          <span dir="auto">{entry.sourceLabel}</span>
+                          <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                         )}
                       </div>
                       <div dir="ltr" className={cn("font-semibold tabular-nums", typeAmountClass(entry.type))}>
                         {entry.type === "inflow" ? "+" : "-"}
-                        {formatCurrency(entry.amount)}
+                        {paintLedger(formatCurrency(entry.amount))}
                       </div>
                       {canManageExpenses && editableExpense ? (
                         <div className="flex justify-end gap-2 pt-1">
@@ -1669,7 +1684,7 @@ export default function FinancialPageClient({
                         onClick={() => navigateToEntry(entry)}
                       >
                         <td className="px-3 py-2 align-top">
-                          <div dir="ltr" className="tabular-nums">{formatShortDate(entry.flowDate)}</div>
+                          <div dir="ltr" className="tabular-nums">{paintLedger(formatShortDate(entry.flowDate))}</div>
                           {isToday ? (
                             <div className="text-xs font-semibold text-primary">היום</div>
                           ) : (
@@ -1683,33 +1698,34 @@ export default function FinancialPageClient({
                           <Badge variant={typeVariant(entry.type)}>{typeLabel(entry.type)}</Badge>
                         </td>
                         <td className="px-3 py-2 align-top">
-                          <div>{entry.domainName}</div>
+                          <div>{paintLedger(entry.domainName)}</div>
                           <div className="text-xs text-muted-foreground">
                             {entry.sourceHref ? (
                               <Link href={entry.sourceHref} className="transition-colors hover:text-foreground" onClick={(event) => { event.stopPropagation(); emitNavigationStart(); }}>
-                                <span dir="auto">{entry.sourceLabel}</span>
+                                <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                               </Link>
                             ) : (
-                              <span dir="auto">{entry.sourceLabel}</span>
+                              <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                             )}
                           </div>
                         </td>
                         <td className="px-3 py-2 align-top">
-                          <div>{entry.description}</div>
+                          <div>{paintLedger(entry.description)}</div>
+                          {ledgerReasons(entry, LEDGER_DESKTOP_DETAIL_LABELS)}
                           <div className="text-xs text-muted-foreground">
-                            {[
+                            {paintLedger([
                               entry.paymentMethodLabel,
                               entry.reference,
                               entry.recordedDate && entry.recordedDate !== entry.flowDate
                                 ? `נרשם: ${formatShortDate(entry.recordedDate)}`
                                 : null,
                               recordedByLabel(entry),
-                            ].filter(Boolean).join(" • ")}
+                            ].filter(Boolean).join(" • "))}
                           </div>
                         </td>
                         <td dir="ltr" className={cn("px-3 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
                           {entry.type === "inflow" ? "+" : "-"}
-                          {formatCurrency(entry.amount)}
+                          {paintLedger(formatCurrency(entry.amount))}
                         </td>
                         {canManageExpenses ? (
                           <td className="px-3 py-2 align-top">
@@ -1784,7 +1800,7 @@ export default function FinancialPageClient({
                       >
                         <td className="px-2 py-2 align-top">
                           <div dir="ltr" className="tabular-nums">
-                            {formatShortDate(entry.flowDate)}
+                            {paintLedger(formatShortDate(entry.flowDate))}
                           </div>
                           <div className="text-[0.647rem] text-muted-foreground">
                             {formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}
@@ -1809,7 +1825,7 @@ export default function FinancialPageClient({
                             {stageLabel(entry.stage)}
                           </Badge>
                         </td>
-                        <td className="px-2 py-2 align-top text-xs">{entry.domainName}</td>
+                        <td className="px-2 py-2 align-top text-xs">{paintLedger(entry.domainName)}</td>
                         <td className="px-2 py-2 align-top">
                           <div className="text-xs">
                             {entry.sourceHref ? (
@@ -1821,18 +1837,19 @@ export default function FinancialPageClient({
                                   emitNavigationStart();
                                 }}
                               >
-                                <span dir="auto">{entry.sourceLabel}</span>
+                                <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                               </Link>
                             ) : (
-                              <span dir="auto">{entry.sourceLabel}</span>
+                              <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                             )}
                           </div>
                           <div className="text-[0.647rem] text-muted-foreground">{sourceTypeTitle(entry.sourceKind)}</div>
                         </td>
                         <td className="px-2 py-2 align-top">
-                          <div className="text-xs font-medium">{entry.description}</div>
+                          <div className="text-xs font-medium">{paintLedger(entry.description)}</div>
+                          {ledgerReasons(entry, ["אמצעי תשלום", "אסמכתא", "נרשם", "מועד פירעון"])}
                           <div className="text-[0.647rem] text-muted-foreground">
-                            {[
+                            {paintLedger([
                               entry.paymentMethodLabel,
                               entry.reference,
                               entry.recordedDate && entry.recordedDate !== entry.flowDate
@@ -1840,7 +1857,7 @@ export default function FinancialPageClient({
                                 : null,
                             ]
                               .filter(Boolean)
-                              .join(" • ")}
+                              .join(" • "))}
                           </div>
                           {entry.origin === "expense" ? (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -1874,7 +1891,7 @@ export default function FinancialPageClient({
                           className={cn("px-2 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}
                         >
                           {entry.type === "inflow" ? "+" : "-"}
-                          {formatCurrency(entry.amount)}
+                          {paintLedger(formatCurrency(entry.amount))}
                         </td>
                         {canManageExpenses ? (
                           <td className="px-2 py-2 align-top">
@@ -1941,7 +1958,7 @@ export default function FinancialPageClient({
               <Input
                 value={ledgerSearch}
                 onChange={(e) => applySearch(e.target.value)}
-                placeholder="חיפוש ביומן (פירוט, מקור, תחום)"
+                placeholder="חיפוש ביומן — סכום, תאריך, שעה או מילה"
                 className="h-9 pr-9"
               />
             </div>
@@ -1995,7 +2012,7 @@ export default function FinancialPageClient({
                   >
                     <div className="flex items-start justify-between gap-3 sm:flex-row-reverse">
                       <div className="space-y-1">
-                        <div dir="ltr" className="text-sm font-medium tabular-nums">{formatShortDate(entry.flowDate)}</div>
+                        <div dir="ltr" className="text-sm font-medium tabular-nums">{paintLedger(formatShortDate(entry.flowDate))}</div>
                         <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}</div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -2005,8 +2022,9 @@ export default function FinancialPageClient({
                     </div>
 
                     <div className="mt-3 space-y-2 text-sm">
-                      <div className="font-medium">{entry.description}</div>
-                      <div className="text-muted-foreground">{entry.domainName}</div>
+                      <div className="font-medium">{paintLedger(entry.description)}</div>
+                      {ledgerReasons(entry, LEDGER_MOBILE_DETAIL_LABELS)}
+                      <div className="text-muted-foreground">{paintLedger(entry.domainName)}</div>
                       <div className="text-muted-foreground">
                         {entry.sourceHref ? (
                           <Link
@@ -2017,16 +2035,16 @@ export default function FinancialPageClient({
                               emitNavigationStart();
                             }}
                           >
-                            <span dir="auto">{entry.sourceLabel}</span>
+                            <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                           </Link>
                         ) : (
-                          <span dir="auto">{entry.sourceLabel}</span>
+                          <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                         )}
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        {entry.paymentMethodLabel ? <span>{entry.paymentMethodLabel}</span> : null}
-                        {entry.reference ? <span>{entry.reference}</span> : null}
-                        {recordedByLabel(entry) ? <span>{recordedByLabel(entry)}</span> : null}
+                        {entry.paymentMethodLabel ? <span>{paintLedger(entry.paymentMethodLabel)}</span> : null}
+                        {entry.reference ? <span>{paintLedger(entry.reference)}</span> : null}
+                        {recordedByLabel(entry) ? <span>{paintLedger(recordedByLabel(entry))}</span> : null}
                         {entry.origin === "expense" ? (
                           <>
                             <span className={cn(
@@ -2056,7 +2074,7 @@ export default function FinancialPageClient({
                       </div>
                       <div dir="ltr" className={cn("font-semibold tabular-nums", typeAmountClass(entry.type))}>
                         {entry.type === "inflow" ? "+" : "-"}
-                        {formatCurrency(entry.amount)}
+                        {paintLedger(formatCurrency(entry.amount))}
                       </div>
                       {canManageExpenses && editableExpense ? (
                         <div className="flex justify-end gap-2 pt-1">
@@ -2117,7 +2135,7 @@ export default function FinancialPageClient({
                         onClick={() => navigateToEntry(entry)}
                       >
                         <td className="px-3 py-2 align-top">
-                          <div dir="ltr" className="tabular-nums">{formatShortDate(entry.flowDate)}</div>
+                          <div dir="ltr" className="tabular-nums">{paintLedger(formatShortDate(entry.flowDate))}</div>
                           <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}</div>
                         </td>
                         <td className="px-3 py-2 align-top">
@@ -2127,7 +2145,7 @@ export default function FinancialPageClient({
                           <Badge variant={typeVariant(entry.type)}>{typeLabel(entry.type)}</Badge>
                         </td>
                         <td className="px-3 py-2 align-top">
-                          <div>{entry.domainName}</div>
+                          <div>{paintLedger(entry.domainName)}</div>
                           <div className="text-xs text-muted-foreground">
                             {entry.sourceHref ? (
                               <Link
@@ -2138,17 +2156,18 @@ export default function FinancialPageClient({
                                   emitNavigationStart();
                                 }}
                               >
-                                <span dir="auto">{entry.sourceLabel}</span>
+                                <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                               </Link>
                             ) : (
-                              <span dir="auto">{entry.sourceLabel}</span>
+                              <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
                             )}
                           </div>
                         </td>
                         <td className="px-3 py-2 align-top">
-                          <div>{entry.description}</div>
+                          <div>{paintLedger(entry.description)}</div>
+                          {ledgerReasons(entry, [...LEDGER_DESKTOP_DETAIL_LABELS, "מועד פירעון"])}
                           <div className="text-xs text-muted-foreground">
-                            {[
+                            {paintLedger([
                               entry.paymentMethodLabel,
                               entry.reference,
                               entry.recordedDate && entry.recordedDate !== entry.flowDate
@@ -2158,7 +2177,7 @@ export default function FinancialPageClient({
                               recordedByLabel(entry),
                             ]
                               .filter(Boolean)
-                              .join(" • ")}
+                              .join(" • "))}
                           </div>
                           {entry.origin === "expense" ? (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -2189,7 +2208,7 @@ export default function FinancialPageClient({
                         </td>
                         <td dir="ltr" className={cn("px-3 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
                           {entry.type === "inflow" ? "+" : "-"}
-                          {formatCurrency(entry.amount)}
+                          {paintLedger(formatCurrency(entry.amount))}
                         </td>
                         {canManageExpenses ? (
                           <td className="px-3 py-2 align-top">

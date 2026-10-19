@@ -28,6 +28,7 @@ export function OptionRow({
   icon,
   label,
   sub,
+  detail,
   badge,
   tone = "brand",
   ...rest
@@ -35,8 +36,10 @@ export function OptionRow({
   selected: boolean;
   onClick: () => void;
   icon?: OptionIcon;
-  label: string;
-  sub?: string;
+  label: ReactNode;
+  sub?: ReactNode;
+  /** One more line under `sub` — e.g. why a search found this option. */
+  detail?: ReactNode;
   badge?: number;
   tone?: "brand" | "paid" | "partial" | "unpaid";
 } & Omit<ComponentPropsWithoutRef<"button">, "onClick" | "type" | "className">) {
@@ -71,6 +74,7 @@ export function OptionRow({
       <span className="min-w-0 flex-1">
         <span className="block font-semibold">{label}</span>
         {sub ? <span className={cn("block text-xs", selected ? "opacity-80" : "text-muted-foreground")}>{sub}</span> : null}
+        {detail ? <span className={cn("block", selected && "opacity-90")}>{detail}</span> : null}
       </span>
       {badge != null ? (
         <span

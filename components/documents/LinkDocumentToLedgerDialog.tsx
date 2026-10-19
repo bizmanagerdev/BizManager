@@ -12,6 +12,9 @@ import {
   linkDocumentToLedger,
   type LedgerCandidate,
 } from "@/lib/documents/moneyLink";
+import { findLedgerDocumentMatches } from "@/app/(app)/documents/actions";
+import { highlightText } from "@/components/search/highlightMatch";
+import { SearchMatchLine } from "@/components/search/SearchMatchLine";
 
 // "שיוך להוצאה או לתשלום" — ties a money document to the transaction it
 // documents, without re-uploading the file.
@@ -19,6 +22,13 @@ import {
 // The alternative people reach for is opening the expense and attaching the
 // file there, which creates a SECOND copy of the same document. This links the
 // one that already exists.
+
+// The day and the amount are on the row itself — painted there, not repeated.
+const SHOWN_LABELS = ["סכום", "תאריך הוצאה", "תאריך תשלום"];
+
+function paintSub(text: string, terms: string[]) {
+  return terms.length ? highlightText(text, terms) : text;
+}
 
 function formatAmount(value: number | null) {
   if (value === null) return "";
@@ -40,6 +50,8 @@ export default function LinkDocumentToLedgerDialog({
 }) {
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<LedgerCandidate[] | null>(null);
+  // What the search painted (empty with nothing typed).
+  const [terms, setTerms] = useState<string[]>([]);
   const [selected, setSelected] = useState<LedgerCandidate | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -54,12 +66,22 @@ export default function LinkDocumentToLedgerDialog({
     if (!open) return;
     let cancelled = false;
     // Debounced so typing an amount does not fire a query per keystroke.
+    // Nothing typed: the newest. Typed: the global search, over every expense
+    // and payment — by amount, date, hour, check or reference number, or a word.
+    const text = query.trim();
     const timer = setTimeout(() => {
-      findLedgerCandidates(query)
-        .then((rows) => {
-          if (!cancelled) setCandidates(rows);
+      const search = text
+        ? findLedgerDocumentMatches(text)
+        : findLedgerCandidates().then((rows) => ({ candidates: rows, terms: [] as string[] }));
+      search
+        .then((found) => {
+          if (cancelled) return;
+          setCandidates(found.candidates);
+          setTerms(text ? Array.from(new Set([...found.terms, text])) : []);
         })
-        .catch(() => setCandidates([]));
+        .catch(() => {
+          if (!cancelled) setCandidates([]);
+        });
     }, 250);
     return () => {
       cancelled = true;
@@ -105,7 +127,7 @@ export default function LinkDocumentToLedgerDialog({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="תיאור, ספק או סכום"
+            placeholder="סכום, תאריך, מספר צ׳ק, אסמכתא או מילה"
             disabled={busy}
           />
         </label>
@@ -116,19 +138,35 @@ export default function LinkDocumentToLedgerDialog({
           <p className="text-sm text-muted-foreground">לא נמצאו תנועות מתאימות.</p>
         ) : (
           <div className="max-h-72 space-y-2 overflow-y-auto">
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const isSelected = selected?.id === row.id && selected?.entityType === row.entityType;
+              return (
               <OptionRow
                 key={`${row.entityType}-${row.id}`}
-                label={row.label}
+                label={terms.length ? highlightText(row.label, terms) : row.label}
                 // row.date is the picked day as stored — a full timestamptz
                 // ("2026-10-14T00:00:00+00:00") that showed raw here.
-                sub={[row.entityType === "expense" ? "הוצאה" : "תשלום", row.date ? formatShortDate(row.date) : null, formatAmount(row.amount)]
-                  .filter(Boolean)
-                  .join(" · ")}
-                selected={selected?.id === row.id && selected?.entityType === row.entityType}
+                sub={paintSub(
+                  [row.entityType === "expense" ? "הוצאה" : "תשלום", row.date ? formatShortDate(row.date) : null, formatAmount(row.amount)]
+                    .filter(Boolean)
+                    .join(" · "),
+                  terms
+                )}
+                detail={
+                  terms.length ? (
+                    <SearchMatchLine
+                      reasons={row.reasons}
+                      terms={terms}
+                      hideLabels={SHOWN_LABELS}
+                      className={isSelected ? "text-current" : undefined}
+                    />
+                  ) : null
+                }
+                selected={isSelected}
                 onClick={() => setSelected(row)}
               />
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AttachIcon, PhoneIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
@@ -27,8 +27,36 @@ import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 import { israelDateKey } from "@/lib/timezone";
 import { addDaysToIso } from "@/lib/financial/utils";
+import { Painted, SearchReasons, SearchTermsProvider } from "@/components/search/Painted";
+import { hourOf, searchList, type SearchRecord } from "@/lib/search/listSearch";
+import type { GlobalSearchReason } from "@/lib/global-search";
 
 type Props = { checks: CheckRow[] };
+
+// The search, by the global search's rules (owner, 2026-10-19: "no amounts, and
+// 050-1234567 doesn't find 0501234567"): what the row shows is painted there —
+// the customer and phone, check number, amount, days, source — and the notes
+// and reference are said under it.
+function checkSearchRecord(c: CheckRow): SearchRecord {
+  return {
+    text: [
+      [null, c.customer_name],
+      [null, c.check_number],
+      [null, c.source_label],
+      [null, checkStatusLabel(c.status)],
+      [null, hourOf(c.cleared_at)],
+      ["הערה", c.notes],
+      ["אסמכתא", c.reference_number],
+    ],
+    amounts: [[null, c.amount]],
+    dates: [
+      [null, c.due_date],
+      [null, c.payment_date],
+      [null, c.cleared_at],
+    ],
+    phones: [[null, c.customer_phone]],
+  };
+}
 
 type FilterKey = "open" | "all" | "today" | "week" | "overdue" | "upcoming" | "cleared";
 type SortKey = "due" | "amount" | "name";
@@ -74,6 +102,8 @@ export default function ChecksClient({ checks: checksProp }: Props) {
   const [filter, setFilter] = useState<FilterKey>("open");
   const [sort, setSort] = useState<SortKey>("due");
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  const found = useMemo(() => searchList(checks, checkSearchRecord, deferredSearch), [checks, deferredSearch]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingCheck, setEditingCheck] = useState<CheckRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CheckRow | null>(null);
@@ -116,7 +146,6 @@ export default function ChecksClient({ checks: checksProp }: Props) {
   }, [checks, today, weekEnd]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
     const list = checks.filter((c) => {
       const due = c.due_date ?? null;
       switch (filter) {
@@ -141,10 +170,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
         default:
           break;
       }
-      if (q) {
-        const haystack = `${c.customer_name} ${c.customer_phone ?? ""} ${c.check_number ?? ""}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
+      if (found && !found.reasons.has(c)) return false;
       return true;
     });
     const sorted = [...list];
@@ -159,7 +185,9 @@ export default function ChecksClient({ checks: checksProp }: Props) {
         sorted.sort((a, b) => (a.due_date ?? "9999-99-99").localeCompare(b.due_date ?? "9999-99-99"));
     }
     return sorted;
-  }, [checks, filter, sort, search, today, weekEnd]);
+  }, [checks, filter, sort, found, today, weekEnd]);
+  // Found, but on another tab — said, with a way to see them all.
+  const foundElsewhere = found ? found.items.length - filtered.length : 0;
 
   async function setCleared(paymentId: string, cleared: boolean, accountId?: string | null) {
     setBusyId(paymentId);
@@ -261,11 +289,26 @@ export default function ChecksClient({ checks: checksProp }: Props) {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="חיפוש לפי מספר צ׳ק / שם / טלפון..."
+          placeholder="מספר צ׳ק, סכום, תאריך, שם או טלפון..."
           className="h-9 w-full sm:w-64"
         />
       </div>
 
+      {found ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{filtered.length === 1 ? "נמצא צ׳ק אחד" : `נמצאו ${filtered.length} צ׳קים`}</span>
+          {foundElsewhere > 0 ? (
+            <>
+              <span>· ועוד {foundElsewhere} בלשוניות אחרות</span>
+              <Button type="button" size="sm" variant="outline" className="h-7" onClick={() => setFilter("all")}>
+                הצגת הכל
+              </Button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      <SearchTermsProvider terms={found?.search.terms ?? null}>
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-10 text-center text-sm text-muted-foreground">
           {checks.length === 0 ? "לא נרשמו צ׳קים עדיין." : "אין צ׳קים שתואמים לסינון."}
@@ -292,6 +335,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
                   <CheckRowDesktop
                     key={c.payment_id}
                     c={c}
+                    reasons={found?.reasons.get(c)}
                     today={today}
                     busy={busyId === c.payment_id}
                     onSetCleared={requestSetCleared}
@@ -318,6 +362,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
               <CheckCard
                 key={c.payment_id}
                 c={c}
+                reasons={found?.reasons.get(c)}
                 today={today}
                 busy={busyId === c.payment_id}
                 onSetCleared={requestSetCleared}
@@ -328,6 +373,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
           </div>
         </>
       )}
+      </SearchTermsProvider>
 
       {depositTarget ? (
         <DepositCheckDialog
@@ -381,7 +427,7 @@ function SourceLink({ c }: { c: CheckRow }) {
   const href = c.source_type === "order" ? `/sales/orders/${c.source_id}` : `/projects/${c.source_id}`;
   return (
     <NavLink to={href} className="text-primary hover:underline">
-      {c.source_label}
+      <Painted text={c.source_label} />
     </NavLink>
   );
 }
@@ -391,7 +437,7 @@ function DueCell({ c, today }: { c: CheckRow; today: string }) {
   const overdue = c.status === "pending" && c.due_date < today;
   return (
     <span className={overdue ? "font-medium text-destructive" : ""}>
-      {formatShortDate(c.due_date)}
+      <Painted text={formatShortDate(c.due_date)} />
       {overdue ? " · באיחור" : ""}
     </span>
   );
@@ -400,14 +446,22 @@ function DueCell({ c, today }: { c: CheckRow; today: string }) {
 // The day the check was received (a picked day) — under its פירעון date.
 function ReceivedLine({ c }: { c: CheckRow }) {
   if (!c.payment_date) return null;
-  return <div className="text-[11px] text-muted-foreground/70">התקבל {formatShortDate(c.payment_date)}</div>;
+  return (
+    <div className="text-[11px] text-muted-foreground/70">
+      התקבל <Painted text={formatShortDate(c.payment_date)} />
+    </div>
+  );
 }
 
 // When it was marked deposited, to the minute (owner, 2026-10-15: "see exactly
 // when things happen") — cleared_at is the moment the status flipped.
 function DepositedLine({ c }: { c: CheckRow }) {
   if (c.status !== "cleared" || !c.cleared_at) return null;
-  return <div className="text-[11px] text-muted-foreground/70">הופקד {formatShortDateTime(c.cleared_at)}</div>;
+  return (
+    <div className="text-[11px] text-muted-foreground/70">
+      הופקד <Painted text={formatShortDateTime(c.cleared_at)} />
+    </div>
+  );
 }
 
 function PhotoCell({ c }: { c: CheckRow }) {
@@ -460,6 +514,7 @@ function ActionCell({
 
 function CheckRowDesktop({
   c,
+  reasons,
   today,
   busy,
   onSetCleared,
@@ -467,6 +522,8 @@ function CheckRowDesktop({
   onDeleteRequest,
 }: {
   c: CheckRow;
+  /** Why a search found it. */
+  reasons?: GlobalSearchReason[];
   today: string;
   busy: boolean;
   onSetCleared: (id: string, cleared: boolean) => void;
@@ -478,19 +535,20 @@ function CheckRowDesktop({
       <td className="px-3 py-2">
         {c.customer_id ? (
           <NavLink to={`/customers/${c.customer_id}`} className="font-medium hover:underline">
-            {c.customer_name}
+            <Painted text={c.customer_name} />
           </NavLink>
         ) : (
-          <span className="font-medium">{c.customer_name}</span>
+          <span className="font-medium"><Painted text={c.customer_name} /></span>
         )}
         {c.customer_phone ? (
           <a href={`tel:${c.customer_phone}`} className="block text-xs text-muted-foreground hover:underline">
-            <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{c.customer_phone}
+            <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}<Painted text={c.customer_phone} />
           </a>
         ) : null}
+        <SearchReasons reasons={reasons} className="mt-0.5" />
       </td>
-      <td className="px-3 py-2 font-mono text-xs">{c.check_number ?? "—"}</td>
-      <td className="px-3 py-2 text-center font-semibold">{formatCurrency(c.amount)}</td>
+      <td className="px-3 py-2 font-mono text-xs">{c.check_number ? <Painted text={c.check_number} /> : "—"}</td>
+      <td className="px-3 py-2 text-center font-semibold"><Painted text={formatCurrency(c.amount)} /></td>
       <td className="px-3 py-2">
         <DueCell c={c} today={today} />
         <ReceivedLine c={c} />
@@ -514,6 +572,7 @@ function CheckRowDesktop({
 
 function CheckCard({
   c,
+  reasons,
   today,
   busy,
   onSetCleared,
@@ -521,6 +580,8 @@ function CheckCard({
   onDeleteRequest,
 }: {
   c: CheckRow;
+  /** Why a search found it. */
+  reasons?: GlobalSearchReason[];
   today: string;
   busy: boolean;
   onSetCleared: (id: string, cleared: boolean) => void;
@@ -533,20 +594,21 @@ function CheckCard({
         <div className="min-w-0">
           {c.customer_id ? (
             <NavLink to={`/customers/${c.customer_id}`} className="font-semibold hover:underline">
-              {c.customer_name}
+              <Painted text={c.customer_name} />
             </NavLink>
           ) : (
-            <span className="font-semibold">{c.customer_name}</span>
+            <span className="font-semibold"><Painted text={c.customer_name} /></span>
           )}
           {c.customer_phone ? (
-            <div className="text-xs text-muted-foreground"><PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{c.customer_phone}</div>
+            <div className="text-xs text-muted-foreground"><PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}<Painted text={c.customer_phone} /></div>
           ) : null}
+          <SearchReasons reasons={reasons} className="mt-0.5" />
         </div>
-        <div className="shrink-0 text-lg font-semibold">{formatCurrency(c.amount)}</div>
+        <div className="shrink-0 text-lg font-semibold"><Painted text={formatCurrency(c.amount)} /></div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <Badge className={checkStatusClasses(c.status)}>{checkStatusLabel(c.status)}</Badge>
-        {c.check_number ? <span className="font-mono text-muted-foreground">מס׳ {c.check_number}</span> : null}
+        {c.check_number ? <span className="font-mono text-muted-foreground">מס׳ <Painted text={c.check_number} /></span> : null}
         <span className="text-muted-foreground">פירעון: </span>
         <DueCell c={c} today={today} />
         <SourceLink c={c} />

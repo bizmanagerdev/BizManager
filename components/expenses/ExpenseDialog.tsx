@@ -16,6 +16,8 @@ import {
   useSwipeToDismiss,
 } from "@/components/ui/dialog-chrome";
 import { NativeSelect } from "@/components/ui/native-select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { filterByText } from "@/lib/search/listSearch";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -538,18 +540,19 @@ export function ExpenseDialog({
   // rather than one combined "filteredSourceList": the switch below only reads
   // whichever one matches effectiveDomain, but hooks can't live inside that
   // conditional branch, so all three are computed here unconditionally instead.
-  const filteredRecurringProjects = useMemo(() => {
-    const q = sourceSearch.trim().toLowerCase();
-    return recurringProjects.filter((p) => p.label.toLowerCase().includes(q));
-  }, [recurringProjects, sourceSearch]);
-  const filteredRecurringOrders = useMemo(() => {
-    const q = sourceSearch.trim().toLowerCase();
-    return recurringOrders.filter((o) => o.label.toLowerCase().includes(q));
-  }, [recurringOrders, sourceSearch]);
-  const filteredRecurringProperties = useMemo(() => {
-    const q = sourceSearch.trim().toLowerCase();
-    return recurringProperties.filter((p) => p.label.toLowerCase().includes(q));
-  }, [recurringProperties, sourceSearch]);
+  // By the global search's rules (lib/search/listSearch.filterByText).
+  const filteredRecurringProjects = useMemo(
+    () => filterByText(recurringProjects, (p) => [p.label], sourceSearch),
+    [recurringProjects, sourceSearch]
+  );
+  const filteredRecurringOrders = useMemo(
+    () => filterByText(recurringOrders, (o) => [o.label], sourceSearch),
+    [recurringOrders, sourceSearch]
+  );
+  const filteredRecurringProperties = useMemo(
+    () => filterByText(recurringProperties, (p) => [p.label], sourceSearch),
+    [recurringProperties, sourceSearch]
+  );
 
   const categoryOptions = workerSupport
     ? [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]
@@ -2208,8 +2211,7 @@ export function ExpenseDialog({
                   className="mb-2"
                 />
                 <div className="grid gap-2">
-                  {workerList
-                    .filter((u) => u.label.toLowerCase().includes(workerSearch.trim().toLowerCase()))
+                  {filterByText(workerList, (u) => [u.label], workerSearch)
                     .map((u, i) =>
                       expCard({
                         key: u.id,
@@ -2677,15 +2679,15 @@ export function ExpenseDialog({
               {!isEditing && effectiveDomain === "sales" && recurringOrders.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">הזמנה</div>
-                  <NativeSelect
+                  <SearchableSelect
+                    options={recurringOrders.map((o) => ({ value: o.id, label: o.label }))}
                     value={orderId}
-                    onChange={(e) => setOrderId(e.target.value)}
-                  >
-                    <option value="">ללא הזמנה</option>
-                    {recurringOrders.map((o) => (
-                      <option key={o.id} value={o.id}>{o.label}</option>
-                    ))}
-                  </NativeSelect>
+                    onChange={setOrderId}
+                    emptyOptionLabel="ללא הזמנה"
+                    placeholder="ללא הזמנה"
+                    searchPlaceholder="חיפוש הזמנה — לקוח, תאריך..."
+                    ariaLabel="הזמנה"
+                  />
                 </div>
               )}
 
@@ -2693,15 +2695,14 @@ export function ExpenseDialog({
                 <div className="space-y-1">
                   <div className="text-sm font-medium">נכס *</div>
                   {recurringProperties.length > 0 ? (
-                    <NativeSelect
+                    <SearchableSelect
+                      options={recurringProperties.map((p) => ({ value: p.id, label: p.label }))}
                       value={propertyId}
-                      onChange={(e) => setPropertyId(e.target.value)}
-                    >
-                      <option value="">בחרו נכס</option>
-                      {recurringProperties.map((p) => (
-                        <option key={p.id} value={p.id}>{p.label}</option>
-                      ))}
-                    </NativeSelect>
+                      onChange={setPropertyId}
+                      placeholder="בחרו נכס"
+                      searchPlaceholder="חיפוש נכס..."
+                      ariaLabel="נכס"
+                    />
                   ) : (
                     <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
                       אין נכסים זמינים — יש להוסיף נכס תחילה.
@@ -2759,15 +2760,14 @@ export function ExpenseDialog({
               {canManageWorkerSessions ? (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">עובד *</div>
-                  <NativeSelect
+                  <SearchableSelect
+                    options={workerList.map((u) => ({ value: u.id, label: u.label }))}
                     value={workerUserId}
-                    onChange={(e) => setWorkerUserId(e.target.value)}
-                  >
-                    <option value=""></option>
-                    {workerList.map((u) => (
-                      <option key={u.id} value={u.id}>{u.label}</option>
-                    ))}
-                  </NativeSelect>
+                    onChange={setWorkerUserId}
+                    placeholder="בחרו עובד"
+                    searchPlaceholder="חיפוש עובד..."
+                    ariaLabel="עובד"
+                  />
                 </div>
               ) : null}
 

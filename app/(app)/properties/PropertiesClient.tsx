@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, BuildingIcon } from "@/components/ui/icons";
+import { AddIcon, BuildingIcon, SearchIcon } from "@/components/ui/icons";
+import { Input } from "@/components/ui/input";
+import { Painted, SearchTermsProvider } from "@/components/search/Painted";
+import { searchList, type SearchRecord } from "@/lib/search/listSearch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MetaRow } from "@/components/ui/meta-row";
@@ -77,6 +80,28 @@ function factsLine(p: PropertyWithLease): (string | null)[] {
   ];
 }
 
+// The page's search (owner, 2026-10-19: "properties … no search"), by the
+// global search's rules: everything on the card — its name and address, what
+// it is, the tenant and the rent, its figures — painted where it matched.
+function propertySearchRecord(p: PropertyWithLease): SearchRecord {
+  return {
+    text: [
+      [null, propertyDisplayName(p)],
+      [null, p.address],
+      [null, p.assetDescription],
+      [null, p.currentLease?.customerName],
+      [null, factsLine(p).filter(Boolean).join(" · ")],
+      [null, amenityBadges(p).join(" ")],
+      [null, p.currentLease ? null : "פנוי"],
+    ],
+    amounts: [
+      [null, p.currentLease?.monthlyRentAmount],
+      [null, p.rollup.paidExpenseAmount],
+      [null, p.rollup.totalIncomeAmount],
+    ],
+  };
+}
+
 function amenityBadges(p: PropertyWithLease) {
   const items: string[] = [];
   if (p.propertyType) items.push(propertyTypeLabel(p.propertyType));
@@ -96,6 +121,10 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<PropertyInput>(EMPTY_PROPERTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<PropertyWithLease | null>(null);
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  const found = useMemo(() => searchList(properties, propertySearchRecord, deferredSearch), [properties, deferredSearch]);
+  const shown = found ? found.items : properties;
 
   function set<K extends keyof PropertyInput>(key: K, value: PropertyInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -198,25 +227,43 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
         </Button>
       </div>
 
-      {properties.length === 0 ? (
+      {properties.length > 0 ? (
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="חיפוש נכס — כתובת, שוכר, סכום..."
+            aria-label="חיפוש נכס"
+            className="h-10 ps-9"
+          />
+        </div>
+      ) : null}
+
+      {found && shown.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">לא נמצאו נכסים לחיפוש הזה.</CardContent>
+        </Card>
+      ) : properties.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
             עדיין אין נכסים. הוסיפו נכס כדי להתחיל לעקוב אחרי חוזי השכירות וההכנסות/הוצאות שלו.
           </CardContent>
         </Card>
       ) : (
+        <SearchTermsProvider terms={found?.search.terms ?? null}>
         <AdaptiveGrid variant="entityCards">
-          {properties.map((p) => {
+          {shown.map((p) => {
             const net = p.rollup.totalIncomeAmount - p.rollup.paidExpenseAmount;
             return (
               <Card key={p.id} className="flex flex-col">
                 <CardContent className="flex flex-1 flex-col gap-3 p-4">
                   <div className="flex items-start justify-between gap-2">
                     <Link href={`/properties/${p.id}`} className="min-w-0 flex-1">
-                      <div className="text-lg font-semibold hover:underline">{propertyDisplayName(p)}</div>
-                      {p.name ? <div className="text-sm text-muted-foreground">{p.address}</div> : null}
+                      <div className="text-lg font-semibold hover:underline"><Painted text={propertyDisplayName(p)} /></div>
+                      {p.name ? <div className="text-sm text-muted-foreground"><Painted text={p.address} /></div> : null}
                       {p.assetDescription ? (
-                        <div className="text-sm text-muted-foreground">{p.assetDescription}</div>
+                        <div className="text-sm text-muted-foreground"><Painted text={p.assetDescription} /></div>
                       ) : null}
                       <MetaRow className="text-xs text-muted-foreground" items={factsLine(p)} />
                     </Link>
@@ -231,10 +278,10 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                     {p.currentLease ? (
                       <Badge variant="success">
                         <Link href={`/customers/${p.currentLease.customerId}`} className="hover:underline">
-                          {p.currentLease.customerName ?? "שוכר"}
+                          <Painted text={p.currentLease.customerName ?? "שוכר"} />
                         </Link>
                         {" · "}
-                        {formatCurrency(p.currentLease.monthlyRentAmount)}/חודש
+                        <Painted text={formatCurrency(p.currentLease.monthlyRentAmount)} />/חודש
                       </Badge>
                     ) : (
                       <Badge variant="neutral">פנוי</Badge>
@@ -254,13 +301,13 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                     <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">הוצאות</div>
                       <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
-                        {formatCurrency(p.rollup.paidExpenseAmount)}
+                        <Painted text={formatCurrency(p.rollup.paidExpenseAmount)} />
                       </div>
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">הכנסות</div>
                       <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-emerald-600">
-                        {formatCurrency(p.rollup.totalIncomeAmount)}
+                        <Painted text={formatCurrency(p.rollup.totalIncomeAmount)} />
                       </div>
                     </div>
                     <div className="min-w-0">
@@ -277,6 +324,7 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
             );
           })}
         </AdaptiveGrid>
+        </SearchTermsProvider>
       )}
 
       <FormDialog

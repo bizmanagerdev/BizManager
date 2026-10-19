@@ -10,6 +10,9 @@ import { normalizePaymentMethodValue } from "@/lib/orders/paymentStatus";
 import type { CollectionCustomerGroup } from "@/lib/collections";
 import type { Reminder } from "@/lib/communications";
 import { israelDateKey } from "@/lib/timezone";
+import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { paymentTermsLabel } from "@/lib/paymentTerms";
+import { searchList, type SearchRecord } from "@/lib/search/listSearch";
 
 export type View = "debtors" | "reminders" | "activity";
 export type FilterKey = "all" | "overdue" | "uncontacted";
@@ -218,6 +221,67 @@ export function parseInitialFilter(value: string | null | undefined): FilterKey 
   return FILTERS.includes(value as FilterKey) ? (value as FilterKey) : "all";
 }
 
+// The search, by the global search's rules (owner, 2026-10-19: "names and raw
+// phones only — no amounts, and 050-1234567 doesn't find 0501234567"). What the
+// row shows — the name, phone, the debt — is painted there; what's inside the
+// customer's open sources (a project, an order's items, a check number, a due
+// day) is said under it.
+export function debtorSearchRecord(group: CollectionCustomerGroup): SearchRecord {
+  const sources = group.sources.filter((source) => source.actionable_amount > 0.009);
+  const checks = sources.flatMap((source) => source.pending_payments.map((p) => p.check_number).filter(Boolean));
+  return {
+    text: [
+      [null, group.customer_name],
+      ["מקור", sources.map((source) => source.title).filter(Boolean).join(" | ")],
+      ["פריטים", sources.flatMap((source) => source.items).join(" | ")],
+      ["מס׳ צ׳ק", checks.join(", ")],
+      ["צורת תשלום", sources.map((source) => (source.payment_terms ? paymentTermsLabel(source.payment_terms) : "")).filter(Boolean).join(", ")],
+      [
+        "אמצעי",
+        Array.from(
+          new Set(sources.flatMap((source) => source.pending_payments.map((p) => (p.payment_method ? paymentMethodLabel(p.payment_method) : ""))))
+        )
+          .filter(Boolean)
+          .join(", "),
+      ],
+    ],
+    amounts: [
+      [null, group.actionable_amount],
+      ["באיחור", group.overdue_amount],
+      ["יתרה כוללת", group.outstanding_amount],
+      ...sources.map((source) => ["חוב במקור", source.actionable_amount] as const),
+      ...sources.map((source) => ["סכום המקור", source.total_amount] as const),
+      ...sources.flatMap((source) => source.pending_payments.map((p) => ["תשלום צפוי", p.amount] as const)),
+    ],
+    dates: [
+      ["פירעון", group.next_due_date],
+      ...sources.map((source) => ["תאריך", source.reference_date] as const),
+      ...sources.map((source) => ["פירעון", source.due_date] as const),
+      ...sources.map((source) => ["תשלום אחרון", source.last_payment_date] as const),
+      ["קשר אחרון", group.last_contact_at],
+      [null, group.next_reminder_at],
+    ],
+    phones: [
+      [null, group.customer_phone],
+      ["וואטסאפ", group.customer_whatsapp],
+    ],
+  };
+}
+
+/** The same for a row of תקבולים צפויים — all of it shown on the row. */
+export function receiptSearchRecord(receipt: ExpectedReceipt): SearchRecord {
+  return {
+    text: [
+      [null, receipt.customerName],
+      [null, receipt.checkNumber],
+      [null, receipt.methodRaw ? paymentMethodLabel(receipt.methodRaw) : null],
+    ],
+    amounts: [[null, receipt.amount]],
+    dates: [[null, receipt.dueDate]],
+    phones: [[null, receipt.customerPhone]],
+  };
+}
+
 /** The חייבים worklist engine: an ACTION LIST of who owes money right now — a
  *  customer whose whole balance is future/not-yet-due (post-dated checks, next
  *  months' rent or loan installments) doesn't belong here at all, no matter which
@@ -227,16 +291,13 @@ export function filterAndSortDebtors(
   customers: CollectionCustomerGroup[],
   opts: { filter: FilterKey; search: string; domain: string; sort: SortKey }
 ): CollectionCustomerGroup[] {
-  const q = opts.search.trim().toLowerCase();
+  const found = searchList(customers, debtorSearchRecord, opts.search);
   const list = customers.filter((c) => {
     if (!(c.actionable_amount > 0.009)) return false;
     if (opts.filter === "overdue" && !(c.overdue_amount > 0.009)) return false;
     if (opts.filter === "uncontacted" && c.last_contact_at) return false;
     if (opts.domain !== "all" && !c.sources.some((s) => s.business_domain === opts.domain)) return false;
-    if (q) {
-      const haystack = `${c.customer_name} ${c.customer_phone ?? ""}`.toLowerCase();
-      if (!haystack.includes(q)) return false;
-    }
+    if (found && !found.reasons.has(c)) return false;
     return true;
   });
   const sorted = [...list];
@@ -280,16 +341,13 @@ export function filterExpectedReceipts(
   receipts: ExpectedReceipt[],
   opts: { method: string; from: string; to: string; search: string }
 ): ExpectedReceipt[] {
-  const q = opts.search.trim().toLowerCase();
+  const found = searchList(receipts, receiptSearchRecord, opts.search);
   return receipts.filter((r) => {
     if (opts.method !== "all" && r.methodKey !== opts.method) return false;
     const day = r.dueDate ? r.dueDate.slice(0, 10) : null;
     if (opts.from && (!day || day < opts.from)) return false;
     if (opts.to && (!day || day > opts.to)) return false;
-    if (q) {
-      const haystack = `${r.customerName} ${r.customerPhone ?? ""} ${r.checkNumber ?? ""}`.toLowerCase();
-      if (!haystack.includes(q)) return false;
-    }
+    if (found && !found.reasons.has(r)) return false;
     return true;
   });
 }

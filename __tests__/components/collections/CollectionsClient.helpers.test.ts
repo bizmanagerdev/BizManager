@@ -10,6 +10,7 @@ import {
   presentReceiptMethodChips,
   parseInitialView,
   parseInitialFilter,
+  debtorSearchRecord,
   filterAndSortDebtors,
   groupReminders,
   filterExpectedReceipts,
@@ -268,6 +269,21 @@ describe("filterAndSortDebtors", () => {
   it("search matches name or phone", () => {
     expect(filterAndSortDebtors([a, b], { ...base, search: "אב" }).map((g) => g.customer_id)).toEqual(["a"]);
     expect(filterAndSortDebtors([a, b], { ...base, search: "050" }).map((g) => g.customer_id)).toEqual(["a"]);
+  });
+  it("search by the global search's rules: the debt, a phone however typed, what's inside the sources", () => {
+    const c = makeGroup({
+      customer_id: "c",
+      customer_name: "גימל",
+      customer_phone: "+972 50-123-4567",
+      actionable_amount: 1447,
+      sources: [makeSource({ title: "הובלת משרדים", actionable_amount: 1447 })],
+    });
+    const find = (search: string) => filterAndSortDebtors([a, b, c], { ...base, search }).map((g) => g.customer_id);
+    expect(find("1447")).toEqual(["c"]);
+    expect(find("₪1,447")).toEqual(["c"]);
+    expect(find("050-1234567")).toEqual(["c"]);
+    expect(find("משרדים")).toEqual(["c"]);
+    expect(debtorSearchRecord(c).text).toContainEqual(["מקור", "הובלת משרדים"]);
   });
   it("sorts by amount desc (default), name, and due date", () => {
     expect(filterAndSortDebtors([a, b], base).map((g) => g.customer_id)).toEqual(["b", "a"]);

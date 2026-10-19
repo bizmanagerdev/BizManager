@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CashIcon, CheckIcon, CheckboxCheckedIcon, ChevronLeftIcon, ClockIcon, CoinsIcon, NotificationIcon, ProductIcon, ProjectIcon, ReceiptIcon, SettingsIcon, SuccessIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
@@ -12,6 +12,9 @@ import { Button } from "@/components/ui/button";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminders/ReminderFormDialog";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Painted, SearchReasons, SearchTermsProvider } from "@/components/search/Painted";
+import { hourOf, searchList, type SearchRecord } from "@/lib/search/listSearch";
 import { formatDayMonth, formatShortDateTime, formatTimeOnly } from "@/lib/date";
 import { israelDateKey, israelLocalValueToIso } from "@/lib/timezone";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
@@ -50,6 +53,25 @@ const RULE_ICON: Record<string, typeof NotificationIcon> = {
   unprocessed_items: ProductIcon,
   vehicle_expiry: VehicleIcon,
 };
+
+// The inbox's search (owner, 2026-10-19: "inbox (up to 500) … no search"), by
+// the global search's rules: what each row shows — its title and text, the
+// customer, who it's on, and its day and hour.
+function inboxSearchRecord(item: WorklistItem): SearchRecord {
+  return {
+    text: [
+      [null, item.title],
+      [null, item.content],
+      [null, item.customerName],
+      [null, hourOf(item.remindAt)],
+      // Not on the card itself — said under it when they're what matched.
+      ["משימה", item.taskSubject],
+      ["אחראי", item.assignedToName],
+    ],
+    dates: [[null, item.remindAt]],
+    phones: [["טלפון לקוח", item.customerPhone]],
+  };
+}
 
 function iconFor(item: WorklistItem) {
   if (item.source === "manual") return NotificationIcon;
@@ -155,14 +177,30 @@ export default function InboxClient({
   const [marking, setMarking] = useState(false);
   const [editing, setEditing] = useState<ReminderFormValue | null>(null);
   const [showSnoozed, setShowSnoozed] = useState(false);
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  // One search over every list on the page (the rows are all here already).
+  const found = useMemo(
+    () => searchList([...inbox.items, ...inbox.snoozed, ...assignedByMe], inboxSearchRecord, deferredSearch),
+    [inbox.items, inbox.snoozed, assignedByMe, deferredSearch]
+  );
 
   const visible = useMemo(
-    () => inbox.items.filter((i) => !hidden.has(i.id) && (bucket === "all" || inboxBucket(i) === bucket)),
-    [inbox.items, hidden, bucket]
+    () =>
+      inbox.items.filter(
+        (i) => !hidden.has(i.id) && (bucket === "all" || inboxBucket(i) === bucket) && (!found || found.reasons.has(i))
+      ),
+    [inbox.items, hidden, bucket, found]
   );
-  const visibleSummaries = bucket === "all" ? inbox.summaries : [];
-  const visibleSnoozed = useMemo(() => inbox.snoozed.filter((i) => !hidden.has(i.id)), [inbox.snoozed, hidden]);
-  const visibleByMe = useMemo(() => assignedByMe.filter((i) => !hidden.has(i.id)), [assignedByMe, hidden]);
+  const visibleSummaries = bucket === "all" && !found ? inbox.summaries : [];
+  const visibleSnoozed = useMemo(
+    () => inbox.snoozed.filter((i) => !hidden.has(i.id) && (!found || found.reasons.has(i))),
+    [inbox.snoozed, hidden, found]
+  );
+  const visibleByMe = useMemo(
+    () => assignedByMe.filter((i) => !hidden.has(i.id) && (!found || found.reasons.has(i))),
+    [assignedByMe, hidden, found]
+  );
 
   // Only offer chips for buckets that actually have something in them.
   const chips = useMemo(
@@ -283,17 +321,18 @@ export default function InboxClient({
           <div className="flex items-center gap-1.5">
             {item.isNew ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-label={t(inboxDict, locale, "newIndicator")} /> : null}
             <Link href={item.url} className="text-sm font-semibold hover:underline">
-              {item.title}
+              <Painted text={item.title} />
             </Link>
           </div>
-          {item.content ? <p className="mt-0.5 text-xs text-muted-foreground">{item.content}</p> : null}
+          {item.content ? <p className="mt-0.5 text-xs text-muted-foreground"><Painted text={item.content} /></p> : null}
+          <SearchReasons reasons={found?.reasons.get(item)} className="mt-0.5" />
 
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-1 text-[0.647rem] text-muted-foreground">
               <ClockIcon className="h-3 w-3 shrink-0" />
-              {whenLabel(item.remindAt, locale)}
-              {item.customerName ? <span>· {item.customerName}</span> : null}
-              {item.assignedToName && muted ? <span>· {item.assignedToName}</span> : null}
+              <Painted text={whenLabel(item.remindAt, locale)} />
+              {item.customerName ? <span>· <Painted text={item.customerName} /></span> : null}
+              {item.assignedToName && muted ? <span>· <Painted text={item.assignedToName} /></span> : null}
               {mine ? <span className="rounded bg-primary/10 px-1 text-primary">{t(inboxDict, locale, "mine")}</span> : null}
             </span>
 
@@ -359,6 +398,7 @@ export default function InboxClient({
   }
 
   return (
+    <SearchTermsProvider terms={found?.search.terms ?? null}>
     <div className="space-y-4">
       {/* Header: what's here, and the two things you do to the list as a whole. */}
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -399,6 +439,16 @@ export default function InboxClient({
         </div>
       </div>
 
+      {inbox.items.length + inbox.snoozed.length + assignedByMe.length > 0 ? (
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t(inboxDict, locale, "searchPlaceholder")}
+          aria-label={t(inboxDict, locale, "searchPlaceholder")}
+          className="h-10"
+        />
+      ) : null}
+
       {/* Category chips — only the buckets that actually have something. */}
       {chips.length > 1 ? (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -428,7 +478,11 @@ export default function InboxClient({
         </div>
       ) : null}
 
-      {visible.length === 0 && visibleSummaries.length === 0 ? (
+      {found && visible.length === 0 && visibleSnoozed.length === 0 && visibleByMe.length === 0 ? (
+        <div className="rounded-2xl border border-border/60 px-5 py-4 text-sm text-muted-foreground">
+          {t(inboxDict, locale, "noSearchResults")}
+        </div>
+      ) : visible.length === 0 && visibleSummaries.length === 0 && !found ? (
         <div className="flex items-center gap-3 rounded-2xl border border-success/40 bg-success-soft px-5 py-4">
           <SuccessIcon className="h-7 w-7 shrink-0 text-success" />
           <div>
@@ -534,5 +588,6 @@ export default function InboxClient({
         }}
       />
     </div>
+    </SearchTermsProvider>
   );
 }

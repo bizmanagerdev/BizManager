@@ -21,6 +21,7 @@ export function customerMatchReason(customer: CustomerSearchIndexEntry | undefin
   if (fuzzyTextMatch(customer.name_for_invoice, query)) return text("שם לחשבונית", customer.name_for_invoice);
   if (substringMatch(customer.email, query)) return text("אימייל", customer.email);
   if (substringMatch(customer.address, query)) return text("כתובת", customer.address);
+  if (substringMatch(customer.registration_number, query)) return text("ח.פ. / ת.ז.", customer.registration_number);
   if (phoneMatchesQuery([customer.phone], query)) return text("טלפון", customer.phone);
   if (phoneMatchesQuery([customer.whatsapp], query)) return text("וואטסאפ", customer.whatsapp);
   for (const contact of customer.contacts ?? []) {
@@ -28,6 +29,11 @@ export function customerMatchReason(customer: CustomerSearchIndexEntry | undefin
     if (substringMatch(contact.email, query)) return text("אימייל איש קשר", contact.email);
     if (phoneMatchesQuery([contact.phone], query)) return text(`טלפון ${contact.full_name}`, contact.phone);
     if (phoneMatchesQuery([contact.whatsapp], query)) return text(`וואטסאפ ${contact.full_name}`, contact.whatsapp);
+  }
+  for (const branch of customer.branches ?? []) {
+    if (fuzzyTextMatch(branch.name, query)) return text("סניף", branch.name);
+    if (substringMatch(branch.address, query)) return text(`כתובת סניף ${branch.name}`, branch.address);
+    if (phoneMatchesQuery([branch.phone], query)) return text(`טלפון סניף ${branch.name}`, branch.phone);
   }
   return [];
 }

@@ -1,12 +1,16 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useDeferredValue, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { CheckIcon, ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon } from "@/components/ui/icons";
+import { CheckIcon, ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon, SearchIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { highlightText } from "@/components/search/highlightMatch";
+import { SearchMatchLine } from "@/components/search/SearchMatchLine";
+import { hourOf, searchList, type ListSearchResult, type SearchRecord } from "@/lib/search/listSearch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -84,6 +88,32 @@ const CHECK_FILTERS: Array<{ value: CheckFilter; label: string }> = [
   { value: "checked", label: "נבדקו" },
 ];
 
+// The register's search (owner, 2026-10-19: "the bank page … needs search by
+// amount, date and description"), by the global search's rules
+// (lib/search/listSearch): what the row shows — its label, detail line, day,
+// amount, who typed it in and when — painted there, and the payments folded
+// into a Grow batch row, said under it.
+const IN_ROW = "תשלום בשורה";
+function bankRowRecord(row: AccountLedgerEntry): SearchRecord {
+  const parts = row.breakdown ?? [];
+  return {
+    text: [
+      [null, row.label],
+      [null, row.sublabel],
+      [null, row.enteredByName],
+      [null, hourOf(row.enteredAt)],
+      ...parts.map((part) => [IN_ROW, [part.label, part.sublabel].filter(Boolean).join(" · ")] as const),
+    ],
+    amounts: [[null, row.amount], ...parts.map((part) => [IN_ROW, part.amount] as const)],
+    dates: [
+      [null, row.date],
+      ["נרשם", row.recordedDate],
+      [null, row.enteredAt],
+      ...parts.map((part) => [IN_ROW, part.date] as const),
+    ],
+  };
+}
+
 function AccountSummaryCard({
   account,
   selected,
@@ -91,6 +121,7 @@ function AccountSummaryCard({
   uncheckedCount,
   showingUnchecked,
   onToggleUnchecked,
+  searchCount,
 }: {
   account: AccountWithLedger;
   selected: boolean;
@@ -100,6 +131,8 @@ function AccountSummaryCard({
   /** This account is open with only its unchecked rows showing. */
   showingUnchecked: boolean;
   onToggleUnchecked: () => void;
+  /** While a search is on: how many of its rows match (null = no search). */
+  searchCount: number | null;
 }) {
   const kindLabel = getAccountKindLabel(account.kind);
   const hasRows = account.ledger.some((row) => row.posted);
@@ -198,7 +231,22 @@ function AccountSummaryCard({
             צפי תזרים, where it can be seen by day and in both directions
             (user, 2026-09-17). */}
       </button>
-      {hasRows &&
+      {/* While searching, the card says how many of its rows were found —
+          in place of the "לא נבדקו" line, so the strip keeps its height. */}
+      {searchCount !== null ? (
+        <span
+          className={cn(
+            "mx-2 mb-2 self-center rounded-full px-2 py-0.5 text-[0.688rem] font-medium tabular-nums",
+            searchCount > 0
+              ? "bg-yellow-200/90 text-foreground dark:bg-yellow-500/35"
+              : selected
+                ? "text-primary-foreground/75"
+                : "text-muted-foreground"
+          )}
+        >
+          {searchCount > 0 ? `נמצאו ${searchCount}` : "לא נמצא"}
+        </span>
+      ) : hasRows &&
         hasBankChecks(account) &&
         (uncheckedCount > 0 ? (
           <button
@@ -381,6 +429,23 @@ export default function BankClient({
   // The register's "נבדק מול הבנק" filter — kept when switching accounts: a
   // reconciliation goes account by account looking at what's left.
   const [checkFilter, setCheckFilter] = useState<CheckFilter>("all");
+  // The search runs over every account at once: the open register shows its
+  // own matches, and each card in the strip says how many it has.
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  const searchByAccount = useMemo(() => {
+    if (!deferredSearch.trim()) return null;
+    const byAccount = new Map<string, ListSearchResult<AccountLedgerEntry>>();
+    for (const account of accounts) {
+      const result = searchList(
+        account.ledger.filter((row) => row.posted),
+        bankRowRecord,
+        deferredSearch
+      );
+      if (result) byAccount.set(account.id, result);
+    }
+    return byAccount;
+  }, [accounts, deferredSearch]);
 
   // The account strip scrolls horizontally now (see below) — on a phone, the
   // selected card can land anywhere in it, off to one side, depending on
@@ -455,6 +520,10 @@ export default function BankClient({
     const offset = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
     container.scrollTop += offset - headerHeight;
   }, [selectedId, currentMonth, checkFilter]);
+  // A new search starts at the top of what it found.
+  useLayoutEffect(() => {
+    if (searchByAccount && registerScrollRef.current) registerScrollRef.current.scrollTop = 0;
+  }, [searchByAccount]);
 
   function selectAccount(accountId: string) {
     setSelectedId(accountId);
@@ -751,12 +820,30 @@ export default function BankClient({
   // A cash box shows every row: it has no ticks to filter by.
   const checksOn = hasBankChecks(selected);
   const activeFilter: CheckFilter = checksOn ? checkFilter : "all";
+  // While searching: only the rows found, painted, with why under any whose
+  // match isn't on the row itself.
+  const accountSearch = searchByAccount?.get(selected.id) ?? null;
+  const searchTerms = accountSearch?.search.terms ?? [];
+  const paint = (text: string) => (accountSearch ? highlightText(text, searchTerms) : text);
+  const foundElsewhere = searchByAccount
+    ? accounts
+        .filter((account) => account.id !== selected.id)
+        .map((account) => ({ account, count: searchByAccount.get(account.id)?.items.length ?? 0 }))
+        .filter((entry) => entry.count > 0)
+    : [];
   const showRow = (row: AccountLedgerEntry) =>
     !hiddenLedgerRowIds.has(row.id) &&
+    (!accountSearch || accountSearch.reasons.has(row)) &&
     (activeFilter === "all" || isRowChecked(selected.id, row) === (activeFilter === "checked"));
   const groups = allGroups.filter(
-    (g) => (!monthFilter || g.month === monthFilter) && (activeFilter === "all" || g.items.some(showRow))
+    (g) =>
+      (!monthFilter || g.month === monthFilter) &&
+      (activeFilter === "all" && !accountSearch ? true : g.items.some(showRow))
   );
+  const foundCount = accountSearch ? groups.reduce((sum, g) => sum + g.items.filter(showRow).length, 0) : 0;
+  const foundBeforeFilters = accountSearch
+    ? accountSearch.items.filter((row) => !hiddenLedgerRowIds.has(row.id)).length
+    : 0;
   // THIS calendar month open by default, older (and any newer — a post-dated
   // check can group under next month) ones folded, until the reader says
   // otherwise. Local date parts, not UTC, so this doesn't slip a day/month
@@ -768,7 +855,8 @@ export default function BankClient({
   // Filtered by the tick, every month that's left opens: it's a list to work
   // through, not a history to browse.
   const isMonthOpen = (month: string, index: number) =>
-    openMonths[month] ?? (activeFilter !== "all" || (hasCurrentMonth ? month === currentMonth : index === 0));
+    openMonths[month] ??
+    (activeFilter !== "all" || Boolean(accountSearch) || (hasCurrentMonth ? month === currentMonth : index === 0));
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
@@ -791,6 +879,34 @@ export default function BankClient({
           container; no justify-center here — combined with overflow-x-auto
           that's a known way to clip the first/last card once the row
           actually overflows. */}
+      <div className="space-y-1">
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="חיפוש בתנועות — סכום, תאריך, שעה, טלפון או מילה"
+            aria-label="חיפוש בתנועות החשבונות"
+            className="h-10 ps-9"
+          />
+        </div>
+        {accountSearch ? (
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {foundCount === 1
+                ? `נמצאה תנועה אחת ב${selected.name}`
+                : foundCount > 0
+                  ? `נמצאו ${foundCount} תנועות ב${selected.name}`
+                  : `לא נמצאו תנועות ב${selected.name}`}
+            </span>
+            {/* The tick / month filter still applies on top of the search. */}
+            {foundCount < foundBeforeFilters ? ` (מתוך ${foundBeforeFilters} — לפי הסינון)` : null}
+            {foundElsewhere.length > 0
+              ? ` · ועוד ${foundElsewhere.reduce((sum, entry) => sum + entry.count, 0)} בחשבונות אחרים`
+              : null}
+          </div>
+        ) : null}
+      </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {accounts.map((account) => (
           <div
@@ -805,6 +921,7 @@ export default function BankClient({
               uncheckedCount={uncheckedCount(account)}
               showingUnchecked={account.id === selected.id && checkFilter === "unchecked"}
               onToggleUnchecked={() => toggleUncheckedFor(account.id)}
+              searchCount={searchByAccount ? (searchByAccount.get(account.id)?.items.length ?? 0) : null}
             />
           </div>
         ))}
@@ -891,6 +1008,27 @@ export default function BankClient({
                 אין תנועות משויכות לחשבון זה עדיין. תנועות יופיעו כאן ברגע שתשייך תקבולים והוצאות
                 לחשבון.
               </div>
+            ) : groups.length === 0 && accountSearch ? (
+              <div className="space-y-3 py-10 text-center text-sm text-muted-foreground">
+                <div>לא נמצאו תנועות בחשבון הזה.</div>
+                {/* Found in another account: one tap opens it there. */}
+                {foundElsewhere.length > 0 ? (
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <span>נמצא ב:</span>
+                    {foundElsewhere.map(({ account, count }) => (
+                      <Button
+                        key={account.id}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => selectAccount(account.id)}
+                      >
+                        {account.name} · {count}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             ) : groups.length === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
                 {activeFilter === "unchecked"
@@ -945,7 +1083,9 @@ export default function BankClient({
                     <span dir="ltr" className="tabular-nums">
                       {monthLabel(group.month)}
                     </span>
-                    <span className="text-muted-foreground/70">({group.items.length})</span>
+                    <span className="text-muted-foreground/70">
+                      ({accountSearch ? group.items.filter(showRow).length : group.items.length})
+                    </span>
                     {/* What's left to compare with the bank in this month. */}
                     {!checksOn ? null : group.unchecked > 0 ? (
                       <span className="whitespace-nowrap rounded-full bg-background px-1.5 py-px text-[0.688rem] font-medium tabular-nums text-foreground/80">
@@ -999,7 +1139,7 @@ export default function BankClient({
                             transfer row) stay pinned to the end of the row. */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">{row.label}</span>
+                            <span className="font-medium">{paint(row.label)}</span>
                             {hasBreakdown && (
                               <ChevronDownIcon
                                 className={cn(
@@ -1010,14 +1150,17 @@ export default function BankClient({
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            <span dir="ltr">{formatShortDate(row.date)}</span>
-                            {row.sublabel && <span> · {row.sublabel}</span>}
+                            <span dir="ltr">{paint(formatShortDate(row.date))}</span>
+                            {row.sublabel && <span> · {paint(row.sublabel)}</span>}
                           </div>
                           {/* When it was typed in, and by whom — the day above
                               is when the money moved (owner, 2026-10-15). */}
                           {enteredLabel && (
-                            <div className="text-[11px] text-muted-foreground/70">{enteredLabel}</div>
+                            <div className="text-[11px] text-muted-foreground/70">{paint(enteredLabel)}</div>
                           )}
+                          {accountSearch ? (
+                            <SearchMatchLine reasons={accountSearch.reasons.get(row)} terms={searchTerms} className="mt-0.5" />
+                          ) : null}
                         </div>
                         <div className="flex shrink-0 flex-col items-end">
                           <div
@@ -1028,7 +1171,7 @@ export default function BankClient({
                             )}
                           >
                             {row.type === "in" ? "+" : "-"}
-                            {formatMoneyRounded(row.amount)}
+                            {paint(formatMoneyRounded(row.amount))}
                           </div>
                           {row.runningBalance !== null && (
                             <div dir="ltr" className="text-xs tabular-nums text-muted-foreground">
@@ -1243,17 +1386,17 @@ export default function BankClient({
                               const paymentInner = (
                                 <>
                                   <div className="min-w-0 flex-1">
-                                    <div className="text-sm">{payment.label}</div>
+                                    <div className="text-sm">{paint(payment.label)}</div>
                                     <div className="text-xs text-muted-foreground">
-                                      <span dir="ltr">{formatShortDate(payment.date)}</span>
-                                      {payment.sublabel && <span> · {payment.sublabel}</span>}
+                                      <span dir="ltr">{paint(formatShortDate(payment.date))}</span>
+                                      {payment.sublabel && <span> · {paint(payment.sublabel)}</span>}
                                     </div>
                                     {paymentEntered && (
-                                      <div className="text-[11px] text-muted-foreground/70">{paymentEntered}</div>
+                                      <div className="text-[11px] text-muted-foreground/70">{paint(paymentEntered)}</div>
                                     )}
                                   </div>
                                   <div dir="ltr" className="shrink-0 text-sm font-medium tabular-nums text-success">
-                                    +{formatMoneyRounded(payment.amount)}
+                                    +{paint(formatMoneyRounded(payment.amount))}
                                   </div>
                                 </>
                               );

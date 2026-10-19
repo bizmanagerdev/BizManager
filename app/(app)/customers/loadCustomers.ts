@@ -337,6 +337,8 @@ export type CustomerSearchIndexEntry = {
   id: string;
   name: string;
   name_for_invoice: string | null;
+  /** ח.פ. / ת.ז. — a customer is found by it (owner, 2026-10-19). Absent in older cached indexes. */
+  registration_number?: string | null;
   phone: string | null;
   whatsapp: string | null;
   email: string | null;
@@ -376,7 +378,7 @@ export async function loadCustomerSearchIndexRows(
     fetchAllPagedResult((from, to) =>
       supabase
         .from("customers")
-        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,addr_place_id")
+        .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,addr_place_id")
         .order("name", { ascending: true })
         .order("id")
         .range(from, to)
@@ -434,6 +436,7 @@ export async function loadCustomerSearchIndexRows(
       id,
       name: typeof row?.name === "string" ? row.name : "",
       name_for_invoice: (row?.name_for_invoice as string | null) ?? null,
+      registration_number: (row?.registration_number as string | null) ?? null,
       phone: (row?.phone as string | null) ?? null,
       whatsapp: (row?.whatsapp as string | null) ?? null,
       email: (row?.email as string | null) ?? null,

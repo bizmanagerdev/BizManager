@@ -5,6 +5,8 @@ import * as Popover from "@radix-ui/react-popover";
 import { CheckIcon, ChevronDownIcon, SearchIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { highlightText } from "@/components/search/highlightMatch";
+import { searchList } from "@/lib/search/listSearch";
 
 export type SearchableSelectOption = {
   value: string;
@@ -99,15 +101,24 @@ export function SearchableSelect({
 
   const showSearch = options.length > searchThreshold;
 
+  // The global search's rules (lib/search/listSearch — final letters, quote
+  // marks, a misspelt word, an amount as a number), and still the plain
+  // substring as before ("12/10" in "הזמנה … 12/10/26"); what matched is painted.
+  const search = useMemo(
+    () => searchList(options, (option) => ({ text: [[null, option.label], [null, option.hint ?? null]] }), query),
+    [options, query]
+  );
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
     return options.filter(
       (option) =>
+        Boolean(search?.reasons.has(option)) ||
         option.label.toLowerCase().includes(q) ||
         (option.hint ?? "").toLowerCase().includes(q)
     );
-  }, [options, query]);
+  }, [options, query, search]);
+  const paint = (text: string) => (search ? highlightText(text, search.search.terms) : text);
 
   // Every row in the list, in order: the "none" row (when shown), then the matches.
   const rows = useMemo(
@@ -304,9 +315,9 @@ export function SearchableSelect({
                     )}
                     {option.icon ? <span className="shrink-0 text-muted-foreground">{option.icon}</span> : null}
                     <span className="min-w-0 flex-1">
-                      <span className="block font-medium">{option.label}</span>
+                      <span className="block font-medium">{paint(option.label)}</span>
                       {option.hint ? (
-                        <span className="block text-xs text-muted-foreground">{option.hint}</span>
+                        <span className="block text-xs text-muted-foreground">{paint(option.hint)}</span>
                       ) : null}
                     </span>
                   </button>

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { parseGlobalQuery } from "@/lib/search/global-query";
 
 type Row = Record<string, unknown>;
 
@@ -83,8 +84,13 @@ async function loadProductPageData(
 
   if (filters.q) {
     const escaped = filters.q.replace(/[%,]/g, " ");
+    // A price typed into the box ("120", "₪1,200") finds the products sold or
+    // bought at it (owner, 2026-10-19: "inventory and price list don't search
+    // by price") — read by the global search's own parser.
+    const price = parseGlobalQuery(filters.q).tokens.find((token) => token.a !== undefined)?.a;
+    const byPrice = price !== undefined ? `,base_price.eq.${price},base_cost.eq.${price}` : "";
     productsQuery = productsQuery.or(
-      `name.ilike.%${escaped}%,sku.ilike.%${escaped}%,barcode.ilike.%${escaped}%,description.ilike.%${escaped}%`
+      `name.ilike.%${escaped}%,sku.ilike.%${escaped}%,barcode.ilike.%${escaped}%,description.ilike.%${escaped}%${byPrice}`
     );
   }
   if (filters.category) {

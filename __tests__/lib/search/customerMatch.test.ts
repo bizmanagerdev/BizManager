@@ -77,6 +77,19 @@ describe("substringMatch", () => {
 });
 
 describe("customerMatchesQuery", () => {
+  it("finds a customer by its ID / company number, and by a branch's name, address or phone", () => {
+    const customer = {
+      name: "רשת פיצה",
+      registration_number: "514123456",
+      branches: [{ name: "סניף בית שמש", address: "נחל לכיש 4", phone: "02-9912345" }],
+    };
+    expect(customerMatchesQuery(customer, "514123456")).toBe(true);
+    expect(customerMatchesQuery(customer, "בית שמש")).toBe(true);
+    expect(customerMatchesQuery(customer, "נחל לכיש")).toBe(true);
+    expect(customerMatchesQuery(customer, "029912345")).toBe(true);
+    expect(customerMatchesQuery(customer, "ירושלים")).toBe(false);
+  });
+
   it("matches by whatsapp when the query is a number not in the phone field", () => {
     expect(
       customerMatchesQuery({ name: "דוד", phone: null, whatsapp: "050-123-4567" }, "0501234567")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChatIcon, CommentIcon, MailIcon, MoreIcon, PhoneIcon, UsersIcon } from "@/components/ui/icons";
@@ -15,6 +15,8 @@ import { channelLabel, directionLabel, type CommunicationLogWithCustomer } from 
 import { formatShortDateTime } from "@/lib/date";
 import { EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { Painted, SearchTermsProvider } from "@/components/search/Painted";
+import { hourOf, searchList, type SearchRecord } from "@/lib/search/listSearch";
 
 const TOPICS = [
   { value: "all", label: "כל הנושאים" },
@@ -59,6 +61,25 @@ function directionRowClass(direction: string | null | undefined): string {
   return "border-success/70 bg-success/15";
 }
 
+// The search, by the global search's rules: everything the row shows — the
+// customer and phone (however typed), the topic, what was said, the day and
+// hour, who logged it, and the channel and direction.
+function communicationSearchRecord(l: CommunicationLogWithCustomer): SearchRecord {
+  return {
+    text: [
+      [null, l.customer_name],
+      [null, l.content],
+      [null, TOPIC_LABEL[l.category] ?? l.category],
+      [null, l.created_by_name],
+      [null, channelLabel(l.channel)],
+      [null, directionLabel(l.direction)],
+      [null, hourOf(l.created_at)],
+    ],
+    dates: [[null, l.created_at]],
+    phones: [[null, l.customer_phone]],
+  };
+}
+
 // Shared column template so every row (and the header) lines up into a table.
 const GRID = "grid grid-cols-[1.5rem_minmax(9rem,1.4fr)_7rem_4.5rem_minmax(0,3fr)_9rem_2rem] items-center gap-x-3";
 
@@ -72,18 +93,17 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
   const [addCallOpen, setAddCallOpen] = useState(false);
   const [editing, setEditing] = useState<EditableCommunication | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return logs.filter((l) => {
-      if (topic !== "all" && (l.category ?? "general") !== topic) return false;
-      if (channel !== "all" && l.channel !== channel) return false;
-      if (q) {
-        const hay = `${l.customer_name ?? ""} ${l.customer_phone ?? ""} ${l.content ?? ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [logs, topic, channel, search]);
+  const deferredSearch = useDeferredValue(search);
+  const found = useMemo(() => searchList(logs, communicationSearchRecord, deferredSearch), [logs, deferredSearch]);
+  const filtered = useMemo(
+    () =>
+      logs.filter((l) => {
+        if (topic !== "all" && (l.category ?? "general") !== topic) return false;
+        if (channel !== "all" && l.channel !== channel) return false;
+        return !found || found.reasons.has(l);
+      }),
+    [logs, topic, channel, found]
+  );
 
   return (
     <div className="space-y-4">
@@ -106,7 +126,7 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
             </option>
           ))}
         </NativeSelect>
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש לפי שם, טלפון או תוכן…" className="h-10 max-w-xs flex-1" />
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="שם, טלפון, תוכן, תאריך או שעה…" className="h-10 max-w-xs flex-1" />
         <div className="text-sm text-muted-foreground">{filtered.length} פניות</div>
       </div>
 
@@ -125,6 +145,7 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
           <CardContent className="py-10 text-center text-muted-foreground">אין פניות שתואמות את הסינון.</CardContent>
         </Card>
       ) : (
+        <SearchTermsProvider terms={found?.search.terms ?? null}>
         <div className="overflow-x-auto">
           <div className="min-w-[54rem] space-y-1">
             {/* Header */}
@@ -151,18 +172,18 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
                   <div className="min-w-0 font-medium">
                     {l.customer_id ? (
                       <Link href={`/customers/${l.customer_id}`} className="hover:underline">
-                        {l.customer_name ?? "לקוח"}
+                        <Painted text={l.customer_name ?? "לקוח"} />
                       </Link>
                     ) : (
-                      l.customer_name ?? "—"
+                      <Painted text={l.customer_name ?? "—"} />
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground">{l.customer_phone ?? "—"}</div>
-                  <div className="text-xs text-muted-foreground">{TOPIC_LABEL[l.category] ?? l.category}</div>
-                  <div className="min-w-0 text-muted-foreground">{l.content ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground"><Painted text={l.customer_phone ?? "—"} /></div>
+                  <div className="text-xs text-muted-foreground"><Painted text={TOPIC_LABEL[l.category] ?? l.category} /></div>
+                  <div className="min-w-0 text-muted-foreground"><Painted text={l.content ?? "—"} /></div>
                   <div className="text-xs text-muted-foreground">
-                    {formatShortDateTime(l.created_at, "-")}
-                    {l.created_by_name ? ` · ${l.created_by_name}` : ""}
+                    <Painted text={formatShortDateTime(l.created_at, "-")} />
+                    {l.created_by_name ? <> · <Painted text={l.created_by_name} /></> : ""}
                   </div>
                   <EditButton onClick={() =>
                       setEditing({ id: l.id, channel: l.channel, direction: l.direction, category: l.category, content: l.content })
@@ -172,6 +193,7 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
             })}
           </div>
         </div>
+        </SearchTermsProvider>
       )}
     </div>
   );

@@ -10,6 +10,9 @@ import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { chunkStrings } from "@/lib/financial/utils";
 import type { DeliveryPin } from "@/lib/delivery-location";
 import { addressPoint } from "@/lib/address/columns";
+import type { GlobalSearchReason } from "@/lib/global-search";
+import { searchList } from "@/lib/search/listSearch";
+import { taskSearchRecord, type TaskSearchExtras } from "@/lib/tasks/search";
 
 type Row = Record<string, unknown>;
 
@@ -48,6 +51,8 @@ export type TaskBoardItem = {
   has_open_reminder: boolean;
   is_overdue: boolean;
   is_private: boolean;
+  /** While searching: why the task came up, for what the card doesn't show (lib/tasks/search.ts). */
+  search_reasons?: GlobalSearchReason[];
   /** Board position within its status column — drag-reorder persists here. */
   sort_order: number | null;
   /** When it comes back, if the viewer snoozed it ("לטיפול בהמשך") — only a search shows it until then. */
@@ -128,6 +133,10 @@ type TaskRow = {
   sort_order: number | null;
   created_at: string | null;
   updated_at: string | null;
+  /** Read only while searching. */
+  description?: string | null;
+  notes?: string | null;
+  completed_at?: string | null;
 };
 
 export type TasksBoardResult = {
@@ -154,6 +163,12 @@ export async function loadTasksBoard(
 ): Promise<TasksBoardResult> {
   const { q, priority, domain, linkedId } = filters;
   const scope = canSeeAll ? filters.scope : "mine";
+  // A search reads the whole board (as with no search) and matches it here by
+  // the global search's rules — the subject, and also the description, notes,
+  // replies, project, customer, who it's on, its days and hours
+  // (lib/tasks/search.ts). Those few extra columns are read only then.
+  const searching = q.trim() !== "";
+  const rowSelect = searching ? `${TASK_ROW_SELECT},description,notes,completed_at` : TASK_ROW_SELECT;
 
   // One read of the board's tasks for a column (open or done) and a scope
   // part. The shared filters are applied while still on the filter builder
@@ -170,8 +185,8 @@ export async function loadTasksBoard(
       part === "member"
         ? // Tasks I'm a member of, through the membership row itself — no
           // separate read of my memberships first.
-          supabase.from("tasks").select(`${TASK_ROW_SELECT},task_members!inner(user_id)`).eq("task_members.user_id", userId)
-        : supabase.from("tasks").select(TASK_ROW_SELECT);
+          supabase.from("tasks").select(`${rowSelect},task_members!inner(user_id)`).eq("task_members.user_id", userId)
+        : supabase.from("tasks").select(rowSelect);
     query = column === "open" ? query.or(OPEN_STATUSES_OR) : query.eq("status", "done");
     if (part === "assignedOrOwned") query = query.or(`assigned_user_id.eq.${userId},private_owner_id.eq.${userId}`);
     if (priority) query = query.eq("priority", priority);
@@ -179,7 +194,6 @@ export async function loadTasksBoard(
     if (linkedId && (domain === "logistics_projects" || domain === "property_management")) {
       query = query.eq(domain === "logistics_projects" ? "project_id" : "property_id", linkedId);
     }
-    if (q) query = query.ilike("subject", `%${q.replace(/[%,]/g, " ")}%`);
     return query;
   };
   const readColumn = (column: "open" | "done", part: "all" | "assignedOrOwned" | "member") =>
@@ -266,7 +280,7 @@ export async function loadTasksBoard(
     // their ids aren't known before this round.
     supabase.rpc("user_directory"),
     readByIds(taskIds, (batch, from, to) =>
-      supabase.from("task_comments").select("task_id").in("task_id", batch).range(from, to)
+      supabase.from("task_comments").select(searching ? "task_id,body" : "task_id").in("task_id", batch).range(from, to)
     ),
     // Open reminders (the card's bell) and done ones: a far-off task its
     // reminder brought onto the board stays there once the reminder is done
@@ -320,10 +334,13 @@ export async function loadTasksBoard(
   }
 
   const commentCountByTask = new Map<string, number>();
+  const commentTextByTask = new Map<string, string[]>();
   for (const row of (commentsRes.data ?? []) as Row[]) {
     const taskId = getString(row, "task_id");
     if (!taskId) continue;
     commentCountByTask.set(taskId, (commentCountByTask.get(taskId) ?? 0) + 1);
+    const body = getString(row, "body")?.trim();
+    if (body) commentTextByTask.set(taskId, [...(commentTextByTask.get(taskId) ?? []), body]);
   }
 
   const reminderRows = (remindersRes.data ?? []) as Row[];
@@ -402,7 +419,25 @@ export async function loadTasksBoard(
     };
   });
 
-  return { items, error, loadedAt: Date.now() };
+  if (!searching) return { items, error, loadedAt: Date.now() };
+  const extrasById = new Map<string, TaskSearchExtras>(
+    taskRows.map((row) => [
+      row.id,
+      {
+        description: row.description,
+        notes: row.notes,
+        comments: commentTextByTask.get(row.id)?.join(" | ") ?? null,
+        createdAt: row.created_at,
+        completedAt: row.completed_at,
+      },
+    ])
+  );
+  const found = searchList(items, (item) => taskSearchRecord(item, extrasById.get(item.id), locale), q);
+  return {
+    items: found ? found.items.map((item) => ({ ...item, search_reasons: found.reasons.get(item) ?? [] })) : items,
+    error,
+    loadedAt: Date.now(),
+  };
 }
 
 export type TaskPickerOptions = {

@@ -232,6 +232,8 @@ export type FinancialEntry = {
   createdAt?: string | null;
   customerId: string | null;
   searchText: string;
+  /** What was written on the payment / loan / worker payment — found by the search and shown as why. */
+  notes?: string | null;
   // Set on worker wage entries (worker_owed / worker_payment) so consumers can
   // relate an entry back to a worker (e.g. de-duping projected salaries).
   workerUserId?: string | null;

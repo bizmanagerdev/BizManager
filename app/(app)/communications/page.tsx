@@ -20,7 +20,9 @@ export default async function CommunicationsPage() {
     );
   }
 
-  const logs = await getRecentCommunications(supabase, { limit: 300 });
+  // Every entry the database gives in one read (owner, 2026-10-19: "communications
+  // only searches its newest 300") — the page's search looks through them all.
+  const logs = await getRecentCommunications(supabase, { limit: 1000 });
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>

@@ -415,6 +415,16 @@ describe("matchesEntryFilters", () => {
     expect(matchesEntryFilters(makeEntry({ searchText: "invoice client abc" }), { ...base, query: "xyz" })).toBe(false);
   });
 
+  it("finds an entry by its amount, its day or a word in its notes (the global search's rules)", () => {
+    const entry = makeEntry({ amount: 1447, flowDate: "2024-04-15", notes: "תשלום על הובלה", searchText: "test" });
+    expect(matchesEntryFilters(entry, { ...base, query: "1447" })).toBe(true);
+    expect(matchesEntryFilters(entry, { ...base, query: "₪1,447" })).toBe(true);
+    expect(matchesEntryFilters(entry, { ...base, query: "1448" })).toBe(false);
+    expect(matchesEntryFilters(entry, { ...base, query: "15/4/24" })).toBe(true);
+    expect(matchesEntryFilters(entry, { ...base, query: "16/4/24" })).toBe(false);
+    expect(matchesEntryFilters(entry, { ...base, query: "הובלה" })).toBe(true);
+  });
+
   it("stage=actual excludes future entries", () => {
     expect(matchesEntryFilters(makeEntry({ flowDate: "2024-09-01", stage: "scheduled" }), { ...base, stage: "actual" })).toBe(false);
     expect(matchesEntryFilters(makeEntry({ flowDate: "2024-04-01", stage: "posted" }), { ...base, stage: "actual" })).toBe(true);

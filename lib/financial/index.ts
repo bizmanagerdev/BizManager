@@ -44,6 +44,9 @@ import {
 } from "./entries";
 import { fetchLoans, summarizeLoans, type Loan, type LoansSummary } from "@/lib/loans";
 import { openLiabilityEntries, withOpenAmount } from "@/lib/financial/expenseOpen";
+import { ledgerSearchRecord } from "@/lib/financial/search";
+import { listVocabulary, prepareListSearch } from "@/lib/search/listSearch";
+import { parseGlobalQuery } from "@/lib/search/global-query";
 import { clampFromToBooksStart } from "@/lib/settings/booksStartDate";
 import {
   type FinancialEntry,
@@ -425,8 +428,17 @@ export async function getFinancialPageData(
     : [];
   sourceOptions.sort((left, right) => left.label.localeCompare(right.label, "he"));
 
+  // The search read once, with close spellings from the whole ledger's words.
+  const search = query
+    ? prepareListSearch(query, {
+        today: referenceDate,
+        vocabulary: parseGlobalQuery(query).words.some((word) => word.length >= 3)
+          ? listVocabulary(entries.map(ledgerSearchRecord))
+          : undefined,
+      })
+    : null;
   const filteredEntries = domainScopedBase.filter((entry) =>
-    matchesEntryFilters(entry, { from, to, domain, sourceId, type, stage, query, referenceDate })
+    matchesEntryFilters(entry, { from, to, domain, sourceId, type, stage, query, referenceDate, search })
   );
   const forecastEndIso = to || addDaysToIso(referenceDate, 30);
 
@@ -451,7 +463,7 @@ export async function getFinancialPageData(
   // Respect the ledger's active filters for the list/summaries; the P&L-style
   // forecast tab only honours the domain filter (like domainEntries).
   const projFiltered = projections.filter((p) =>
-    matchesEntryFilters(p, { from, to, domain, sourceId, type, stage, query, referenceDate })
+    matchesEntryFilters(p, { from, to, domain, sourceId, type, stage, query, referenceDate, search })
   );
   const projDomainEntries = projections.filter((p) => !domain || p.businessDomain === domain);
 

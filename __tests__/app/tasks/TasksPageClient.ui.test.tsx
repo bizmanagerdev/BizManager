@@ -283,7 +283,16 @@ function listOrder() {
 
 /** A card, by its title (the card is a button: tap it to open the task). */
 function card(subject: string) {
-  return screen.getByRole("button", { name: new RegExp(subject) });
+  // A search paints the matched words in their own <mark>, which can put a
+  // space into the card's accessible name — compared without spaces.
+  const bare = subject.replace(/\s+/g, "");
+  return screen.getByRole("button", { name: (name) => name.replace(/\s+/g, "").includes(bare) });
+}
+
+/** Text a search painted — split by its yellow <mark>s, so matched as a whole. */
+function painted(text: string) {
+  return (_: string, element: Element | null) =>
+    element?.textContent === text && !Array.from(element.children).some((child) => child.textContent === text);
 }
 
 // An open add box holds its text as the textarea's content — that's not a card.
@@ -1318,7 +1327,7 @@ describe("snoozing (לטיפול בהמשך)", () => {
     await flush();
 
     act(() => undo.actions[0].onRevert());
-    expect(list("blocked").getByText("להתקשר לספק")).toBeInTheDocument();
+    expect(list("blocked").getByText(painted("להתקשר לספק"))).toBeInTheDocument();
     expect(within(card("להתקשר לספק")).getByRole("button", { name: "לטיפול בהמשך" })).toBeInTheDocument();
     expect(within(card("להתקשר לספק")).queryByRole("button", { name: "חוזרת בקרוב" })).toBeNull();
   });
@@ -1350,8 +1359,10 @@ describe("search", () => {
     // One request, for what was typed last.
     expect(push).toHaveBeenCalledTimes(1);
     expect(push).toHaveBeenCalledWith(`/tasks?${new URLSearchParams({ q: "ספק" })}`);
-    // The board already shows only what matches, from the cards it has.
-    expect(screen.getByText("להתקשר לספק")).toBeInTheDocument();
+    // The board already shows only what matches, from the cards it has —
+    // what matched painted yellow.
+    expect(screen.getByText(painted("להתקשר לספק"))).toBeInTheDocument();
+    expect(screen.getByText("ספק", { selector: "mark" })).toBeInTheDocument();
     expect(screen.queryByText("להזמין חומרים")).toBeNull();
     expect(screen.queryByText("לתקן ברז")).toBeNull();
   });
@@ -1366,7 +1377,7 @@ describe("search", () => {
     // The board itself hides nothing by date: a to-do due months out waits
     // off the board because the server leaves it out, and its search keeps it in.
     view.arrive("q=ביטוח", [task({ id: "far", subject: "לחדש ביטוח רכב", due_date: inDays(60) })]);
-    expect(list("todo").getByText("לחדש ביטוח רכב")).toBeInTheDocument();
+    expect(list("todo").getByText(painted("לחדש ביטוח רכב"))).toBeInTheDocument();
     expect(screen.getByPlaceholderText("חיפוש...")).toHaveValue("ביטוח");
   });
 
@@ -1375,7 +1386,7 @@ describe("search", () => {
     renderBoard({ tasks: [task({ id: "a", subject: "اتصل بالمورد", subject_he: "להתקשר לספק" }), task({ id: "b", subject: "אחר" })] });
     fireEvent.change(screen.getByPlaceholderText("חיפוש..."), { target: { value: "לספק" } });
     act(() => vi.advanceTimersByTime(400));
-    expect(screen.getByText("להתקשר לספק")).toBeInTheDocument();
+    expect(screen.getByText(painted("להתקשר לספק"))).toBeInTheDocument();
     expect(screen.queryByText("אחר")).toBeNull();
   });
 

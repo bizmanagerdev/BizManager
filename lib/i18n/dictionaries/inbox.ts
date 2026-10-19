@@ -11,6 +11,8 @@ export type InboxKey =
   | "syncing"
   | "refresh"
   | "allChip"
+  | "searchPlaceholder"
+  | "noSearchResults"
   | "allCleanTitle"
   | "allCleanSubtitle"
   | "summariesTitle"
@@ -62,6 +64,8 @@ export const inboxDict: Dictionary<InboxKey> = {
     syncing: "מעדכן…",
     refresh: "רענן",
     allChip: "הכול",
+    searchPlaceholder: "חיפוש — מילה, לקוח, תאריך, שעה...",
+    noSearchResults: "לא נמצא דבר לחיפוש הזה.",
     allCleanTitle: "הכול נקי",
     allCleanSubtitle: "אין מה לטפל כרגע.",
     summariesTitle: "סיכומים",
@@ -112,6 +116,8 @@ export const inboxDict: Dictionary<InboxKey> = {
     syncing: "جارٍ التحديث…",
     refresh: "تحديث",
     allChip: "الكل",
+    searchPlaceholder: "بحث — كلمة، زبون، تاريخ، ساعة...",
+    noSearchResults: "لم يتم العثور على شيء لهذا البحث.",
     allCleanTitle: "لقد اطلعت على كل شيء",
     allCleanSubtitle: "لا يوجد ما يستدعي المتابعة الآن.",
     summariesTitle: "ملخصات",

@@ -37,7 +37,11 @@ import CustomerCollectionButton from "@/components/collections/CustomerCollectio
 import CommunicationLogItem from "@/components/collections/CommunicationLogItem";
 import BulkActions from "@/components/collections/BulkActions";
 import type { CollectionCustomerGroup, PaymentDueToday } from "@/lib/collections";
+import { Painted, SearchReasons, SearchTermsProvider } from "@/components/search/Painted";
+import { prepareListSearch, searchList } from "@/lib/search/listSearch";
+import type { GlobalSearchReason } from "@/lib/global-search";
 import {
+  debtorSearchRecord,
   buildWaMessage,
   daysSince,
   filterExpectedReceipts,
@@ -463,6 +467,7 @@ const CustomerCard = memo(function CustomerCard({
   selected,
   onToggleSelect,
   onOpenReminders,
+  reasons,
 }: {
   group: CollectionCustomerGroup;
   isOpen: boolean;
@@ -471,6 +476,8 @@ const CustomerCard = memo(function CustomerCard({
   selected: boolean;
   onToggleSelect?: (id: string) => void;
   onOpenReminders: (customerId: string | null) => void;
+  /** Why a search found it. */
+  reasons?: GlobalSearchReason[];
 }) {
   const tint = severityTint(group);
   const rowKey = group.customer_id ?? group.customer_name;
@@ -526,7 +533,7 @@ const CustomerCard = memo(function CustomerCard({
               <ChevronDownIcon
                 className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
               />
-              <span className="font-semibold">{group.customer_name}</span>
+              <span className="font-semibold"><Painted text={group.customer_name} /></span>
               {groupHasPendingCheck(group) ? (
                 <Badge variant="info" className="gap-1 text-[0.588rem]">צ׳ק</Badge>
               ) : null}
@@ -537,9 +544,10 @@ const CustomerCard = memo(function CustomerCard({
                 value={group.customer_phone}
                 className="mt-1 inline-block text-sm text-muted-foreground hover:underline"
               >
-                <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{group.customer_phone}
+                <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}<Painted text={group.customer_phone} />
               </ContactTapZone>
             ) : null}
+            <SearchReasons reasons={reasons} className="mt-0.5" />
             <div className="mt-0.5">
               <LastContactSignal
                 lastContactAt={group.last_contact_at}
@@ -560,7 +568,7 @@ const CustomerCard = memo(function CustomerCard({
           {/* Price + payment status stacked together on the left — days-late
               rides right under the status badge it explains. */}
           <div className="flex shrink-0 flex-col items-end gap-1">
-            <div className="text-lg font-semibold">{formatCurrency(group.actionable_amount)}</div>
+            <div className="text-lg font-semibold"><Painted text={formatCurrency(group.actionable_amount)} /></div>
             <Badge className={collectionStatusClasses(group.status)}>{collectionStatusLabel(group.status)}</Badge>
             <DaysLateSummary group={group} className="text-xs text-destructive" />
           </div>
@@ -612,18 +620,18 @@ function ExpectedReceiptRow({ receipt }: { receipt: ExpectedReceipt }) {
       <div className="min-w-0">
         {receipt.customerId ? (
           <NavLink to={`/customers/${receipt.customerId}`} className="font-semibold hover:underline">
-            {receipt.customerName}
+            <Painted text={receipt.customerName} />
           </NavLink>
         ) : (
-          <span className="font-semibold">{receipt.customerName}</span>
+          <span className="font-semibold"><Painted text={receipt.customerName} /></span>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           {receipt.customerPhone ? (
             <ContactTapZone kind="tel" value={receipt.customerPhone} className="hover:underline">
-              <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{receipt.customerPhone}
+              <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}<Painted text={receipt.customerPhone} />
             </ContactTapZone>
           ) : null}
-          {receipt.checkNumber ? <span>מס׳ צ׳ק {receipt.checkNumber}</span> : null}
+          {receipt.checkNumber ? <span>מס׳ צ׳ק <Painted text={receipt.checkNumber} /></span> : null}
           <NavLink to={href} target="_blank" rel="noreferrer" className="text-primary hover:underline">
             {linkLabel}
           </NavLink>
@@ -633,7 +641,7 @@ function ExpectedReceiptRow({ receipt }: { receipt: ExpectedReceipt }) {
           one), then the due date under them — same corner as the חייבים
           cards' price+status. */}
       <div className="flex shrink-0 flex-col items-end gap-1">
-        <span className="text-lg font-semibold">{formatCurrency(receipt.amount)}</span>
+        <span className="text-lg font-semibold"><Painted text={formatCurrency(receipt.amount)} /></span>
         <div className="flex items-center gap-1">
           {receipt.isScheduled ? (
             <Badge variant="info" className="gap-1 text-[0.588rem]">{paymentMethodLabel(receipt.methodRaw)}</Badge>
@@ -645,7 +653,7 @@ function ExpectedReceiptRow({ receipt }: { receipt: ExpectedReceipt }) {
           ) : null}
         </div>
         <span className={`text-xs ${receipt.overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}>
-          פירעון {receipt.dueDate ? formatShortDate(receipt.dueDate) : "—"}
+          פירעון {receipt.dueDate ? <Painted text={formatShortDate(receipt.dueDate)} /> : "—"}
         </span>
       </div>
     </div>
@@ -683,22 +691,22 @@ function ExpectedReceiptTableRow({ receipt }: { receipt: ExpectedReceipt }) {
           <Badge variant="neutral" className="gap-1 text-[0.588rem]">לא נקבע</Badge>
         )}
         {receipt.checkNumber ? (
-          <div className="mt-0.5 text-xs text-muted-foreground">מס׳ צ׳ק {receipt.checkNumber}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">מס׳ צ׳ק <Painted text={receipt.checkNumber} /></div>
         ) : null}
       </td>
       <td className="px-3 py-2">
         {receipt.customerId ? (
           <NavLink to={`/customers/${receipt.customerId}`} className="font-medium hover:underline">
-            {receipt.customerName}
+            <Painted text={receipt.customerName} />
           </NavLink>
         ) : (
-          <span className="font-medium">{receipt.customerName}</span>
+          <span className="font-medium"><Painted text={receipt.customerName} /></span>
         )}
       </td>
       <td className="px-3 py-2 text-muted-foreground">
         {receipt.customerPhone ? (
           <ContactTapZone kind="tel" value={receipt.customerPhone} className="hover:underline">
-            {receipt.customerPhone}
+            <Painted text={receipt.customerPhone} />
           </ContactTapZone>
         ) : (
           <span className="text-muted-foreground/50">—</span>
@@ -710,14 +718,14 @@ function ExpectedReceiptTableRow({ receipt }: { receipt: ExpectedReceipt }) {
         </NavLink>
       </td>
       <td className={`px-3 py-2 ${receipt.overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}>
-        {receipt.dueDate ? formatShortDate(receipt.dueDate) : "—"}
+        {receipt.dueDate ? <Painted text={formatShortDate(receipt.dueDate)} /> : "—"}
       </td>
       <td className="px-3 py-2">
         {receipt.overdue ? (
           <Badge className={collectionStatusClasses("overdue")}>{collectionStatusLabel("overdue")}</Badge>
         ) : null}
       </td>
-      <td className="px-3 py-2 text-center font-semibold">{formatCurrency(receipt.amount)}</td>
+      <td className="px-3 py-2 text-center font-semibold"><Painted text={formatCurrency(receipt.amount)} /></td>
       <td className="px-2 py-2 text-center">
         {receipt.isScheduled ? <MarkCollectedButton paymentIds={[receipt.paymentId]} /> : null}
       </td>
@@ -747,6 +755,8 @@ function ExpectedReceiptsView({
 
   const total = filtered.reduce((sum, r) => sum + r.amount, 0);
   const dateRangeActive = Boolean(from || to);
+  // Everything a receipt matches on is on its row: painted there.
+  const searchTerms = useMemo(() => prepareListSearch(search)?.terms ?? null, [search]);
 
   const dateRangeFields = (
     <>
@@ -788,7 +798,7 @@ function ExpectedReceiptsView({
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="חיפוש לפי שם או טלפון..."
+          placeholder="שם, טלפון, סכום, תאריך או מספר צ׳ק..."
           className="h-9 w-56"
         />
         {dateRangeFields}
@@ -815,7 +825,7 @@ function ExpectedReceiptsView({
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="חיפוש לפי שם או טלפון..."
+            placeholder="שם, טלפון, סכום, תאריך או מספר צ׳ק..."
             className="h-9 flex-1"
           />
           <Button
@@ -890,6 +900,7 @@ function ExpectedReceiptsView({
           {receipts.length === 0 ? "אין תקבולים צפויים." : "אין תקבולים שתואמים לסינון."}
         </div>
       ) : (
+        <SearchTermsProvider terms={searchTerms}>
         <ResponsiveDataView
           breakpoint="sm"
           desktop={
@@ -932,6 +943,7 @@ function ExpectedReceiptsView({
             </div>
           }
         />
+        </SearchTermsProvider>
       )}
     </div>
   );
@@ -980,6 +992,8 @@ export function DebtorsTable({
   // expected (future-dated) receipts filterable by payment method + due date.
   const [subView, setSubView] = useState<"customers" | "receipts">("customers");
   const expectedReceipts = useMemo(() => flattenExpectedReceipts(customers), [customers]);
+  // Why each debtor came up, and what to paint (the list itself is `filtered`).
+  const found = useMemo(() => searchList(customers, debtorSearchRecord, search), [customers, search]);
   const tabs: { key: FilterKey; label: string }[] = [
     { key: "all", label: "הכל" },
     { key: "overdue", label: "באיחור" },
@@ -1080,7 +1094,7 @@ export function DebtorsTable({
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="חיפוש לפי שם או טלפון..."
+              placeholder="שם, טלפון, סכום, תאריך או מספר צ׳ק..."
               className="h-9 w-56"
             />
             <NativeSelect dense
@@ -1127,7 +1141,7 @@ export function DebtorsTable({
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="חיפוש לפי שם או טלפון..."
+                placeholder="שם, טלפון, סכום, תאריך או מספר צ׳ק..."
                 className="h-9 flex-1"
               />
               <Button
@@ -1222,6 +1236,7 @@ export function DebtorsTable({
             : "אין פריטים שתואמים לסינון."}
         </div>
       ) : (
+        <SearchTermsProvider terms={found?.search.terms ?? null}>
         <ResponsiveDataView
           breakpoint="sm"
           desktop={
@@ -1264,6 +1279,7 @@ export function DebtorsTable({
                       selected={cid ? selected.has(cid) : false}
                       onToggleSelect={cid ? toggleSelect : undefined}
                       onOpenReminders={onOpenReminders}
+                      reasons={found?.reasons.get(group)}
                     />
                   );
                 })}
@@ -1298,6 +1314,7 @@ export function DebtorsTable({
                   selected={cid ? selected.has(cid) : false}
                   onToggleSelect={cid ? toggleSelect : undefined}
                   onOpenReminders={onOpenReminders}
+                  reasons={found?.reasons.get(group)}
                 />
               );
             })}
@@ -1307,6 +1324,7 @@ export function DebtorsTable({
             </div>
           }
         />
+        </SearchTermsProvider>
       )}
         </>
       )}
@@ -1325,6 +1343,7 @@ const FragmentRow = memo(function FragmentRow({
   selected,
   onToggleSelect,
   onOpenReminders,
+  reasons,
 }: {
   group: CollectionCustomerGroup;
   isOpen: boolean;
@@ -1333,6 +1352,8 @@ const FragmentRow = memo(function FragmentRow({
   selected: boolean;
   onToggleSelect?: (id: string) => void;
   onOpenReminders: (customerId: string | null) => void;
+  /** Why a search found it. */
+  reasons?: GlobalSearchReason[];
 }) {
   const tint = severityTint(group);
   const rowKey = group.customer_id ?? group.customer_name;
@@ -1360,15 +1381,16 @@ const FragmentRow = memo(function FragmentRow({
                 <ChevronDownIcon
                   className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
                 />
-                <span>{group.customer_name}</span>
+                <span><Painted text={group.customer_name} /></span>
               </button>
+              <SearchReasons reasons={reasons} className="mt-0.5" />
             </div>
           </div>
         </td>
         <td className="px-3 py-2 text-muted-foreground">
           {group.customer_phone ? (
             <a href={`tel:${group.customer_phone}`} className="hover:underline">
-              {group.customer_phone}
+              <Painted text={group.customer_phone} />
             </a>
           ) : (
             <span className="text-muted-foreground/50">—</span>
@@ -1406,7 +1428,7 @@ const FragmentRow = memo(function FragmentRow({
             <span className="text-muted-foreground/40">—</span>
           )}
         </td>
-        <td className="px-3 py-2 text-center font-semibold">{formatCurrency(group.actionable_amount)}</td>
+        <td className="px-3 py-2 text-center font-semibold"><Painted text={formatCurrency(group.actionable_amount)} /></td>
         <td className="px-2 py-2">
           <div className="flex items-center justify-center">
             <CustomerActions group={group} wa={wa} />

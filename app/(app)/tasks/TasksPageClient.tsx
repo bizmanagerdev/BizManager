@@ -46,6 +46,9 @@ import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { CountBadge } from "@/components/ui/count-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { highlightText } from "@/components/search/highlightMatch";
+import { SearchMatchLine } from "@/components/search/SearchMatchLine";
+import { prepareListSearch } from "@/lib/search/listSearch";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatDateWithTime, formatShortDate, getDueUrgency } from "@/lib/date";
@@ -280,6 +283,7 @@ const TaskCard = memo(function TaskCard({
   longPress,
   overview,
   locale,
+  searchTerms,
 }: {
   task: TaskBoardItem;
   onOpen: (id: string) => void;
@@ -293,7 +297,10 @@ const TaskCard = memo(function TaskCard({
   /** Zoomed out: titles only — the point is to see the list, not each card. */
   overview: boolean;
   locale: Locale;
+  /** While searching: what to paint yellow (lib/tasks/search.ts); null = no search. */
+  searchTerms: readonly string[] | null;
 }) {
+  const paint = (text: string) => (searchTerms ? highlightText(text, searchTerms) : text);
   // A quick-added card the server hasn't given its id yet: greyed and inert —
   // no opening, ticking, snoozing, menu or drag — until it has, the way the
   // app shows anything not usable yet (RememberedCard). Each of those would
@@ -416,7 +423,7 @@ const TaskCard = memo(function TaskCard({
           />
         ) : null}
         <div className={`min-w-0 flex-1 font-medium leading-snug ${isDone ? "text-muted-foreground line-through" : ""}`}>
-          {displaySubject}
+          {paint(displaySubject)}
         </div>
         {!overview && task.priority && SHOWN_PRIORITIES.has(task.priority) ? (
           // 0.74em of the card's 0.875rem: the app's smallest step, 0.647rem, at
@@ -451,27 +458,27 @@ const TaskCard = memo(function TaskCard({
               }
             >
               {dueChipClass ? <ClockIcon className="h-[1.1em] w-[1.1em]" /> : null}
-              {formatDateWithTime(task.due_date, task.due_time)}
+              {paint(formatDateWithTime(task.due_date, task.due_time))}
             </span>
           ) : null}
           {task.project_name ? (
             <span className="inline-flex max-w-full items-center gap-[0.25em]">
               <ProjectIcon className="h-[1.1em] w-[1.1em] shrink-0" />
-              <span className="min-w-0">{task.project_name}</span>
+              <span className="min-w-0">{paint(task.project_name)}</span>
             </span>
           ) : null}
           {task.property_name ? (
             <span className="inline-flex max-w-full items-center gap-[0.25em]">
               <BuildingIcon className="h-[1.1em] w-[1.1em] shrink-0" />
-              <span className="min-w-0">{task.property_name}</span>
+              <span className="min-w-0">{paint(task.property_name)}</span>
             </span>
           ) : null}
           {task.customer_name ? (
             <span className="inline-flex max-w-full items-center gap-[0.25em]">
               <UserIcon className="h-[1.1em] w-[1.1em] shrink-0" />
               <span className="min-w-0">
-                {task.customer_name}
-                {task.customer_phone ? <span dir="ltr"> · {task.customer_phone}</span> : null}
+                {paint(task.customer_name)}
+                {task.customer_phone ? <span dir="ltr"> · {paint(task.customer_phone)}</span> : null}
               </span>
             </span>
           ) : null}
@@ -484,7 +491,7 @@ const TaskCard = memo(function TaskCard({
               className="inline-flex items-center gap-[0.2em]"
             >
               <WazeIcon className="h-[1.1em] w-[1.1em]" />
-              {task.city}
+              {paint(task.city)}
             </AddressLink>
           ) : null}
           {task.is_private ? (
@@ -514,6 +521,11 @@ const TaskCard = memo(function TaskCard({
           ) : null}
         </div>
       ) : null}
+      {/* Why a search found it, for what the card doesn't show — a reply,
+          the description, who it's on. */}
+      {searchTerms ? (
+        <SearchMatchLine reasons={task.search_reasons} terms={searchTerms} className="mt-[0.35em] text-[0.8em]" />
+      ) : null}
     </div>
   );
 });
@@ -533,6 +545,7 @@ function BoardColumn({
   longPress,
   overview,
   locale,
+  searchTerms,
 }: {
   status: string;
   tasks: TaskBoardItem[];
@@ -548,6 +561,7 @@ function BoardColumn({
   longPress: boolean;
   overview: boolean;
   locale: Locale;
+  searchTerms: readonly string[] | null;
 }) {
   const {
     setNodeRef,
@@ -709,6 +723,7 @@ function BoardColumn({
               longPress={longPress}
               overview={overview}
               locale={locale}
+              searchTerms={searchTerms}
             />
           ))}
         </SortableContext>
@@ -765,6 +780,8 @@ export default function TasksPageClient(props: Props) {
   if (pendingFilters && pendingFilters.from !== searchKey) setPendingFilters(null);
   const shownFilters = pendingFilters?.filters ?? committedFilters;
   const urlQ = shownFilters.q;
+  // What a search paints on the cards (the matching itself is the loader's).
+  const searchTerms = useMemo(() => prepareListSearch(urlQ)?.terms ?? null, [urlQ]);
   const urlPriority = shownFilters.priority;
   const urlDomain = shownFilters.domain;
   const urlLinkedId = shownFilters.linkedId;
@@ -1852,6 +1869,7 @@ export default function TasksPageClient(props: Props) {
                   longPress={!touchDrag}
                   overview={isOverview}
                   locale={props.locale}
+                  searchTerms={searchTerms}
                 />
               ))}
             </div>

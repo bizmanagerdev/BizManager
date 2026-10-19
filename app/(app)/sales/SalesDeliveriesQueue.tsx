@@ -3,8 +3,11 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState, useTransition } from "react";
-import { CashIcon, ChevronDownIcon, CommentIcon, LocationIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
+import { useCallback, useDeferredValue, useMemo, useState, useTransition } from "react";
+import { Input } from "@/components/ui/input";
+import { Painted, SearchTermsProvider } from "@/components/search/Painted";
+import { searchList, type SearchRecord } from "@/lib/search/listSearch";
+import { CashIcon, ChevronDownIcon, CommentIcon, LocationIcon, SearchIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { formatMoney } from "@/lib/money";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
@@ -138,6 +141,24 @@ const NO_ADDRESS_WAZE = "bg-muted text-muted-foreground hover:!text-muted-foregr
 /** The still-outstanding line items: drop what's already fully delivered, and
  * show the remaining quantity rather than the original ordered quantity — this
  * queue is what's left to load, not a record of what already went out. */
+// The queue's search (owner, 2026-10-19: "deliveries … no search"), by the
+// global search's rules: what the stop shows — the customer and branch, phone,
+// city and address, the products, the comments, the sum, the asked-for day.
+function deliverySearchRecord(delivery: DeliveryItem): SearchRecord {
+  return {
+    text: [
+      [null, combinedCustomerName(delivery)],
+      [null, delivery.city],
+      [null, delivery.address],
+      [null, delivery.items.map((item) => item.name).join(" | ")],
+      [null, delivery.notes],
+    ],
+    amounts: [[null, delivery.totalAmount]],
+    dates: [[null, delivery.requestedDeliveryDate]],
+    phones: [[null, delivery.customerPhone]],
+  };
+}
+
 function remainingDeliveryItems(items: DeliveryOrderItem[]) {
   return items
     .map((item) => ({ ...item, remaining: item.quantity - item.delivered }))
@@ -267,14 +288,16 @@ export default function SalesDeliveriesQueue({
   // Orders just confirmed on this phone leave the list at once, even while
   // the confirmation waits for a connection (lib/orders/confirmed-deliveries.ts).
   const confirmed = useConfirmedDeliveries();
-  const deliveriesByRegion = useMemo(
-    () =>
-      groupDeliveries(
-        confirmed.size > 0 ? deliveries.filter((delivery) => !confirmed.has(delivery.id)) : deliveries,
-        regionFilter
-      ),
-    [deliveries, regionFilter, confirmed]
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  const found = useMemo(
+    () => searchList(deliveries, deliverySearchRecord, deferredSearch),
+    [deliveries, deferredSearch]
   );
+  const deliveriesByRegion = useMemo(() => {
+    const open = confirmed.size > 0 ? deliveries.filter((delivery) => !confirmed.has(delivery.id)) : deliveries;
+    return groupDeliveries(found ? open.filter((delivery) => found.reasons.has(delivery)) : open, regionFilter);
+  }, [deliveries, regionFilter, confirmed, found]);
 
   const totalVisible = deliveriesByRegion.reduce(
     (sum, [, cities]) =>
@@ -400,10 +423,35 @@ export default function SalesDeliveriesQueue({
         </span>
       </div>
 
+      {deliveries.length > 0 ? (
+        <div className="space-y-1">
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="חיפוש משלוח — לקוח, עיר, מוצר, טלפון, סכום..."
+              aria-label="חיפוש משלוח"
+              className="h-10 ps-9"
+            />
+          </div>
+          {found ? (
+            <div className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">
+                {totalVisible === 1 ? "נמצא משלוח אחד" : `נמצאו ${totalVisible} משלוחים`}
+              </span>
+              {/* Further pages aren't read yet: say the search covers what's here. */}
+              {hasMore ? " · מתוך המשלוחים שנטענו — גללו לעוד" : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* An empty list has the app's one look (owner, 2026-10-11). */}
       {deliveriesByRegion.length === 0 ? (
-        <EmptyState>אין כרגע הזמנות מקובצות למשלוחים.</EmptyState>
+        <EmptyState>{found ? "לא נמצאו משלוחים לחיפוש הזה." : "אין כרגע הזמנות מקובצות למשלוחים."}</EmptyState>
       ) : (
+        <SearchTermsProvider terms={found?.search.terms ?? null}>
         <ResponsiveDataView
           breakpoint="xl"
           desktop={
@@ -470,7 +518,7 @@ export default function SalesDeliveriesQueue({
                               {...(canOpenOrder ? rowNavigateProps(router, `/sales/orders/${delivery.id}`) : {})}
                             >
                               <td className="px-4 py-4">
-                                <div className="font-medium">{combinedCustomerName(group)}</div>
+                                <div className="font-medium"><Painted text={combinedCustomerName(group)} /></div>
                                 {/* The number as text and the app's one call look beside
                                     it, the green phone (owner, 2026-10-11: "make them
                                     all the same"). It copies the number at a desk. */}
@@ -567,7 +615,7 @@ export default function SalesDeliveriesQueue({
                               </td>
                               <td className="px-4 py-4">
                                 <div className="space-y-1">
-                                  <div className="font-semibold">{formatCurrency(delivery.totalAmount)}</div>
+                                  <div className="font-semibold"><Painted text={formatCurrency(delivery.totalAmount)} /></div>
                                   <div className="flex flex-wrap gap-1">
                                     <RequestedDeliveryDateBadge date={delivery.requestedDeliveryDate} />
                                     <LowStockBadge outOfStock={delivery.outOfStock} />
@@ -692,7 +740,7 @@ export default function SalesDeliveriesQueue({
                                         </AddressLink>
                                       )}
                                       <div className="min-w-0 flex-1">
-                                        <div className={LIST_CARD_NAME}>{combinedCustomerName(group)}</div>
+                                        <div className={LIST_CARD_NAME}><Painted text={combinedCustomerName(group)} /></div>
                                         {displayAddress ? <div className={LIST_CARD_META}>{displayAddress}</div> : null}
                                         {hasMultipleOrders ? (
                                           <span className={cn("mt-1 inline-flex rounded-full border border-border bg-muted/50 text-muted-foreground", LIST_CARD_BADGE)}>
@@ -746,7 +794,7 @@ export default function SalesDeliveriesQueue({
                                           <CallGlyph />
                                           <span className="min-w-0 flex-1">
                                             <span className="block text-sm font-semibold">
-                                              {combinedCustomerName(group)}
+                                              <Painted text={combinedCustomerName(group)} />
                                             </span>
                                             {/* dir=ltr keeps the digits in dialling order, but
                                                 it also left-aligns the box — text-right pulls
@@ -777,7 +825,7 @@ export default function SalesDeliveriesQueue({
                                         <div className="divide-y divide-border/60">
                                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 p-3">
                                           <span className="text-sm font-bold">
-                                            {formatCurrency(delivery.totalAmount)}
+                                            <Painted text={formatCurrency(delivery.totalAmount)} />
                                           </span>
                                           <RequestedDeliveryDateBadge date={delivery.requestedDeliveryDate} />
                                           <LowStockBadge outOfStock={delivery.outOfStock} />
@@ -905,6 +953,7 @@ export default function SalesDeliveriesQueue({
             </div>
           }
         />
+        </SearchTermsProvider>
       )}
 
       {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}

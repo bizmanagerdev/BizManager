@@ -181,12 +181,12 @@ export async function findMatchingCustomers(
   const pools: MatchPools = { customerRowById: new Map(), contactsByCustomer: new Map() };
 
   // Fast path: indexed substring match across the whole table.
-  const [ilikeCustomersRes, ilikeContactsRes] = await Promise.all([
+  const [ilikeCustomersRes, ilikeContactsRes, ilikeBranchesRes] = await Promise.all([
     supabase
       .from("customers")
       .select(CUSTOMER_COLUMNS)
       .or(
-        `name.ilike.%${escaped}%,name_for_invoice.ilike.%${escaped}%,email.ilike.%${escaped}%,phone.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%,address.ilike.%${escaped}%`
+        `name.ilike.%${escaped}%,name_for_invoice.ilike.%${escaped}%,registration_number.ilike.%${escaped}%,email.ilike.%${escaped}%,phone.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%,address.ilike.%${escaped}%`
       )
       .limit(300),
     supabase
@@ -195,11 +195,23 @@ export async function findMatchingCustomers(
       .eq("active", true)
       .or(`full_name.ilike.%${escaped}%,phone.ilike.%${escaped}%,email.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%`)
       .limit(300),
+    // A customer is also found by one of its branches — name, address or phone
+    // (owner, 2026-10-19).
+    supabase
+      .from("customer_branches")
+      .select("customer_id")
+      .eq("active", true)
+      .or(`name.ilike.%${escaped}%,address.ilike.%${escaped}%,phone.ilike.%${escaped}%`)
+      .limit(300),
   ]);
   addCustomerRows(pools, ilikeCustomersRes);
   addContactRows(pools, ilikeContactsRes);
 
   let { matchedIds, matchedContactsByCustomer } = computeMatches(pools, query);
+  for (const row of (ilikeBranchesRes.data ?? []) as Row[]) {
+    const customerId = str(row.customer_id);
+    if (customerId) matchedIds.add(customerId);
+  }
 
   // Fallback: only when substring matching found nothing do we scan for
   // fuzzy (typo / letter-swap / re-formatted-number) matches.
