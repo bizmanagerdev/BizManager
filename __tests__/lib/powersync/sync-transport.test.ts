@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
+  FORGET_REMEMBERED_BEFORE,
   createTransportWatch,
   rememberTransport,
   storedTransport,
@@ -18,7 +19,7 @@ describe("the sync's way of connecting", () => {
 
   it("starts on the WebSocket; a remembered HTTP stream holds for a week", () => {
     expect(storedTransport()).toBe("web-socket");
-    const at = Date.UTC(2026, 9, 12);
+    const at = Date.UTC(2026, 9, 20);
     rememberTransport("http", at);
     expect(storedTransport(at + 6 * 24 * 3600_000)).toBe("http");
     expect(storedTransport(at + 8 * 24 * 3600_000)).toBe("web-socket");
@@ -29,13 +30,24 @@ describe("the sync's way of connecting", () => {
   it(`switches after ${SWITCH_AFTER_FAILURES} failed connections in a row, and remembers it`, () => {
     const onSwitch = vi.fn();
     const watch = createTransportWatch("web-socket", onSwitch);
-    watch.failed(0);
-    watch.failed(5_000);
+    const t0 = FORGET_REMEMBERED_BEFORE + 1000;
+    watch.failed(t0);
+    watch.failed(t0 + 5_000);
     expect(onSwitch).not.toHaveBeenCalled();
-    watch.failed(10_000);
+    watch.failed(t0 + 10_000);
     expect(onSwitch).toHaveBeenCalledWith("http");
     expect(watch.transport).toBe("http");
-    expect(storedTransport(10_000)).toBe("http");
+    expect(storedTransport(t0 + 10_000)).toBe("http");
+  });
+
+  // NetFree blocked the sync address on the office network until 2026-10-18;
+  // the devices that switched to the HTTP stream meanwhile go back to the
+  // WebSocket now that it's open (owner, 2026-10-18).
+  it("an HTTP stream remembered before NetFree opened the address is forgotten", () => {
+    rememberTransport("http", FORGET_REMEMBERED_BEFORE - 60_000);
+    expect(storedTransport(FORGET_REMEMBERED_BEFORE + 60_000)).toBe("web-socket");
+    rememberTransport("http", FORGET_REMEMBERED_BEFORE + 60_000);
+    expect(storedTransport(FORGET_REMEMBERED_BEFORE + 120_000)).toBe("http");
   });
 
   it("one failure logged as several lines counts once", () => {
@@ -104,7 +116,7 @@ describe("the sync's way of connecting", () => {
     it("the other tabs hear of a switch", () => {
       const heard = vi.fn();
       const stop = watchStoredTransport(heard);
-      rememberTransport("http");
+      rememberTransport("http", FORGET_REMEMBERED_BEFORE + 1000);
       window.dispatchEvent(new StorageEvent("storage", { key: "bizh-sync-transport" }));
       expect(heard).toHaveBeenLastCalledWith("http");
       rememberTransport("web-socket");

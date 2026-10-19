@@ -16,13 +16,24 @@ export const SWITCH_AFTER_FAILURES = 3;
 /** One failure logs two or three lines ("Sync error", "Failed to connect WebSocket"): one count per this window. */
 const SAME_FAILURE_MS = 2000;
 
+/**
+ * A way remembered before this is forgotten. The office's NetFree blocked the
+ * sync address until 2026-10-18, and the devices that switched to the HTTP
+ * stream while it was blocked go back to the WebSocket — the main way — now
+ * that it's open (owner, 2026-10-18: "moving computers back to the main way of
+ * connecting"). One that still can't use it switches again by itself.
+ */
+export const FORGET_REMEMBERED_BEFORE = Date.parse("2026-10-18T16:00:00Z");
+
 /** The way this device last found working — the WebSocket unless the other way was kept recently. */
 export function storedTransport(now = Date.now()): SyncTransport {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return "web-socket";
     const { transport, at } = JSON.parse(raw) as { transport?: SyncTransport; at?: number };
-    if (transport === "http" && typeof at === "number" && now - at < REMEMBER_MS) return "http";
+    if (transport === "http" && typeof at === "number" && at >= FORGET_REMEMBERED_BEFORE && now - at < REMEMBER_MS) {
+      return "http";
+    }
   } catch {
     // No storage, or something unreadable in it: the default.
   }
