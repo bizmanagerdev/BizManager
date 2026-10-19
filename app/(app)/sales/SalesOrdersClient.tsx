@@ -68,7 +68,7 @@ import { formatMoney } from "@/lib/money";
 import { useSharedSearch } from "@/lib/ui/shared-search";
 import { SearchMatchLine } from "@/components/search/SearchMatchLine";
 import { highlightText } from "@/components/search/highlightMatch";
-import { gsNorm } from "@/lib/search/global-query";
+import { gsNorm, parseGlobalQuery } from "@/lib/search/global-query";
 import type { InsideMatches } from "@/lib/global-search";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
@@ -395,6 +395,10 @@ function shouldShowPaymentAction(row: OrderView) {
 // nothing. Anything else (בוטלה, בטיפול, במשלוח…) is worth flagging and still shows.
 const EXPECTED_STATUS_BY_VIEW = { open: "draft", closed: "delivered" } as const;
 
+// What an order's row already shows (and paints yellow when it matches), so a
+// search that matched it doesn't repeat it under the row.
+const ORDER_ROW_FIELDS: readonly string[] = ["שם לחשבונית", "סניף", "עיר"];
+
 // Stable for useUndoOverlay: a deleted order leaves the list at once, while
 // its undo window is still open.
 const orderViewId = (row: OrderView) => row.id;
@@ -602,43 +606,39 @@ export default function SalesOrdersClient({
     if (orderIndexLoading) return;
     let cancelled = false;
 
-    const allNameMatches = searchOrderEntries(orderIndexEntries, q, customerIndexEntries, 100);
+    // The instant (on-device) name search paints typed WORDS at once; the full
+    // search then decides the list, so every row on it can say why it's there
+    // (owner, 2026-10-19: "I need all results to be highlighted"). An amount, a
+    // date or an hour waits for the full search — matched against names it only
+    // found digits inside phone numbers.
+    const wordsOnly = parseGlobalQuery(q).understood.length === 0;
+    const allNameMatches = wordsOnly ? searchOrderEntries(orderIndexEntries, q, customerIndexEntries, 100) : [];
     const nameMatches = allNameMatches.filter((entry) =>
       passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter)
     );
-    const otherNameIds = allNameMatches
-      .filter((entry) => passesActiveScope(entry, otherTab, customerId ?? null, "all"))
-      .map((entry) => entry.id);
-    setOtherTabCount(otherNameIds.length);
-    const basicRows = nameMatches.map(toBasicOrderRow);
     // A payment-status filter needs real totals, unavailable until enrichment —
     // skip the instant (zero-total) paint for that combo rather than flash rows
     // that would immediately get filtered back out.
-    const skipInstantPaint = showPaymentStatusFilter && paymentFilter !== "all";
-    if (!skipInstantPaint) setApiSearchRows(basicRows);
+    const skipInstantPaint = !wordsOnly || (showPaymentStatusFilter && paymentFilter !== "all");
+    if (!skipInstantPaint) setApiSearchRows(nameMatches.map(toBasicOrderRow));
 
     const timer = setTimeout(async () => {
       try {
         const deep = await findOrderContentMatches(q);
         if (cancelled) return;
         setDeepMatches({ ids: deep.ids ?? [], reasons: deep.reasons ?? {}, terms: deep.terms ?? [], query: q });
-        const contentIds = deep.ids ?? [];
         const entryById = new Map(orderIndexEntries.map((entry) => [entry.id, entry]));
-        const knownIds = new Set(nameMatches.map((entry) => entry.id));
-        const contentEntries = contentIds
+        const contentEntries = (deep.ids ?? [])
           .map((id) => entryById.get(id))
           .filter((entry): entry is OrderSearchIndexEntry => entry != null);
-        const extraEntries = contentEntries
-          .filter((entry) => !knownIds.has(entry.id))
-          .filter((entry) => passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter));
-        const otherIds = new Set(otherNameIds);
-        for (const entry of contentEntries) {
-          if (passesActiveScope(entry, otherTab, customerId ?? null, "all")) otherIds.add(entry.id);
-        }
-        setOtherTabCount(otherIds.size);
-        const allMatches = [...nameMatches, ...extraEntries];
-        const allBasicRows = [...basicRows, ...extraEntries.map(toBasicOrderRow)];
-        if (!skipInstantPaint) setApiSearchRows(allBasicRows);
+        setOtherTabCount(
+          contentEntries.filter((entry) => passesActiveScope(entry, otherTab, customerId ?? null, "all")).length
+        );
+        const allMatches = contentEntries.filter((entry) =>
+          passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter)
+        );
+        const allBasicRows = allMatches.map(toBasicOrderRow);
+        if (!(showPaymentStatusFilter && paymentFilter !== "all")) setApiSearchRows(allBasicRows);
 
         const { rows: enriched } = await loadOrderRowsByIds(allMatches.map((entry) => entry.id));
         if (cancelled) return;
@@ -1007,9 +1007,9 @@ export default function SalesOrdersClient({
                           {row.customerBranchName ? (
                             <div className="text-xs text-muted-foreground">סניף: {highlightText(row.customerBranchName, searchTerms)}</div>
                           ) : null}
-                          <SearchMatchLine reasons={matchReasons?.[row.id]} terms={searchTerms} className="mt-1 max-w-[18rem]" />
+                          <SearchMatchLine reasons={matchReasons?.[row.id]} terms={searchTerms} hideLabels={ORDER_ROW_FIELDS} className="mt-1 max-w-[18rem]" />
                           {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
-                            <div className="text-xs text-muted-foreground">לחשבונית: {row.customerNameForInvoice}</div>
+                            <div className="text-xs text-muted-foreground">לחשבונית: {highlightText(row.customerNameForInvoice, searchTerms)}</div>
                           ) : null}
                           {/* The number stays text — a click on it opens the order
                               like the rest of the row — and the green phone beside
@@ -1018,7 +1018,7 @@ export default function SalesOrdersClient({
                           {row.customerPhone ? (
                             <div className="mt-1 flex items-center gap-2">
                               <span dir="ltr" className="text-muted-foreground">
-                                {row.customerPhone}
+                                {highlightText(row.customerPhone, searchTerms)}
                               </span>
                               <CallIconButton phone={row.customerPhone} name={row.customerName} />
                             </div>
@@ -1029,7 +1029,7 @@ export default function SalesOrdersClient({
                       </td>
                       <td className="px-4 py-4">
                         <div>
-                          <div>{row.customerCity ?? "—"}</div>
+                          <div>{row.customerCity ? highlightText(row.customerCity, searchTerms) : "—"}</div>
                           {/* The order's day, then when it was really typed in —
                               on the same line, so the row keeps its height,
                               and with no "הוזן" before it ("it's extra" —
@@ -1260,7 +1260,7 @@ export default function SalesOrdersClient({
                               ) : null}
                               {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
                                 <div className={cn(LIST_CARD_META, "leading-snug")}>
-                                  לחשבונית: {row.customerNameForInvoice}
+                                  לחשבונית: {highlightText(row.customerNameForInvoice, searchTerms)}
                                 </div>
                               ) : null}
                               {row.customerPhone || row.customerCity ? (
@@ -1269,9 +1269,9 @@ export default function SalesOrdersClient({
                                       of the card. As a call link right under the name it took
                                       the taps meant for the order (owner, 2026-10-11); the
                                       call button in the corner dials instead. */}
-                                  {row.customerPhone ? <span dir="ltr">{row.customerPhone}</span> : null}
+                                  {row.customerPhone ? <span dir="ltr">{highlightText(row.customerPhone, searchTerms)}</span> : null}
                                   {row.customerPhone && row.customerCity ? " · " : null}
-                                  {row.customerCity}
+                                  {row.customerCity ? highlightText(row.customerCity, searchTerms) : null}
                                 </div>
                               ) : null}
                             </div>
@@ -1293,8 +1293,8 @@ export default function SalesOrdersClient({
 
                           {/* Found by a search through something not on the card (a
                               payment, a comment, an hour): what it was, painted. */}
-                          {matchReasons?.[row.id]?.length ? (
-                            <SearchMatchLine reasons={matchReasons[row.id]} terms={searchTerms} />
+                          {matchReasons?.[row.id]?.some((reason) => !ORDER_ROW_FIELDS.includes(reason.label)) ? (
+                            <SearchMatchLine reasons={matchReasons[row.id]} terms={searchTerms} hideLabels={ORDER_ROW_FIELDS} />
                           ) : null}
 
                           {/* Only what's EXCEPTIONAL about the order — a status that isn't

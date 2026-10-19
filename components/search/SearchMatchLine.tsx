@@ -10,16 +10,20 @@ import { cn } from "@/lib/utils";
 export function SearchMatchLine({
   reasons,
   terms,
+  hideLabels,
   className,
 }: {
   reasons: readonly GlobalSearchReason[] | undefined;
   terms: readonly string[];
+  /** Fields the row already shows (and paints) — not said twice. */
+  hideLabels?: readonly string[];
   className?: string;
 }) {
-  if (!reasons || reasons.length === 0) return null;
+  const shown = (reasons ?? []).filter((reason) => !hideLabels?.includes(reason.label));
+  if (shown.length === 0) return null;
   return (
     <div className={cn("space-y-0.5 text-xs text-muted-foreground", className)}>
-      {reasons.map((reason) => (
+      {shown.map((reason) => (
         <MatchReason
           key={`${reason.kind}:${reason.label}`}
           label={reason.label}

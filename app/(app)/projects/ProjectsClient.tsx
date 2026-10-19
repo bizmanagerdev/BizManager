@@ -89,7 +89,7 @@ import { formatMoneyRounded } from "@/lib/money";
 import { useSharedSearch } from "@/lib/ui/shared-search";
 import { SearchMatchLine } from "@/components/search/SearchMatchLine";
 import { highlightText } from "@/components/search/highlightMatch";
-import { gsNorm } from "@/lib/search/global-query";
+import { gsNorm, parseGlobalQuery } from "@/lib/search/global-query";
 import type { InsideMatches } from "@/lib/global-search";
 
 type ProjectRow = Record<string, unknown>;
@@ -100,6 +100,10 @@ const PROJECT_TABS: ProjectsView[] = ["quotes", "projects", "closed"];
 const PROJECT_TAB_LABELS: Record<ProjectsView, string> = { quotes: "הצעות", projects: "פרויקטים", closed: "סגורים" };
 
 type TabCounts = Partial<Record<ProjectsView, number>>;
+
+// What a project's row already shows (and paints yellow when it matches), so a
+// search that matched it doesn't repeat it under the row.
+const PROJECT_ROW_FIELDS: readonly string[] = ["לקוח"];
 
 /** A state update that keeps the same object when the counts didn't change (no extra render). */
 function keepIfSame(next: TabCounts) {
@@ -616,11 +620,16 @@ export default function ProjectsClient({
         otherTabs.map((tab) => [tab, entries.filter((entry) => passesActiveScope(entry, tab, "all", scopeCustomerId)).length])
       ) as TabCounts;
 
-    const allNameMatches = searchProjectEntries(projectIndexEntries, q, customerIndexEntries, 100);
-    const nameMatches = allNameMatches.filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
-    setOtherTabCounts(keepIfSame(countOtherTabs(allNameMatches)));
-    const basicRows = nameMatches.map(toBasicProjectRow);
-    setApiSearchRows(basicRows);
+    // The instant (on-device) name search paints typed WORDS at once; the full
+    // search then decides the list, so every row on it can say why it's there
+    // (owner, 2026-10-19: "I need all results to be highlighted"). An amount, a
+    // date or an hour waits for the full search.
+    if (parseGlobalQuery(q).understood.length === 0) {
+      const nameMatches = searchProjectEntries(projectIndexEntries, q, customerIndexEntries, 100).filter((entry) =>
+        passesActiveScope(entry, activeTab, status, scopeCustomerId)
+      );
+      setApiSearchRows(nameMatches.map(toBasicProjectRow));
+    }
 
     const timer = setTimeout(async () => {
       try {
@@ -628,17 +637,12 @@ export default function ProjectsClient({
         if (cancelled) return;
         setDeepMatches({ ids: deep.ids ?? [], reasons: deep.reasons ?? {}, terms: deep.terms ?? [], query: q });
         const entryById = new Map(projectIndexEntries.map((entry) => [entry.id, entry]));
-        const knownIds = new Set(nameMatches.map((entry) => entry.id));
         const contentEntries = (deep.ids ?? [])
           .map((id) => entryById.get(id))
           .filter((entry): entry is ProjectSearchIndexEntry => entry != null);
-        const extraEntries = contentEntries
-          .filter((entry) => !knownIds.has(entry.id))
-          .filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
-        const everyMatch = new Map([...allNameMatches, ...contentEntries].map((entry) => [entry.id, entry]));
-        setOtherTabCounts(keepIfSame(countOtherTabs([...everyMatch.values()])));
-        const allMatches = [...nameMatches, ...extraEntries];
-        const allBasicRows = [...basicRows, ...extraEntries.map(toBasicProjectRow)];
+        setOtherTabCounts(keepIfSame(countOtherTabs(contentEntries)));
+        const allMatches = contentEntries.filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
+        const allBasicRows = allMatches.map(toBasicProjectRow);
         setApiSearchRows(allBasicRows);
 
         const { rows: enriched } = await loadProjectRowsByIds(allMatches.map((entry) => entry.id));
@@ -1365,7 +1369,7 @@ export default function ProjectsClient({
                       <div className="block">
                         <div className="font-medium">{highlightText(projectDisplayName(row), searchTerms)}</div>
                         <div className="mt-1 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
-                        <SearchMatchLine reasons={matchReasons?.[id]} terms={searchTerms} className="mt-1 max-w-[18rem]" />
+                        <SearchMatchLine reasons={matchReasons?.[id]} terms={searchTerms} hideLabels={PROJECT_ROW_FIELDS} className="mt-1 max-w-[18rem]" />
                       </div>
                     </td>
                     <td className="px-4 py-4">
@@ -1647,7 +1651,7 @@ export default function ProjectsClient({
                         {/* Found by a search through something not on the card (a
                             payment, an expense, a shift, a task reply, an hour): what
                             it was, painted. */}
-                        <SearchMatchLine reasons={matchReasons?.[id]} terms={searchTerms} />
+                        <SearchMatchLine reasons={matchReasons?.[id]} terms={searchTerms} hideLabels={PROJECT_ROW_FIELDS} />
 
                         {/* The two statuses under it — a caption, not a headline. */}
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
