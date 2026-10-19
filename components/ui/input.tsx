@@ -1,3 +1,8 @@
+"use client";
+
+// A browser component: it keeps its own change handler (useCallback), which a
+// page rendered on the server can't hand over — /search crashed with "Event
+// handlers cannot be passed to Client Component props" (2026-10-19).
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
