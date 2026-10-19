@@ -25,10 +25,13 @@ const POWERSYNC_VERSION = (
 ).version;
 
 const nextConfig: NextConfig = {
-  // A second `next dev` in this folder (another chat's preview) can't share
-  // .next/dev — Next locks it — so it builds into its own folder instead
-  // (.claude/launch.json sets NEXT_DIST_DIR). Unset everywhere else.
-  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+  // Another chat's preview runs `next dev` in this same folder on the next free
+  // port, and two can't share .next/dev (Next locks it): a preview past 3000
+  // builds into a folder of its own port. Only .claude/launch.json sets
+  // NEXT_DIST_BY_PORT, so Vercel and a plain `npm run dev` build as before.
+  ...(process.env.NEXT_DIST_BY_PORT && process.env.PORT && process.env.PORT !== "3000"
+    ? { distDir: `.next/port-${process.env.PORT}` }
+    : {}),
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
     NEXT_PUBLIC_POWERSYNC_ASSETS: `/powersync/${POWERSYNC_VERSION}`,

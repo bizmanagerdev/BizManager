@@ -30,8 +30,10 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    ".next/preview/types/**/*.ts",
-    ".next/preview/dev/types/**/*.ts",
+    ".next/port-3001/types/**/*.ts",
+    ".next/port-3001/dev/types/**/*.ts",
+    ".next/port-3002/types/**/*.ts",
+    ".next/port-3002/dev/types/**/*.ts",
     "**/*.mts"
   ],
   "exclude": ["node_modules", "lovable"]
