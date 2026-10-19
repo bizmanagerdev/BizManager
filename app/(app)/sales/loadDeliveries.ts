@@ -67,6 +67,8 @@ export type DeliveryItem = {
   deliveryLng: number | null;
   /** The customer's saved address was not found on Google Maps: no Waze, no driver's slip. */
   addressNotFound?: boolean;
+  /** The apartment / entrance / floor of the address the stop goes to (owner, 2026-10-19). */
+  addressUnit?: string | null;
 };
 
 export type DeliveriesFilters = { customerId: string | null };
@@ -165,6 +167,7 @@ export async function loadDeliveriesPage(
       deliveryLat: null as number | null,
       deliveryLng: null as number | null,
       addressNotFound: false,
+      addressUnit: null as string | null,
     }))
     .filter((row) => row.id);
 
@@ -190,13 +193,13 @@ export async function loadDeliveriesPage(
           supabase
             .from("customers")
             .select(
-              "id,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment"
+              "id,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment"
             )
             .in("id", customerIds),
           branchIds.length > 0
             ? supabase
                 .from("customer_branches")
-                .select("id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng")
+                .select("id,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng")
                 .in("id", branchIds)
                 .then(({ data: rows }) => (rows ?? []) as Row[])
             : Promise.resolve([] as Row[]),
@@ -215,6 +218,7 @@ export async function loadDeliveriesPage(
             : pinFrom(row.delivery_lat, row.delivery_lng) ?? addressPoint(row);
           delivery.deliveryLat = point?.lat ?? null;
           delivery.deliveryLng = point?.lng ?? null;
+          delivery.addressUnit = getString(toOwnBranch ? branchById.get(delivery.branchId ?? "") ?? {} : row, "addr_unit");
           delivery.addressNotFound = !toOwnBranch && addressNotFound(row);
           delivery.requiresPrepayment = row.requires_prepayment === true;
         }

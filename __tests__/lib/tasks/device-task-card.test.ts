@@ -31,7 +31,9 @@ function fakeReader(tables: Record<string, Row[]>): LocalReader {
 const task = {
   id: "t1", business_domain: "general_business", project_id: null, property_id: null, customer_id: "c1",
   assigned_user_id: "u2", subject: "להתקשר", description: "פרטים", subject_he: null, description_he: null,
-  subject_ar: null, description_ar: null, due_date: "2026-10-09", due_time: null, city: null, address: null,
+  subject_ar: null, description_ar: null, due_date: "2026-10-09", due_time: null, city: "בית שמש", address: "יחזקאל הנביא 27",
+  addr_city: "בית שמש", addr_street: "יחזקאל הנביא", addr_house_number: "27", addr_unit: null, addr_lat: 31.70377,
+  addr_lng: 34.98633, addr_place_id: "ChIJ-yechezkel", addr_formatted: "יחזקאל הנביא 27, בית שמש",
   priority: "high", status: "todo", created_at: "2026-10-01T08:00:00Z", updated_at: "2026-10-01T08:00:00Z",
   notes: null, is_private: 1, private_owner_id: "u1",
 };
@@ -57,6 +59,8 @@ describe("readTaskCardFromDevice", () => {
     const card = await readTaskCardFromDevice(reader as never, "t1", "u1");
     expect(card).not.toBeNull();
     expect(card!.task).toMatchObject({ id: "t1", subject: "להתקשר", is_private: true, priority: "high" });
+    // The address picked from Google, like the server's /api/tasks/get (owner, 2026-10-19).
+    expect(card!.task).toMatchObject({ addr_city: "בית שמש", addr_street: "יחזקאל הנביא", addr_house_number: "27", addr_lat: 31.70377 });
     expect(card!.memberIds).toEqual(["u3"]);
     expect(card!.comments.map((c) => [c.id, c.author_name])).toEqual([
       ["k1", "אני"],

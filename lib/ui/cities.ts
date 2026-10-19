@@ -244,10 +244,13 @@ function splitDeliveryAddress(input: {
 export function formatDeliveryAddress(input: {
   address?: string | null;
   city?: string | null;
+  /** The apartment / entrance / floor typed in the address picker's own box. */
+  unit?: string | null;
 }): string {
   const { street, city } = splitDeliveryAddress(input);
   const shown = street && !STREET_TYPE_PREFIX.test(street) ? `רחוב ${street}` : street;
-  return [shown, city].filter(Boolean).join(", ");
+  const main = [shown, city].filter(Boolean).join(", ");
+  return [main, input.unit?.trim()].filter(Boolean).join(" · ");
 }
 
 // A street and its house number, with at most a letter after it ("14ב",

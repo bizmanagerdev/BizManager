@@ -56,6 +56,13 @@ describe("the driver's slip", () => {
     expect(screen.getByRole("button", { name: "שליחה לנהג" })).toBeDisabled();
   });
 
+  // Owner, 2026-10-19: the driver sees the apartment / entrance too.
+  it("shows the apartment / entrance with the address", () => {
+    render(<DeliveryShareActions delivery={delivery({ addressUnit: "קומה 2" })} label="שליחה לנהג" />);
+    tapShare();
+    expect(screen.getByText("רחוב יחזקאל הנביא 27, בית שמש · קומה 2")).toBeInTheDocument();
+  });
+
   it("is made at once when a point is saved, whatever the address", () => {
     render(
       <DeliveryShareActions

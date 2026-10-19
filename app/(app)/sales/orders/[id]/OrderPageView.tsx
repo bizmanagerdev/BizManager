@@ -177,6 +177,7 @@ export default function OrderPageView({
     ? addressPoint(branch)
     : pinFrom(customer?.delivery_lat, customer?.delivery_lng) ?? addressPoint(customer);
   const orderAddressNotFound = !branchAddress && addressNotFound(customer);
+  const orderAddressUnit = getString((branchAddress ? branch : customer) ?? {}, "addr_unit");
   const effectivePhone = branchPhone ?? customerPhone;
   const orderNotes = getString(order ?? {}, "notes");
 
@@ -408,7 +409,7 @@ export default function OrderPageView({
                 phone={effectivePhone}
                 email={customerEmail}
                 address={effectiveAddress}
-                pin={orderPin} addressNotFound={orderAddressNotFound}
+                pin={orderPin} addressNotFound={orderAddressNotFound} addressUnit={orderAddressUnit}
               />
             </div>
 
@@ -496,7 +497,7 @@ export default function OrderPageView({
                   phone={effectivePhone}
                   email={customerEmail}
                   address={effectiveAddress}
-                  pin={orderPin} addressNotFound={orderAddressNotFound}
+                  pin={orderPin} addressNotFound={orderAddressNotFound} addressUnit={orderAddressUnit}
                 />
               </div>
 

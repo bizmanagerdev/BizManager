@@ -60,6 +60,7 @@ type CustomerGroup = {
   deliveryLat: number | null;
   deliveryLng: number | null;
   addressNotFound?: boolean;
+  addressUnit?: string | null;
 };
 
 type RegionLink = {
@@ -99,6 +100,7 @@ function buildCustomerGroups(cityDeliveries: DeliveryItem[]) {
         deliveryLat: delivery.deliveryLat,
         deliveryLng: delivery.deliveryLng,
         addressNotFound: delivery.addressNotFound,
+        addressUnit: delivery.addressUnit,
       });
       return map;
     }, new Map<string, CustomerGroup>())
@@ -506,7 +508,7 @@ export default function SalesDeliveriesQueue({
                           const unpaidPrepayment =
                             delivery.requiresPrepayment && delivery.paymentStatus !== "paid";
                           const partiallyDelivered = delivery.status === "partially_delivered";
-                          const displayAddress = formatDeliveryAddress({ address: group.address, city });
+                          const displayAddress = formatDeliveryAddress({ address: group.address, city, unit: group.addressUnit });
                           return (
                             <tr
                               key={delivery.id}
@@ -696,7 +698,7 @@ export default function SalesDeliveriesQueue({
 
                         <ul className="space-y-2">
                             {customerGroups.map(([customerKey, group]) => {
-                              const displayAddress = formatDeliveryAddress({ address: group.address, city });
+                              const displayAddress = formatDeliveryAddress({ address: group.address, city, unit: group.addressUnit });
 
                               const hasMultipleOrders = group.orders.length > 1;
                               const groupPin = pinFrom(group.deliveryLat, group.deliveryLng);

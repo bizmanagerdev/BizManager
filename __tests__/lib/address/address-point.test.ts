@@ -79,6 +79,16 @@ describe("the deliveries list and the driver's slip", () => {
     expect(delivery).toMatchObject({ deliveryLat: null, deliveryLng: null });
   });
 
+  it("carries the apartment / entrance of the address it goes to", async () => {
+    expect(await firstStop({ view: stop({}), customer: customer({ addr_unit: "קומה 2" }) })).toMatchObject({ addressUnit: "קומה 2" });
+    const toBranch = await firstStop({
+      view: stop({ branch_id: "b1", branch_address: "ירושלים | צפניה 48" }),
+      customer: customer({ addr_unit: "קומה 2" }),
+      branch: { id: "b1", addr_city: "ירושלים", addr_street: "צפניה", addr_house_number: "48", addr_unit: "כניסה ב", addr_lat: 31.79, addr_lng: 35.21 },
+    });
+    expect(toBranch).toMatchObject({ addressUnit: "כניסה ב" });
+  });
+
   it("an order to a branch goes to the branch's own point, not the customer's", async () => {
     const delivery = await firstStop({
       view: stop({ branch_id: "b1", branch_address: "ירושלים | צפניה 48" }),

@@ -171,7 +171,7 @@ export default function DeliveryShareActions({
       // `slipPin` consts, so a delivery update mid-capture can't leave the
       // share TEXT quoting a different address than the slip IMAGE (captured
       // fresh from the DOM below) actually shows.
-      const currentAddress = formatDeliveryAddress({ address: current.address, city: current.city });
+      const currentAddress = formatDeliveryAddress({ address: current.address, city: current.city, unit: current.addressUnit });
       const currentSlipPin = pinFrom(current.deliveryLat, current.deliveryLng);
       try {
         if ("fonts" in document) await document.fonts.ready;
@@ -349,7 +349,8 @@ export default function DeliveryShareActions({
     void run();
   }, [renderingImage]);
 
-  const address = formatDeliveryAddress({ address: delivery.address, city: delivery.city });
+  // The apartment / entrance goes on the slip too (owner, 2026-10-19).
+  const address = formatDeliveryAddress({ address: delivery.address, city: delivery.city, unit: delivery.addressUnit });
   const slipPin = pinFrom(delivery.deliveryLat, delivery.deliveryLng);
   const fullAddress =
     slipPin !== null || addressQuality({ address: delivery.address, city: delivery.city }) === "clear";

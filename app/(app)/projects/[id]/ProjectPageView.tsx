@@ -316,6 +316,7 @@ export default function ProjectPageView({
       address={customerAddress}
       pin={customerPin}
       addressNotFound={!cleanField(branchRow?.address) && addressNotFound(customerRow as Record<string, unknown> | null)}
+      addressUnit={cleanField((cleanField(branchRow?.address) ? branchRow : customerRow)?.addr_unit)}
       entityType="project"
       entityId={id}
     />

@@ -703,8 +703,8 @@ describe("the money views, worked out on the device", () => {
             "payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,vat_rate,business_domain,order_id,property_id,requires_split,recorded_by,notes,account_id,created_at,updated_at"
           ),
           salary_agreements: pad(tables.salary_agreements, "salary_type,hourly_rate,monthly_salary,notes,overtime_rate,standard_daily_hours"),
-          customers: pad(tables.customers, "name_for_invoice,email,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,delivery_lat,delivery_lng"),
-          customer_branches: [{ id: "b1", customer_id: "c1", name: "צפון", address: "חיפה", phone: "04", addr_city: null, addr_street: null, addr_house_number: null, addr_lat: null, addr_lng: null }],
+          customers: pad(tables.customers, "name_for_invoice,email,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,delivery_lat,delivery_lng"),
+          customer_branches: [{ id: "b1", customer_id: "c1", name: "צפון", address: "חיפה", phone: "04", addr_unit: null, addr_city: null, addr_street: null, addr_house_number: null, addr_lat: null, addr_lng: null }],
           tasks: pad(
             [
               { id: "t1", project_id: "p1", status: "done", subject: "לארוז", due_date: "2026-10-01T08:00:00.000000", assigned_user_id: "u1" },
@@ -763,7 +763,7 @@ describe("the money views, worked out on the device", () => {
 describe("the sales tabs, worked out on the device", () => {
   const tables = {
     customers: [
-      { id: "c1", name: "  ", name_for_invoice: "חברה", phone: "050", email: null, address: "חיפה|הרצל 1", addr_place_id: null, addr_city: null, addr_street: null, addr_house_number: null, addr_lat: null, addr_lng: null, delivery_lat: null, delivery_lng: null },
+      { id: "c1", name: "  ", name_for_invoice: "חברה", phone: "050", email: null, address: "חיפה|הרצל 1", addr_place_id: null, addr_unit: null, addr_city: null, addr_street: null, addr_house_number: null, addr_lat: null, addr_lng: null, delivery_lat: null, delivery_lng: null },
     ],
     users: [{ id: "u1", full_name: "מנהל", email: "a@b.c" }],
     customer_branches: [],

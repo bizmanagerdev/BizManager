@@ -43,6 +43,13 @@ describe("omitUnknownPlace", () => {
 });
 
 describe("formatDeliveryAddress", () => {
+  // The apartment / entrance typed in the picker's own box (owner, 2026-10-19).
+  it("puts the apartment / entrance after the address", () => {
+    expect(formatDeliveryAddress({ address: "ירושלים | שדרות גולדה מאיר 255", unit: "קניון רמות קומה 2" })).toBe(
+      "שדרות גולדה מאיר 255, ירושלים · קניון רמות קומה 2"
+    );
+    expect(formatDeliveryAddress({ address: "תל אביב | הרצל 5", unit: "  " })).toBe("רחוב הרצל 5, תל אביב");
+  });
   it("splits a pipe-separated 'city | street' address and prefixes רחוב", () => {
     expect(formatDeliveryAddress({ address: "תל אביב | הרצל 5", city: null })).toBe("רחוב הרצל 5, תל אביב");
   });

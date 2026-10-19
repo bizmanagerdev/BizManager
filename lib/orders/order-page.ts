@@ -102,7 +102,7 @@ export async function loadOrderPageCore(
     if (!customerId) return null;
     const { data } = await supabase
       .from("customers")
-      .select("id,name,name_for_invoice,registration_number,email,phone,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,delivery_lat,delivery_lng")
+      .select("id,name,name_for_invoice,registration_number,email,phone,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,delivery_lat,delivery_lng")
       .eq("id", customerId)
       .maybeSingle();
     return (data ?? null) as Row | null;
@@ -110,7 +110,7 @@ export async function loadOrderPageCore(
   const branchRead = orderRow.then(async (order) => {
     const branchId = getString(order, "branch_id");
     if (!branchId) return null;
-    const { data } = await supabase.from("customer_branches").select("id,name,address,phone,addr_city,addr_street,addr_house_number,addr_lat,addr_lng").eq("id", branchId).maybeSingle();
+    const { data } = await supabase.from("customer_branches").select("id,name,address,phone,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng").eq("id", branchId).maybeSingle();
     return (data ?? null) as Row | null;
   });
   // The lines' products with their live stock (on-hand − reserved), so the

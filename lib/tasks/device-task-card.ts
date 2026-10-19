@@ -46,7 +46,7 @@ export async function readTaskCardFromDevice(
     local
       .from("tasks")
       .select(
-        "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,subject_he,description_he,subject_ar,description_ar,due_date,due_time,city,address,priority,status,created_at,updated_at,notes,is_private,private_owner_id"
+        "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,subject_he,description_he,subject_ar,description_ar,due_date,due_time,city,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,priority,status,created_at,updated_at,notes,is_private,private_owner_id"
       )
       .eq("id", taskId)
       .maybeSingle(),
