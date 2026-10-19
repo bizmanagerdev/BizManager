@@ -879,7 +879,10 @@ export default function BankClient({
           container; no justify-center here — combined with overflow-x-auto
           that's a known way to clip the first/last card once the row
           actually overflows. */}
-      <div className="space-y-1">
+      {/* Pulled up into half the page's top padding — the search is the
+          page's first line, and the full gap above it read as empty space
+          (owner, 2026-10-19). */}
+      <div className="space-y-1 md:-mt-3 lg:-mt-4">
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
