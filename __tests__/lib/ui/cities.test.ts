@@ -8,6 +8,17 @@ describe("getCityRegion", () => {
   it("trims the city before lookup", () => {
     expect(getCityRegion("  באר שבע  ")).toBe("דרום");
   });
+  // The names Google gives towns (the address picker), not only the everyday ones.
+  it.each([
+    ["תל אביב-יפו", "מרכז"],
+    ["קרית יערים", "מרכז"],
+    ["מודיעין מכבים רעות", "מרכז"],
+    ['כפר חב"ד', "מרכז"],
+    ["נוף הגליל", "צפון"],
+    ["אלומה", "דרום"],
+  ])("Google's name %s is in %s", (city, region) => {
+    expect(getCityRegion(city)).toBe(region);
+  });
   it("null for an unknown city or no city", () => {
     expect(getCityRegion("עיר לא קיימת")).toBeNull();
     expect(getCityRegion(null)).toBeNull();
