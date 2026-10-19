@@ -1,7 +1,7 @@
 "use server";
 
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { findProjectIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
+import { findInsideMatches, type InsideMatches } from "@/lib/global-search";
 import {
   loadProjectsByIds,
   loadProjectsPage,
@@ -25,13 +25,13 @@ export async function loadProjectRowsByIds(ids: string[]) {
 // The project search index is a GET now: app/api/search-index/[kind]/route.ts.
 
 /**
- * Project ids reached only through a task/task-comment or the project's own
- * notes/items-to-move — the "deep content" matches the instant name/customer
- * index can't see. Run in the background after the instant paint so those
- * projects still surface without delaying the type-ahead.
+ * Projects reached through anything inside them — tasks and task replies,
+ * notes, addresses, payments, expenses, shifts, dates, hours, amounts — the
+ * "deep content" matches the instant name/customer index can't see, with why
+ * each one came up (owner, 2026-10-19). Run in the background after the
+ * instant paint so the type-ahead isn't held up.
  */
-export async function findProjectContentMatches(query: string) {
-  const { supabase } = await requireProfile();
-  const { ids } = await findProjectIdsMatchingContent(supabase, query, 300);
-  return { ids };
+export async function findProjectContentMatches(query: string): Promise<InsideMatches> {
+  const { supabase, profile } = await requireProfile();
+  return findInsideMatches(supabase, { query, kind: "project", viewerRole: profile.role, viewerId: profile.id });
 }

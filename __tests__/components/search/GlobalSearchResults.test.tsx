@@ -46,7 +46,10 @@ const response: GlobalSearchResponse = {
           subtitle: null,
           meta: [{ text: "₪1,000", hit: true }, { text: "15/10/26" }],
           href: "/financial?focus=expense%3Ae1",
-          reasons: [{ kind: "date", label: "תאריך הוצאה", value: "15/10/26" }],
+          reasons: [
+            { kind: "amount", label: "סכום", value: "₪1,000" },
+            { kind: "date", label: "תאריך הוצאה", value: "15/10/26" },
+          ],
           rank: 2,
         },
       ],
@@ -68,9 +71,11 @@ describe("GlobalSearchResults", () => {
     expect(marks).toContain("15/10/26"); // a date reason is painted whole
   });
 
-  it("paints the amount chip that matched", () => {
+  it("paints the amount chip that matched, and doesn't say it again as a line", () => {
     render(<GlobalSearchResults results={response} />);
     expect(screen.getByText("₪1,000").className).toContain("bg-yellow");
+    expect(screen.queryByText("סכום:")).toBeNull();
+    expect(screen.getByText("תאריך הוצאה:")).toBeTruthy();
   });
 
   it("links each result to its record, and a big group to all of it", () => {

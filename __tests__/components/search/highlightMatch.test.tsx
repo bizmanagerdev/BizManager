@@ -32,6 +32,16 @@ describe("matchRanges / highlightText", () => {
     expect(painted("Dan@Gmail.com", "gmail")).toEqual(["Gmail"]);
   });
 
+  it("an hour is painted whole, never as two numbers", () => {
+    expect(painted("נמסרה 14:30", "14:30")).toEqual(["14:30"]);
+    expect(painted("1430 ₪", "14:30")).toEqual([]);
+  });
+
+  it("a phrase is painted whole where it appears whole, else word by word", () => {
+    expect(painted("משה כהן", "משה כהן")).toEqual(["משה כהן"]);
+    expect(painted("כהן, משה", "משה כהן")).toEqual(["כהן", "משה"]);
+  });
+
   it("every occurrence of every term, merged", () => {
     expect(painted("ביאן מרקט ביאן", ["ביאן", "מרקט"])).toEqual(["ביאן", "מרקט", "ביאן"]);
   });

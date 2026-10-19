@@ -9,6 +9,7 @@ import { israelDateKey } from "@/lib/timezone";
  *
  *   "1000" / "₪1,000" / "1000 ש״ח"   → an amount (also a whole number in text)
  *   "15/10", "15.10.26", "2026-10-15" → a date
+ *   "14:30", "9:05"                   → an hour (owner, 2026-10-19: "by hour")
  *   "054-893-3553", "+972 54 8933553" → a phone (digits, +972 folded to 0)
  *   anything else                     → words; every word must be found
  *
@@ -28,9 +29,11 @@ export type GlobalSearchToken = {
   d?: string;
   /** Phone digits (local form, 0-prefixed). */
   p?: string;
+  /** An hour on Israel's clock, "HH:MM". */
+  h?: string;
 };
 
-export type UnderstoodPart = { kind: "amount" | "date" | "phone"; value: string };
+export type UnderstoodPart = { kind: "amount" | "date" | "phone" | "hour"; value: string };
 
 export type ParsedGlobalQuery = {
   tokens: GlobalSearchToken[];
@@ -86,6 +89,7 @@ function validDate(year: number, month: number, day: number): string | null {
 const CURRENCY_WORD = /(^|\s)(ש["״׳'`]?ח|שקלים|שקל|nis|ils)(?=\s|$)/gi;
 const PHONE_RUN = /(^|\s)(\+?\d[\d\s\-().]{6,}\d)(?=\s|$)/g;
 const DATE_PART = /^(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2}|\d{4}))?$/;
+const HOUR_PART = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 const ISO_DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
 const AMOUNT_PART = /^(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?$/;
 
@@ -115,6 +119,15 @@ export function parseGlobalQuery(raw: string, today: string = israelDateKey(new 
 
   const year = Number(today.slice(0, 4));
   for (const part of text.split(" ").filter(Boolean)) {
+    // An hour: 14:30, 9:05
+    const hour = HOUR_PART.exec(part);
+    if (hour) {
+      const value = `${pad2(Number(hour[1]))}:${hour[2]}`;
+      tokens.push({ h: value });
+      understood.push({ kind: "hour", value });
+      continue;
+    }
+
     // A date: 15/10, 15.10.26, 15-10-2026, 2026-10-15
     const iso = ISO_DATE.exec(part);
     const dmy = iso ? null : DATE_PART.exec(part);
@@ -172,7 +185,7 @@ export function parseGlobalQuery(raw: string, today: string = israelDateKey(new 
   // are looked for as numbers in text.
   let special = 0;
   const final = kept.map((token) => {
-    const isSpecial = token.a !== undefined || token.d !== undefined || token.p !== undefined;
+    const isSpecial = token.a !== undefined || token.d !== undefined || token.p !== undefined || token.h !== undefined;
     if (!isSpecial) return token;
     special += 1;
     if (special <= MAX_SPECIAL_TOKENS) return token;

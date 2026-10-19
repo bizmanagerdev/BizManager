@@ -49,6 +49,21 @@ describe("parseGlobalQuery", () => {
     expect(tokens.some((token) => token.d)).toBe(false);
   });
 
+  it("an hour", () => {
+    expect(parseGlobalQuery("14:30", TODAY).tokens).toEqual([{ h: "14:30" }]);
+    expect(parseGlobalQuery("9:05", TODAY).tokens).toEqual([{ h: "09:05" }]);
+    expect(parseGlobalQuery("14:30", TODAY).understood).toEqual([{ kind: "hour", value: "14:30" }]);
+  });
+
+  it("not a real hour → not an hour", () => {
+    expect(parseGlobalQuery("25:00", TODAY).tokens.some((token) => token.h)).toBe(false);
+    expect(parseGlobalQuery("14:75", TODAY).tokens.some((token) => token.h)).toBe(false);
+  });
+
+  it("a date and an hour together", () => {
+    expect(parseGlobalQuery("15/10 14:30", TODAY).tokens).toEqual([{ d: "2026-10-15" }, { h: "14:30" }]);
+  });
+
   it("a phone, typed with spaces or dashes", () => {
     expect(parseGlobalQuery("054 893 3553", TODAY).tokens).toEqual([{ t: ["0548933553"], p: "0548933553" }]);
     expect(parseGlobalQuery("+972-54-8933553", TODAY).tokens).toEqual([{ t: ["0548933553"], p: "0548933553" }]);

@@ -45,18 +45,22 @@ export function matchRanges(text: string, terms: string | readonly string[]): Ar
   if (list.length === 0) return [];
   const { folded, index } = foldWithIndex(text);
   const ranges: Array<[number, number]> = [];
-  for (const term of list) {
-    // A multi-word phrase is painted word by word, so "משה כהן" lights both.
-    for (const part of term.split(" ")) {
-      if (!part) continue;
-      let from = folded.indexOf(part);
-      while (from !== -1) {
-        const start = index[from];
-        const end = index[from + part.length - 1] + 1;
-        ranges.push([start, end]);
-        from = folded.indexOf(part, from + part.length);
-      }
+  const paint = (part: string) => {
+    let found = false;
+    let from = folded.indexOf(part);
+    while (from !== -1) {
+      found = true;
+      ranges.push([index[from], index[from + part.length - 1] + 1]);
+      from = folded.indexOf(part, from + part.length);
     }
+    return found;
+  };
+  for (const term of list) {
+    // A phrase is painted whole where it appears whole ("14:30", "משה כהן"),
+    // and otherwise word by word, so "משה כהן" still lights both apart.
+    // An hour ("14 30" once folded) is never split into "14" and "30".
+    if (paint(term) || !term.includes(" ") || /^[\d ]+$/.test(term)) continue;
+    for (const part of term.split(" ")) if (part) paint(part);
   }
   ranges.sort((left, right) => left[0] - right[0]);
   const merged: Array<[number, number]> = [];

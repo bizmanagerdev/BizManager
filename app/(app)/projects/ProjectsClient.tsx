@@ -86,11 +86,26 @@ import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { formatShortDate } from "@/lib/date";
 import { formatMoneyRounded } from "@/lib/money";
+import { useSharedSearch } from "@/lib/ui/shared-search";
+import { SearchMatchLine } from "@/components/search/SearchMatchLine";
+import { highlightText } from "@/components/search/highlightMatch";
+import { gsNorm } from "@/lib/search/global-query";
+import type { InsideMatches } from "@/lib/global-search";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
 type SortMode = "recent" | "start_date" | "start_date_desc" | "profit_desc";
 type ProjectsView = "projects" | "quotes" | "closed";
+const PROJECT_TABS: ProjectsView[] = ["quotes", "projects", "closed"];
+const PROJECT_TAB_LABELS: Record<ProjectsView, string> = { quotes: "הצעות", projects: "פרויקטים", closed: "סגורים" };
+
+type TabCounts = Partial<Record<ProjectsView, number>>;
+
+/** A state update that keeps the same object when the counts didn't change (no extra render). */
+function keepIfSame(next: TabCounts) {
+  return (prev: TabCounts) =>
+    PROJECT_TABS.every((tab) => (prev[tab] ?? 0) === (next[tab] ?? 0)) ? prev : next;
+}
 const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
 const defaultProjectTypeOptions = ["logistics", "moving", "construction"];
 
@@ -548,7 +563,14 @@ export default function ProjectsClient({
   });
 
   const activeTab: ProjectsView = normalizeProjectsView(searchParams.get("view"));
-  const [query, setQuery] = useState(initialFilters?.q ?? "");
+  // One search box for פרויקטים, הצעות מחיר and סגורים: what's typed stays when
+  // the tab changes, on the desktop box and the phone's top bar (owner,
+  // 2026-10-19). A customer's own project list keeps its own.
+  const [query, setQuery] = useSharedSearch(
+    `projects:${searchParams.get("customer_id") ?? ""}`,
+    initialFilters?.q ?? "",
+    "/projects"
+  );
   const status = searchParams.get("status") ?? "all";
   const rawSort: SortMode = (["recent", "start_date", "start_date_desc", "profit_desc"].includes(searchParams.get("sort") ?? "") ? searchParams.get("sort") : defaultSortForTab(activeTab)) as SortMode;
   // Non-admins can't sort by (or see) profit, even via a hand-crafted URL.
@@ -573,32 +595,49 @@ export default function ProjectsClient({
   const { entries: projectIndexEntries, loading: projectIndexLoading } = useProjectSearchIndex();
   const [apiSearchRows, setApiSearchRows] = useState<ProjectRow[] | null>(null);
   const scopeCustomerId = searchParams.get("customer_id");
+  // Why each found project came up (a payment, an expense, a shift, a task
+  // reply, an hour…), and how many the other tabs hold.
+  const [deepMatches, setDeepMatches] = useState<(InsideMatches & { query: string }) | null>(null);
+  const [otherTabCounts, setOtherTabCounts] = useState<TabCounts>({});
 
   useEffect(() => {
     const q = query.trim();
     if (!q || offline) {
       setApiSearchRows(null);
+      setDeepMatches(null);
+      setOtherTabCounts((prev) => (Object.keys(prev).length === 0 ? prev : {}));
       return;
     }
     if (projectIndexLoading) return;
     let cancelled = false;
+    const otherTabs = PROJECT_TABS.filter((tab) => tab !== activeTab);
+    const countOtherTabs = (entries: ProjectSearchIndexEntry[]) =>
+      Object.fromEntries(
+        otherTabs.map((tab) => [tab, entries.filter((entry) => passesActiveScope(entry, tab, "all", scopeCustomerId)).length])
+      ) as TabCounts;
 
-    const nameMatches = searchProjectEntries(projectIndexEntries, q, customerIndexEntries, 100).filter(
-      (entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId)
-    );
+    const allNameMatches = searchProjectEntries(projectIndexEntries, q, customerIndexEntries, 100);
+    const nameMatches = allNameMatches.filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
+    setOtherTabCounts(keepIfSame(countOtherTabs(allNameMatches)));
     const basicRows = nameMatches.map(toBasicProjectRow);
     setApiSearchRows(basicRows);
 
     const timer = setTimeout(async () => {
       try {
-        const { ids: contentIds } = await findProjectContentMatches(q);
-        const knownIds = new Set(nameMatches.map((entry) => entry.id));
-        const extraEntries = contentIds
-          .map((id) => projectIndexEntries.find((entry) => entry.id === id))
-          .filter((entry): entry is ProjectSearchIndexEntry => entry != null && !knownIds.has(entry.id))
-          .filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
-        const allMatches = [...nameMatches, ...extraEntries];
+        const deep = await findProjectContentMatches(q);
         if (cancelled) return;
+        setDeepMatches({ ids: deep.ids ?? [], reasons: deep.reasons ?? {}, terms: deep.terms ?? [], query: q });
+        const entryById = new Map(projectIndexEntries.map((entry) => [entry.id, entry]));
+        const knownIds = new Set(nameMatches.map((entry) => entry.id));
+        const contentEntries = (deep.ids ?? [])
+          .map((id) => entryById.get(id))
+          .filter((entry): entry is ProjectSearchIndexEntry => entry != null);
+        const extraEntries = contentEntries
+          .filter((entry) => !knownIds.has(entry.id))
+          .filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
+        const everyMatch = new Map([...allNameMatches, ...contentEntries].map((entry) => [entry.id, entry]));
+        setOtherTabCounts(keepIfSame(countOtherTabs([...everyMatch.values()])));
+        const allMatches = [...nameMatches, ...extraEntries];
         const allBasicRows = [...basicRows, ...extraEntries.map(toBasicProjectRow)];
         setApiSearchRows(allBasicRows);
 
@@ -615,6 +654,20 @@ export default function ProjectsClient({
       clearTimeout(timer);
     };
   }, [query, offline, projectIndexEntries, customerIndexEntries, projectIndexLoading, activeTab, status, scopeCustomerId]);
+
+  // What to paint yellow on the rows: the deep search's own terms (spelling
+  // fixes, an hour) once it answered, the typed words until then.
+  const trimmedQuery = query.trim();
+  const searchTerms = useMemo(
+    () =>
+      !trimmedQuery
+        ? []
+        : deepMatches?.query === trimmedQuery
+          ? deepMatches.terms
+          : gsNorm(trimmedQuery).split(" ").filter(Boolean),
+    [trimmedQuery, deepMatches]
+  );
+  const matchReasons = deepMatches?.query === trimmedQuery ? deepMatches.reasons : null;
 
   // Until the list for the new tab/filters is in (the first time only — kept
   // and prefetched lists show at once), the old one stays up dimmed and the
@@ -839,13 +892,14 @@ export default function ProjectsClient({
     return defaultProjectTypeOptions;
   }, []);
 
+  // The search stays across tabs (owner, 2026-10-19); the status and sort are
+  // the tab's own, so they reset.
   const handleTabChange = useCallback(
     (value: string) => {
       const nextTab = normalizeProjectsView(value);
-      pushFilters({ view: nextTab, status: "all", sort: defaultSortForTab(nextTab), q: "" });
-      setQuery("");
+      pushFilters({ view: nextTab, status: "all", sort: defaultSortForTab(nextTab), q: query });
     },
-    [pushFilters]
+    [pushFilters, query]
   );
 
   function defaultCreateStatusForTab(tab: ProjectsView) {
@@ -1198,6 +1252,24 @@ export default function ProjectsClient({
             : `נמצאו ${tabCounts?.projects ?? rows.length} פרויקטים`}
       </div>
 
+      {/* The same search finds projects in the other tabs too — say so, one tap
+          away (the box keeps what's typed). */}
+      {trimmedQuery && PROJECT_TABS.some((tab) => (otherTabCounts[tab] ?? 0) > 0) ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">נמצאו גם ב:</span>
+          {PROJECT_TABS.filter((tab) => (otherTabCounts[tab] ?? 0) > 0).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => handleTabChange(tab)}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {PROJECT_TAB_LABELS[tab]} ({otherTabCounts[tab]})
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <div
         className={cn(
           "transition-opacity duration-150",
@@ -1271,8 +1343,9 @@ export default function ProjectsClient({
                   >
                     <td className="px-4 py-4">
                       <div className="block">
-                        <div className="font-medium">{projectDisplayName(row)}</div>
+                        <div className="font-medium">{highlightText(projectDisplayName(row), searchTerms)}</div>
                         <div className="mt-1 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
+                        <SearchMatchLine reasons={matchReasons?.[id]} terms={searchTerms} className="mt-1 max-w-[18rem]" />
                       </div>
                     </td>
                     <td className="px-4 py-4">
@@ -1308,7 +1381,7 @@ export default function ProjectsClient({
                           everywhere) — the number was a tel: link of its own here. */}
                       <div className="flex items-center gap-2">
                         <div className="min-w-0">
-                          <div>{clientDisplayName(row)}</div>
+                          <div>{highlightText(clientDisplayName(row), searchTerms)}</div>
                           {clientPhone(row) ? (
                             <div className="text-xs text-muted-foreground">
                               <span dir="ltr">{clientPhone(row)}</span>
@@ -1529,13 +1602,13 @@ export default function ProjectsClient({
                             to scan down. */}
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
-                            <div className={LIST_CARD_NAME}>{projectDisplayName(row)}</div>
+                            <div className={LIST_CARD_NAME}>{highlightText(projectDisplayName(row), searchTerms)}</div>
                             {/* The number as plain text — tapping it opens the project
                                 like the rest of the card. As a call link under the name
                                 it took the taps meant for the project (owner, 2026-10-11);
                                 the call button in the corner dials instead. */}
                             <div className={cn("mt-0.5", LIST_CARD_META)}>
-                              {clientDisplayName(row)}
+                              {highlightText(clientDisplayName(row), searchTerms)}
                               {clientPhone(row) ? (
                                 <>
                                   {" · "}
@@ -1550,6 +1623,11 @@ export default function ProjectsClient({
                             <CallIconButton phone={clientPhone(row)!} name={clientDisplayName(row)} className="shrink-0" />
                           ) : null}
                         </div>
+
+                        {/* Found by a search through something not on the card (a
+                            payment, an expense, a shift, a task reply, an hour): what
+                            it was, painted. */}
+                        <SearchMatchLine reasons={matchReasons?.[id]} terms={searchTerms} />
 
                         {/* The two statuses under it — a caption, not a headline. */}
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">

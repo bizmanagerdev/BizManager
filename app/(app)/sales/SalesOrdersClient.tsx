@@ -65,6 +65,11 @@ import {
 import { computeSourceCollection } from "@/lib/collections";
 import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
+import { useSharedSearch } from "@/lib/ui/shared-search";
+import { SearchMatchLine } from "@/components/search/SearchMatchLine";
+import { highlightText } from "@/components/search/highlightMatch";
+import { gsNorm } from "@/lib/search/global-query";
+import type { InsideMatches } from "@/lib/global-search";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
   loading: () => null,
@@ -432,7 +437,10 @@ export default function SalesOrdersClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [query, setQuery] = useState(initialQuery);
+  // One search box for הזמנות and הזמנות סגורות: what's typed in one tab is
+  // still there in the other, on the desktop box and the phone's top bar
+  // (owner, 2026-10-19). A customer's own order list keeps its own.
+  const [query, setQuery] = useSharedSearch(`orders:${customerId ?? ""}`, initialQuery, "/sales");
   // One swiped-open row at a time, like a native list.
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
   // The device version edits an order right here (its form read from the phone's copy).
@@ -574,6 +582,11 @@ export default function SalesOrdersClient({
   const { entries: customerIndexEntries } = useCustomerSearchIndex();
   const { entries: orderIndexEntries, loading: orderIndexLoading } = useOrderSearchIndex();
   const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
+  // Why each found order came up (a payment, a comment, an hour…), from the
+  // deep search, and how many more the other tab holds.
+  const [deepMatches, setDeepMatches] = useState<(InsideMatches & { query: string }) | null>(null);
+  const [otherTabCount, setOtherTabCount] = useState(0);
+  const otherTab: "orders" | "closed" = orderTab === "orders" ? "closed" : "orders";
 
   useEffect(() => {
     const q = query.trim();
@@ -582,14 +595,21 @@ export default function SalesOrdersClient({
       // connection drops — same pattern as CustomersClient's search effect.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setApiSearchRows(null);
+      setDeepMatches(null);
+      setOtherTabCount(0);
       return;
     }
     if (orderIndexLoading) return;
     let cancelled = false;
 
-    const nameMatches = searchOrderEntries(orderIndexEntries, q, customerIndexEntries, 100).filter((entry) =>
+    const allNameMatches = searchOrderEntries(orderIndexEntries, q, customerIndexEntries, 100);
+    const nameMatches = allNameMatches.filter((entry) =>
       passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter)
     );
+    const otherNameIds = allNameMatches
+      .filter((entry) => passesActiveScope(entry, otherTab, customerId ?? null, "all"))
+      .map((entry) => entry.id);
+    setOtherTabCount(otherNameIds.length);
     const basicRows = nameMatches.map(toBasicOrderRow);
     // A payment-status filter needs real totals, unavailable until enrichment —
     // skip the instant (zero-total) paint for that combo rather than flash rows
@@ -599,14 +619,24 @@ export default function SalesOrdersClient({
 
     const timer = setTimeout(async () => {
       try {
-        const { ids: contentIds } = await findOrderContentMatches(q);
-        const knownIds = new Set(nameMatches.map((entry) => entry.id));
-        const extraEntries = contentIds
-          .map((id) => orderIndexEntries.find((entry) => entry.id === id))
-          .filter((entry): entry is OrderSearchIndexEntry => entry != null && !knownIds.has(entry.id))
-          .filter((entry) => passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter));
-        const allMatches = [...nameMatches, ...extraEntries];
+        const deep = await findOrderContentMatches(q);
         if (cancelled) return;
+        setDeepMatches({ ids: deep.ids ?? [], reasons: deep.reasons ?? {}, terms: deep.terms ?? [], query: q });
+        const contentIds = deep.ids ?? [];
+        const entryById = new Map(orderIndexEntries.map((entry) => [entry.id, entry]));
+        const knownIds = new Set(nameMatches.map((entry) => entry.id));
+        const contentEntries = contentIds
+          .map((id) => entryById.get(id))
+          .filter((entry): entry is OrderSearchIndexEntry => entry != null);
+        const extraEntries = contentEntries
+          .filter((entry) => !knownIds.has(entry.id))
+          .filter((entry) => passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter));
+        const otherIds = new Set(otherNameIds);
+        for (const entry of contentEntries) {
+          if (passesActiveScope(entry, otherTab, customerId ?? null, "all")) otherIds.add(entry.id);
+        }
+        setOtherTabCount(otherIds.size);
+        const allMatches = [...nameMatches, ...extraEntries];
         const allBasicRows = [...basicRows, ...extraEntries.map(toBasicOrderRow)];
         if (!skipInstantPaint) setApiSearchRows(allBasicRows);
 
@@ -637,11 +667,36 @@ export default function SalesOrdersClient({
     customerIndexEntries,
     orderIndexLoading,
     orderTab,
+    otherTab,
     customerId,
     invoiceFilter,
     showPaymentStatusFilter,
     paymentFilter,
   ]);
+
+  // What to paint yellow on the cards: the deep search's own terms (spelling
+  // fixes, an hour) once it answered, the typed words until then.
+  const trimmedQuery = query.trim();
+  const searchTerms = useMemo(
+    () =>
+      !trimmedQuery
+        ? []
+        : deepMatches?.query === trimmedQuery
+          ? deepMatches.terms
+          : gsNorm(trimmedQuery).split(" ").filter(Boolean),
+    [trimmedQuery, deepMatches]
+  );
+  const matchReasons = deepMatches?.query === trimmedQuery ? deepMatches.reasons : null;
+  const otherTabHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (otherTab === "closed") params.set("tab", "closed");
+    for (const key of ["customer_id", "customer_name", "customer_page"]) {
+      const value = searchParams.get(key);
+      if (value) params.set(key, value);
+    }
+    const qs = params.toString();
+    return qs ? `/sales?${qs}` : "/sales";
+  }, [otherTab, searchParams]);
 
   // While the client search index is driving the list, infinite-scroll's "load
   // more" would fetch more of the underlying unfiltered list, not more search
@@ -797,6 +852,18 @@ export default function SalesOrdersClient({
       {/* The header subtitle carries this count on mobile. */}
       <div className="hidden text-sm text-muted-foreground xl:block">נמצאו {totalCount ?? filteredRows.length} הזמנות</div>
 
+      {/* The same search finds orders in the other tab too — say so, one tap
+          away (the box keeps what's typed there). */}
+      {trimmedQuery && otherTabCount > 0 ? (
+        <Link
+          href={otherTabHref}
+          onClick={() => emitNavigationStart()}
+          className="block rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-sm text-primary underline-offset-2 hover:underline"
+        >
+          {otherTabCount === 1 ? "עוד הזמנה אחת" : `עוד ${otherTabCount} הזמנות`} ב{otherTab === "closed" ? "הזמנות הסגורות" : "הזמנות הפתוחות"} ←
+        </Link>
+      ) : null}
+
       {/* An empty list has the app's one look (owner, 2026-10-11). */}
       {filteredRows.length === 0 ? (
         showPaymentStatusFilter && paymentFilter !== "all" ? (
@@ -916,10 +983,11 @@ export default function SalesOrdersClient({
                     >
                       <td className="px-4 py-4">
                         <div>
-                          <div className="font-medium">{row.customerName}</div>
+                          <div className="font-medium">{highlightText(row.customerName, searchTerms)}</div>
                           {row.customerBranchName ? (
-                            <div className="text-xs text-muted-foreground">סניף: {row.customerBranchName}</div>
+                            <div className="text-xs text-muted-foreground">סניף: {highlightText(row.customerBranchName, searchTerms)}</div>
                           ) : null}
+                          <SearchMatchLine reasons={matchReasons?.[row.id]} terms={searchTerms} className="mt-1 max-w-[18rem]" />
                           {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
                             <div className="text-xs text-muted-foreground">לחשבונית: {row.customerNameForInvoice}</div>
                           ) : null}
@@ -1164,9 +1232,11 @@ export default function SalesOrdersClient({
                               (components/ui/list-card.ts; owner, 2026-10-11). */}
                           <div className="flex items-baseline justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <div className={LIST_CARD_NAME}>{row.customerName}</div>
+                              <div className={LIST_CARD_NAME}>{highlightText(row.customerName, searchTerms)}</div>
                               {row.customerBranchName ? (
-                                <div className={cn(LIST_CARD_META, "leading-snug")}>סניף: {row.customerBranchName}</div>
+                                <div className={cn(LIST_CARD_META, "leading-snug")}>
+                                  סניף: {highlightText(row.customerBranchName, searchTerms)}
+                                </div>
                               ) : null}
                               {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
                                 <div className={cn(LIST_CARD_META, "leading-snug")}>
@@ -1200,6 +1270,12 @@ export default function SalesOrdersClient({
                               {row.customerPhone ? <CallIconButton phone={row.customerPhone} name={row.customerName} /> : null}
                             </div>
                           </div>
+
+                          {/* Found by a search through something not on the card (a
+                              payment, a comment, an hour): what it was, painted. */}
+                          {matchReasons?.[row.id]?.length ? (
+                            <SearchMatchLine reasons={matchReasons[row.id]} terms={searchTerms} />
+                          ) : null}
 
                           {/* Only what's EXCEPTIONAL about the order — a status that isn't
                               the one this tab implies, or a stock problem. Nothing here on

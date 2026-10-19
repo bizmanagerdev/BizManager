@@ -503,11 +503,9 @@ export function toGlobalSearchResult(row: Row, role: UserRole): GlobalSearchResu
     subtitle: str(row.subtitle) || null,
     meta,
     href: hrefFor(kind, row.id, info, role),
-    // An amount already shown as a painted chip needn't be said twice; a date
-    // stays, since its label says WHICH date it was (opened, paid, delivered…).
-    reasons: reasons.filter(
-      (reason) => !(reason.kind === "amount" && meta.some((item) => item.hit && item.text === reason.value))
-    ),
+    // Every reason; a screen that already paints the amount as a chip can skip
+    // saying it twice (visibleReasons).
+    reasons,
     rank: typeof row.rank === "number" ? row.rank : 3,
   };
 }
@@ -601,7 +599,7 @@ export async function performGlobalSearch(
   const rows = (data ?? []) as Row[];
   const groups = buildGroups(rows, options.viewerRole);
   const terms = Array.from(
-    new Set(tokens.flatMap((token) => (token.t ?? []).filter((term) => term.length > 0)))
+    new Set(tokens.flatMap((token) => [...(token.t ?? []), ...(token.h ? [token.h] : [])].filter((term) => term.length > 0)))
   );
   return {
     query,
@@ -610,5 +608,39 @@ export async function performGlobalSearch(
     understood: parsed.understood,
     corrections: Array.from(new Set(corrections)),
     groups,
+  };
+}
+
+/** What a list page (orders, projects) needs from the search: which rows, and why. */
+export type InsideMatches = {
+  /** Best match first. */
+  ids: string[];
+  /** Why each row came up — shown under it, painted yellow. */
+  reasons: Record<string, GlobalSearchReason[]>;
+  /** Words to paint (what was typed, spelling fixes, an hour). */
+  terms: string[];
+};
+
+/**
+ * The same search, for one kind of record, every match — for the orders and
+ * projects pages (owner, 2026-10-19: "search all types of data that can be in
+ * a project or order … by date, by hour, by amount").
+ */
+export async function findInsideMatches(
+  supabase: SupabaseClient,
+  options: { query: string; kind: "order" | "project"; viewerRole: UserRole; viewerId?: string | null }
+): Promise<InsideMatches> {
+  const response = await performGlobalSearch(supabase, {
+    query: options.query,
+    viewerRole: options.viewerRole,
+    viewerId: options.viewerId,
+    kind: options.kind,
+    limitPerGroup: 500,
+  });
+  const results = response.groups.flatMap((group) => group.results);
+  return {
+    ids: results.map((result) => result.id),
+    reasons: Object.fromEntries(results.map((result) => [result.id, result.reasons])),
+    terms: response.terms,
   };
 }

@@ -5,7 +5,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { HighlightAll, MatchReason, highlightText } from "@/components/search/highlightMatch";
 import { formatShortDate } from "@/lib/date";
 import { formatMoney } from "@/lib/money";
-import type { GlobalSearchResponse, GlobalSearchResult } from "@/lib/global-search";
+import type { GlobalSearchReason, GlobalSearchResponse, GlobalSearchResult } from "@/lib/global-search";
 import type { UnderstoodPart } from "@/lib/search/global-query";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +17,19 @@ import { cn } from "@/lib/utils";
 function understoodText(part: UnderstoodPart) {
   if (part.kind === "amount") return `סכום ${formatMoney(Number(part.value))}`;
   if (part.kind === "date") return `תאריך ${formatShortDate(part.value, part.value)}`;
+  if (part.kind === "hour") return `שעה ${part.value}`;
   return `טלפון ${part.value}`;
+}
+
+/**
+ * The reasons worth a line under a result that also shows its chips: an amount
+ * already painted as a chip isn't said twice; a date stays, since its label
+ * says WHICH date it was (opened, paid, delivered…).
+ */
+export function visibleReasons(result: Pick<GlobalSearchResult, "reasons" | "meta">): GlobalSearchReason[] {
+  return result.reasons.filter(
+    (reason) => !(reason.kind === "amount" && result.meta.some((item) => item.hit && item.text === reason.value))
+  );
 }
 
 export function searchHref(query: string, kind?: string | null) {
@@ -56,7 +68,7 @@ function ResultRow({
             {highlightText(result.subtitle, terms)}
           </div>
         ) : null}
-        {result.reasons.map((reason) => (
+        {visibleReasons(result).map((reason) => (
           <MatchReason
             key={`${reason.kind}:${reason.label}`}
             label={reason.label}

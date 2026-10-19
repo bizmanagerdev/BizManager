@@ -107,7 +107,7 @@ describe("formatReason", () => {
 });
 
 describe("toGlobalSearchResult", () => {
-  it("paints the amount chip that matched, and doesn't repeat it as a line", () => {
+  it("paints the amount chip that matched, and keeps every reason (the list pages show them)", () => {
     const result = toGlobalSearchResult(
       row({
         kind: "expense",
@@ -119,7 +119,7 @@ describe("toGlobalSearchResult", () => {
       "admin"
     );
     expect(result?.meta.find((item) => item.text === "₪1,000")?.hit).toBe(true);
-    expect(result?.reasons).toEqual([]);
+    expect(result?.reasons).toEqual([{ kind: "amount", label: "סכום", value: "₪1,000" }]);
   });
 
   it("keeps a word reason (a branch, a reply) under the title", () => {

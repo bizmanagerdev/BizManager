@@ -30,9 +30,12 @@ vi.mock("@/hooks/useOfflineRows", () => ({
   useOnline: () => true,
   useOfflineRows: (_key: string | null, rows: unknown[]) => ({ rows, offline: false, savedAt: null }),
 }));
-vi.mock("@/hooks/useCustomerSearchIndex", () => ({ useCustomerSearchIndex: () => ({ entries: [] }) }));
+// One list each, like the real hooks' state (a new array on every render
+// would re-run the list's search on every render).
+const indexes = vi.hoisted(() => ({ customers: [] as unknown[], projects: [] as unknown[] }));
+vi.mock("@/hooks/useCustomerSearchIndex", () => ({ useCustomerSearchIndex: () => ({ entries: indexes.customers }) }));
 vi.mock("@/hooks/useProjectSearchIndex", () => ({
-  useProjectSearchIndex: () => ({ entries: [], loading: false }),
+  useProjectSearchIndex: () => ({ entries: indexes.projects, loading: false }),
   searchProjectEntries: () => [],
 }));
 vi.mock("@/app/(app)/projects/actions", () => ({
@@ -108,6 +111,7 @@ vi.mock("@/components/ui/dropdown-menu", async () => {
 });
 
 import ProjectsClient from "@/app/(app)/projects/ProjectsClient";
+import { clearSharedSearch } from "@/lib/ui/shared-search";
 
 const ROWS = [
   {
@@ -137,6 +141,8 @@ function renderList(rows: Array<Record<string, unknown>> = ROWS) {
 beforeEach(() => {
   nav.search = "view=projects";
   vi.clearAllMocks();
+  // The search box is shared by the tabs; each test starts with it empty.
+  clearSharedSearch("projects:");
 });
 
 describe("ProjectsClient — the phone card", () => {
@@ -212,5 +218,18 @@ describe("ProjectsClient — an empty list", () => {
     renderList();
     expect(screen.getByRole("button", { name: "נקה סינון" })).toBeInTheDocument();
     expect(screen.queryByText("איפוס סינון")).toBeNull();
+  });
+});
+
+describe("ProjectsClient — one search for every tab", () => {
+  it("what's typed stays when the tab changes, and goes into the new tab's address (owner, 2026-10-19)", () => {
+    renderList();
+    const [box] = screen.getAllByPlaceholderText(/חיפוש/);
+    fireEvent.change(box, { target: { value: "1447" } });
+    const pushState = vi.spyOn(window.history, "pushState");
+    fireEvent.mouseDown(screen.getAllByRole("tab", { name: /סגורים/ })[0]);
+    expect(pushState).toHaveBeenCalledWith(null, "", "/projects?view=closed&q=1447");
+    pushState.mockRestore();
+    for (const input of screen.getAllByPlaceholderText(/חיפוש/)) expect((input as HTMLInputElement).value).toBe("1447");
   });
 });

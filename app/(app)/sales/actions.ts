@@ -2,7 +2,7 @@
 
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
-import { findOrderIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
+import { findInsideMatches, type InsideMatches } from "@/lib/global-search";
 import {
   loadOrdersByIds,
   loadOrdersPage,
@@ -33,14 +33,16 @@ export async function loadOrderRowsByIds(ids: string[]) {
 // The order search index is a GET now: app/api/search-index/[kind]/route.ts.
 
 /**
- * Order ids reached only through a line item's product/notes or the order's
- * own notes — the "deep content" matches the instant customer/branch index
- * can't see. Run in the background after the instant paint.
+ * Orders reached through anything inside them — the "deep content" matches the
+ * instant customer/branch index can't see, with why each one came up. Run in
+ * the background after the instant paint.
  */
-export async function findOrderContentMatches(query: string) {
-  const { supabase } = await requireProfile();
-  const { ids } = await findOrderIdsMatchingContent(supabase, query, 300);
-  return { ids };
+export async function findOrderContentMatches(query: string): Promise<InsideMatches> {
+  const { supabase, profile } = await requireProfile();
+  // Everything inside an order: its comments, products and lines, its payments
+  // (amount, date, check, reference), its dates and hours (owner, 2026-10-19:
+  // "if I see a bank charge for 1447 I should be able to search orders and find it").
+  return findInsideMatches(supabase, { query, kind: "order", viewerRole: profile.role, viewerId: profile.id });
 }
 
 /** Fetch the next page of price-list products for the infinite-scroll list. */
