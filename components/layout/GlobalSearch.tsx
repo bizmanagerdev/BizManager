@@ -150,8 +150,11 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
 
     const controller = new AbortController();
 
-    // Three per kind here; "הצג את כל N" and "לכל התוצאות" open the full page.
-    void fetch(`/api/search/global?q=${encodeURIComponent(normalized)}&limit=3`, {
+    // Eight per kind here — three hid what the owner was looking for: a find by
+    // the name for invoices ("נחל" → בית כנסת ברסלב, "ברכת הנחל") ranks below
+    // the names that hold the word, and sat behind "הצג את כל" (2026-10-19).
+    // "הצג את כל N" and "לכל התוצאות" still open the full page for more.
+    void fetch(`/api/search/global?q=${encodeURIComponent(normalized)}&limit=8`, {
       cache: "no-store",
       signal: controller.signal,
     })

@@ -49,7 +49,7 @@ export default async function SearchPage({
             {kind ? `חיפוש — ${GLOBAL_SEARCH_LABELS[kind]}` : "חיפוש בכל המערכת"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            שם, מילה מהערה או מתגובה, סכום (1000), תאריך (15/10), טלפון, סניף, מסמך, רכב — וכמה מילים יחד מצמצמות.
+            מילה, תאריך, תגובה, מספר, כל דבר...
           </p>
         </div>
 
