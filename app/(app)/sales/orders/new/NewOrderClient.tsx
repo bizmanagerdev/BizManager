@@ -54,7 +54,6 @@ import {
   type CustomerOption,
   type Step,
   ORDER_STATUS_OPTIONS,
-  customerAddressHelp,
   STEP_LABEL,
   extractCityFromAddress,
   formatCurrency,
@@ -73,6 +72,7 @@ import { ORDER_NOT_SENT_YET, deviceOrderSaves } from "@/lib/orders/device-order-
 import { addressNotFound, addressVerified } from "@/lib/address/columns";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { isFullAddress } from "@/lib/address/structured";
+import { addressHelpPrompt, customerAddressHelp } from "@/lib/address/address-help";
 
 type Row = Record<string, unknown>;
 
@@ -1231,14 +1231,8 @@ export default function NewOrderClient({
         onOpenChange={(open) => {
           if (!open) setAddressPromptFor(null);
         }}
-        title={customerAddressHelp(addressPromptFor) === "not_found" ? "הכתובת של הלקוח לא נמצאה במפות" : "צריך לעדכן כתובת ללקוח"}
-        description={
-          customerAddressHelp(addressPromptFor) === "not_found"
-            ? `הכתובת השמורה${addressPromptFor?.address ? `: ${plainAddress({ address: addressPromptFor.address, city: addressPromptFor.city })}` : ""} לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך להזין כתובת חדשה.`
-            : customerAddressHelp(addressPromptFor) === "partial"
-            ? `הכתובת השמורה: ${plainAddress({ address: addressPromptFor?.address, city: addressPromptFor?.city })}. אין בה רחוב ומספר בית שנמצאו ב-Google Maps, אז Waze לא יוכל לנווט. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה.`
-            : "לא שמורה כתובת ללקוח הזה. אם ההזמנה למשלוח, בקשו מהלקוח כתובת מלאה ושמרו אותה."
-        }
+        title={addressHelpPrompt(addressPromptFor, "order").title}
+        description={addressHelpPrompt(addressPromptFor, "order").description}
         confirmLabel="עדכון הכתובת"
         cancelLabel="המשך בלי"
         onConfirm={() => {

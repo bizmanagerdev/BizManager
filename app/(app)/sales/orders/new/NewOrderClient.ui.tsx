@@ -1,6 +1,6 @@
 import { PAYMENT_TERMS_OPTIONS } from "@/lib/paymentTerms";
 import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
-import { addressQuality, omitUnknownPlace, plainAddress } from "@/lib/ui/cities";
+import { omitUnknownPlace } from "@/lib/ui/cities";
 import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
 import { addressNotFound, addressVerified } from "@/lib/address/columns";
@@ -134,25 +134,6 @@ export function mapCustomerSearchResult(row: Record<string, unknown>): CustomerO
     contacts,
     branches,
   };
-}
-
-/**
- * What a customer's address needs before an order (owner, 2026-10-18: "If his
- * address is good, it doesn't say anything. If his address is not one of the
- * ones Google found already … only a city, not found at all, one of the
- * mistake ones … it should tell me"). Good: a full address Google found, or a
- * saved drop-off point. A list that doesn't carry Google's fields is judged
- * by the saved line.
- */
-export type AddressHelp = "not_found" | "partial" | "none" | null;
-export function customerAddressHelp(
-  customer: Pick<CustomerOption, "address" | "city" | "pin" | "addressNotFound" | "addressVerified"> | null | undefined
-): AddressHelp {
-  if (!customer || customer.pin) return null;
-  if (customer.addressNotFound) return "not_found";
-  if (customer.addressVerified === true) return null;
-  if (customer.addressVerified === undefined && addressQuality({ address: customer.address, city: customer.city }) === "clear") return null;
-  return plainAddress({ address: customer.address, city: customer.city }) ? "partial" : "none";
 }
 
 /**

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StructuredAddress } from "@/lib/address/structured";
 import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
-import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
+import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, SearchIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
 import { EditButton, IconButton } from "@/components/ui/icon-button";
 import { Field } from "@/components/ui/field";
 import { StepWizard, WizardTitle, useStepFlow } from "@/components/ui/step-wizard";
@@ -47,8 +47,11 @@ import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
 import type { ProjectRowFields } from "@/lib/projects/project-input";
 import { israelDateKey } from "@/lib/timezone";
 import { offlineUpload, queueUploadsAfter } from "@/lib/offline-upload";
-import { addressNotFound } from "@/lib/address/columns";
+import { addressNotFound, addressVerified } from "@/lib/address/columns";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import { addressHelpPrompt, customerAddressHelp } from "@/lib/address/address-help";
+import { isFullAddress } from "@/lib/address/structured";
 
 type Row = Record<string, unknown>;
 type Step =
@@ -128,6 +131,8 @@ export type ProjectCustomerOption = {
   pin?: DeliveryPin | null;
   /** The saved address was not found on Google Maps: ask for a new one. */
   addressNotFound?: boolean;
+  /** A full address Google found; undefined when the list didn't carry it. */
+  addressVerified?: boolean;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
   branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -259,6 +264,7 @@ export function mapProjectCustomer(row: Row): ProjectCustomerOption | null {
     city: omitUnknownPlace(getString(row, ["city"]) ?? extractCityFromAddress(address)),
     pin: pinFrom(row.delivery_lat, row.delivery_lng),
     addressNotFound: addressNotFound(row),
+    addressVerified: addressVerified(row),
     contacts,
     branches,
   };
@@ -395,8 +401,51 @@ export default function NewProjectClient({
 
   // Which of the customer's branches this project is for — only asked about
   // when the customer actually has more than one (see the "branch" step gating).
-  // The customer just picked, when their saved address wasn't found on Google Maps.
+  // The customer just picked, when their address needs help (lib/address/address-help.ts).
   const [wrongAddressFor, setWrongAddressFor] = useState<ProjectCustomerOption | null>(null);
+  // The lists this wizard is handed don't all carry the address (the projects
+  // list's has none), so its status comes from the customer index — loaded
+  // for the search anyway. Until it has the customer, nothing is asked.
+  const { entries: customerIndexEntries } = useCustomerSearchIndex();
+  const indexedCustomers = useMemo(
+    () => new Map(customerIndexEntries.map((entry) => [entry.id, entry as unknown as Row])),
+    [customerIndexEntries]
+  );
+  const withAddressStatus = useCallback(
+    (customer: ProjectCustomerOption): ProjectCustomerOption => {
+      if (customer.addressVerified !== undefined) return customer;
+      const entry = indexedCustomers.get(customer.id);
+      const fromIndex = entry ? mapProjectCustomer(entry) : null;
+      if (!fromIndex) return customer;
+      return {
+        ...customer,
+        address: customer.address ?? fromIndex.address,
+        city: customer.city ?? fromIndex.city,
+        pin: customer.pin ?? fromIndex.pin,
+        addressNotFound: fromIndex.addressNotFound,
+        addressVerified: fromIndex.addressVerified,
+      };
+    },
+    [indexedCustomers]
+  );
+  const projectAddressHelp = useCallback(
+    (customer: ProjectCustomerOption | null | undefined) => {
+      if (!customer) return null;
+      const known = withAddressStatus(customer);
+      return known.addressVerified === undefined && !known.addressNotFound ? null : customerAddressHelp(known);
+    },
+    [withAddressStatus]
+  );
+  const shownCustomer = selectedCustomer ? withAddressStatus(selectedCustomer) : null;
+  // Opened for a customer (from their page): asked once their status is known.
+  const prefillAsked = useRef(isEditMode || Boolean(restoredDraft?.customerId) || !initialCustomerId);
+  useEffect(() => {
+    if (prefillAsked.current || !selectedCustomer || selectedCustomer.id !== initialCustomerId) return;
+    const known = withAddressStatus(selectedCustomer);
+    if (known.addressVerified === undefined && !known.addressNotFound) return;
+    prefillAsked.current = true;
+    if (customerAddressHelp(known)) setWrongAddressFor(known);
+  }, [initialCustomerId, selectedCustomer, withAddressStatus]);
   const [branchId, setBranchId] = useState(initialProject?.branch_id ?? restoredDraft?.branchId ?? "");
 
   // ---- Project details ---------------------------------------------------------
@@ -676,6 +725,9 @@ export default function NewProjectClient({
       email: customer.email,
       address: customer.address,
       city: extractCityFromAddress(customer.address),
+      pin: selectedCustomer?.id === customer.id ? selectedCustomer.pin ?? null : null,
+      addressNotFound: customer.address_not_found === true,
+      addressVerified: customer.structured_address === undefined ? undefined : isFullAddress(customer.structured_address),
     });
     setCustomerQuery("");
     setCustomerTab("existing");
@@ -987,7 +1039,7 @@ export default function NewProjectClient({
                           onClick={() => {
                             if (customer.id !== customerId) {
                               setBranchId("");
-                              if (customer.addressNotFound && !customer.pin) setWrongAddressFor(customer);
+                              if (projectAddressHelp(customer)) setWrongAddressFor(withAddressStatus(customer));
                             }
                             setCustomerId(customer.id);
                             setPickedCustomer(customer);
@@ -1095,24 +1147,38 @@ export default function NewProjectClient({
                         </div>
                       </div>
 
-                      {/* The address saved for this customer was not found on
-                          Google Maps (owner, 2026-10-18: "when you add an order for
-                          them or a project for them … say that the address cannot be
-                          found … we need to enter a new address"). */}
+                      {/* The customer's address isn't a full one Google found
+                          (owner, 2026-10-18: "do the same for projects"). */}
                       <ConfirmDialog
                         open={wrongAddressFor !== null}
                         onOpenChange={(open) => {
                           if (!open) setWrongAddressFor(null);
                         }}
-                        title="הכתובת של הלקוח לא נמצאה במפות"
-                        description={`הכתובת השמורה${wrongAddressFor?.address ? `: ${wrongAddressFor.address.replace(/\s*\|\s*/g, ", ")}` : ""} לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך להזין כתובת חדשה.`}
+                        title={addressHelpPrompt(wrongAddressFor, "project").title}
+                        description={addressHelpPrompt(wrongAddressFor, "project").description}
                         confirmLabel="עדכון הכתובת"
                         cancelLabel="המשך בלי"
                         onConfirm={() => {
                           setWrongAddressFor(null);
+                          setStep("customer");
                           setEditingCustomer(true);
                         }}
                       />
+                      {/* Stays after the pop-up, like the order wizard's. */}
+                      {!editingCustomer && projectAddressHelp(selectedCustomer) ? (
+                        <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
+                          <WarningIcon className="h-4 w-4 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold">
+                              {projectAddressHelp(selectedCustomer) === "not_found" ? "הכתובת של הלקוח לא נמצאה ב-Google Maps" : "אין כתובת מלאה ללקוח הזה"}
+                            </p>
+                            <p>בקשו מהלקוח רחוב ומספר בית ושמרו אותם.</p>
+                          </div>
+                          <Button type="button" size="sm" variant="outline" onClick={() => setEditingCustomer(true)} disabled={actionLocked}>
+                            הוספת כתובת
+                          </Button>
+                        </div>
+                      ) : null}
                       {editingCustomer ? (
                         <CustomerForm
                           key={selectedCustomer.id}
@@ -1129,7 +1195,7 @@ export default function NewProjectClient({
                             { label: "טלפון", value: selectedCustomer.phone, ltr: true },
                             { label: "וואטסאפ", value: selectedCustomer.whatsapp, ltr: true },
                             { label: "אימייל", value: selectedCustomer.email, ltr: true },
-                            { label: "כתובת", value: omitUnknownPlace(selectedCustomer.address || selectedCustomer.city), ltr: false, isAddress: true },
+                            { label: "כתובת", value: omitUnknownPlace(shownCustomer?.address || shownCustomer?.city || null), ltr: false, isAddress: true },
                             { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
                           ].map((row) => (
                             <p key={row.label} className="leading-5">
@@ -1138,8 +1204,8 @@ export default function NewProjectClient({
                                 row.isAddress ? (
                                   <AddressLink
                                     address={row.value}
-                                    pin={selectedCustomer.pin}
-                                    notFound={selectedCustomer.addressNotFound}
+                                    pin={shownCustomer?.pin}
+                                    notFound={shownCustomer?.addressNotFound}
                                     className="inline-flex items-center gap-1 font-medium text-foreground"
                                   >
                                     <WazeIcon className="h-3.5 w-3.5 shrink-0" />
