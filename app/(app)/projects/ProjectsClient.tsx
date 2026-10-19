@@ -89,8 +89,8 @@ import { formatMoneyRounded } from "@/lib/money";
 import { useSharedSearch } from "@/lib/ui/shared-search";
 import { SearchMatchLine } from "@/components/search/SearchMatchLine";
 import { highlightText } from "@/components/search/highlightMatch";
-import { gsNorm, parseGlobalQuery } from "@/lib/search/global-query";
-import type { InsideMatches } from "@/lib/global-search";
+import type { GlobalSearchReason, InsideMatches } from "@/lib/global-search";
+import { projectInstantReason } from "@/lib/search/instantMatchReason";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
@@ -103,7 +103,7 @@ type TabCounts = Partial<Record<ProjectsView, number>>;
 
 // What a project's row already shows (and paints yellow when it matches), so a
 // search that matched it doesn't repeat it under the row.
-const PROJECT_ROW_FIELDS: readonly string[] = ["לקוח"];
+const PROJECT_ROW_FIELDS: readonly string[] = ["לקוח", "טלפון", "טלפון לקוח"];
 
 /** A state update that keeps the same object when the counts didn't change (no extra render). */
 function keepIfSame(next: TabCounts) {
@@ -620,16 +620,15 @@ export default function ProjectsClient({
         otherTabs.map((tab) => [tab, entries.filter((entry) => passesActiveScope(entry, tab, "all", scopeCustomerId)).length])
       ) as TabCounts;
 
-    // The instant (on-device) name search paints typed WORDS at once; the full
-    // search then decides the list, so every row on it can say why it's there
-    // (owner, 2026-10-19: "I need all results to be highlighted"). An amount, a
-    // date or an hour waits for the full search.
-    if (parseGlobalQuery(q).understood.length === 0) {
-      const nameMatches = searchProjectEntries(projectIndexEntries, q, customerIndexEntries, 100).filter((entry) =>
-        passesActiveScope(entry, activeTab, status, scopeCustomerId)
-      );
-      setApiSearchRows(nameMatches.map(toBasicProjectRow));
-    }
+    // Two searches, one list: the quick on-device one paints at once, the full
+    // one adds everything inside the projects. Every row on it says why it's
+    // there and the part that matched is painted (owner, 2026-10-19: "it should
+    // paint whatever it found matching so I understand").
+    const allNameMatches = searchProjectEntries(projectIndexEntries, q, customerIndexEntries, 100);
+    setOtherTabCounts(keepIfSame(countOtherTabs(allNameMatches)));
+    setApiSearchRows(
+      allNameMatches.filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId)).map(toBasicProjectRow)
+    );
 
     const timer = setTimeout(async () => {
       try {
@@ -640,8 +639,10 @@ export default function ProjectsClient({
         const contentEntries = (deep.ids ?? [])
           .map((id) => entryById.get(id))
           .filter((entry): entry is ProjectSearchIndexEntry => entry != null);
-        setOtherTabCounts(keepIfSame(countOtherTabs(contentEntries)));
-        const allMatches = contentEntries.filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
+        const deepIds = new Set(contentEntries.map((entry) => entry.id));
+        const everyMatch = [...contentEntries, ...allNameMatches.filter((entry) => !deepIds.has(entry.id))];
+        setOtherTabCounts(keepIfSame(countOtherTabs(everyMatch)));
+        const allMatches = everyMatch.filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
         const allBasicRows = allMatches.map(toBasicProjectRow);
         setApiSearchRows(allBasicRows);
 
@@ -662,16 +663,34 @@ export default function ProjectsClient({
   // What to paint yellow on the rows: the deep search's own terms (spelling
   // fixes, an hour) once it answered, the typed words until then.
   const trimmedQuery = query.trim();
-  const searchTerms = useMemo(
-    () =>
-      !trimmedQuery
-        ? []
-        : deepMatches?.query === trimmedQuery
-          ? deepMatches.terms
-          : gsNorm(trimmedQuery).split(" ").filter(Boolean),
-    [trimmedQuery, deepMatches]
-  );
+  const searchTerms = useMemo(() => {
+    if (!trimmedQuery) return [];
+    const deep = deepMatches?.query === trimmedQuery ? deepMatches.terms : [];
+    // What was typed too, whole: "23/6" then lights "236" inside a phone number
+    // (or the 23 and the 6 where they're apart) — what the quick search matched.
+    return Array.from(new Set([...deep, trimmedQuery]));
+  }, [trimmedQuery, deepMatches]);
   const matchReasons = deepMatches?.query === trimmedQuery ? deepMatches.reasons : null;
+  // Why a row is on the list: the full search's reason, or — for a row only the
+  // quick on-device search found — which field matched.
+  const projectEntryById = useMemo(
+    () => new Map(projectIndexEntries.map((entry) => [entry.id, entry])),
+    [projectIndexEntries]
+  );
+  const customerEntryById = useMemo(
+    () => new Map(customerIndexEntries.map((entry) => [entry.id, entry])),
+    [customerIndexEntries]
+  );
+  const reasonsFor = useCallback(
+    (id: string): GlobalSearchReason[] | undefined => {
+      if (!trimmedQuery) return undefined;
+      const deep = matchReasons?.[id];
+      if (deep && deep.length > 0) return deep;
+      const entry = projectEntryById.get(id);
+      return entry ? projectInstantReason(entry, customerEntryById.get(entry.customer_id), trimmedQuery) : undefined;
+    },
+    [trimmedQuery, matchReasons, projectEntryById, customerEntryById]
+  );
 
   // Until the list for the new tab/filters is in (the first time only — kept
   // and prefetched lists show at once), the old one stays up dimmed and the
@@ -1369,7 +1388,7 @@ export default function ProjectsClient({
                       <div className="block">
                         <div className="font-medium">{highlightText(projectDisplayName(row), searchTerms)}</div>
                         <div className="mt-1 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
-                        <SearchMatchLine reasons={matchReasons?.[id]} terms={searchTerms} hideLabels={PROJECT_ROW_FIELDS} className="mt-1 max-w-[18rem]" />
+                        <SearchMatchLine reasons={reasonsFor(id)} terms={searchTerms} hideLabels={PROJECT_ROW_FIELDS} className="mt-1 max-w-[18rem]" />
                       </div>
                     </td>
                     <td className="px-4 py-4">
@@ -1408,7 +1427,7 @@ export default function ProjectsClient({
                           <div>{highlightText(clientDisplayName(row), searchTerms)}</div>
                           {clientPhone(row) ? (
                             <div className="text-xs text-muted-foreground">
-                              <span dir="ltr">{clientPhone(row)}</span>
+                              <span dir="ltr">{highlightText(clientPhone(row) ?? "", searchTerms)}</span>
                             </div>
                           ) : null}
                         </div>
@@ -1636,7 +1655,7 @@ export default function ProjectsClient({
                               {clientPhone(row) ? (
                                 <>
                                   {" · "}
-                                  <span dir="ltr">{clientPhone(row)}</span>
+                                  <span dir="ltr">{highlightText(clientPhone(row) ?? "", searchTerms)}</span>
                                 </>
                               ) : null}
                             </div>
@@ -1651,7 +1670,7 @@ export default function ProjectsClient({
                         {/* Found by a search through something not on the card (a
                             payment, an expense, a shift, a task reply, an hour): what
                             it was, painted. */}
-                        <SearchMatchLine reasons={matchReasons?.[id]} terms={searchTerms} hideLabels={PROJECT_ROW_FIELDS} />
+                        <SearchMatchLine reasons={reasonsFor(id)} terms={searchTerms} hideLabels={PROJECT_ROW_FIELDS} />
 
                         {/* The two statuses under it — a caption, not a headline. */}
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">

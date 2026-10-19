@@ -68,8 +68,8 @@ import { formatMoney } from "@/lib/money";
 import { useSharedSearch } from "@/lib/ui/shared-search";
 import { SearchMatchLine } from "@/components/search/SearchMatchLine";
 import { highlightText } from "@/components/search/highlightMatch";
-import { gsNorm, parseGlobalQuery } from "@/lib/search/global-query";
-import type { InsideMatches } from "@/lib/global-search";
+import type { GlobalSearchReason, InsideMatches } from "@/lib/global-search";
+import { orderInstantReason } from "@/lib/search/instantMatchReason";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
   loading: () => null,
@@ -397,7 +397,7 @@ const EXPECTED_STATUS_BY_VIEW = { open: "draft", closed: "delivered" } as const;
 
 // What an order's row already shows (and paints yellow when it matches), so a
 // search that matched it doesn't repeat it under the row.
-const ORDER_ROW_FIELDS: readonly string[] = ["שם לחשבונית", "סניף", "עיר"];
+const ORDER_ROW_FIELDS: readonly string[] = ["לקוח", "שם לחשבונית", "סניף", "עיר", "טלפון", "טלפון לקוח"];
 
 // Stable for useUndoOverlay: a deleted order leaves the list at once, while
 // its undo window is still open.
@@ -606,20 +606,21 @@ export default function SalesOrdersClient({
     if (orderIndexLoading) return;
     let cancelled = false;
 
-    // The instant (on-device) name search paints typed WORDS at once; the full
-    // search then decides the list, so every row on it can say why it's there
-    // (owner, 2026-10-19: "I need all results to be highlighted"). An amount, a
-    // date or an hour waits for the full search — matched against names it only
-    // found digits inside phone numbers.
-    const wordsOnly = parseGlobalQuery(q).understood.length === 0;
-    const allNameMatches = wordsOnly ? searchOrderEntries(orderIndexEntries, q, customerIndexEntries, 100) : [];
+    // Two searches, one list: the quick on-device one paints at once, the full
+    // one adds everything inside the orders. Every row on it says why it's there
+    // and the part that matched is painted (owner, 2026-10-19: "it should paint
+    // whatever it found matching so I understand").
+    const allNameMatches = searchOrderEntries(orderIndexEntries, q, customerIndexEntries, 100);
     const nameMatches = allNameMatches.filter((entry) =>
       passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter)
+    );
+    setOtherTabCount(
+      allNameMatches.filter((entry) => passesActiveScope(entry, otherTab, customerId ?? null, "all")).length
     );
     // A payment-status filter needs real totals, unavailable until enrichment —
     // skip the instant (zero-total) paint for that combo rather than flash rows
     // that would immediately get filtered back out.
-    const skipInstantPaint = !wordsOnly || (showPaymentStatusFilter && paymentFilter !== "all");
+    const skipInstantPaint = showPaymentStatusFilter && paymentFilter !== "all";
     if (!skipInstantPaint) setApiSearchRows(nameMatches.map(toBasicOrderRow));
 
     const timer = setTimeout(async () => {
@@ -631,14 +632,16 @@ export default function SalesOrdersClient({
         const contentEntries = (deep.ids ?? [])
           .map((id) => entryById.get(id))
           .filter((entry): entry is OrderSearchIndexEntry => entry != null);
+        const deepIds = new Set(contentEntries.map((entry) => entry.id));
+        const everyMatch = [...contentEntries, ...allNameMatches.filter((entry) => !deepIds.has(entry.id))];
         setOtherTabCount(
-          contentEntries.filter((entry) => passesActiveScope(entry, otherTab, customerId ?? null, "all")).length
+          everyMatch.filter((entry) => passesActiveScope(entry, otherTab, customerId ?? null, "all")).length
         );
-        const allMatches = contentEntries.filter((entry) =>
+        const allMatches = everyMatch.filter((entry) =>
           passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter)
         );
         const allBasicRows = allMatches.map(toBasicOrderRow);
-        if (!(showPaymentStatusFilter && paymentFilter !== "all")) setApiSearchRows(allBasicRows);
+        if (!skipInstantPaint) setApiSearchRows(allBasicRows);
 
         const { rows: enriched } = await loadOrderRowsByIds(allMatches.map((entry) => entry.id));
         if (cancelled) return;
@@ -677,16 +680,31 @@ export default function SalesOrdersClient({
   // What to paint yellow on the cards: the deep search's own terms (spelling
   // fixes, an hour) once it answered, the typed words until then.
   const trimmedQuery = query.trim();
-  const searchTerms = useMemo(
-    () =>
-      !trimmedQuery
-        ? []
-        : deepMatches?.query === trimmedQuery
-          ? deepMatches.terms
-          : gsNorm(trimmedQuery).split(" ").filter(Boolean),
-    [trimmedQuery, deepMatches]
-  );
+  const searchTerms = useMemo(() => {
+    if (!trimmedQuery) return [];
+    const deep = deepMatches?.query === trimmedQuery ? deepMatches.terms : [];
+    // What was typed too, whole: "23/6" then lights "236" inside a phone number
+    // (or the 23 and the 6 where they're apart) — what the quick search matched.
+    return Array.from(new Set([...deep, trimmedQuery]));
+  }, [trimmedQuery, deepMatches]);
   const matchReasons = deepMatches?.query === trimmedQuery ? deepMatches.reasons : null;
+  // Why a row is on the list: the full search's reason, or — for a row only the
+  // quick on-device search found — which of its customer's fields matched.
+  const orderEntryById = useMemo(() => new Map(orderIndexEntries.map((entry) => [entry.id, entry])), [orderIndexEntries]);
+  const customerEntryById = useMemo(
+    () => new Map(customerIndexEntries.map((entry) => [entry.id, entry])),
+    [customerIndexEntries]
+  );
+  const reasonsFor = useCallback(
+    (id: string): GlobalSearchReason[] | undefined => {
+      if (!trimmedQuery) return undefined;
+      const deep = matchReasons?.[id];
+      if (deep && deep.length > 0) return deep;
+      const entry = orderEntryById.get(id);
+      return entry ? orderInstantReason(entry, customerEntryById.get(entry.customer_id), trimmedQuery) : undefined;
+    },
+    [trimmedQuery, matchReasons, orderEntryById, customerEntryById]
+  );
   const otherTabHref = useMemo(() => {
     const params = new URLSearchParams();
     if (otherTab === "closed") params.set("tab", "closed");
@@ -1007,7 +1025,7 @@ export default function SalesOrdersClient({
                           {row.customerBranchName ? (
                             <div className="text-xs text-muted-foreground">סניף: {highlightText(row.customerBranchName, searchTerms)}</div>
                           ) : null}
-                          <SearchMatchLine reasons={matchReasons?.[row.id]} terms={searchTerms} hideLabels={ORDER_ROW_FIELDS} className="mt-1 max-w-[18rem]" />
+                          <SearchMatchLine reasons={reasonsFor(row.id)} terms={searchTerms} hideLabels={ORDER_ROW_FIELDS} className="mt-1 max-w-[18rem]" />
                           {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
                             <div className="text-xs text-muted-foreground">לחשבונית: {highlightText(row.customerNameForInvoice, searchTerms)}</div>
                           ) : null}
@@ -1293,8 +1311,8 @@ export default function SalesOrdersClient({
 
                           {/* Found by a search through something not on the card (a
                               payment, a comment, an hour): what it was, painted. */}
-                          {matchReasons?.[row.id]?.some((reason) => !ORDER_ROW_FIELDS.includes(reason.label)) ? (
-                            <SearchMatchLine reasons={matchReasons[row.id]} terms={searchTerms} hideLabels={ORDER_ROW_FIELDS} />
+                          {reasonsFor(row.id)?.some((reason) => !ORDER_ROW_FIELDS.includes(reason.label)) ? (
+                            <SearchMatchLine reasons={reasonsFor(row.id)} terms={searchTerms} hideLabels={ORDER_ROW_FIELDS} />
                           ) : null}
 
                           {/* Only what's EXCEPTIONAL about the order — a status that isn't

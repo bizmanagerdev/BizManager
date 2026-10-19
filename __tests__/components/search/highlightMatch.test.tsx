@@ -42,6 +42,24 @@ describe("matchRanges / highlightText", () => {
     expect(painted("כהן, משה", "משה כהן")).toEqual(["כהן", "משה"]);
   });
 
+  it("digits across a dash or space: what the quick search matched inside a phone", () => {
+    expect(painted("050-632-3624", "23/6")).toEqual(["2-36"]);
+    expect(painted("054 893 3553", "0548933553")).toEqual(["054 893 3553"]);
+  });
+
+  it("numbers matched apart are painted apart (the quick search's '23' and '6')", () => {
+    expect(painted("S0723167064@gmail.com", "23/6")).toEqual(["23", "6", "6"]);
+  });
+
+  it("a date typed with slashes lights the same date", () => {
+    expect(painted("13:42 · 15/10/26", "15/10")).toEqual(["15/10"]);
+  });
+
+  it("a misspelt word lights the word it stands for", () => {
+    expect(painted("ביאן מרקט", "באין")).toEqual(["ביאן"]);
+    expect(painted("משה מוסקוביטש", "מוסקוביץ")).toEqual(["מוסקוביטש"]);
+  });
+
   it("every occurrence of every term, merged", () => {
     expect(painted("ביאן מרקט ביאן", ["ביאן", "מרקט"])).toEqual(["ביאן", "מרקט", "ביאן"]);
   });
