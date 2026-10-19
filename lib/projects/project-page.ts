@@ -347,13 +347,13 @@ export function startProjectPageReads(supabase: SupabaseClient, id: string): Pro
   const customerRead = dashboardRead.then(async ({ data }) => {
     const customerId = getString(data as Row | null, "customer_id");
     if (!customerId) return null;
-    const { data: row } = await supabase.from("customers").select("phone,email,address,addr_place_id,name_for_invoice,delivery_lat,delivery_lng").eq("id", customerId).maybeSingle();
+    const { data: row } = await supabase.from("customers").select("phone,email,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,name_for_invoice,delivery_lat,delivery_lng").eq("id", customerId).maybeSingle();
     return (row ?? null) as Row | null;
   });
   const branchRead = detailsRead.then(async ({ data }) => {
     const branchId = getString(data as Row | null, "branch_id");
     if (!branchId) return null;
-    const { data: row } = await supabase.from("customer_branches").select("id,name,address,phone").eq("id", branchId).maybeSingle();
+    const { data: row } = await supabase.from("customer_branches").select("id,name,address,phone,addr_city,addr_street,addr_house_number,addr_lat,addr_lng").eq("id", branchId).maybeSingle();
     return (row ?? null) as Row | null;
   });
 

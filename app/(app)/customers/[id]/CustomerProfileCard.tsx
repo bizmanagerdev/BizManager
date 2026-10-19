@@ -97,7 +97,7 @@ export default function CustomerProfileCard({
         // drop-off point wins over the address (owner, 2026-10-16).
         <AddressLink
           address={address}
-          pin={customer.deliveryPin}
+          pin={customer.deliveryPin ?? customer.addressPoint ?? null}
           notFound={customer.addressNotFound}
           fallback="—"
           className="inline-flex items-center gap-1.5 hover:text-secondary"

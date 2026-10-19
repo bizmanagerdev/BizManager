@@ -15,7 +15,7 @@ import {
 import { pinFrom } from "@/lib/delivery-location";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { MorningLocalDocument } from "@/lib/morning/types";
-import { addressNotFound } from "@/lib/address/columns";
+import { addressNotFound, addressPoint } from "@/lib/address/columns";
 import {
   buildOrderRows,
   buildProjectRows,
@@ -60,7 +60,7 @@ const IN_BATCH = 150;
 export const DOCUMENTS_SHOWN = 10;
 
 const CUSTOMER_SELECT =
-  "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,addr_place_id,delivery_instructions,delivery_lat,delivery_lng,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error";
+  "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,delivery_instructions,delivery_lat,delivery_lng,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error";
 
 type Page = (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>;
 
@@ -195,7 +195,7 @@ export function startCustomerPageReads(
   const branches = paged((from, to) =>
     supabase
       .from("customer_branches")
-      .select("id,customer_id,name,address,phone,active")
+      .select("id,customer_id,name,address,phone,active,addr_city,addr_street,addr_house_number,addr_lat,addr_lng")
       .eq("customer_id", id)
       .order("name", { ascending: true })
       .order("id", { ascending: true })
@@ -372,6 +372,7 @@ export function startCustomerPageReads(
           deliveryInstructions: str(customerRow, "delivery_instructions") || null,
           deliveryPin: pinFrom(customerRow.delivery_lat, customerRow.delivery_lng),
           addressNotFound: addressNotFound(customerRow as Record<string, unknown>),
+          addressPoint: addressPoint(customerRow as Record<string, unknown>),
           notes: str(customerRow, "notes") || null,
           active: customerRow.active !== false,
           requiresPrepayment: customerRow.requires_prepayment === true,
@@ -395,6 +396,7 @@ export function startCustomerPageReads(
             name: str(branch, "name"),
             address: str(branch, "address") || null,
             phone: str(branch, "phone") || null,
+            point: addressPoint(branch),
           })),
         tags: tagRows
           .map((link) => (link as { tag?: { id?: string; name?: string; color?: string | null } }).tag)

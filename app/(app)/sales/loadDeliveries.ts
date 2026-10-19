@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { orderCity } from "@/lib/ui/cities";
 import { derivePaymentStatus, type PaymentStatus } from "@/lib/orders/paymentStatus";
-import { addressNotFound } from "@/lib/address/columns";
+import { addressNotFound, addressPoint } from "@/lib/address/columns";
+import { pinFrom } from "@/lib/delivery-location";
 
 type Row = Record<string, unknown>;
 
@@ -181,11 +182,27 @@ export async function loadDeliveriesPage(
       (async () => {
         const customerIds = Array.from(new Set(deliveries.map((d) => d.customerId).filter(Boolean)));
         if (customerIds.length === 0) return;
-        const { data: customerRows } = await supabase
-          .from("customers")
-          .select("id,address,addr_place_id,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment")
-          .in("id", customerIds);
+        const branchIds = Array.from(new Set(deliveries.map((d) => d.branchId).filter((id): id is string => Boolean(id))));
+        // Google's point of a full address is where Waze goes when no drop-off
+        // point is saved (addresses plan B, step 5) — the branch's own for a
+        // branch order.
+        const [{ data: customerRows }, branchRows] = await Promise.all([
+          supabase
+            .from("customers")
+            .select(
+              "id,address,addr_place_id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment"
+            )
+            .in("id", customerIds),
+          branchIds.length > 0
+            ? supabase
+                .from("customer_branches")
+                .select("id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng")
+                .in("id", branchIds)
+                .then(({ data: rows }) => (rows ?? []) as Row[])
+            : Promise.resolve([] as Row[]),
+        ]);
         const byId = new Map(((customerRows ?? []) as Row[]).map((row) => [getString(row, "id") ?? "", row]));
+        const branchById = new Map(branchRows.map((row) => [getString(row, "id") ?? "", row]));
         for (const delivery of deliveries) {
           const row = byId.get(delivery.customerId);
           if (!row) continue;
@@ -193,8 +210,11 @@ export async function loadDeliveriesPage(
           // The customer's point is where the customer is: not for an order
           // going to a branch that has an address of its own.
           const toOwnBranch = delivery.branchId !== null && delivery.address !== (getString(row, "address") ?? "-");
-          delivery.deliveryLat = toOwnBranch ? null : getNumber(row, "delivery_lat");
-          delivery.deliveryLng = toOwnBranch ? null : getNumber(row, "delivery_lng");
+          const point = toOwnBranch
+            ? addressPoint(branchById.get(delivery.branchId ?? ""))
+            : pinFrom(row.delivery_lat, row.delivery_lng) ?? addressPoint(row);
+          delivery.deliveryLat = point?.lat ?? null;
+          delivery.deliveryLng = point?.lng ?? null;
           delivery.addressNotFound = !toOwnBranch && addressNotFound(row);
           delivery.requiresPrepayment = row.requires_prepayment === true;
         }

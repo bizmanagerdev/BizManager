@@ -3,7 +3,7 @@ import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import { omitUnknownPlace } from "@/lib/ui/cities";
 import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
-import { addressNotFound, addressVerified } from "@/lib/address/columns";
+import { addressNotFound, addressPoint, addressVerified } from "@/lib/address/columns";
 
 // Pure helpers and option constants, lifted out of NewOrderClient so the
 // component file holds wizard state + orchestration only. No component state
@@ -42,6 +42,8 @@ export type CustomerOption = {
   addressNotFound?: boolean;
   /** A full address Google found; undefined when the list didn't carry it. */
   addressVerified?: boolean;
+  /** Google's point of that full address: where Waze goes with no drop-off point. */
+  addressPoint?: DeliveryPin | null;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
   branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -131,6 +133,7 @@ export function mapCustomerSearchResult(row: Record<string, unknown>): CustomerO
     pin: pinFrom(row.delivery_lat, row.delivery_lng),
     addressNotFound: addressNotFound(row),
     addressVerified: addressVerified(row),
+    addressPoint: addressPoint(row),
     contacts,
     branches,
   };

@@ -4,9 +4,9 @@
 // a city, not found at all, one of the mistake ones … it should tell me").
 
 import type { DeliveryPin } from "@/lib/delivery-location";
-import { addressQuality, plainAddress } from "@/lib/ui/cities";
+import { addressQuality, orderCity, plainAddress } from "@/lib/ui/cities";
 
-export type AddressHelp = "not_found" | "partial" | "none" | null;
+export type AddressHelp = "not_found" | "partial" | "none" | "no_city" | null;
 
 export type CustomerAddressStatus = {
   address?: string | null;
@@ -22,14 +22,21 @@ export type CustomerAddressStatus = {
 
 /**
  * Good: a full address Google found, or a saved drop-off point. A list that
- * didn't carry Google's fields is judged by the saved line.
+ * didn't carry Google's fields is judged by the saved line. A point with no
+ * city at all still asks for the city (owner, 2026-10-18: "every single one
+ * needs a city … when they make an order, you can ask for it").
  */
 export function customerAddressHelp(customer: CustomerAddressStatus | null | undefined): AddressHelp {
-  if (!customer || customer.pin) return null;
+  if (!customer) return null;
+  if (customer.pin) return customerCity(customer) ? null : "no_city";
   if (customer.addressNotFound) return "not_found";
   if (customer.addressVerified === true) return null;
   if (customer.addressVerified === undefined && addressQuality({ address: customer.address, city: customer.city }) === "clear") return null;
   return plainAddress({ address: customer.address, city: customer.city }) ? "partial" : "none";
+}
+
+function customerCity(customer: CustomerAddressStatus): string {
+  return orderCity({ customerAddress: customer.address, customerCity: customer.city }) ?? "";
 }
 
 /** The pop-up's words for it, the same in the order and the project wizard. */
@@ -44,6 +51,12 @@ export function addressHelpPrompt(
     return {
       title: "הכתובת של הלקוח לא נמצאה במפות",
       description: `הכתובת השמורה${saved ? `: ${saved}` : ""} לא נמצאה ב-Google Maps, אז היא כנראה שגויה. צריך להזין כתובת חדשה.`,
+    };
+  }
+  if (help === "no_city") {
+    return {
+      title: "חסרה עיר ללקוח",
+      description: "ללקוח הזה שמורה נקודת מסירה, אז Waze יגיע אליה, אבל לא שמורה לו עיר. לכל לקוח צריכה להיות עיר: בחרו לפחות את העיר מהרשימה.",
     };
   }
   if (help === "partial") {

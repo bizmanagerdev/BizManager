@@ -4,6 +4,7 @@
 // and properties, origin_* / destination_* on projects.
 
 import { hebrewPlaceName, isFullAddress, type StructuredAddress } from "@/lib/address/structured";
+import type { DeliveryPin } from "@/lib/delivery-location";
 
 export type AddressPrefix = "addr" | "origin" | "destination";
 
@@ -36,6 +37,20 @@ export function addressNotFound(row: Record<string, unknown> | null | undefined,
 export function addressVerified(row: Record<string, unknown> | null | undefined, prefix: AddressPrefix = "addr"): boolean | undefined {
   if (!row || !(`${prefix}_city` in row)) return undefined;
   return isFullAddress(addressFromColumns(row, prefix));
+}
+
+/**
+ * Where Waze goes for an address when no drop-off point is saved: Google's
+ * own point, only for a full address it found (city, street and house
+ * number) — a town on its own would send the driver to its middle.
+ */
+export function structuredPoint(address: StructuredAddress | null | undefined): DeliveryPin | null {
+  return address && isFullAddress(address) && address.lat !== null && address.lng !== null
+    ? { lat: address.lat, lng: address.lng }
+    : null;
+}
+export function addressPoint(row: Record<string, unknown> | null | undefined, prefix: AddressPrefix = "addr"): DeliveryPin | null {
+  return structuredPoint(addressFromColumns(row, prefix));
 }
 
 /** "addr_city,addr_street,…" for a select. */

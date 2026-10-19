@@ -433,6 +433,16 @@ describe("the new-order wizard — the first step", () => {
       expect(screen.queryByRole("heading", { name: "צריך לעדכן כתובת ללקוח" })).not.toBeInTheDocument();
     });
 
+    // Owner, 2026-10-19: picked א.י.ג. (a point, nothing else) — "i dont see any warning".
+    it("a saved point but no city at all: asks for the city, and the card shows the point", async () => {
+      await renderForm({ customers: google({ address: null, delivery_lat: 31.8, delivery_lng: 35.22 }) });
+      tap("משכן משה");
+      expect(screen.getByRole("heading", { name: "חסרה עיר ללקוח" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "המשך בלי" }));
+      expect(screen.getByText("חסרה עיר ללקוח הזה")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /נקודה שמורה/ }).getAttribute("href")).toContain("ll=31.8,35.22");
+    });
+
     it("the + menu's list, which comes without Google's fields: taken from the customer index", async () => {
       server.customerIndex = [indexEntry(CUSTOMER_ROWS[0], { addr_city: "בני ברק", addr_street: null, addr_house_number: null, addr_place_id: "ChIJ-bnei-brak" })];
       await renderForm({ customers: [{ id: "c1", name: "משכן משה", phone: "052-1234567", email: null, address: "בני ברק | רבי עקיבא 10" }] });

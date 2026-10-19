@@ -69,7 +69,7 @@ import { AddressLink } from "@/components/ui/address-link";
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
 import { formatShortDate } from "@/lib/date";
 import { ORDER_NOT_SENT_YET, deviceOrderSaves } from "@/lib/orders/device-order-saves";
-import { addressNotFound, addressVerified } from "@/lib/address/columns";
+import { addressNotFound, addressPoint, addressVerified, structuredPoint } from "@/lib/address/columns";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { isFullAddress } from "@/lib/address/structured";
 import { addressHelpPrompt, customerAddressHelp } from "@/lib/address/address-help";
@@ -360,6 +360,8 @@ export default function NewOrderClient({
               addr_city: entry.addr_city,
               addr_street: entry.addr_street,
               addr_house_number: entry.addr_house_number,
+              addr_lat: entry.addr_lat,
+              addr_lng: entry.addr_lng,
               addr_place_id: entry.addr_place_id,
             }
           : source;
@@ -376,6 +378,7 @@ export default function NewOrderClient({
           pin: pinFrom(row.delivery_lat, row.delivery_lng),
           addressNotFound: addressNotFound(row),
           addressVerified: addressVerified(row),
+          addressPoint: addressPoint(row),
         };
       })
       .filter((row) => row.id);
@@ -422,7 +425,7 @@ export default function NewOrderClient({
       })
     : selectedCustomer?.city ?? null;
   // The customer's saved point — not for a branch that has its own address.
-  const orderPin = orderBranch?.address?.trim() ? null : selectedCustomer?.pin ?? null;
+  const orderPin = orderBranch?.address?.trim() ? null : selectedCustomer?.pin ?? selectedCustomer?.addressPoint ?? null;
   const orderAddressNotFound = !orderBranch?.address?.trim() && selectedCustomer?.addressNotFound === true;
 
   useEffect(() => {
@@ -1195,6 +1198,12 @@ export default function NewOrderClient({
       pin: selectedCustomer?.id === customer.id ? selectedCustomer.pin ?? null : null,
       addressNotFound: customer.address_not_found === true,
       addressVerified: customer.structured_address === undefined ? undefined : isFullAddress(customer.structured_address),
+      addressPoint:
+        customer.structured_address === undefined
+          ? selectedCustomer?.id === customer.id
+            ? selectedCustomer.addressPoint ?? null
+            : null
+          : structuredPoint(customer.structured_address),
     });
     setCustomerQuery(customer.name);
   }
@@ -1529,9 +1538,17 @@ export default function NewOrderClient({
                           <WarningIcon className="h-4 w-4 shrink-0" />
                           <div className="min-w-0 flex-1">
                             <p className="font-semibold">
-                              {customerAddressHelp(selectedCustomer) === "not_found" ? "הכתובת של הלקוח לא נמצאה ב-Google Maps" : "אין כתובת מלאה ללקוח הזה"}
+                              {customerAddressHelp(selectedCustomer) === "not_found"
+                                ? "הכתובת של הלקוח לא נמצאה ב-Google Maps"
+                                : customerAddressHelp(selectedCustomer) === "no_city"
+                                  ? "חסרה עיר ללקוח הזה"
+                                  : "אין כתובת מלאה ללקוח הזה"}
                             </p>
-                            <p>אם ההזמנה למשלוח, בקשו מהלקוח רחוב ומספר בית ושמרו אותם.</p>
+                            <p>
+                              {customerAddressHelp(selectedCustomer) === "no_city"
+                                ? "בחרו לפחות את העיר מהרשימה."
+                                : "אם ההזמנה למשלוח, בקשו מהלקוח רחוב ומספר בית ושמרו אותם."}
+                            </p>
                           </div>
                           <Button
                             type="button"
@@ -1561,7 +1578,13 @@ export default function NewOrderClient({
                             { label: "טלפון", value: selectedCustomer.phone, ltr: true },
                             { label: "וואטסאפ", value: selectedCustomer.whatsapp, ltr: true },
                             { label: "אימייל", value: selectedCustomer.email, ltr: true },
-                            { label: "כתובת", value: omitUnknownPlace(selectedCustomer.address || selectedCustomer.city), ltr: false, isAddress: true },
+                            {
+                              label: "כתובת",
+                              // A saved point with no address line is still somewhere to go.
+                              value: omitUnknownPlace(selectedCustomer.address || selectedCustomer.city) || (selectedCustomer.pin ? "נקודה שמורה" : null),
+                              ltr: false,
+                              isAddress: true,
+                            },
                             { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
                             { label: "אופן תשלום", value: selectedCustomer.requiresPrepayment ? "תשלום מראש" : "רגיל", ltr: false },
                           ].map((row) => (
@@ -1571,7 +1594,7 @@ export default function NewOrderClient({
                                 row.isAddress ? (
                                   <AddressLink
                                     address={row.value}
-                                    pin={selectedCustomer.pin}
+                                    pin={selectedCustomer.pin ?? selectedCustomer.addressPoint ?? null}
                                     notFound={selectedCustomer.addressNotFound}
                                     className="inline-flex items-center gap-1 font-medium text-foreground"
                                   >

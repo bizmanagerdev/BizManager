@@ -107,6 +107,13 @@ describe("picking a customer for a project", () => {
     expect(screen.queryByText("אין כתובת מלאה ללקוח הזה")).not.toBeInTheDocument();
   });
 
+  it("a saved point but no city at all: asks for the city", async () => {
+    index.state.entries = [entry({ address: null, delivery_lat: 31.8, delivery_lng: 35.22 })];
+    await renderWizard();
+    tapCustomer();
+    expect(asked("חסרה עיר ללקוח")).toBeInTheDocument();
+  });
+
   it("a customer the index doesn't have yet: nothing is asked rather than a wrong warning", async () => {
     await renderWizard();
     tapCustomer();

@@ -47,7 +47,7 @@ import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
 import type { ProjectRowFields } from "@/lib/projects/project-input";
 import { israelDateKey } from "@/lib/timezone";
 import { offlineUpload, queueUploadsAfter } from "@/lib/offline-upload";
-import { addressNotFound, addressVerified } from "@/lib/address/columns";
+import { addressNotFound, addressPoint, addressVerified, structuredPoint } from "@/lib/address/columns";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { addressHelpPrompt, customerAddressHelp } from "@/lib/address/address-help";
@@ -133,6 +133,8 @@ export type ProjectCustomerOption = {
   addressNotFound?: boolean;
   /** A full address Google found; undefined when the list didn't carry it. */
   addressVerified?: boolean;
+  /** Google's point of that full address: where Waze goes with no drop-off point. */
+  addressPoint?: DeliveryPin | null;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
   branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
@@ -265,6 +267,7 @@ export function mapProjectCustomer(row: Row): ProjectCustomerOption | null {
     pin: pinFrom(row.delivery_lat, row.delivery_lng),
     addressNotFound: addressNotFound(row),
     addressVerified: addressVerified(row),
+    addressPoint: addressPoint(row),
     contacts,
     branches,
   };
@@ -424,6 +427,7 @@ export default function NewProjectClient({
         pin: customer.pin ?? fromIndex.pin,
         addressNotFound: fromIndex.addressNotFound,
         addressVerified: fromIndex.addressVerified,
+        addressPoint: fromIndex.addressPoint,
       };
     },
     [indexedCustomers]
@@ -728,6 +732,12 @@ export default function NewProjectClient({
       pin: selectedCustomer?.id === customer.id ? selectedCustomer.pin ?? null : null,
       addressNotFound: customer.address_not_found === true,
       addressVerified: customer.structured_address === undefined ? undefined : isFullAddress(customer.structured_address),
+      addressPoint:
+        customer.structured_address === undefined
+          ? selectedCustomer?.id === customer.id
+            ? selectedCustomer.addressPoint ?? null
+            : null
+          : structuredPoint(customer.structured_address),
     });
     setCustomerQuery("");
     setCustomerTab("existing");
@@ -1170,9 +1180,13 @@ export default function NewProjectClient({
                           <WarningIcon className="h-4 w-4 shrink-0" />
                           <div className="min-w-0 flex-1">
                             <p className="font-semibold">
-                              {projectAddressHelp(selectedCustomer) === "not_found" ? "הכתובת של הלקוח לא נמצאה ב-Google Maps" : "אין כתובת מלאה ללקוח הזה"}
+                              {projectAddressHelp(selectedCustomer) === "not_found"
+                                ? "הכתובת של הלקוח לא נמצאה ב-Google Maps"
+                                : projectAddressHelp(selectedCustomer) === "no_city"
+                                  ? "חסרה עיר ללקוח הזה"
+                                  : "אין כתובת מלאה ללקוח הזה"}
                             </p>
-                            <p>בקשו מהלקוח רחוב ומספר בית ושמרו אותם.</p>
+                            <p>{projectAddressHelp(selectedCustomer) === "no_city" ? "בחרו לפחות את העיר מהרשימה." : "בקשו מהלקוח רחוב ומספר בית ושמרו אותם."}</p>
                           </div>
                           <Button type="button" size="sm" variant="outline" onClick={() => setEditingCustomer(true)} disabled={actionLocked}>
                             הוספת כתובת
@@ -1195,7 +1209,13 @@ export default function NewProjectClient({
                             { label: "טלפון", value: selectedCustomer.phone, ltr: true },
                             { label: "וואטסאפ", value: selectedCustomer.whatsapp, ltr: true },
                             { label: "אימייל", value: selectedCustomer.email, ltr: true },
-                            { label: "כתובת", value: omitUnknownPlace(shownCustomer?.address || shownCustomer?.city || null), ltr: false, isAddress: true },
+                            {
+                              label: "כתובת",
+                              // A saved point with no address line is still somewhere to go.
+                              value: omitUnknownPlace(shownCustomer?.address || shownCustomer?.city || null) || (shownCustomer?.pin ? "נקודה שמורה" : null),
+                              ltr: false,
+                              isAddress: true,
+                            },
                             { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
                           ].map((row) => (
                             <p key={row.label} className="leading-5">
@@ -1204,7 +1224,7 @@ export default function NewProjectClient({
                                 row.isAddress ? (
                                   <AddressLink
                                     address={row.value}
-                                    pin={shownCustomer?.pin}
+                                    pin={shownCustomer?.pin ?? shownCustomer?.addressPoint ?? null}
                                     notFound={shownCustomer?.addressNotFound}
                                     className="inline-flex items-center gap-1 font-medium text-foreground"
                                   >

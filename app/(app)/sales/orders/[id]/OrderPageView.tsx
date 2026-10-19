@@ -28,7 +28,7 @@ import type { OrderPageCore } from "@/lib/orders/order-page";
 import type { OrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPageExtras";
 import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
-import { addressNotFound } from "@/lib/address/columns";
+import { addressNotFound, addressPoint } from "@/lib/address/columns";
 
 // An order's page, from what was read for it: the order itself
 // (lib/orders/order-page.ts — from the server, or from the device copy) and
@@ -172,7 +172,10 @@ export default function OrderPageView({
   const effectiveAddress = branchAddress ? formatAddressForDisplay(branchAddress) : fullAddress;
   // The customer's saved drop-off point wins over the address — unless the
   // order goes to a branch somewhere else.
-  const orderPin = branchAddress ? null : pinFrom(customer?.delivery_lat, customer?.delivery_lng);
+  // Else Google's point of a full address (addresses plan B, step 5).
+  const orderPin = branchAddress
+    ? addressPoint(branch)
+    : pinFrom(customer?.delivery_lat, customer?.delivery_lng) ?? addressPoint(customer);
   const orderAddressNotFound = !branchAddress && addressNotFound(customer);
   const effectivePhone = branchPhone ?? customerPhone;
   const orderNotes = getString(order ?? {}, "notes");

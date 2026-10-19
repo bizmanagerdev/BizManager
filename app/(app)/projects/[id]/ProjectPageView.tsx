@@ -37,7 +37,7 @@ import { formatShortDate } from "@/lib/date";
 import type { ProjectPageCore } from "@/lib/projects/project-page";
 import type { ProjectPageExtras } from "@/app/(app)/projects/[id]/loadProjectPageExtras";
 import { useSettled } from "@/hooks/useSettled";
-import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
+import { addressFromColumns, addressNotFound, addressPoint } from "@/lib/address/columns";
 
 // A project's page, from what was read for it: the project itself
 // (lib/projects/project-page.ts) and the parts only the server reads
@@ -141,6 +141,8 @@ export default function ProjectPageView({
         typeof details?.destination_has_elevator === "boolean" ? details.destination_has_elevator : null,
       origin_structured: addressFromColumns(details as Record<string, unknown> | null, "origin"),
       origin_not_found: addressNotFound(details as Record<string, unknown> | null, "origin"),
+      origin_point: addressPoint(details as Record<string, unknown> | null, "origin"),
+      destination_point: addressPoint(details as Record<string, unknown> | null, "destination"),
       destination_not_found: addressNotFound(details as Record<string, unknown> | null, "destination"),
       destination_structured: addressFromColumns(details as Record<string, unknown> | null, "destination"),
       price_includes_vat: details?.price_includes_vat === true,
@@ -270,7 +272,10 @@ export default function ProjectPageView({
   const customerEmail = cleanField(customerRow?.email);
   const customerAddress = cleanField(branchRow?.address) ?? cleanField(customerRow?.address);
   // The saved drop-off point wins over the address, unless it's a branch's job.
-  const customerPin = cleanField(branchRow?.address) ? null : pinFrom(customerRow?.delivery_lat, customerRow?.delivery_lng);
+  // Else Google's point of a full address (addresses plan B, step 5).
+  const customerPin = cleanField(branchRow?.address)
+    ? addressPoint(branchRow as Record<string, unknown> | null)
+    : pinFrom(customerRow?.delivery_lat, customerRow?.delivery_lng) ?? addressPoint(customerRow as Record<string, unknown> | null);
   const customerInvoiceName = cleanField(customerRow?.name_for_invoice);
   const projectNotes = typeof overview?.notes === "string" && overview.notes.trim() ? overview.notes.trim() : null;
   const startDate = typeof overview?.start_date === "string" ? overview.start_date : null;
@@ -328,7 +333,7 @@ export default function ProjectPageView({
   const routeHeadline = hasRoute ? (
     <span className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-base font-bold leading-snug">
       {moveOrigin ? (
-        <AddressLink address={originAddress} notFound={overview?.origin_not_found} className="flex min-w-0 items-center gap-2">
+        <AddressLink address={originAddress} pin={overview?.origin_point} notFound={overview?.origin_not_found} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
             <WazeIcon className="h-3.5 w-3.5" />
           </span>
@@ -337,7 +342,7 @@ export default function ProjectPageView({
       ) : null}
       {moveOrigin && moveDestination ? <ArrowLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden /> : null}
       {moveDestination ? (
-        <AddressLink address={destinationAddress} notFound={overview?.destination_not_found} className="flex min-w-0 items-center gap-2">
+        <AddressLink address={destinationAddress} pin={overview?.destination_point} notFound={overview?.destination_not_found} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
             <WazeIcon className="h-3.5 w-3.5" />
           </span>
@@ -432,7 +437,7 @@ export default function ProjectPageView({
           {hasRoute ? (
             <div className="space-y-2 lg:hidden">
               {moveOrigin ? (
-                <AddressLink address={originAddress} notFound={overview?.origin_not_found} className="flex items-start gap-2 text-sm">
+                <AddressLink address={originAddress} pin={overview?.origin_point} notFound={overview?.origin_not_found} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
                     <WazeIcon className="h-3.5 w-3.5" />
                   </span>
@@ -443,7 +448,7 @@ export default function ProjectPageView({
                 </AddressLink>
               ) : null}
               {moveDestination ? (
-                <AddressLink address={destinationAddress} notFound={overview?.destination_not_found} className="flex items-start gap-2 text-sm">
+                <AddressLink address={destinationAddress} pin={overview?.destination_point} notFound={overview?.destination_not_found} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
                     <WazeIcon className="h-3.5 w-3.5" />
                   </span>

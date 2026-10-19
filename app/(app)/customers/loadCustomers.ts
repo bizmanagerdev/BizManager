@@ -6,6 +6,7 @@ import { withLinkColumn } from "@/lib/customers/workerLink";
 import { chunkStrings } from "@/lib/financial/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import type { CustomersFilters } from "@/app/(app)/customers/customersFilters";
+import { addressPoint } from "@/lib/address/columns";
 
 export type { CustomerFilterMode, CustomersFilters } from "@/app/(app)/customers/customersFilters";
 
@@ -56,7 +57,7 @@ const OVERVIEW_SELECT =
 // (the Morning column) and the two flags the rows badge — plus the worker
 // link, through withLinkColumn.
 // The saved drop-off point too: the address column's Waze goes there first.
-const CUSTOMER_SELECT = "id,whatsapp,morning_client_id,requires_prepayment,delivery_lat,delivery_lng,addr_place_id";
+const CUSTOMER_SELECT = "id,whatsapp,morning_client_id,requires_prepayment,delivery_lat,delivery_lng,addr_place_id,addr_city,addr_street,addr_house_number,addr_lat,addr_lng";
 
 type ReadResult = { data: Row[]; error: string | null };
 
@@ -255,6 +256,8 @@ async function enrichCustomerOverviewRows(
       delivery_lat: customer?.delivery_lat ?? null,
       delivery_lng: customer?.delivery_lng ?? null,
       addr_place_id: customer?.addr_place_id ?? null,
+      // Google's point of a full address: where Waze goes with no drop-off point.
+      address_point: addressPoint(customer as Row | null | undefined),
     };
   });
 
@@ -348,6 +351,9 @@ export type CustomerSearchIndexEntry = {
   addr_city: string | null;
   addr_street: string | null;
   addr_house_number: string | null;
+  /** Google's point of the address (Waze goes there when it's a full address). */
+  addr_lat: number | null;
+  addr_lng: number | null;
   /** "not_found" when the saved address wasn't found on Google Maps (lib/address/columns.ts). */
   addr_place_id: string | null;
   contacts: Array<{ full_name: string; phone: string | null; email: string | null; whatsapp: string | null }>;
@@ -370,7 +376,7 @@ export async function loadCustomerSearchIndexRows(
     fetchAllPagedResult((from, to) =>
       supabase
         .from("customers")
-        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng,addr_city,addr_street,addr_house_number,addr_place_id")
+        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment,delivery_lat,delivery_lng,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,addr_place_id")
         .order("name", { ascending: true })
         .order("id")
         .range(from, to)
@@ -437,6 +443,8 @@ export async function loadCustomerSearchIndexRows(
       addr_city: (row?.addr_city as string | null) ?? null,
       addr_street: (row?.addr_street as string | null) ?? null,
       addr_house_number: (row?.addr_house_number as string | null) ?? null,
+      addr_lat: row?.addr_lat == null ? null : Number(row.addr_lat),
+      addr_lng: row?.addr_lng == null ? null : Number(row.addr_lng),
       addr_place_id: (row?.addr_place_id as string | null) ?? null,
       delivery_lat: row?.delivery_lat == null ? null : Number(row.delivery_lat),
       delivery_lng: row?.delivery_lng == null ? null : Number(row.delivery_lng),

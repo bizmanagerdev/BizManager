@@ -476,7 +476,13 @@ const TaskCard = memo(function TaskCard({
             </span>
           ) : null}
           {task.city ? (
-            <AddressLink address={task.city} className="inline-flex items-center gap-[0.2em]">
+            // Waze to the task's own address — Google's point, else its street
+            // with the city — not just the middle of the town.
+            <AddressLink
+              address={task.address?.trim() ? `${task.city} | ${task.address}` : task.city}
+              pin={task.location_point}
+              className="inline-flex items-center gap-[0.2em]"
+            >
               <WazeIcon className="h-[1.1em] w-[1.1em]" />
               {task.city}
             </AddressLink>

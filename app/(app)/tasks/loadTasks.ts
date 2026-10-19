@@ -8,6 +8,8 @@ import { snoozedTasks } from "@/lib/tasks/snooze";
 import { israelDateKey } from "@/lib/timezone";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { chunkStrings } from "@/lib/financial/utils";
+import type { DeliveryPin } from "@/lib/delivery-location";
+import { addressPoint } from "@/lib/address/columns";
 
 type Row = Record<string, unknown>;
 
@@ -25,6 +27,8 @@ export type TaskBoardItem = {
   due_date: string | null;
   due_time: string | null;
   city: string | null;
+  /** The street line beside the city ("יחזקאל הנביא 27"), for Waze. */
+  address?: string | null;
   business_domain: string | null;
   project_id: string | null;
   property_id: string | null;
@@ -33,6 +37,8 @@ export type TaskBoardItem = {
   property_name: string | null;
   customer_name: string | null;
   customer_phone: string | null;
+  /** Google's point of the task's full address: where Waze goes. */
+  location_point?: DeliveryPin | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   members: TaskMember[];
@@ -84,7 +90,7 @@ async function readByIds<T = Row>(
 }
 
 const TASK_SELECT =
-  "id,subject,subject_he,subject_ar,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id,sort_order";
+  "id,subject,subject_he,subject_ar,status,priority,due_date,due_time,city,address,addr_city,addr_street,addr_house_number,addr_lat,addr_lng,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id,sort_order";
 // What the board reads per task: the task and the two timestamps the "mine"
 // union re-ranks by. People's names and colours come from user_directory() in
 // the second round (workers can't read other people's user rows).
@@ -110,6 +116,8 @@ type TaskRow = {
   due_date: string | null;
   due_time: string | null;
   city: string | null;
+  /** The street line beside the city ("יחזקאל הנביא 27"), for Waze. */
+  address: string | null;
   business_domain: string | null;
   project_id: string | null;
   property_id: string | null;
@@ -371,6 +379,8 @@ export async function loadTasksBoard(
       due_date: row.due_date,
       due_time: row.due_time,
       city: row.city,
+      address: row.address,
+      location_point: addressPoint(row as unknown as Row),
       business_domain: row.business_domain,
       project_id: row.project_id,
       property_id: row.property_id,

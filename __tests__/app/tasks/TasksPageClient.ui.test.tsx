@@ -484,6 +484,15 @@ describe("what a card shows", () => {
     expect(c.getByText("+1")).toBeInTheDocument();
   });
 
+  // Addresses plan B, step 5: the card's Waze goes to the task's own address.
+  it.each([
+    ["Google's point of its full address", { address: "רבי עקיבא 10", location_point: { lat: 32.08, lng: 34.83 } }, "ll=32.08,34.83"],
+    ["its street with the city, when no point is kept", { address: "רבי עקיבא 10", location_point: null }, "waze.com/ul?q="],
+  ])("the city opens Waze to %s", (_label, fields, href) => {
+    renderBoard({ tasks: [task({ id: "w1", subject: "להתקין", city: "בני ברק", ...fields })] });
+    expect(within(card("להתקין")).getByRole("link", { name: "בני ברק" }).getAttribute("href")).toContain(href);
+  });
+
   it("a priority badge only when it's out of the ordinary (high/urgent) — never בינונית", () => {
     renderBoard({
       tasks: [

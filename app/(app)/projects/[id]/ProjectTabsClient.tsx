@@ -90,6 +90,7 @@ import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, isDocumentCategory } fro
 import dynamic from "next/dynamic";
 import { DocumentTile } from "@/components/ui/document-tile";
 import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
+import type { DeliveryPin } from "@/lib/delivery-location";
 import {
   customerPaymentStatusLabel,
   deriveCustomerPaymentStatus,
@@ -155,6 +156,9 @@ export type ProjectOverview = {
   /** The saved end was not found on Google Maps: Waze says so instead of opening. */
   origin_not_found?: boolean;
   destination_not_found?: boolean;
+  /** Google's point of a full from / to: where Waze goes. */
+  origin_point?: DeliveryPin | null;
+  destination_point?: DeliveryPin | null;
   /** Not on the page's tabs — the edit form sends them back as they are. */
   branch_id?: string | null;
   payment_terms?: string | null;

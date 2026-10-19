@@ -207,7 +207,7 @@ export default function CustomerContactsSection({
                 <div className="font-medium">{branch.name || `סניף ${index + 1}`}</div>
                 <div className="-mx-2 flex flex-wrap items-center">
                   {branch.address ? (
-                    <AddressLink address={branch.address} fallback="—" className={LINK_CLASS}>
+                    <AddressLink address={branch.address} pin={branch.point} fallback="—" className={LINK_CLASS}>
                       <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
                       <span className="min-w-0 break-words">{branch.address}</span>
                     </AddressLink>

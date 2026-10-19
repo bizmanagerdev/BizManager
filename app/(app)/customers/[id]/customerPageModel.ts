@@ -58,6 +58,8 @@ export type CustomerProfile = {
   deliveryPin: DeliveryPin | null;
   /** The saved address was not found on Google Maps (lib/address/columns.ts). */
   addressNotFound?: boolean;
+  /** Google's point of a full address: where Waze goes with no drop-off point. */
+  addressPoint?: DeliveryPin | null;
   notes: string | null;
   active: boolean;
   requiresPrepayment: boolean;
@@ -117,7 +119,14 @@ export type CustomerContactRow = {
   waiting?: boolean;
 };
 
-export type CustomerBranchRow = { id: string; name: string; address: string | null; phone: string | null };
+export type CustomerBranchRow = {
+  id: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  /** Google's point of the branch's full address: where Waze goes. */
+  point?: DeliveryPin | null;
+};
 
 export type CustomerTag = { id: string; name: string; color?: string | null };
 

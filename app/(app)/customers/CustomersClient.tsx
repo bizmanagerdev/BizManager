@@ -57,7 +57,7 @@ import { CloseIcon, DownloadIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, 
 import { NativeSelect } from "@/components/ui/native-select";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { AddressLink } from "@/components/ui/address-link";
-import { pinFrom } from "@/lib/delivery-location";
+import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import { CallIconButton, ContactLink } from "@/components/ui/contact-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -994,7 +994,8 @@ export default function CustomersClient({
                   const phone = s(row, "phone");
                   const email = s(row, "email");
                   const address = s(row, "address");
-                  const pin = pinFrom(row.delivery_lat, row.delivery_lng);
+                  // The saved drop-off point, else Google's point of a full address.
+                  const pin = pinFrom(row.delivery_lat, row.delivery_lng) ?? ((row.address_point as DeliveryPin | null | undefined) ?? null);
                   const morningId = s(row, "morning_client_id");
                   const debt = n(row, "open_balance");
                   const pending = row[ENRICH_PENDING] === true;
