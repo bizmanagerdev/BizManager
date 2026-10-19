@@ -1,14 +1,19 @@
-import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { SearchIcon } from "@/components/ui/icons";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
-import { performGlobalSearch } from "@/lib/global-search";
-import { highlightText, MatchReason } from "@/components/search/highlightMatch";
+import { GLOBAL_SEARCH_LABELS, isGlobalSearchKind, performGlobalSearch } from "@/lib/global-search";
+import { GlobalSearchResults } from "@/components/search/GlobalSearchResults";
+import { toHebrewError } from "@/lib/error-messages";
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+// The full results of the global search: up to 20 of every kind of record,
+// and with ?kind=… every match of one kind ("הצג את כל 36").
 export default async function SearchPage({
   searchParams,
 }: {
@@ -16,92 +21,68 @@ export default async function SearchPage({
 }) {
   const params = (await searchParams) ?? {};
   const query = (firstValue(params.q) ?? "").trim();
+  const kindParam = firstValue(params.kind);
+  const kind = isGlobalSearchKind(kindParam) ? kindParam : null;
   const { profile, supabase } = await requireStaffPage();
-  const results = await performGlobalSearch(supabase, {
-    query,
-    viewerRole: profile.role,
-    limitPerGroup: 10,
-    mode: "full",
-  });
+
+  let error: string | null = null;
+  let results: Awaited<ReturnType<typeof performGlobalSearch>> | null = null;
+  if (query) {
+    try {
+      results = await performGlobalSearch(supabase, {
+        query,
+        viewerRole: profile.role,
+        viewerId: profile.id,
+        limitPerGroup: kind ? 500 : 20,
+        kind,
+      });
+    } catch (cause: unknown) {
+      error = toHebrewError(cause, "החיפוש נכשל");
+    }
+  }
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">חיפוש גלובלי</h1>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold">
+            {kind ? `חיפוש — ${GLOBAL_SEARCH_LABELS[kind]}` : "חיפוש בכל המערכת"}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            מקום אחד לחיפוש לקוחות, פרויקטים, משימות, מכירות, מסמכים, מלאי ופיננסים.
+            שם, מילה מהערה או מתגובה, סכום (1000), תאריך (15/10), טלפון, סניף, מסמך, רכב — וכמה מילים יחד מצמצמות.
           </p>
         </div>
 
-        {!query ? (
+        <form action="/search" method="get" className="flex gap-2">
+          {kind ? <input type="hidden" name="kind" value={kind} /> : null}
+          <div className="relative flex-1">
+            <SearchIcon className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              name="q"
+              defaultValue={query}
+              placeholder="מה לחפש?"
+              className="h-11 ps-9 text-base"
+              autoComplete="off"
+              enterKeyHint="search"
+            />
+          </div>
+          <Button type="submit" className="h-11 rounded-xl px-5">
+            חיפוש
+          </Button>
+        </form>
+
+        {!query ? null : error ? (
           <Card>
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              הקלידו בשורת החיפוש העליונה כדי לחפש בכל המערכת.
-            </CardContent>
+            <CardContent className="p-6 text-sm text-destructive">{error}</CardContent>
           </Card>
-        ) : results.totalResults === 0 ? (
+        ) : !results || results.totalResults === 0 ? (
           <Card>
             <CardContent className="p-6 text-sm text-muted-foreground">
               לא נמצאו תוצאות עבור <span className="font-medium text-foreground">{query}</span>.
             </CardContent>
           </Card>
         ) : (
-          <>
-            <Card>
-              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-6 text-sm">
-                <div>
-                  <span className="text-muted-foreground">חיפוש:</span>{" "}
-                  <span className="font-medium">{query}</span>
-                </div>
-                <div className="text-muted-foreground">{results.totalResults} תוצאות</div>
-              </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {results.groups.map((group) => (
-                <Card key={group.key}>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg">{group.label}</CardTitle>
-                    <CardDescription>{group.results.length} תוצאות</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {group.results.map((result) => (
-                      <Link
-                        key={`${result.group}:${result.id}`}
-                        href={result.href}
-                        className="block rounded-2xl border border-border/70 p-4 transition-colors hover:bg-muted/40"
-                      >
-                        <div className="font-medium">{highlightText(result.title, query)}</div>
-                        {result.subtitle ? (
-                          <div className="mt-1 text-sm text-muted-foreground">
-                            {highlightText(result.subtitle, query)}
-                          </div>
-                        ) : null}
-                        {result.match ? (
-                          <MatchReason
-                            label={result.match.label}
-                            snippet={result.match.snippet}
-                            query={query}
-                            className="mt-1 text-sm text-muted-foreground"
-                          />
-                        ) : null}
-                        {result.meta.length > 0 ? (
-                          <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            {result.meta.map((item) => (
-                              <span key={item} className="rounded-full bg-muted px-2.5 py-1">
-                                {item}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </Link>
-                    ))}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </>
+          <GlobalSearchResults results={results} showAllKind={kind} />
         )}
       </div>
     </AppShell>

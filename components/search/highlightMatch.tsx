@@ -1,52 +1,131 @@
 import { Fragment, type ReactNode } from "react";
 
-// Wrap every case-insensitive occurrence of `query` inside `text` in a <mark>, so
-// the user can see exactly what matched. Pure (no hooks) — safe in both server and
-// client components. Highlighting is a literal substring pass: it lights up the
-// common case (notes/comments/names contain the typed text) and simply returns the
-// text unchanged when the match was fuzzy rather than an exact substring.
-export function highlightText(text: string, query: string): ReactNode {
-  const needle = query.trim();
-  if (!needle || !text) return text;
+// Paint in yellow what a search matched, so the reader sees WHY a row came up
+// (owner, 2026-10-18: "show me what I searched and highlight it yellow so I
+// know that's the part"). Pure (no hooks) — safe in server and client
+// components.
+//
+// Matching is done the way the search itself matches: a final letter equals
+// its regular form (כהן ⇄ כהנ), quote marks and niqqud inside a word are
+// skipped (צק finds צ׳ק, מקט finds מק״ט), a thousands comma between digits is
+// skipped (1000 finds 1,000), case is ignored. The painted span covers the
+// original characters, quote marks included.
 
-  const haystack = text.toLowerCase();
-  const lowerNeedle = needle.toLowerCase();
+const MARK_CLASS = "rounded bg-yellow-200/90 px-0.5 text-inherit dark:bg-yellow-500/35";
+
+const FINALS: Record<string, string> = { ך: "כ", ם: "מ", ן: "נ", ף: "פ", ץ: "צ" };
+const SKIPPED = /["'`´׳״’‘֑-ׇ]/;
+const WORD_CHAR = /[0-9a-zא-ת؀-ۿ]/;
+
+/** The text folded for matching, with each folded character's original index. */
+function foldWithIndex(text: string): { folded: string; index: number[] } {
+  let folded = "";
+  const index: number[] = [];
+  for (let i = 0; i < text.length; i += 1) {
+    // Char by char, so an index here is an index in the original text.
+    const ch = text[i].toLowerCase()[0] ?? text[i];
+    if (SKIPPED.test(ch)) continue;
+    // 1,000 → 1000 (a comma between two digits)
+    if (ch === "," && /\d/.test(text[i - 1] ?? "") && /\d/.test(text[i + 1] ?? "")) continue;
+    const mapped = FINALS[ch] ?? ch;
+    folded += WORD_CHAR.test(mapped) ? mapped : " ";
+    index.push(i);
+  }
+  return { folded, index };
+}
+
+function foldTerm(term: string): string {
+  return foldWithIndex(term).folded.replace(/\s+/g, " ").trim();
+}
+
+/** Ranges [start, end) in `text` covered by any of the terms (merged). */
+export function matchRanges(text: string, terms: string | readonly string[]): Array<[number, number]> {
+  if (!text) return [];
+  const list = (typeof terms === "string" ? [terms] : terms).map(foldTerm).filter((term) => term.length > 0);
+  if (list.length === 0) return [];
+  const { folded, index } = foldWithIndex(text);
+  const ranges: Array<[number, number]> = [];
+  for (const term of list) {
+    // A multi-word phrase is painted word by word, so "משה כהן" lights both.
+    for (const part of term.split(" ")) {
+      if (!part) continue;
+      let from = folded.indexOf(part);
+      while (from !== -1) {
+        const start = index[from];
+        const end = index[from + part.length - 1] + 1;
+        ranges.push([start, end]);
+        from = folded.indexOf(part, from + part.length);
+      }
+    }
+  }
+  ranges.sort((left, right) => left[0] - right[0]);
+  const merged: Array<[number, number]> = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1]);
+    else merged.push([range[0], range[1]]);
+  }
+  return merged;
+}
+
+/** `text` with every match of the terms wrapped in a yellow <mark>. */
+export function highlightText(text: string, terms: string | readonly string[]): ReactNode {
+  const ranges = matchRanges(text, terms);
+  if (ranges.length === 0) return text;
   const parts: ReactNode[] = [];
-  let from = 0;
-  let index = haystack.indexOf(lowerNeedle, from);
-  let key = 0;
-
-  if (index === -1) return text;
-
-  while (index !== -1) {
-    if (index > from) parts.push(<Fragment key={key++}>{text.slice(from, index)}</Fragment>);
+  let at = 0;
+  ranges.forEach(([start, end], key) => {
+    if (start > at) parts.push(<Fragment key={`t${key}`}>{text.slice(at, start)}</Fragment>);
     parts.push(
-      <mark key={key++} className="rounded bg-yellow-200/80 px-0.5 text-inherit dark:bg-yellow-500/30">
-        {text.slice(index, index + needle.length)}
+      <mark key={`m${key}`} className={MARK_CLASS}>
+        {text.slice(start, end)}
       </mark>
     );
-    from = index + needle.length;
-    index = haystack.indexOf(lowerNeedle, from);
-  }
-  if (from < text.length) parts.push(<Fragment key={key++}>{text.slice(from)}</Fragment>);
+    at = end;
+  });
+  if (at < text.length) parts.push(<Fragment key="end">{text.slice(at)}</Fragment>);
   return parts;
 }
 
-/** The "why it matched" line: a short field label + the matching text, highlighted. */
+/** A whole value painted (a matched date, amount or phone). */
+export function HighlightAll({ children }: { children: ReactNode }) {
+  return <mark className={MARK_CLASS}>{children}</mark>;
+}
+
+/**
+ * A long text cut to a window around its first match, so the yellow part is
+ * on screen even in a long note ("…ביאנקו נרו 1700 מול…").
+ */
+export function snippetAround(text: string, terms: string | readonly string[], max = 90): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const first = matchRanges(clean, terms)[0];
+  if (!first) return `${clean.slice(0, max - 1)}…`;
+  const pad = Math.max(0, Math.floor((max - (first[1] - first[0])) / 2));
+  const start = Math.max(0, Math.min(first[0] - pad, clean.length - max));
+  const end = Math.min(clean.length, start + max);
+  return `${start > 0 ? "…" : ""}${clean.slice(start, end)}${end < clean.length ? "…" : ""}`;
+}
+
+/** The "why it matched" line: a short field label + the matching text, painted. */
 export function MatchReason({
   label,
-  snippet,
-  query,
+  value,
+  terms,
+  whole = false,
   className,
 }: {
   label: string;
-  snippet: string;
-  query: string;
+  value: string;
+  terms: string | readonly string[];
+  /** Paint the whole value (a date / amount / phone that matched as such). */
+  whole?: boolean;
   className?: string;
 }) {
   return (
     <div className={className}>
-      <span className="font-medium">{label}:</span> {highlightText(snippet, query)}
+      <span className="font-medium">{label}:</span>{" "}
+      {whole ? <HighlightAll>{value}</HighlightAll> : highlightText(snippetAround(value, terms), terms)}
     </div>
   );
 }

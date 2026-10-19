@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SearchIcon } from "@/components/ui/icons";
@@ -8,12 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { TOPBAR_ICON_BUTTON } from "@/components/layout/topbar-icon";
 import { cn } from "@/lib/utils";
-import { highlightText, MatchReason } from "@/components/search/highlightMatch";
+import { GlobalSearchResults, searchHref } from "@/components/search/GlobalSearchResults";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import type { GlobalSearchResponse } from "@/lib/global-search";
+import { gsNorm } from "@/lib/search/global-query";
 import { takeQuickParam } from "@/lib/quick-link";
 
 type Props = {
@@ -28,49 +27,27 @@ type Props = {
   iconOnly?: boolean;
 };
 
-function translateSearchMetaItem(value: string) {
-  const normalized = value.trim().toLowerCase();
-  switch (normalized) {
-    case "moving":
-      return "הובלה";
-    case "construction":
-      return "שיפוצים";
-    case "logistics":
-      return "לוגיסטיקה";
-    case "completed":
-    case "active":
-    case "planned":
-    case "planning":
-    case "on_hold":
-    case "quote":
-    case "cancelled":
-      return getProjectStatusLabel(normalized);
-    default:
-      return value;
-  }
-}
+// What the box can find, said once before anything is typed.
+const SEARCH_HINT =
+  "כל דבר במערכת: שם, מילה מהערה או מתגובה, סכום (1000), תאריך (15/10), טלפון, סניף, מסמך, רכב, הוצאה, הכנסה…";
 
 function SearchResults({
   results,
   query,
-  compact = false,
+  loading = false,
   offline = false,
   onNavigate,
 }: {
   results: GlobalSearchResponse | null;
   query: string;
-  compact?: boolean;
+  loading?: boolean;
   offline?: boolean;
   onNavigate?: () => void;
 }) {
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
-    return (
-      <div className="px-4 py-6 text-sm text-muted-foreground">
-        חפשו לקוחות, פרויקטים, משימות, הזמנות, מוצרים, מסמכים, מלאי ופיננסים.
-      </div>
-    );
+    return <div className="px-4 py-6 text-sm text-muted-foreground">{SEARCH_HINT}</div>;
   }
 
   if (trimmedQuery.length < 2) {
@@ -90,71 +67,13 @@ function SearchResults({
   }
 
   return (
-    <div className="max-h-[min(70vh,40rem)] overflow-y-auto">
+    <div className={cn("max-h-[min(70vh,40rem)] overflow-y-auto transition-opacity", loading && "opacity-60")}>
       {offline ? (
         <div className="flex items-center gap-1.5 border-b border-warning/40 bg-warning-soft/60 px-4 py-2 text-xs text-warning-soft-foreground">
           <span>לא מקוון — מציג לקוחות מהרשימה השמורה במכשיר בלבד.</span>
         </div>
       ) : null}
-      <div className="border-b border-border/70 px-4 py-3 text-xs font-medium text-muted-foreground">
-        {results.totalResults} תוצאות
-      </div>
-      <div className="space-y-1 p-2">
-        {results.groups.map((group) => (
-          <section key={group.key} className="space-y-1">
-            <div className="px-2 pt-2 text-[0.647rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {group.label}
-            </div>
-            {group.results.map((result) => (
-              <Link
-                key={`${result.group}:${result.id}`}
-                href={result.href}
-                className="block rounded-2xl px-3 py-3 transition-colors hover:bg-muted/60"
-                onClick={() => {
-                  emitNavigationStart();
-                  onNavigate?.();
-                }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <div className="text-sm font-medium">{highlightText(result.title, trimmedQuery)}</div>
-                    {result.subtitle ? (
-                      <div className="text-xs text-muted-foreground">
-                        {highlightText(result.subtitle, trimmedQuery)}
-                      </div>
-                    ) : null}
-                    {result.match ? (
-                      <MatchReason
-                        label={result.match.label}
-                        snippet={result.match.snippet}
-                        query={trimmedQuery}
-                        className="text-xs text-muted-foreground/90"
-                      />
-                    ) : null}
-                  </div>
-                  {!compact ? (
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[0.588rem] font-medium text-muted-foreground">
-                      {result.groupLabel}
-                    </span>
-                  ) : null}
-                </div>
-                {result.meta.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-[0.647rem] text-muted-foreground">
-                    {result.meta.slice(0, compact ? 2 : 3).map((item) => {
-                      const translated = translateSearchMetaItem(item);
-                      return (
-                        <span key={`${item}-${translated}`} className="rounded-full bg-background/80 px-2 py-1">
-                          {translated}
-                        </span>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </Link>
-            ))}
-          </section>
-        ))}
-      </div>
+      <GlobalSearchResults results={results} compact onNavigate={onNavigate} />
     </div>
   );
 }
@@ -204,17 +123,22 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
       const matched = searchCustomers(normalized, 8);
       const results = matched.map((c) => ({
         id: c.id,
-        group: "customers" as const,
+        group: "customer" as const,
         groupLabel: "לקוחות",
         title: c.name,
         subtitle: c.address || null,
-        meta: [c.phone, c.email].filter((v): v is string => Boolean(v)),
+        meta: [c.phone, c.email].filter((v): v is string => Boolean(v)).map((text) => ({ text })),
         href: `/customers/${encodeURIComponent(c.id)}`,
+        reasons: [],
+        rank: 3,
       }));
       setFetchedResults({
         query: normalized,
         totalResults: results.length,
-        groups: results.length ? [{ key: "customers", label: "לקוחות", results }] : [],
+        terms: gsNorm(normalized).split(" ").filter(Boolean),
+        understood: [],
+        corrections: [],
+        groups: results.length ? [{ key: "customer", label: "לקוחות", total: results.length, results }] : [],
       });
       setOfflineFallback(true);
     };
@@ -226,7 +150,8 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
 
     const controller = new AbortController();
 
-    void fetch(`/api/search/global?q=${encodeURIComponent(normalized)}&limit=4&mode=quick`, {
+    // Three per kind here; "הצג את כל N" and "לכל התוצאות" open the full page.
+    void fetch(`/api/search/global?q=${encodeURIComponent(normalized)}&limit=3`, {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -258,22 +183,22 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
-  const searchHref = useMemo(() => {
+  const fullSearchHref = useMemo(() => {
     const normalized = query.trim();
-    return normalized ? `/search?q=${encodeURIComponent(normalized)}` : "/search";
+    return normalized ? searchHref(normalized) : "/search";
   }, [query]);
 
   const normalizedQuery = query.trim();
-  const results =
-    normalizedQuery.length >= 2 && fetchedResults?.query === normalizedQuery
-      ? fetchedResults
-      : null;
+  // While the next answer is on its way the last one stays on screen, dimmed,
+  // instead of the list blinking to "מחפש…" on every keystroke.
+  const results = normalizedQuery.length >= 2 ? fetchedResults : null;
+  const loading = Boolean(results) && results?.query !== normalizedQuery;
 
   function submitSearch() {
     emitNavigationStart();
     setOpen(false);
     setMobileOpen(false);
-    router.push(searchHref);
+    router.push(fullSearchHref);
   }
 
   return (
@@ -304,7 +229,13 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
           </div>
           {open ? (
             <div className="absolute inset-x-0 top-[calc(100%+0.6rem)] z-50 overflow-hidden rounded-[1.4rem] border border-border/60 bg-background/95 shadow-elevated">
-              <SearchResults results={results} query={query} offline={offlineFallback} onNavigate={() => setOpen(false)} />
+              <SearchResults
+                results={results}
+                query={query}
+                loading={loading}
+                offline={offlineFallback}
+                onNavigate={() => setOpen(false)}
+              />
               {query.trim().length >= 2 ? (
                 <div className="border-t border-border/70 p-2">
                   <Button variant="ghost" className="w-full justify-center rounded-xl" onClick={submitSearch}>
@@ -370,7 +301,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
                     submitSearch();
                   }
                 }}
-                placeholder="חיפוש בכל המערכת..."
+                placeholder="שם, סכום, תאריך, טלפון, מילה מהערה..."
                 className="ps-9"
               />
             </div>
@@ -386,7 +317,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
           <SearchResults
             results={results}
             query={query}
-            compact
+            loading={loading}
             offline={offlineFallback}
             onNavigate={() => setMobileOpen(false)}
           />

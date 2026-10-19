@@ -1,1058 +1,614 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { buildFocusHref } from "@/lib/audit";
-import { formatDateWithTime, formatShortDate, formatShortDateTime } from "@/lib/date";
-import { getProjectStatusLabel } from "@/lib/ui/status-colors";
-import { customerMatchesQuery, fuzzyTextMatch, phoneMatchesQuery } from "@/lib/search/customerMatch";
+import { formatDateWithTime, formatShortDate, formatShortDateTime, formatTimeOnly } from "@/lib/date";
+import { formatMoney } from "@/lib/money";
 import {
-  findMatchingRowIds,
-  findOrderIdsMatchingContent,
-  findProjectIdsMatchingContent,
-} from "@/lib/search/findMatchingChildIds";
+  getOrderStatusLabel,
+  getPaymentStatusLabel,
+  getProjectStatusLabel,
+  getTaskPriorityLabel,
+  getTaskStatusLabel,
+} from "@/lib/ui/status-colors";
+import {
+  fuzzyAlternatives,
+  parseGlobalQuery,
+  type GlobalSearchToken,
+  type UnderstoodPart,
+} from "@/lib/search/global-query";
 
-export type GlobalSearchGroupKey =
-  | "customers"
-  | "contacts"
-  | "projects"
-  | "tasks"
-  | "orders"
-  | "products"
-  | "documents"
-  | "properties"
-  | "payments"
-  | "expenses"
-  | "tags"
-  | "users";
+// The global search (owner, 2026-10-18): one box that finds ANY record in the
+// system — by a word in it (fuzzy), an amount, a date or a phone — and says
+// why each one came up. The finding is one database call (public.global_search,
+// see supabase/migrations/20261018140000_global_search.sql); this side turns
+// the typed query into its tokens, adds close spellings for a misspelt word,
+// and turns each row into a result with a link to the record itself.
+
+export type GlobalSearchKind =
+  | "customer"
+  | "contact"
+  | "project"
+  | "order"
+  | "task"
+  | "payment"
+  | "expense"
+  | "document"
+  | "vehicle"
+  | "product"
+  | "worker"
+  | "worker_payment"
+  | "shift"
+  | "attendance_report"
+  | "absence"
+  | "salary"
+  | "payslip"
+  | "invoice"
+  | "communication"
+  | "reminder"
+  | "loan"
+  | "loan_repayment"
+  | "transfer"
+  | "account"
+  | "card_row"
+  | "card_charge"
+  | "card_statement"
+  | "recurring_expense"
+  | "recurring_task"
+  | "meeting"
+  | "property"
+  | "lease"
+  | "promise";
+
+/** Kept for callers that still name it by its old type name. */
+export type GlobalSearchGroupKey = GlobalSearchKind;
+
+/** In this order when two groups match equally well. */
+export const GLOBAL_SEARCH_KINDS: GlobalSearchKind[] = [
+  "customer",
+  "contact",
+  "project",
+  "order",
+  "task",
+  "payment",
+  "expense",
+  "document",
+  "vehicle",
+  "product",
+  "worker",
+  "worker_payment",
+  "shift",
+  "attendance_report",
+  "absence",
+  "salary",
+  "payslip",
+  "invoice",
+  "communication",
+  "reminder",
+  "loan",
+  "loan_repayment",
+  "transfer",
+  "account",
+  "card_row",
+  "card_charge",
+  "card_statement",
+  "recurring_expense",
+  "recurring_task",
+  "meeting",
+  "property",
+  "lease",
+  "promise",
+];
+
+export const GLOBAL_SEARCH_LABELS: Record<GlobalSearchKind, string> = {
+  customer: "לקוחות",
+  contact: "אנשי קשר",
+  project: "פרויקטים",
+  order: "הזמנות",
+  task: "משימות",
+  payment: "הכנסות",
+  expense: "הוצאות",
+  document: "מסמכים",
+  vehicle: "רכבים ותגיות",
+  product: "מוצרים",
+  worker: "עובדים",
+  worker_payment: "תשלומים לעובדים",
+  shift: "משמרות",
+  attendance_report: "דיווחי שעות בטלפון",
+  absence: "היעדרויות",
+  salary: "הסכמי שכר",
+  payslip: "תלושים",
+  invoice: "חשבוניות וקבלות",
+  communication: "תיעוד תקשורת",
+  reminder: "תזכורות",
+  loan: "הלוואות",
+  loan_repayment: "החזרי הלוואות",
+  transfer: "העברות בין חשבונות",
+  account: "חשבונות וקופה",
+  card_row: "שורות אשראי",
+  card_charge: "חיובי כרטיס",
+  card_statement: "דפי חיוב אשראי",
+  recurring_expense: "הוצאות קבועות",
+  recurring_task: "משימות קבועות",
+  meeting: "ישיבות",
+  property: "נכסים",
+  lease: "חוזי שכירות",
+  promise: "הבטחות תשלום",
+};
+
+// The money ledger, loans and bank pages open for admins only, so office staff
+// aren't shown records whose page they can't open.
+const ADMIN_ONLY_KINDS: GlobalSearchKind[] = ["expense", "loan", "loan_repayment", "transfer", "account"];
+
+export function kindsForRole(role: UserRole): GlobalSearchKind[] | null {
+  if (role === "admin") return null;
+  return GLOBAL_SEARCH_KINDS.filter((kind) => !ADMIN_ONLY_KINDS.includes(kind));
+}
+
+export function isGlobalSearchKind(value: unknown): value is GlobalSearchKind {
+  return typeof value === "string" && (GLOBAL_SEARCH_KINDS as string[]).includes(value);
+}
+
+export type GlobalSearchReason = {
+  kind: "date" | "amount" | "phone" | "text";
+  label: string;
+  /** Ready to show (a date as 15/10/26, an amount as ₪1,000). */
+  value: string;
+};
+
+export type GlobalSearchMeta = { text: string; hit?: boolean };
 
 export type GlobalSearchResult = {
   id: string;
-  group: GlobalSearchGroupKey;
+  group: GlobalSearchKind;
   groupLabel: string;
   title: string;
   subtitle: string | null;
-  meta: string[];
+  meta: GlobalSearchMeta[];
   href: string;
-  // Why this result surfaced, when the match was on a field NOT already shown in
-  // the title (e.g. a note, a comment, a phone, a product). label is a short
-  // Hebrew field name; snippet is the matching text (highlighted in the UI).
-  match?: { label: string; snippet: string } | null;
+  /** Why it came up — shown under the title, the matching part in yellow. */
+  reasons: GlobalSearchReason[];
+  rank: number;
+};
+
+export type GlobalSearchGroup = {
+  key: GlobalSearchKind;
+  label: string;
+  /** Every match in this group; `results` may hold fewer. */
+  total: number;
+  results: GlobalSearchResult[];
 };
 
 export type GlobalSearchResponse = {
   query: string;
+  /** Matches across every group (not only the ones shown). */
   totalResults: number;
-  groups: Array<{
-    key: GlobalSearchGroupKey;
-    label: string;
-    results: GlobalSearchResult[];
-  }>;
+  /** Words to paint yellow: what was typed, plus any spelling fixes used. */
+  terms: string[];
+  /** Amounts / dates / phones recognised in the query. */
+  understood: UnderstoodPart[];
+  /** Spelling fixes that were also searched for ("באין" → "ביאן"). */
+  corrections: string[];
+  groups: GlobalSearchGroup[];
 };
 
-type SearchOptions = {
-  query: string;
-  viewerRole: UserRole;
-  limitPerGroup?: number;
-  mode?: "quick" | "full";
+type Row = {
+  kind: string;
+  id: string;
+  title: string | null;
+  subtitle: string | null;
+  at: string | null;
+  info: Record<string, unknown> | null;
+  reasons: Array<{ k?: string; l?: string; v?: string }> | null;
+  rank: number | null;
+  total: number | string | null;
 };
 
-type Row = Record<string, unknown>;
-
-const GROUP_LABELS: Record<GlobalSearchGroupKey, string> = {
-  customers: "לקוחות",
-  contacts: "אנשי קשר",
-  projects: "פרויקטים",
-  tasks: "משימות",
-  orders: "הזמנות",
-  products: "מוצרים",
-  documents: "מסמכים",
-  properties: "נכסים",
-  payments: "הכנסות",
-  expenses: "הוצאות",
-  tags: "רכבים ותגיות",
-  users: "עובדים",
+const EMPTY: Omit<GlobalSearchResponse, "query"> = {
+  totalResults: 0,
+  terms: [],
+  understood: [],
+  corrections: [],
+  groups: [],
 };
 
-function tagKindLabel(kind: string) {
-  switch (kind) {
-    case "vehicle":
-      return "רכב";
-    case "campaign":
-      return "קמפיין";
-    case "equipment":
-      return "ציוד";
-    case "event":
-      return "אירוע";
-    case "vendor":
-      return "ספק";
-    default:
-      return "תגית";
-  }
-}
-
-function text(value: unknown) {
+function str(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function num(value: unknown) {
+function num(value: unknown): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "string") {
-    const parsed = Number(value.replace(/,/g, "").trim());
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
 }
 
-function isUuidLike(value: string) {
-  return /^[0-9a-f-]{8,}$/i.test(value);
+function money(value: unknown): string | null {
+  const amount = num(value);
+  return amount === null ? null : formatMoney(amount);
 }
 
-// A short preview of a matched field, WINDOWED around the matched term so the
-// highlight is visible even in a long note (truncating from the start could hide
-// it). Falls back to a head slice when the raw term isn't found (fuzzy match).
-function snippetAround(value: string, query: string, max = 80) {
-  const clean = value.replace(/\s+/g, " ").trim();
-  if (clean.length <= max) return clean;
-  const idx = clean.toLowerCase().indexOf(query.trim().toLowerCase());
-  if (idx < 0) return `${clean.slice(0, max - 1)}…`;
-  const pad = Math.floor((max - Math.min(query.length, max)) / 2);
-  const end = Math.min(clean.length, Math.max(idx + query.length + pad, idx - pad + max));
-  const start = Math.max(0, end - max);
-  return `${start > 0 ? "…" : ""}${clean.slice(start, end)}${end < clean.length ? "…" : ""}`;
+function day(value: unknown): string | null {
+  const text = str(value);
+  return text ? formatShortDate(text, "") || null : null;
 }
 
-function windowMatch(
-  match: { label: string; snippet: string } | null | undefined,
-  query: string
-): { label: string; snippet: string } | null {
-  return match ? { label: match.label, snippet: snippetAround(match.snippet, query) } : null;
+const METHOD_LABELS: Record<string, string> = {
+  cash: "מזומן",
+  bank_transfer: "העברה בנקאית",
+  credit_card: "כרטיס אשראי",
+  check: "צ׳ק",
+  bit: "ביט",
+  other: "אחר",
+  card_refund: "זיכוי בכרטיס",
+  friend_transfer: "הועבר דרך חבר",
+};
+
+function methodLabel(value: unknown): string | null {
+  const method = str(value);
+  if (!method) return null;
+  return METHOD_LABELS[method.toLowerCase()] ?? method;
 }
 
-// Find which of the given (label, value) fields contains the query, so the UI
-// can tell the user WHY a result surfaced. Returns the first hidden field that
-// matches (the title/name is handled separately — it's already on screen).
-function buildMatch(
-  query: string,
-  candidates: Array<[label: string, value: string | null | undefined]>
-): { label: string; snippet: string } | null {
-  const needle = normalizeHebrewText(query);
-  if (!needle) return null;
-  for (const [label, rawValue] of candidates) {
-    const value = (rawValue ?? "").trim();
-    if (!value) continue;
-    if (normalizeHebrewText(value).includes(needle)) {
-      return { label, snippet: snippetAround(value, query) };
+function hours(minutes: unknown): string | null {
+  const value = num(minutes);
+  if (value === null || value <= 0) return null;
+  const h = Math.floor(value / 60);
+  const m = Math.round(value % 60);
+  return m ? `${h}:${String(m).padStart(2, "0")} שעות` : `${h} שעות`;
+}
+
+function chips(...items: Array<string | null | undefined | false>): GlobalSearchMeta[] {
+  return items.filter((item): item is string => Boolean(item)).map((text) => ({ text }));
+}
+
+/** A reason as the screen shows it: dates and amounts in the app's own format. */
+export function formatReason(raw: { k?: string; l?: string; v?: string }): GlobalSearchReason | null {
+  const kind = raw.k === "date" || raw.k === "amount" || raw.k === "phone" ? raw.k : "text";
+  const label = str(raw.l);
+  const value = str(raw.v);
+  if (!label || !value) return null;
+  if (kind === "date") {
+    // A range comes as "start/end".
+    const [start, end] = value.split("/");
+    const shown = end && end !== start ? `${formatShortDate(start, start)} – ${formatShortDate(end, end)}` : formatShortDate(start, start);
+    return { kind, label, value: shown };
+  }
+  if (kind === "amount") return { kind, label, value: money(value) ?? value };
+  return { kind, label, value };
+}
+
+/** Where the result opens — always the record itself, never just its section. */
+export function hrefFor(kind: GlobalSearchKind, id: string, info: Record<string, unknown>, role: UserRole): string {
+  const enc = encodeURIComponent;
+  switch (kind) {
+    case "customer":
+      return `/customers/${enc(id)}`;
+    case "contact":
+      return str(info.customer_id) ? `/customers/${enc(str(info.customer_id))}` : "/customers";
+    case "project":
+      return `/projects/${enc(id)}`;
+    case "order":
+      return `/sales/orders/${enc(id)}`;
+    case "task":
+      return `/tasks/${enc(id)}`;
+    case "payment": {
+      if (role === "admin") return buildFocusHref("/financial", `payment:${id}`);
+      if (str(info.order_id)) return `/sales/orders/${enc(str(info.order_id))}`;
+      if (str(info.project_id)) return `/projects/${enc(str(info.project_id))}`;
+      return str(info.method) === "check" ? buildFocusHref("/checks", id) : "/collections";
     }
+    case "expense":
+      return buildFocusHref("/financial", `expense:${id}`);
+    case "document":
+      return buildFocusHref("/documents", id);
+    case "vehicle":
+      return str(info.kind) === "vehicle" ? `/vehicles/${enc(id)}` : "/vehicles";
+    case "product":
+      return buildFocusHref("/sales?tab=inventory", id);
+    case "worker":
+      return `/payroll/workers/${enc(id)}`;
+    case "worker_payment":
+    case "shift":
+    case "absence":
+    case "salary":
+    case "payslip":
+      return str(info.user_id) ? `/payroll/workers/${enc(str(info.user_id))}` : "/payroll";
+    case "attendance_report":
+      return buildFocusHref("/payroll/attendance", id);
+    case "invoice":
+      return "/invoices";
+    case "communication":
+      return buildFocusHref("/communications", id);
+    case "reminder":
+      return str(info.task_id) ? `/tasks/${enc(str(info.task_id))}` : "/inbox";
+    case "loan":
+      return `/financial/loans/${enc(id)}`;
+    case "loan_repayment":
+      return str(info.loan_id) ? `/financial/loans/${enc(str(info.loan_id))}` : "/financial/loans";
+    case "transfer": {
+      const account = str(info.from_account_id) || str(info.to_account_id);
+      return buildFocusHref(account ? `/financial/bank?account=${enc(account)}` : "/financial/bank", id);
+    }
+    case "account":
+      return `/financial/bank?account=${enc(id)}`;
+    case "card_row":
+      return str(info.statement_id) ? buildFocusHref(`/financial/statements/${enc(str(info.statement_id))}`, id) : "/financial/statements";
+    case "card_charge":
+      return str(info.statement_id) ? `/financial/statements/${enc(str(info.statement_id))}` : "/financial/statements";
+    case "card_statement":
+      return `/financial/statements/${enc(id)}`;
+    case "recurring_expense":
+      return buildFocusHref("/financial/payments-calendar?tab=recurring", id);
+    case "recurring_task":
+      return buildFocusHref("/tasks/recurring", id);
+    case "meeting":
+      return `/meetings/${enc(id)}`;
+    case "property":
+      return `/properties/${enc(id)}`;
+    case "lease":
+      return str(info.property_id) ? `/properties/${enc(str(info.property_id))}` : "/properties";
+    case "promise":
+      return "/collections";
   }
-  return null;
 }
 
-function attachMatch(
-  result: GlobalSearchResult | null,
-  match: { label: string; snippet: string } | null
-): GlobalSearchResult | null {
-  if (result && match) result.match = match;
-  return result;
-}
+const PROJECT_TYPE_LABELS: Record<string, string> = {
+  moving: "הובלה",
+  construction: "שיפוצים",
+  logistics: "לוגיסטיקה",
+  home: "בית",
+};
 
-function normalizeHebrewText(value: string) {
-  return value
-    .normalize("NFKC")
-    .replace(/[\u0591-\u05C7]/g, "")
-    .replace(/[״"'`´.,/\\|()[\]{}\-–—_:;!?+=*&^%$#@~<>]/g, " ")
-    .replace(/[ך]/g, "כ")
-    .replace(/[ם]/g, "מ")
-    .replace(/[ן]/g, "נ")
-    .replace(/[ף]/g, "פ")
-    .replace(/[ץ]/g, "צ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-// Fuzzy (typo / letter-swap tolerant) match across the joined fields, so e.g.
-// "באין" still finds "ביאן". The global search is the most sophisticated
-// surface and applies this everywhere, not just to names.
-function includesNormalized(haystackParts: Array<string | null | undefined>, query: string) {
-  return fuzzyTextMatch(haystackParts.filter(Boolean).join(" "), query);
-}
-
-function exactIdMatch(id: string | null | undefined, query: string) {
-  const normalizedId = text(id);
-  return Boolean(normalizedId) && normalizedId.toLowerCase() === query.toLowerCase();
-}
-
-function sortByMatch<T extends Row>(
-  rows: T[],
-  query: string,
-  getRankParts: (row: T) => Array<string | null | undefined>
-) {
-  const normalizedQuery = normalizeHebrewText(query);
-  return [...rows].sort((left, right) => {
-    const leftText = normalizeHebrewText(getRankParts(left).filter(Boolean).join(" "));
-    const rightText = normalizeHebrewText(getRankParts(right).filter(Boolean).join(" "));
-    const leftStarts = leftText.startsWith(normalizedQuery) ? 1 : 0;
-    const rightStarts = rightText.startsWith(normalizedQuery) ? 1 : 0;
-    if (leftStarts !== rightStarts) return rightStarts - leftStarts;
-
-    const leftIndex = leftText.indexOf(normalizedQuery);
-    const rightIndex = rightText.indexOf(normalizedQuery);
-    const safeLeftIndex = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
-    const safeRightIndex = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
-    if (safeLeftIndex !== safeRightIndex) return safeLeftIndex - safeRightIndex;
-
-    return leftText.localeCompare(rightText, "he");
-  });
-}
-
-function formatCurrency(value: number | null) {
-  if (value === null) return null;
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function shortId(value: string) {
-  return value.slice(0, 8);
-}
-
-function projectTypeLabel(value: unknown) {
-  switch (text(value)) {
-    case "moving":
-      return "הובלה";
-    case "construction":
-      return "שיפוצים";
-    case "logistics":
-      return "לוגיסטיקה";
+/** The small grey chips under a result: its amount, date, status… */
+function metaFor(kind: GlobalSearchKind, info: Record<string, unknown>, at: string | null): GlobalSearchMeta[] {
+  switch (kind) {
+    case "customer":
+      return chips(str(info.phone), info.inactive === true && "לא פעיל");
+    case "contact":
+      return chips(str(info.role), str(info.phone));
+    case "project":
+      return chips(
+        str(info.status) && getProjectStatusLabel(str(info.status)),
+        PROJECT_TYPE_LABELS[str(info.type)],
+        money(info.price),
+        day(info.start_date)
+      );
+    case "order":
+      return chips(
+        day(info.order_date),
+        str(info.status) && getOrderStatusLabel(str(info.status)),
+        str(info.payment_status) && getPaymentStatusLabel(str(info.payment_status)),
+        money(info.total)
+      );
+    case "task":
+      return chips(
+        str(info.status) && getTaskStatusLabel(str(info.status)),
+        str(info.priority) && getTaskPriorityLabel(str(info.priority)),
+        str(info.assignee),
+        str(info.due_date) && formatDateWithTime(str(info.due_date), str(info.due_time), "")
+      );
+    case "payment":
+      return chips(
+        money(info.amount),
+        day(info.date),
+        methodLabel(info.method),
+        str(info.check_number) && `צ׳ק ${str(info.check_number)}`,
+        str(info.status) === "pending" && getPaymentStatusLabel("pending")
+      );
+    case "expense":
+      return chips(
+        money(info.amount),
+        day(info.date),
+        str(info.category),
+        str(info.status) === "not_paid" ? "לא שולם" : str(info.status) === "partial" ? "שולם חלקית" : null,
+        str(info.installment) && `תשלום ${str(info.installment)}`
+      );
+    case "document":
+      return chips(str(info.type), day(info.doc_date) ?? (str(info.uploaded_at) ? formatShortDateTime(str(info.uploaded_at), "") : null), money(info.amount));
+    case "vehicle":
+      return chips(
+        str(info.test) && `טסט ${day(info.test)}`,
+        str(info.insurance) && `ביטוח ${day(info.insurance)}`,
+        info.inactive === true && "לא פעיל"
+      );
+    case "product":
+      return chips(str(info.sku), money(info.price), info.inactive === true && "לא פעיל");
+    case "worker":
+      return chips(str(info.phone), info.active === false && "לא פעיל");
+    case "worker_payment":
+      return chips(money(info.amount), day(info.date), methodLabel(info.method));
+    case "shift":
+    case "attendance_report": {
+      const start = str(info.clock_in);
+      const end = str(info.clock_out);
+      return chips(
+        start && `${formatShortDate(start, "")} ${formatTimeOnly(start, "")}${end ? `–${formatTimeOnly(end, "")}` : ""}`,
+        hours(info.minutes),
+        kind === "shift" ? money(info.cost) : null
+      );
+    }
+    case "absence":
+      return chips(day(info.date), info.paid === true && "בתשלום");
+    case "salary":
+      return chips(
+        num(info.hourly) !== null && `${money(info.hourly)} לשעה`,
+        num(info.monthly) !== null && `${money(info.monthly)} לחודש`
+      );
+    case "payslip":
+      return chips(money(info.gross) && `ברוטו ${money(info.gross)}`);
+    case "invoice":
+      return chips(money(info.amount), day(info.date));
+    case "communication":
+      return chips(str(info.date) ? formatShortDateTime(str(info.date), "") : null);
+    case "reminder":
+      return chips(str(info.when) ? formatShortDateTime(str(info.when), "") : null);
+    case "loan":
+      return chips(money(info.amount), day(info.date), str(info.due) && `להחזר ${day(info.due)}`);
+    case "loan_repayment":
+    case "transfer":
+    case "card_row":
+    case "card_charge":
+    case "promise":
+      return chips(money(info.amount), day(info.date));
+    case "account":
+      return chips(str(info.number), info.inactive === true && "לא פעיל");
+    case "card_statement":
+      return chips(str(info.date) ? formatShortDateTime(str(info.date), "") : null, num(info.rows) !== null && `${num(info.rows)} שורות`);
+    case "recurring_expense":
+      return chips(money(info.amount), num(info.day) !== null && `ב־${num(info.day)} לחודש`, info.active === false && "לא פעיל");
+    case "recurring_task":
+      return chips(num(info.day) !== null && `ב־${num(info.day)} לחודש`, info.active === false && "לא פעיל");
+    case "meeting":
+      return chips(day(info.date));
+    case "property":
+      return chips(str(info.type), info.inactive === true && "לא פעיל");
+    case "lease":
+      return chips(money(info.rent) && `${money(info.rent)} לחודש`, day(info.start), day(info.end));
     default:
-      return text(value);
+      return chips(at ? formatShortDate(at, "") : null);
   }
 }
 
-function buildGroups(results: GlobalSearchResult[]): GlobalSearchResponse["groups"] {
-  const byGroup = new Map<GlobalSearchGroupKey, GlobalSearchResult[]>();
-
-  for (const result of results) {
-    const list = byGroup.get(result.group) ?? [];
-    list.push(result);
-    byGroup.set(result.group, list);
+/** The result's title as the screen shows it (an order also gets its short number). */
+function titleFor(kind: GlobalSearchKind, row: Row): string {
+  const title = str(row.title) || GLOBAL_SEARCH_LABELS[kind];
+  if (kind === "order") return `${title} · #${row.id.slice(0, 8)}`;
+  if (kind === "meeting") {
+    const date = day(row.info?.date);
+    return date ? `ישיבה ${date}` : title;
   }
+  return title;
+}
 
-  return Array.from(byGroup.entries()).map(([key, groupResults]) => ({
-    key,
-    label: GROUP_LABELS[key],
-    results: groupResults,
+/** One row of public.global_search → one result. */
+export function toGlobalSearchResult(row: Row, role: UserRole): GlobalSearchResult | null {
+  if (!isGlobalSearchKind(row.kind) || !row.id) return null;
+  const kind = row.kind;
+  const info = row.info ?? {};
+  const reasons = (row.reasons ?? [])
+    .map(formatReason)
+    .filter((reason): reason is GlobalSearchReason => reason !== null);
+  const meta = metaFor(kind, info, row.at).map((item) => ({
+    ...item,
+    // A chip that IS what matched (₪1,000 when 1000 was searched) is painted too.
+    hit: reasons.some((reason) => reason.kind !== "text" && reason.value === item.text) || undefined,
   }));
-}
-
-export function customerResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.customer_id) || text(row.id);
-  const name = text(row.customer_name) || text(row.name) || text(row.name_for_invoice);
-  if (!id || !name) return null;
   return {
-    id,
-    group: "customers",
-    groupLabel: GROUP_LABELS.customers,
-    title: name,
-    subtitle: text(row.address) || null,
-    meta: [text(row.phone), text(row.email)].filter(Boolean),
-    href: `/customers/${encodeURIComponent(id)}`,
+    id: row.id,
+    group: kind,
+    groupLabel: GLOBAL_SEARCH_LABELS[kind],
+    title: titleFor(kind, row),
+    subtitle: str(row.subtitle) || null,
+    meta,
+    href: hrefFor(kind, row.id, info, role),
+    // An amount already shown as a painted chip needn't be said twice; a date
+    // stays, since its label says WHICH date it was (opened, paid, delivered…).
+    reasons: reasons.filter(
+      (reason) => !(reason.kind === "amount" && meta.some((item) => item.hit && item.text === reason.value))
+    ),
+    rank: typeof row.rank === "number" ? row.rank : 3,
   };
 }
 
-export function projectResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.id);
-  const name = text(row.name);
-  if (!id || !name) return null;
-  const customerName = text(row.customer_name);
-  const customerPhone = text(row.customer_phone);
-  const subtitle =
-    [customerName, customerPhone].filter(Boolean).join(" · ") || null;
-  return {
-    id,
-    group: "projects",
-    groupLabel: GROUP_LABELS.projects,
-    title: name,
-    subtitle,
-    meta: [getProjectStatusLabel(text(row.status)), projectTypeLabel(row.project_type)].filter(Boolean),
-    href: `/projects/${encodeURIComponent(id)}`,
-  };
+/** Rows (already grouped and ranked by the database) → groups, best groups first. */
+export function buildGroups(rows: Row[], role: UserRole): GlobalSearchGroup[] {
+  const byKind = new Map<GlobalSearchKind, GlobalSearchGroup & { best: number }>();
+  for (const row of rows) {
+    const result = toGlobalSearchResult(row, role);
+    if (!result) continue;
+    const group = byKind.get(result.group) ?? {
+      key: result.group,
+      label: result.groupLabel,
+      total: Number(row.total) || 0,
+      results: [],
+      best: Number.POSITIVE_INFINITY,
+    };
+    group.results.push(result);
+    group.best = Math.min(group.best, result.rank);
+    byKind.set(result.group, group);
+  }
+  return [...byKind.values()]
+    .sort((left, right) => left.best - right.best || GLOBAL_SEARCH_KINDS.indexOf(left.key) - GLOBAL_SEARCH_KINDS.indexOf(right.key))
+    .map((group) => ({ key: group.key, label: group.label, total: group.total, results: group.results }));
 }
 
-// Dates as the rest of the app shows them, never the raw stored value: a day
-// someone picked (due/order/payment/expense) as the day, a real moment
-// (uploaded_at) with its hour — both on Israel's clock (owner, 2026-10-15).
-export function taskResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.task_id) || text(row.id);
-  const subject = text(row.subject);
-  if (!id || !subject) return null;
-  return {
-    id,
-    group: "tasks",
-    groupLabel: GROUP_LABELS.tasks,
-    title: subject,
-    subtitle: text(row.project_name) || null,
-    meta: [text(row.status), text(row.priority), text(row.assigned_user_name), formatDateWithTime(text(row.due_date), text(row.due_time), "")].filter(Boolean),
-    href: `/tasks/${encodeURIComponent(id)}`,
-  };
+// ── spelling fixes ──────────────────────────────────────────────────────────
+// The vocabulary (every word in names, subjects, notes, comments…) is read once
+// per signed-in person and kept for ten minutes, so correcting a typo costs no
+// extra trip on each keystroke.
+const VOCAB_TTL_MS = 10 * 60 * 1000;
+const vocabCache = new Map<string, { at: number; words: string[] }>();
+
+async function vocabularyFor(supabase: SupabaseClient, cacheKey: string): Promise<string[]> {
+  const cached = vocabCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < VOCAB_TTL_MS) return cached.words;
+  // One array (not rows), so the API's 1,000-row cap can't cut it short.
+  const { data, error } = await supabase.rpc("global_search_vocab");
+  if (error) return cached?.words ?? [];
+  const words = (Array.isArray(data) ? (data as unknown[]) : []).map(str).filter(Boolean);
+  if (vocabCache.size > 200) vocabCache.clear();
+  vocabCache.set(cacheKey, { at: Date.now(), words });
+  return words;
 }
 
-export function orderResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.order_id) || text(row.id);
-  if (!id) return null;
-  const customerName = text(row.customer_name);
-  return {
-    id,
-    group: "orders",
-    groupLabel: GROUP_LABELS.orders,
-    title: customerName ? `${customerName} · #${shortId(id)}` : `הזמנה #${shortId(id)}`,
-    subtitle: formatShortDate(text(row.order_date), "") || null,
-    meta: [text(row.status), text(row.payment_status), formatCurrency(num(row.total_amount))].filter(Boolean) as string[],
-    href: `/sales/orders/${encodeURIComponent(id)}`,
-  };
-}
-
-export function productResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.id);
-  const name = text(row.name);
-  if (!id || !name) return null;
-  return {
-    id,
-    group: "products",
-    groupLabel: GROUP_LABELS.products,
-    title: name,
-    subtitle: text(row.description) || null,
-    meta: [text(row.sku), text(row.barcode), formatCurrency(num(row.base_price))].filter(Boolean) as string[],
-    href: buildFocusHref("/sales?tab=inventory", id),
-  };
-}
-
-export function documentResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.id);
-  const title = text(row.title) || text(row.file_name);
-  if (!id || !title) return null;
-  return {
-    id,
-    group: "documents",
-    groupLabel: GROUP_LABELS.documents,
-    title,
-    subtitle: text(row.file_name) || null,
-    meta: [text(row.document_type), formatShortDateTime(text(row.uploaded_at), "")].filter(Boolean),
-    href: buildFocusHref("/documents", id),
-  };
-}
-
-export function propertyResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.id);
-  const address = text(row.address);
-  if (!id || !address) return null;
-  return {
-    id,
-    group: "properties",
-    groupLabel: GROUP_LABELS.properties,
-    title: address,
-    subtitle: row.is_active === false ? "נכס לא פעיל" : "נכס",
-    meta: [],
-    href: `/properties/${encodeURIComponent(id)}`,
-  };
-}
-
-export function paymentResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.id);
-  if (!id) return null;
-  return {
-    id,
-    group: "payments",
-    groupLabel: GROUP_LABELS.payments,
-    title: text(row.notes) || text(row.reference_number) || `תשלום #${shortId(id)}`,
-    subtitle: formatShortDate(text(row.payment_date), "") || null,
-    meta: [formatCurrency(num(row.amount_total)), text(row.payment_method), text(row.business_domain)].filter(Boolean) as string[],
-    href: buildFocusHref("/financial", `payment:${id}`),
-  };
-}
-
-export function expenseResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.id);
-  if (!id) return null;
-  return {
-    id,
-    group: "expenses",
-    groupLabel: GROUP_LABELS.expenses,
-    title: text(row.description) || text(row.category) || `הוצאה #${shortId(id)}`,
-    subtitle: formatShortDate(text(row.expense_date), "") || null,
-    meta: [formatCurrency(num(row.amount)), text(row.category), text(row.business_domain)].filter(Boolean) as string[],
-    href: buildFocusHref("/financial", `expense:${id}`),
-  };
-}
-
-export function contactResult(row: Row, customerNameById: Map<string, string>): GlobalSearchResult | null {
-  const id = text(row.id);
-  const customerId = text(row.customer_id);
-  const name = text(row.full_name);
-  if (!id || !customerId || !name) return null;
-  const customerName = customerNameById.get(customerId) ?? null;
-  return {
-    id,
-    group: "contacts",
-    groupLabel: GROUP_LABELS.contacts,
-    title: name,
-    subtitle: customerName,
-    meta: [text(row.role), text(row.phone), text(row.email)].filter(Boolean),
-    href: `/customers/${encodeURIComponent(customerId)}`,
-  };
-}
-
-export function tagResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.id);
-  const name = text(row.name);
-  if (!id || !name) return null;
-  const kind = text(row.kind);
-  return {
-    id,
-    group: "tags",
-    groupLabel: GROUP_LABELS.tags,
-    title: name,
-    subtitle: tagKindLabel(kind),
-    meta: [],
-    // A vehicle tag opens its activity rollup; other kinds land on the list.
-    href: kind === "vehicle" ? `/vehicles/${encodeURIComponent(id)}` : "/vehicles",
-  };
-}
-
-export function userResult(row: Row): GlobalSearchResult | null {
-  const id = text(row.id);
-  const name = text(row.full_name) || text(row.email);
-  if (!id || !name) return null;
-  return {
-    id,
-    group: "users",
-    groupLabel: GROUP_LABELS.users,
-    title: name,
-    subtitle: text(row.email) || null,
-    meta: [text(row.role), row.active === false ? "לא פעיל" : "פעיל"].filter(Boolean),
-    href: `/payroll/workers/${encodeURIComponent(id)}`,
-  };
-}
-
-const PAYMENT_COLUMNS =
-  "id,payment_date,amount_total,payment_method,reference_number,notes,business_domain,project_id,order_id,property_id";
-const EXPENSE_COLUMNS =
-  "id,expense_date,amount,category,description,notes,business_domain,project_id,order_id,property_id";
-const CUSTOMER_COLUMNS = "id,name,name_for_invoice,phone,whatsapp,email,address";
-const TAG_COLUMNS = "id,kind,name,color,is_active";
-
-type MatchContent = import("@/lib/search/findMatchingChildIds").ChildMatchResult;
-const emptyContent = (): MatchContent => ({ ids: [], contextById: new Map() });
+type SearchOptions = {
+  query: string;
+  viewerRole: UserRole;
+  /** Who is searching — the vocabulary is kept per person (it follows their rights). */
+  viewerId?: string | null;
+  /** Results per group (the total is always counted). */
+  limitPerGroup?: number;
+  /** Only this kind of record (the "show all" view of one group). */
+  kind?: GlobalSearchKind | null;
+};
 
 export async function performGlobalSearch(
   supabase: SupabaseClient,
   options: SearchOptions
 ): Promise<GlobalSearchResponse> {
   const query = options.query.trim();
-  const limitPerGroup = Math.min(Math.max(options.limitPerGroup ?? 6, 1), 12);
-  const mode = options.mode ?? "full";
-  const fetchSize =
-    mode === "quick"
-      ? Math.max(limitPerGroup * 4, 24)
-      : Math.max(limitPerGroup * 8, 80);
-  const uuidLike = isUuidLike(query);
-  // Deep cross-table reach: task comments, order notes/line-items, project tasks,
-  // and payment/expense notes. Runs for BOTH the top-bar type-ahead ("quick") and
-  // the full search page so a comment/note is findable wherever you search. Each
-  // is an indexed ilike over modest tables; the type-ahead is debounced + abort-
-  // able, so the extra round-trips don't pile up.
-  const deep = true;
+  const parsed = parseGlobalQuery(query);
+  if (!query || parsed.tokens.length === 0) return { query, ...EMPTY };
 
-  if (!query) {
-    return { query: "", totalResults: 0, groups: [] };
-  }
+  const roleKinds = kindsForRole(options.viewerRole);
+  if (options.kind && roleKinds && !roleKinds.includes(options.kind)) return { query, ...EMPTY };
+  const kinds = options.kind ? [options.kind] : roleKinds;
 
-  const requests = [
-    supabase
-      .from("customers")
-      .select("id,name,name_for_invoice,phone,whatsapp,email,address")
-      .order("name", { ascending: true })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("project_dashboard_view")
-      .select("id,name,customer_id,customer_name,status,project_type,updated_at")
-      .order("updated_at", { ascending: false })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("task_overview_view")
-      .select("task_id,subject,project_name,status,priority,assigned_user_name,due_date,due_time,updated_at")
-      .order("updated_at", { ascending: false })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("order_overview_view")
-      .select("order_id,customer_name,status,payment_status,total_amount,order_date,customer_email,customer_phone,customer_address")
-      .order("order_date", { ascending: false })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("products")
-      .select("id,name,sku,barcode,description,base_price")
-      .order("name", { ascending: true })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("documents")
-      .select("id,title,file_name,document_type,uploaded_at,notes")
-      .order("uploaded_at", { ascending: false, nullsFirst: false })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("properties")
-      .select("id,address,is_active")
-      .order("address", { ascending: true })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("payments")
-      .select(PAYMENT_COLUMNS)
-      .order("payment_date", { ascending: false })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("expenses")
-      .select(EXPENSE_COLUMNS)
-      .order("expense_date", { ascending: false })
-      .range(0, fetchSize - 1),
-    options.viewerRole === "admin"
-      ? supabase
-          .from("users")
-          .select("id,full_name,email,role,active,phone")
-          .order("full_name", { ascending: true })
-          .range(0, fetchSize - 1)
-      : Promise.resolve({ data: [], error: null }),
-    supabase
-      .from("contacts")
-      .select("id,customer_id,full_name,role,phone,email,whatsapp")
-      .eq("active", true)
-      .order("full_name", { ascending: true })
-      .range(0, fetchSize - 1),
-    supabase
-      .from("tags")
-      .select(TAG_COLUMNS)
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .range(0, fetchSize - 1),
-  ] as const;
-
-  const [
-    customersResult,
-    projectsResult,
-    tasksResult,
-    ordersResult,
-    productsResult,
-    documentsResult,
-    propertiesResult,
-    paymentsResult,
-    expensesResult,
-    usersResult,
-    contactsResult,
-    tagsResult,
-  ] = await Promise.all(requests);
-
-  const errors = [
-    customersResult.error,
-    projectsResult.error,
-    tasksResult.error,
-    ordersResult.error,
-    productsResult.error,
-    documentsResult.error,
-    propertiesResult.error,
-    paymentsResult.error,
-    expensesResult.error,
-    usersResult.error,
-    contactsResult.error,
-  ].filter(Boolean);
-
-  if (errors.length > 0) {
-    throw new Error(errors[0]?.message ?? "Global search failed");
-  }
-
-  // ── Deep, fuzzy, cross-table reach ──────────────────────────────────────────
-  // One fuzzy engine (findMatchingRowIds: indexed ILIKE across the whole table +
-  // a bounded fuzzy fallback for typos) resolves notes/free-text and child records
-  // system-wide, so a search finds a row by ANY field — a customer/project/car
-  // note, an order comment, a task comment — no matter how old. Ids resolved here
-  // are pulled into their groups below (fetching any outside the recent window),
-  // and the matching text is carried for the "why it matched" line.
-  const [
-    orderContent,
-    projectContent,
-    customerContent,
-    paymentContent,
-    expenseContent,
-    tagContent,
-    vehicleContent,
-    commentContent,
-  ] = deep
-    ? await Promise.all([
-        findOrderIdsMatchingContent(supabase, query, fetchSize),
-        findProjectIdsMatchingContent(supabase, query, fetchSize),
-        findMatchingRowIds(supabase, {
-          table: "customers",
-          columns: [
-            { name: "notes", label: "הערה" },
-            { name: "name", label: "שם" },
-            { name: "name_for_invoice", label: "שם לחשבונית" },
-            { name: "phone", label: "טלפון" },
-            { name: "email", label: "אימייל" },
-            { name: "address", label: "כתובת" },
-          ],
-          query,
-          limit: fetchSize,
-        }),
-        findMatchingRowIds(supabase, {
-          table: "payments",
-          columns: [
-            { name: "notes", label: "הערה" },
-            { name: "reference_number", label: "אסמכתא" },
-          ],
-          query,
-          limit: fetchSize,
-          scanOrderColumn: "payment_date",
-        }),
-        findMatchingRowIds(supabase, {
-          table: "expenses",
-          columns: [
-            { name: "notes", label: "הערה" },
-            { name: "description", label: "תיאור" },
-            { name: "category", label: "קטגוריה" },
-          ],
-          query,
-          limit: fetchSize,
-          scanOrderColumn: "expense_date",
-        }),
-        findMatchingRowIds(supabase, {
-          table: "tags",
-          columns: [
-            { name: "name", label: "שם" },
-            { name: "notes", label: "הערה" },
-          ],
-          query,
-          limit: fetchSize,
-          eq: { column: "is_active", value: true },
-        }),
-        findMatchingRowIds(supabase, {
-          table: "vehicles",
-          columns: [
-            { name: "license_plate", label: "מספר רישוי" },
-            { name: "make_model", label: "דגם" },
-            { name: "owner_name", label: "בעלים" },
-            { name: "notes", label: "הערה" },
-          ],
-          query,
-          idColumn: "tag_id",
-          limit: fetchSize,
-        }),
-        findMatchingRowIds(supabase, {
-          table: "task_comments",
-          columns: [{ name: "body", label: "תגובה" }],
-          query,
-          idColumn: "task_id",
-          limit: fetchSize,
-          scanOrderColumn: "created_at",
-        }),
-      ])
-    : [emptyContent(), emptyContent(), emptyContent(), emptyContent(), emptyContent(), emptyContent(), emptyContent(), emptyContent()];
-
-  const itemOrderIds = orderContent.ids;
-  const orderMatchById = orderContent.contextById;
-  const projectMatchById = projectContent.contextById;
-  const customerMatchById = customerContent.contextById;
-  const paymentMatchById = paymentContent.contextById;
-  const expenseMatchById = expenseContent.contextById;
-  // Cars and other tags share the "tags" group; a vehicle match maps to its tag id.
-  const tagMatchById = new Map(tagContent.contextById);
-  for (const [id, ctx] of vehicleContent.contextById) if (!tagMatchById.has(id)) tagMatchById.set(id, ctx);
-  const tagContentIds = [...tagMatchById.keys()];
-  // Comment → task, for the tasks group (comment → project is handled in projectContent).
-  const commentByTaskId = new Map<string, string>();
-  for (const [taskId, ctx] of commentContent.contextById) commentByTaskId.set(taskId, ctx.snippet);
-
-  // Fetch rows that matched deep but fall outside a group's recent window.
-  const fetchByIds = async (
-    table: string,
-    select: string,
-    idColumn: string,
-    ids: string[],
-    have: Set<string>
-  ): Promise<Row[]> => {
-    const missing = ids.filter((id) => id && !have.has(id));
-    if (missing.length === 0) return [];
-    const { data } = await supabase
-      .from(table)
-      .select(select)
-      .in(idColumn, missing.slice(0, fetchSize))
-      .range(0, fetchSize - 1);
-    return (data ?? []) as unknown as Row[];
-  };
-
-  // Customers (+ deep note / full-coverage field matches).
-  const customerIdMatch = new Set(customerContent.ids);
-  const customerRows = (customersResult.data ?? []) as Row[];
-  const customerHave = new Set(customerRows.map((row) => text(row.customer_id) || text(row.id)));
-  const extraCustomerRows = await fetchByIds("customers", CUSTOMER_COLUMNS, "id", customerContent.ids, customerHave);
-  const customers = sortByMatch(
-    [...customerRows, ...extraCustomerRows].filter((row) => {
-      const id = text(row.customer_id) || text(row.id);
-      return (
-        customerIdMatch.has(id) ||
-        (uuidLike && exactIdMatch(id, query)) ||
-        customerMatchesQuery(
-          {
-            name: text(row.name) || text(row.customer_name),
-            name_for_invoice: text(row.name_for_invoice),
-            email: text(row.email),
-            phone: text(row.phone),
-            whatsapp: text(row.whatsapp),
-            address: text(row.address),
-          },
-          query
-        )
-      );
-    }),
-    query,
-    (row) => [text(row.name) || text(row.customer_name), text(row.name_for_invoice), text(row.email), text(row.phone)]
-  ).slice(0, limitPerGroup);
-
-  // Projects (+ deep note / task / comment matches).
-  const projectIdMatch = new Set(projectContent.ids);
-  const projectRows = (projectsResult.data ?? []) as Row[];
-  const projectHave = new Set(projectRows.map((row) => text(row.id)));
-  const taskProjectRows = await fetchByIds(
-    "project_dashboard_view",
-    "id,name,customer_id,customer_name,status,project_type,updated_at",
-    "id",
-    projectContent.ids,
-    projectHave
-  );
-  const projects = sortByMatch(
-    [...projectRows, ...taskProjectRows].filter((row) =>
-      projectIdMatch.has(text(row.id)) ||
-      (uuidLike && exactIdMatch(text(row.id), query)) ||
-      includesNormalized([text(row.name), text(row.customer_name), text(row.status), text(row.project_type)], query)
-    ),
-    query,
-    (row) => [text(row.name), text(row.customer_name), text(row.status), text(row.project_type)]
-  ).slice(0, limitPerGroup);
-
-  // The project view carries no phone; look it up for the shortlisted projects so a
-  // project result shows the customer's number next to the name (project rule).
-  const projectCustomerIds = Array.from(
-    new Set(projects.map((row) => text(row.customer_id)).filter(Boolean))
-  );
-  if (projectCustomerIds.length > 0) {
-    const { data: projectPhoneRows } = await supabase
-      .from("customer_overview_view")
-      .select("customer_id,phone")
-      .in("customer_id", projectCustomerIds);
-    const phoneByCustomerId = new Map<string, string>();
-    ((projectPhoneRows ?? []) as Row[]).forEach((row) => {
-      const cid = text(row.customer_id);
-      const phone = text(row.phone);
-      if (cid && phone) phoneByCustomerId.set(cid, phone);
+  // Close spellings for a word that doesn't exist as typed.
+  const corrections: string[] = [];
+  let tokens: GlobalSearchToken[] = parsed.tokens;
+  if (parsed.words.some((word) => word.length >= 3)) {
+    const vocabulary = await vocabularyFor(supabase, options.viewerId || options.viewerRole);
+    tokens = parsed.tokens.map((token) => {
+      const typed = token.t?.[0];
+      if (!typed || token.a !== undefined || token.d || token.p) return token;
+      const alternatives = fuzzyAlternatives(typed, vocabulary);
+      corrections.push(...alternatives);
+      return alternatives.length > 0 ? { ...token, t: [typed, ...alternatives] } : token;
     });
-    for (const row of projects) {
-      const phone = phoneByCustomerId.get(text(row.customer_id));
-      if (phone) row.customer_phone = phone;
-    }
   }
 
-  // Comments → parent task. task_comments has no page of its own, so a matching
-  // comment (fuzzy, any age — resolved above) surfaces the task it belongs to.
-  const taskRows = (tasksResult.data ?? []) as Row[];
-  const taskHave = new Set(taskRows.map((row) => text(row.task_id) || text(row.id)));
-  const commentTaskRows = await fetchByIds(
-    "task_overview_view",
-    "task_id,subject,project_name,status,priority,assigned_user_name,due_date,due_time,updated_at",
-    "task_id",
-    commentContent.ids,
-    taskHave
+  const { data, error } = await supabase.rpc("global_search", {
+    p_tokens: tokens,
+    p_query: query,
+    p_kinds: kinds,
+    p_limit: Math.min(Math.max(options.limitPerGroup ?? 5, 1), 500),
+  });
+  if (error) throw new Error(error.message || "Global search failed");
+
+  const rows = (data ?? []) as Row[];
+  const groups = buildGroups(rows, options.viewerRole);
+  const terms = Array.from(
+    new Set(tokens.flatMap((token) => (token.t ?? []).filter((term) => term.length > 0)))
   );
-
-  const tasks = sortByMatch(
-    [...taskRows, ...commentTaskRows].filter((row) => {
-      const taskId = text(row.task_id) || text(row.id);
-      return (
-        commentByTaskId.has(taskId) ||
-        (uuidLike && exactIdMatch(taskId, query)) ||
-        includesNormalized(
-          [text(row.subject), text(row.project_name), text(row.status), text(row.priority), text(row.assigned_user_name)],
-          query
-        )
-      );
-    }),
-    query,
-    (row) => [text(row.subject), text(row.project_name), text(row.assigned_user_name), text(row.status), text(row.priority)]
-  ).slice(0, limitPerGroup);
-
-  const orderIdsFromItems = new Set(itemOrderIds);
-  const orderRows = (ordersResult.data ?? []) as Row[];
-  const orderRowIds = new Set(orderRows.map((row) => text(row.order_id) || text(row.id)));
-  const missingOrderIds = itemOrderIds.filter((id) => id && !orderRowIds.has(id));
-  let itemOrderRows: Row[] = [];
-  if (missingOrderIds.length > 0) {
-    const { data } = await supabase
-      .from("order_overview_view")
-      .select("order_id,customer_name,status,payment_status,total_amount,order_date,customer_email,customer_phone,customer_address")
-      .in("order_id", missingOrderIds.slice(0, fetchSize))
-      .range(0, fetchSize - 1);
-    itemOrderRows = (data ?? []) as Row[];
-  }
-
-  const orders = sortByMatch(
-    [...orderRows, ...itemOrderRows].filter((row) => {
-      const orderId = text(row.order_id) || text(row.id);
-      return (
-        orderIdsFromItems.has(orderId) ||
-        (uuidLike && exactIdMatch(orderId, query)) ||
-        includesNormalized(
-          [
-            text(row.customer_name),
-            text(row.status),
-            text(row.payment_status),
-            text(row.customer_email),
-            text(row.customer_phone),
-            text(row.customer_address),
-          ],
-          query
-        )
-      );
-    }),
-    query,
-    (row) => [text(row.customer_name), text(row.customer_phone), text(row.customer_address), text(row.status)]
-  ).slice(0, limitPerGroup);
-
-  const products = sortByMatch(
-    ((productsResult.data ?? []) as Row[]).filter((row) =>
-      (uuidLike && exactIdMatch(text(row.id), query)) ||
-      includesNormalized([text(row.name), text(row.sku), text(row.barcode), text(row.description)], query)
-    ),
-    query,
-    (row) => [text(row.name), text(row.sku), text(row.barcode), text(row.description)]
-  ).slice(0, limitPerGroup);
-
-  const documents = sortByMatch(
-    ((documentsResult.data ?? []) as Row[]).filter((row) =>
-      (uuidLike && exactIdMatch(text(row.id), query)) ||
-      includesNormalized([text(row.title), text(row.file_name), text(row.notes), text(row.document_type)], query)
-    ),
-    query,
-    (row) => [text(row.title), text(row.file_name), text(row.document_type), text(row.notes)]
-  ).slice(0, limitPerGroup);
-
-  const properties = sortByMatch(
-    ((propertiesResult.data ?? []) as Row[]).filter((row) =>
-      (uuidLike && exactIdMatch(text(row.id), query)) ||
-      includesNormalized([text(row.address)], query)
-    ),
-    query,
-    (row) => [text(row.address)]
-  ).slice(0, limitPerGroup);
-
-  // Deep mode: payments/expenses whose NOTES (a payment's "comment") or
-  // reference/description/category match, fetched server-side so they're found no
-  // matter how old they are — not just within the recent window loaded above.
-  // Merged (deduped) into the candidates below. (Commas/percent are stripped: the
-  // value sits inside an or() list where a comma is a delimiter.)
-  // Payments/expenses: window matches (fuzzy, recent) + deep note/reference matches
-  // (fuzzy, any age — resolved above), merged and deduped by id.
-  const paymentIdMatch = new Set(paymentContent.ids);
-  const paymentHave = new Set(((paymentsResult.data ?? []) as Row[]).map((row) => text(row.id)));
-  const extraPaymentRows = await fetchByIds("payments", PAYMENT_COLUMNS, "id", paymentContent.ids, paymentHave);
-  const payments = sortByMatch(
-    [...((paymentsResult.data ?? []) as Row[]), ...extraPaymentRows].filter((row) =>
-      paymentIdMatch.has(text(row.id)) ||
-      (uuidLike && exactIdMatch(text(row.id), query)) ||
-      includesNormalized([text(row.reference_number), text(row.notes), text(row.payment_method), text(row.business_domain)], query)
-    ),
-    query,
-    (row) => [text(row.notes), text(row.reference_number), text(row.payment_method), text(row.business_domain)]
-  ).slice(0, limitPerGroup);
-
-  const expenseIdMatch = new Set(expenseContent.ids);
-  const expenseHave = new Set(((expensesResult.data ?? []) as Row[]).map((row) => text(row.id)));
-  const extraExpenseRows = await fetchByIds("expenses", EXPENSE_COLUMNS, "id", expenseContent.ids, expenseHave);
-  const expenses = sortByMatch(
-    [...((expensesResult.data ?? []) as Row[]), ...extraExpenseRows].filter((row) =>
-      expenseIdMatch.has(text(row.id)) ||
-      (uuidLike && exactIdMatch(text(row.id), query)) ||
-      includesNormalized([text(row.category), text(row.description), text(row.notes), text(row.business_domain)], query)
-    ),
-    query,
-    (row) => [text(row.description), text(row.category), text(row.notes), text(row.business_domain)]
-  ).slice(0, limitPerGroup);
-
-  const users = sortByMatch(
-    ((usersResult.data ?? []) as Row[]).filter((row) =>
-      (uuidLike && exactIdMatch(text(row.id), query)) ||
-      includesNormalized([text(row.full_name), text(row.email), text(row.phone), text(row.role)], query)
-    ),
-    query,
-    (row) => [text(row.full_name), text(row.email), text(row.phone), text(row.role)]
-  ).slice(0, limitPerGroup);
-
-  const customerNameById = new Map<string, string>(
-    ((customersResult.data ?? []) as Row[]).map((row) => [
-      text(row.customer_id) || text(row.id),
-      text(row.customer_name) || text(row.name) || text(row.name_for_invoice),
-    ])
-  );
-
-  const contacts = sortByMatch(
-    ((contactsResult.data ?? []) as Row[]).filter((row) =>
-      fuzzyTextMatch([text(row.full_name), text(row.role)].join(" "), query) ||
-      phoneMatchesQuery([text(row.phone), text(row.whatsapp)], query) ||
-      includesNormalized([text(row.email)], query)
-    ),
-    query,
-    (row) => [text(row.full_name), text(row.phone), text(row.email), text(row.role)]
-  ).slice(0, limitPerGroup);
-
-  // Tags / vehicles ("cars"). Window matches by name + deep matches on tag notes
-  // and vehicle fields (license plate, model, owner, notes — a vehicle maps to its
-  // tag id). Resilient: a missing table never breaks the rest of search.
-  const tagIdMatch = new Set(tagContentIds);
-  const tagRows = (tagsResult.error ? [] : tagsResult.data ?? []) as Row[];
-  const tagHave = new Set(tagRows.map((row) => text(row.id)));
-  const extraTagRows = await fetchByIds("tags", TAG_COLUMNS, "id", tagContentIds, tagHave);
-  const tags = sortByMatch(
-    [...tagRows, ...extraTagRows].filter((row) =>
-      tagIdMatch.has(text(row.id)) ||
-      (uuidLike && exactIdMatch(text(row.id), query)) ||
-      includesNormalized([text(row.name), text(row.kind)], query)
-    ),
-    query,
-    (row) => [text(row.name)]
-  ).slice(0, limitPerGroup);
-
-  const results = [
-    ...(customers
-      .map((row) =>
-        attachMatch(
-          customerResult(row),
-          windowMatch(customerMatchById.get(text(row.customer_id) || text(row.id)), query) ??
-            buildMatch(query, [
-              ["טלפון", text(row.phone)],
-              ["וואטסאפ", text(row.whatsapp)],
-              ["אימייל", text(row.email)],
-              ["כתובת", text(row.address)],
-              ["שם לחשבונית", text(row.name_for_invoice)],
-            ])
-        )
-      )
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(contacts
-      .map((row) =>
-        attachMatch(
-          contactResult(row, customerNameById),
-          buildMatch(query, [
-            ["טלפון", text(row.phone)],
-            ["וואטסאפ", text(row.whatsapp)],
-            ["אימייל", text(row.email)],
-            ["תפקיד", text(row.role)],
-          ])
-        )
-      )
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(projects
-      .map((row) => attachMatch(projectResult(row), windowMatch(projectMatchById.get(text(row.id)), query)))
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(tasks
-      .map((row) => {
-        const taskId = text(row.task_id) || text(row.id);
-        const body = commentByTaskId.get(taskId);
-        const match = body
-          ? windowMatch({ label: "תגובה", snippet: body }, query)
-          : buildMatch(query, [["אחראי", text(row.assigned_user_name)]]);
-        return attachMatch(taskResult(row), match);
-      })
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(tags
-      .map((row) => attachMatch(tagResult(row), windowMatch(tagMatchById.get(text(row.id)), query)))
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(orders
-      .map((row) => {
-        const orderId = text(row.order_id) || text(row.id);
-        const match =
-          windowMatch(orderMatchById.get(orderId), query) ??
-          buildMatch(query, [
-            ["טלפון", text(row.customer_phone)],
-            ["אימייל", text(row.customer_email)],
-            ["עיר", text(row.customer_city)],
-            ["כתובת", text(row.customer_address)],
-          ]);
-        return attachMatch(orderResult(row), match);
-      })
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(products
-      .map((row) =>
-        attachMatch(
-          productResult(row),
-          buildMatch(query, [
-            ["מק\"ט", text(row.sku)],
-            ["ברקוד", text(row.barcode)],
-            ["תיאור", text(row.description)],
-          ])
-        )
-      )
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(documents
-      .map((row) =>
-        attachMatch(
-          documentResult(row),
-          buildMatch(query, [
-            ["הערה", text(row.notes)],
-            ["סוג", text(row.document_type)],
-            ["קובץ", text(row.file_name)],
-          ])
-        )
-      )
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(properties.map(propertyResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(payments
-      .map((row) =>
-        attachMatch(
-          paymentResult(row),
-          windowMatch(paymentMatchById.get(text(row.id)), query) ??
-            buildMatch(query, [
-              ["הערה", text(row.notes)],
-              ["אסמכתא", text(row.reference_number)],
-              ["אמצעי תשלום", text(row.payment_method)],
-            ])
-        )
-      )
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(expenses
-      .map((row) =>
-        attachMatch(
-          expenseResult(row),
-          windowMatch(expenseMatchById.get(text(row.id)), query) ??
-            buildMatch(query, [
-              ["הערה", text(row.notes)],
-              ["קטגוריה", text(row.category)],
-              ["תיאור", text(row.description)],
-            ])
-        )
-      )
-      .filter(Boolean) as GlobalSearchResult[]),
-    ...(users
-      .map((row) =>
-        attachMatch(
-          userResult(row),
-          buildMatch(query, [
-            ["אימייל", text(row.email)],
-            ["טלפון", text(row.phone)],
-          ])
-        )
-      )
-      .filter(Boolean) as GlobalSearchResult[]),
-  ];
-
   return {
     query,
-    totalResults: results.length,
-    groups: buildGroups(results),
+    totalResults: groups.reduce((sum, group) => sum + group.total, 0),
+    terms,
+    understood: parsed.understood,
+    corrections: Array.from(new Set(corrections)),
+    groups,
   };
 }
