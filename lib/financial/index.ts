@@ -24,6 +24,7 @@ import {
 import { buildPayslipDomainShares } from "./laborSplit";
 import {
   expandByDomain,
+  aggregateLoanFlows,
   aggregateProfitLoss,
   aggregateProfitLossProof,
   aggregateExpenseCategories,
@@ -91,6 +92,8 @@ export type {
   ProfitLossCategoryRow,
   ProfitLossProofItem,
   ProfitLossProofMap,
+  LoanFlowItem,
+  LoanFlows,
   MonthlyTrendPoint,
   ForecastChangePoint,
 } from "./types";
@@ -542,6 +545,8 @@ export async function getFinancialPageData(
     profitLossExpenseCategories: aggregateExpenseCategories(domainEntries, { from, to }),
     profitLossPrevious: previousPeriod ? aggregateProfitLoss(domainEntries, previousPeriod) : [],
     profitLossPreviousPeriod: previousPeriod,
+    // Loan money that moved in the period — shown only behind "כולל הלוואות".
+    loanFlows: aggregateLoanFlows(domainEntries, { from, to }),
     // Historical monthly trend: posted-only, within [from..today] (default last 12 months).
     monthlyTrend: buildMonthlyTrend(domainEntries, {
       from: from ?? addMonthsToIso(referenceDate, -12),

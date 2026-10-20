@@ -20,6 +20,8 @@ import type {
   FinancialEntryType,
   FinancialSummary,
   ForecastChangePoint,
+  LoanFlowItem,
+  LoanFlows,
   MonthlyTrendPoint,
   OrderFinancialRow,
   OrderRow,
@@ -555,6 +557,50 @@ export function aggregateProfitLoss(
 }
 
 /**
+ * Loan principal that really moved inside [from, to] — the reports' "כולל
+ * הלוואות" step. Only posted movements count: the loan itself on its date and
+ * every paid repayment. A planned or late installment (loan_planned / loan_due)
+ * hasn't moved, so it stays out. Principal only: a repayment's interest is
+ * already an expense (taken) or income (given) in its domain's P&L, and adding
+ * it here would count it twice. The same on every report basis — a loan is
+ * never "earned", it is money that came in or went out on its date.
+ */
+export function aggregateLoanFlows(
+  entries: FinancialEntry[],
+  options: { from?: string | null; to?: string | null } = {}
+): LoanFlows {
+  const from = options.from || null;
+  const to = options.to || null;
+  const flows: LoanFlows = { received: [], repaid: [], lent: [], repaidToMe: [], net: 0 };
+
+  for (const entry of entries) {
+    if (entry.origin !== "loan" || entry.stage !== "posted") continue;
+    const isPrincipal = entry.id.startsWith("loan:");
+    const isRepayment = entry.id.startsWith("loan_repay:");
+    if (!isPrincipal && !isRepayment) continue;
+    if (from && entry.flowDate < from) continue;
+    if (to && entry.flowDate > to) continue;
+
+    const item: LoanFlowItem = {
+      date: entry.flowDate,
+      label: entry.counterparty?.trim() || entry.description,
+      amount: entry.amount,
+    };
+    if (isPrincipal) (entry.type === "inflow" ? flows.received : flows.lent).push(item);
+    else (entry.type === "outflow" ? flows.repaid : flows.repaidToMe).push(item);
+    flows.net += entry.type === "inflow" ? entry.amount : -entry.amount;
+  }
+
+  const byDate = (a: LoanFlowItem, b: LoanFlowItem) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label, "he");
+  flows.received.sort(byDate);
+  flows.repaid.sort(byDate);
+  flows.lent.sort(byDate);
+  flows.repaidToMe.sort(byDate);
+  flows.net = Math.round(flows.net * 100) / 100;
+  return flows;
+}
+
+/**
  * Line-item PROOF behind each domain's cash/accrual P&L — the exact transactions
  * that sum to the numbers aggregateProfitLoss produces, so a report row can be
  * opened to "prove it". Mirrors aggregateProfitLoss's per-entry rules one-to-one:
@@ -1051,6 +1097,7 @@ export function buildLoanEntries(loans: Loan[], referenceDate: string): Financia
         paymentStatus: null,
         recordedByName: null,
         customerId: loan.counterparty_customer_id,
+        counterparty,
         notes: loan.notes?.trim() || null,
         searchText: [description, counterparty ?? "", loan.notes ?? "", domainName]
           .join(" ")
@@ -1173,6 +1220,7 @@ export function buildLoanEntries(loans: Loan[], referenceDate: string): Financia
           paymentStatus: null,
           recordedByName: null,
           customerId: loan.counterparty_customer_id,
+          counterparty,
           searchText: [description, counterparty ?? "", domainName].join(" ").toLowerCase(),
         });
       }

@@ -39,6 +39,59 @@ describe("סקירה — property adds to what's left", () => {
   });
 });
 
+describe("סקירה — כולל הלוואות (owner, 2026-10-20)", () => {
+  const loanFlows = {
+    received: [{ date: "2026-10-15", label: "שעיה שטרן", amount: 150000 }],
+    repaid: [
+      { date: "2026-10-18", label: "אנשיל אייזנבאך", amount: 40000 },
+      { date: "2026-10-18", label: "רוזנפלד אהרון", amount: 5000 },
+    ],
+    lent: [],
+    repaidToMe: [],
+    net: 105000,
+  };
+  // sales 1000 − 200, שוטף −300 → 500 left before loans.
+
+  it("adds the loan money as the last step and in what's left", () => {
+    render(
+      <BottomLinePanel rows={rows} earned={null} basis="cash" includeHomeCharity={false} includeProperties={false} includeLoans loanFlows={loanFlows} />
+    );
+    expect(screen.getByText("ועוד הלוואות — כסף שנכנס ויצא בפועל, לא רווח")).toBeTruthy();
+    expect(screen.getByText("הלוואות שקיבלתי")).toBeTruthy();
+    expect(screen.getByText("החזרתי על הלוואות")).toBeTruthy();
+    expect(screen.queryByText("הלוואות שנתתי")).toBeNull(); // no movement → no line
+    const headline = screen.getByText((_, el) => el?.tagName === "P" && (el.textContent ?? "").startsWith("רווח מהעסקים"));
+    expect(headline.textContent).toMatch(/\+ הלוואות/);
+    expect(screen.getAllByText((_, el) => el?.tagName === "SPAN" && (el.textContent ?? "").replace(/\s/g, "").includes("105,500")).length).toBeGreaterThan(0);
+  });
+
+  it("leaves loans out when the box isn't ticked", () => {
+    render(
+      <BottomLinePanel rows={rows} earned={null} basis="cash" includeHomeCharity={false} includeProperties={false} loanFlows={loanFlows} />
+    );
+    expect(screen.queryByText("הלוואות שקיבלתי")).toBeNull();
+    const headline = screen.getByText((_, el) => el?.tagName === "P" && (el.textContent ?? "").startsWith("רווח מהעסקים"));
+    expect(headline.textContent).not.toMatch(/הלוואות/);
+  });
+
+  it("says so when the box is ticked but no loan money moved", () => {
+    render(
+      <BottomLinePanel
+        rows={rows}
+        earned={null}
+        basis="cash"
+        includeHomeCharity={false}
+        includeProperties={false}
+        includeLoans
+        loanFlows={{ received: [], repaid: [], lent: [], repaidToMe: [], net: 0 }}
+      />
+    );
+    expect(screen.getByText("אין תנועות הלוואה בתקופה.")).toBeTruthy();
+    const headline = screen.getByText((_, el) => el?.tagName === "P" && (el.textContent ?? "").startsWith("רווח מהעסקים"));
+    expect(headline.textContent).not.toMatch(/הלוואות/);
+  });
+});
+
 describe("לפי תחום — expenses by category follow the toggles", () => {
   const categories: ProfitLossCategoryRow[] = [
     { category: "דלק", domain: "general_business", cashExpense: 300, accrualExpense: 300 },

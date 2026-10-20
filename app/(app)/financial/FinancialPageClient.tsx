@@ -271,6 +271,9 @@ export default function FinancialPageClient({
   // Off by default, like בית וצדקה (owner, 2026-10-13: "I don't want the property
   // management checkbox to be ticked by default").
   const [includeProperties, setIncludeProperties] = useState(false);
+  // Loan money in/out as a last step of the סקירה — off by default like the
+  // other two (owner, 2026-10-20: "add another check that includes the loans").
+  const [includeLoans, setIncludeLoans] = useState(false);
   // Global domain chips (empty = all) — live in the report control row and filter
   // the by-domain views (לפי תחום / חודשי) across every tab, not just one panel.
   const [selectedReportDomains, setSelectedReportDomains] = useState<string[]>([]);
@@ -1136,6 +1139,18 @@ export default function FinancialPageClient({
         />
         <span>כולל ניהול נכסים</span>
       </label>
+      <label
+        className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border bg-background px-2.5 text-sm"
+        title="מוסיף לסקירה את כספי ההלוואות שנכנסו ויצאו בתקופה"
+      >
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-primary"
+          checked={includeLoans}
+          onChange={(e) => setIncludeLoans(e.target.checked)}
+        />
+        <span>כולל הלוואות</span>
+      </label>
       {activeFilterCount > 0 ? (
         <Button type="button" variant="ghost" size="sm" onClick={resetFilters} className="ms-auto h-9">
           <RefreshIcon className="h-4 w-4" />
@@ -1349,6 +1364,9 @@ export default function FinancialPageClient({
             {includeProperties ? (
               <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">כולל ניהול נכסים</span>
             ) : null}
+            {includeLoans ? (
+              <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">כולל הלוואות</span>
+            ) : null}
           </div>
         </div>
         {/* Tabs — separated from the filter band with clear breathing room. */}
@@ -1466,6 +1484,8 @@ export default function FinancialPageClient({
             basis={plBasis}
             includeHomeCharity={includeHomeCharity}
             includeProperties={includeProperties}
+            includeLoans={includeLoans}
+            loanFlows={data.loanFlows}
             domainProof={domainProof}
             projectBreakdown={projectBreakdown}
             profitLossProof={data.profitLossProof}

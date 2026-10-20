@@ -142,6 +142,7 @@ export function flowViewData(data: FinancialPageData): { data: FinancialPageData
       profitLossProof: {},
       profitLossExpenseCategories: [],
       profitLossPrevious: [],
+      loanFlows: { received: [], repaid: [], lent: [], repaidToMe: [], net: 0 },
       monthlyTrend: [],
       forecastMonthly: [],
     },

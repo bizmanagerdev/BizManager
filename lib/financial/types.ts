@@ -234,6 +234,8 @@ export type FinancialEntry = {
   searchText: string;
   /** What was written on the payment / loan / worker payment — found by the search and shown as why. */
   notes?: string | null;
+  /** Loan movements only: who the loan is with (the lender of a loan taken, the borrower of one given). */
+  counterparty?: string | null;
   // Set on worker wage entries (worker_owed / worker_payment) so consumers can
   // relate an entry back to a worker (e.g. de-duping projected salaries).
   workerUserId?: string | null;
@@ -319,6 +321,18 @@ export type ProfitLossProofItem = {
 // domain key ("sales", "general_business", … | "__unassigned__") → its items.
 export type ProfitLossProofMap = Record<string, ProfitLossProofItem[]>;
 
+// One loan movement inside the report period — see aggregateLoanFlows in entries.ts.
+export type LoanFlowItem = { date: string; label: string; amount: number };
+// Loan principal that actually moved in the period, for the reports' "כולל
+// הלוואות" step. Never part of the P&L — a repayment's interest already is.
+export type LoanFlows = {
+  received: LoanFlowItem[]; // loans I took — money in
+  repaid: LoanFlowItem[]; // what I paid back on them — money out
+  lent: LoanFlowItem[]; // loans I gave — money out
+  repaidToMe: LoanFlowItem[]; // what I got back on them — money in
+  net: number; // in − out
+};
+
 // One month of realized (posted) cash movement — see buildMonthlyTrend in entries.ts.
 export type MonthlyTrendPoint = {
   month: string; // YYYY-MM
@@ -358,6 +372,8 @@ export type FinancialPageData = {
   // both from+to are set); profitLossPreviousPeriod holds that window's dates.
   profitLossPrevious: ProfitLossDomainRow[];
   profitLossPreviousPeriod: { from: string; to: string } | null;
+  // Loan money in/out in the period — the סקירה "כולל הלוואות" step.
+  loanFlows: LoanFlows;
   monthlyTrend: MonthlyTrendPoint[];
   forecastMonthly: ForecastChangePoint[];
   domainOptions: ExpenseBusinessDomain[];

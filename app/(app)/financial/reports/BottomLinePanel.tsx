@@ -5,7 +5,7 @@ import { ChevronDownIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
-import type { ProfitLossDomainRow } from "@/lib/financial";
+import type { LoanFlowItem, LoanFlows, ProfitLossDomainRow } from "@/lib/financial";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { DomainProofMap, DomainProofItem } from "@/lib/financial/domainProof";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
@@ -66,6 +66,7 @@ type RowDetail = {
  *     + ניהול נכסים (אופציונלי, בטוגל נפרד — חלק ממה שהרווחתי, גם כשהוא במינוס)
  *     − שוטף (תקורה כללית)
  *     − בית / צדקה (אישי, אופציונלי)
+ *     ± הלוואות (אופציונלי, "כולל הלוואות" — כסף שנכנס ויצא בפועל, לא רווח)
  *     = מה שנשאר בסוף
  * Each stage shows its contribution and the running "כמה נשאר" after it.
  * Every row is CLICKABLE — it opens to the exact transactions behind the number
@@ -81,6 +82,8 @@ export default function BottomLinePanel({
   basis,
   includeHomeCharity,
   includeProperties,
+  includeLoans = false,
+  loanFlows,
   domainProof,
   projectBreakdown,
   profitLossProof,
@@ -90,6 +93,8 @@ export default function BottomLinePanel({
   basis: Basis;
   includeHomeCharity: boolean;
   includeProperties: boolean;
+  includeLoans?: boolean;
+  loanFlows?: LoanFlows | null;
   domainProof?: DomainProofMap | null;
   projectBreakdown?: ProjectBreakdown | null;
   profitLossProof?: ProfitLossProofMap | null;
@@ -209,10 +214,31 @@ export default function BottomLinePanel({
   const overheadTotal = groups.overhead.reduce((sum, r) => sum + r.net, 0);
   const afterOverhead = afterProperties + overheadTotal;
   const homeCharityTotal = groups.homeCharity.reduce((sum, r) => sum + r.net, 0);
-  const finalLeft = afterOverhead + homeCharityTotal;
+  const beforeLoans = afterOverhead + homeCharityTotal;
+
+  // "כולל הלוואות": the loan money that moved in the period, as the last step.
+  // The same on every basis — a loan is never earned, it came in or went out.
+  const loanSteps = useMemo(() => {
+    if (!includeLoans || !loanFlows) return [];
+    const sum = (items: LoanFlowItem[]) => items.reduce((total, item) => total + item.amount, 0);
+    return [
+      { key: "received", label: "הלוואות שקיבלתי", items: loanFlows.received, sign: 1 },
+      { key: "repaid", label: "החזרתי על הלוואות", items: loanFlows.repaid, sign: -1 },
+      { key: "lent", label: "הלוואות שנתתי", items: loanFlows.lent, sign: -1 },
+      { key: "repaidToMe", label: "החזירו לי על הלוואות", items: loanFlows.repaidToMe, sign: 1 },
+    ]
+      .filter((step) => step.items.length > 0)
+      .map((step) => ({ ...step, value: step.sign * sum(step.items) }));
+  }, [includeLoans, loanFlows]);
+  const loansTotal = loanSteps.reduce((sum, step) => sum + step.value, 0);
+  const finalLeft = beforeLoans + loansTotal;
 
   const hasData =
-    groups.business.length || groups.overhead.length || groups.homeCharity.length || groups.properties.length;
+    groups.business.length ||
+    groups.overhead.length ||
+    groups.homeCharity.length ||
+    groups.properties.length ||
+    loanSteps.length;
 
   // A single waterfall line. When earned-basis detail exists for the row's domain,
   // it becomes a clickable disclosure that opens the transactions behind the number.
@@ -246,6 +272,39 @@ export default function BottomLinePanel({
     );
   };
 
+  // A loan line opens to the movements behind it: date, who, amount.
+  const loanLine = (step: (typeof loanSteps)[number]) => {
+    const key = `loan-${step.key}`;
+    const isOpen = expanded.has(key);
+    return (
+      <div key={key}>
+        <button
+          type="button"
+          onClick={() => toggle(key)}
+          aria-expanded={isOpen}
+          className="flex w-full items-center justify-between gap-3 rounded-md py-1.5 text-right transition-colors hover:bg-muted/60"
+        >
+          <span className="flex items-center gap-1.5 text-sm">
+            <ChevronDownIcon className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", isOpen ? "" : "-rotate-90")} />
+            {step.label}
+          </span>
+          <span dir="ltr" className={cn("tabular-nums text-sm font-medium", netClass(step.value))}>{signed(step.value)}</span>
+        </button>
+        {isOpen ? (
+          <div className="mb-2 mt-1 rounded-lg border bg-muted/30 p-3">
+            <DetailColumn
+              title={step.label}
+              items={step.items}
+              total={Math.abs(step.value)}
+              empty="אין תנועות בתקופה."
+              amountClass={step.value >= 0 ? "text-success" : "text-destructive"}
+            />
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const runningRow = (label: string, value: number, key: string) => (
     <div key={key} className="flex items-center justify-between gap-3 border-t border-dashed py-2 mt-1">
       <span className="text-sm font-semibold">{label}</span>
@@ -268,6 +327,7 @@ export default function BottomLinePanel({
             <CardHeader className="pb-2">
               <CardDescription className="text-right">
                 מה שנשאר בסוף {basis === "earned" ? "(לפי מה שהרווחתי)" : basis === "cash" ? "(לפי מה שנכנס)" : "(כולל פתוחים)"}
+                {loanSteps.length > 0 ? " · כולל הלוואות" : ""}
               </CardDescription>
               <CardTitle className={cn("text-right text-3xl font-bold tabular-nums", netClass(finalLeft))}>
                 <span dir="ltr">{formatCurrency(finalLeft)}</span>
@@ -282,6 +342,7 @@ export default function BottomLinePanel({
                   { label: "נכסים", value: propertiesTotal, show: groups.properties.length > 0 },
                   { label: "שוטף", value: overheadTotal, show: true },
                   { label: "בית/צדקה", value: homeCharityTotal, show: groups.homeCharity.length > 0 },
+                  { label: "הלוואות", value: loansTotal, show: loanSteps.length > 0 },
                 ]
                   .filter((step) => step.show)
                   .map((step) => ` ${step.value < 0 ? "−" : "+"} ${step.label} ${formatCurrency(Math.abs(step.value))}`)
@@ -341,6 +402,18 @@ export default function BottomLinePanel({
                     .slice()
                     .sort((a, b) => a.net - b.net)
                     .map((r, i) => line(r.name, r.net, `hc-${i}`, r.domain, basis))}
+                  {loanSteps.length > 0 ? runningRow("נשאר לפני הלוואות", beforeLoans, "__before_loans__") : null}
+                </div>
+              ) : null}
+
+              {includeLoans ? (
+                <div className="pt-2">
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">ועוד הלוואות — כסף שנכנס ויצא בפועל, לא רווח</div>
+                  {loanSteps.length === 0 ? (
+                    <div className="py-1.5 text-sm text-muted-foreground">אין תנועות הלוואה בתקופה.</div>
+                  ) : (
+                    loanSteps.map((step) => loanLine(step))
+                  )}
                 </div>
               ) : null}
 
