@@ -782,6 +782,17 @@ body:has(.dark-topbar-page) #page-header-toolbar {
   }
 }
 
+/* A dashboard placeholder on the wider stack (a phone turned sideways, a
+   tablet) takes the height this device kept THERE, not the phone's — where the
+   card shows all its rows (lib/ui/held-heights.ts, HELD_HEIGHTS_WIDE_COOKIE).
+   !important: the phone's --held-h is set inline. Not at xl, where the board
+   sizes its cells itself. */
+@media (min-width: 768px) and (max-width: 1279.98px) {
+  [data-held-wide] {
+    --held-h: var(--held-h-wide) !important;
+  }
+}
+
 /* Dashboard cards fade in as they arrive — the placeholder's box, then the
    card gently filling it, instead of "empty, then boom" (owner, 2026-10-07).
    Once per card: a card that's already there and updates doesn't fade again.

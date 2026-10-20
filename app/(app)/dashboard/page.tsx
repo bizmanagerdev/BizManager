@@ -8,7 +8,7 @@ import { firstAccessiblePrefix, hasSectionAccess, isStaffRole } from "@/lib/auth
 import DashboardGreetingTitle from "@/components/dashboard/DashboardGreetingTitle";
 import { firstNameOf, greetingForHour, viewerHour } from "@/lib/dashboard/greeting";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
-import { HELD_HEIGHTS_COOKIE } from "@/lib/ui/held-heights";
+import { HELD_HEIGHTS_COOKIE, HELD_HEIGHTS_WIDE_COOKIE } from "@/lib/ui/held-heights";
 
 export const revalidate = 60;
 
@@ -65,7 +65,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <PageStack className="-mt-2 md:-mt-3 lg:-mt-4">
         {/* The board's placeholder: this device's board as it last stood (the
             held-heights cookie) — the same one the loading screen drew. */}
-        <Suspense fallback={<PanelsFallback heldRaw={cookieStore.get(HELD_HEIGHTS_COOKIE)?.value} />}>
+        <Suspense
+          fallback={
+            <PanelsFallback
+              heldRaw={cookieStore.get(HELD_HEIGHTS_COOKIE)?.value}
+              wideRaw={cookieStore.get(HELD_HEIGHTS_WIDE_COOKIE)?.value}
+            />
+          }
+        >
           {/* ?data=server: the device-copy cards' fallback to the server version. */}
           <DashboardPanels forceServer={dataSource === "server"} />
         </Suspense>

@@ -290,6 +290,11 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
           title="חיפוש גלובלי"
           description="מצאו כל דבר במערכת ממקום אחד."
           size="form2xl"
+          // One height from the moment it opens: sized to its results, the box
+          // grew as they came in and its "לכל התוצאות" moved down under the
+          // finger (Sentry, a phone, 2026-10-17: the bar ↓119px, twice in one
+          // search). The results scroll inside it instead.
+          className="h-[85svh] sm:h-[min(40rem,85svh)]"
           bodyClassName="p-0 sm:p-0"
           headerBelow={
             <div className="relative">

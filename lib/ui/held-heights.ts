@@ -7,8 +7,32 @@
 
 export const HELD_HEIGHTS_COOKIE = "bizh-held";
 
+/**
+ * The same, measured on the wider stack (768–1279px: a phone turned sideways,
+ * a tablet), where a card shows all its rows, not a phone's three. Kept apart:
+ * one cookie for both, and a phone turned sideways once had every placeholder
+ * of its next upright opening at the sideways heights — the deliveries card
+ * 500px for its 380, the tasks 476 for 292 — and the board jumped up as the
+ * cards came in (2026-10-19).
+ */
+export const HELD_HEIGHTS_WIDE_COOKIE = "bizh-held-wide";
+
 /** Below this width the board is a plain stack of natural-height cards (DashboardSections). */
 export const HELD_HEIGHTS_MAX_WIDTH = 1280;
+/** Below this, the phone's stack (board-flush in globals.css: three rows a list). */
+export const HELD_HEIGHTS_PHONE_MAX_WIDTH = 768;
+
+/**
+ * A placeholder's height custom properties: --held-h (the phone's) and, when
+ * this device has kept one, --held-h-wide, which globals.css puts in its place
+ * on the wider stack ([data-held-wide]).
+ */
+export function heldHeightVars(phone: number | undefined, wide: number | undefined): Record<string, string> {
+  return {
+    ...(phone ? { "--held-h": `${phone}px` } : null),
+    ...(wide ? { "--held-h-wide": `${wide}px` } : null),
+  };
+}
 
 /**
  * Each card's usual height on a phone (the owner's board, 2026-10-07) — the
@@ -71,10 +95,12 @@ export function rememberHeldHeight(id: string, px: number, board?: readonly stri
   if (typeof document === "undefined" || window.innerWidth >= HELD_HEIGHTS_MAX_WIDTH) return;
   const rounded = Math.round(px / 4) * 4;
   if (rounded < MIN_PX || rounded > MAX_PX || !/^[A-Za-z0-9_-]+$/.test(id)) return;
+  // The phone's stack and the wider one each keep their own (see HELD_HEIGHTS_WIDE_COOKIE).
+  const name = window.innerWidth < HELD_HEIGHTS_PHONE_MAX_WIDTH ? HELD_HEIGHTS_COOKIE : HELD_HEIGHTS_WIDE_COOKIE;
   const current = document.cookie
     .split("; ")
-    .find((c) => c.startsWith(`${HELD_HEIGHTS_COOKIE}=`))
-    ?.slice(HELD_HEIGHTS_COOKIE.length + 1);
+    .find((c) => c.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
   const kept = parseHeldHeights(current);
   const heights = { ...kept };
   if (heights[id] !== rounded) {
@@ -86,5 +112,5 @@ export function rememberHeldHeight(id: string, px: number, board?: readonly stri
     : heights;
   const value = serialize(next);
   if (value === serialize(kept)) return;
-  document.cookie = `${HELD_HEIGHTS_COOKIE}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 60}; samesite=lax`;
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 60}; samesite=lax`;
 }

@@ -14,7 +14,13 @@ const nav = vi.hoisted(() => ({ pathname: "/projects/11111111-2222-4333-8444-555
 vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
 vi.mock("@/lib/ui/navigation-timing", () => ({ installNavigationTiming: () => {}, lastNavigationStart: () => nav.start }));
 
-import { HELD_HEIGHTS_COOKIE, parseHeldHeights, rememberHeldHeight } from "@/lib/ui/held-heights";
+import {
+  HELD_HEIGHTS_COOKIE,
+  HELD_HEIGHTS_WIDE_COOKIE,
+  heldHeightVars,
+  parseHeldHeights,
+  rememberHeldHeight,
+} from "@/lib/ui/held-heights";
 
 const clearCookie = () => (document.cookie = `${HELD_HEIGHTS_COOKIE}=; path=/; max-age=0`);
 
@@ -29,6 +35,22 @@ describe("remembered card heights", () => {
     rememberHeldHeight("todaySchedule", 402);
     const raw = document.cookie.split("; ").find((c) => c.startsWith(`${HELD_HEIGHTS_COOKIE}=`))!.split("=")[1];
     expect(parseHeldHeights(raw)).toEqual({ myTasks: 280, todaySchedule: 404 });
+  });
+
+  // A phone turned sideways shows every card's rows, not three: those heights
+  // went into the same cookie, and the next upright opening's placeholders were
+  // the sideways ones — the board jumped up as the cards came in (2026-10-19).
+  it("a phone turned sideways keeps its own heights, never the upright ones", () => {
+    const read = (name: string) =>
+      parseHeldHeights(document.cookie.split("; ").find((c) => c.startsWith(`${name}=`))?.split("=")[1]);
+    rememberHeldHeight("deliveries", 380);
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 832 });
+    rememberHeldHeight("deliveries", 500);
+    expect(read(HELD_HEIGHTS_COOKIE)).toEqual({ deliveries: 380 });
+    expect(read(HELD_HEIGHTS_WIDE_COOKIE)).toEqual({ deliveries: 500 });
+    document.cookie = `${HELD_HEIGHTS_WIDE_COOKIE}=; path=/; max-age=0`;
+    expect(heldHeightVars(380, 500)).toEqual({ "--held-h": "380px", "--held-h-wide": "500px" });
+    expect(heldHeightVars(380, undefined)).toEqual({ "--held-h": "380px" });
   });
 
   it("never on the desktop layout (fixed cells there), never nonsense", () => {

@@ -1,7 +1,13 @@
 import { Fragment, Suspense, type CSSProperties, type ReactNode } from "react";
 import { cookies } from "next/headers";
 import HeldHeight from "@/components/dashboard/HeldHeight";
-import { HELD_HEIGHTS_COOKIE, USUAL_HELD_HEIGHTS, parseHeldHeights } from "@/lib/ui/held-heights";
+import {
+  HELD_HEIGHTS_COOKIE,
+  HELD_HEIGHTS_WIDE_COOKIE,
+  USUAL_HELD_HEIGHTS,
+  heldHeightVars,
+  parseHeldHeights,
+} from "@/lib/ui/held-heights";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { t } from "@/lib/i18n/t";
@@ -89,9 +95,10 @@ const USUAL_BOARD = ["todaySchedule", "todayAlerts", "myTasks", "payments", "col
  * The board's placeholder (the page's loading screen and its Suspense
  * fallback). `heldRaw`: the held-heights cookie (lib/ui/held-heights.ts) —
  * this device's board as it last stood on its phone layout, its cards in the
- * board's running order, each at its height.
+ * board's running order, each at its height. `wideRaw`: the same measured on
+ * the wider stack (a phone turned sideways, a tablet), used there.
  */
-export function PanelsFallback({ heldRaw }: { heldRaw?: string }) {
+export function PanelsFallback({ heldRaw, wideRaw }: { heldRaw?: string; wideRaw?: string }) {
   // Below xl the board is one column of cards, each its own content's height
   // (see board-flush in globals.css): so a box per card the board last had on
   // this device, in its order, each as tall as that card stood — the board
@@ -105,6 +112,7 @@ export function PanelsFallback({ heldRaw }: { heldRaw?: string }) {
   // column, the rest column with the secondary row over the tertiary one
   // (tierCounts, as the board splits them).
   const held = parseHeldHeights(heldRaw);
+  const wide = parseHeldHeights(wideRaw);
   const kept = Object.keys(held);
   const ids = kept.length > 0 ? kept : USUAL_BOARD;
   const height = (id: string) => held[id] ?? USUAL_HELD_HEIGHTS[id];
@@ -116,7 +124,8 @@ export function PanelsFallback({ heldRaw }: { heldRaw?: string }) {
     <div
       key={id}
       className={cn("min-w-0", fill ? CARD_FILL_CLASS : CARD_NATURAL_CLASS)}
-      style={{ "--held-h": `${height(id) ?? 64}px` } as CSSProperties}
+      data-held-wide={wide[id] ? "" : undefined}
+      style={heldHeightVars(height(id) ?? 64, wide[id]) as CSSProperties}
     >
       <Skeleton className={cn("h-[var(--held-h)] w-full rounded-card", fill && "xl:h-full")} />
     </div>
@@ -197,6 +206,7 @@ export function Cell({
   tier,
   order,
   heldHeight,
+  heldWide,
 }: {
   item: WidgetItem;
   fill: boolean;
@@ -204,6 +214,8 @@ export function Cell({
   order: number;
   /** Phone layout: how tall this card last stood on this device (lib/ui/held-heights.ts). */
   heldHeight?: number;
+  /** The same on the wider stack (a phone turned sideways, a tablet), when this device has kept it. */
+  heldWide?: number;
 }) {
   return (
     // `empty:hidden` because a card can decide at RUNTIME that it has nothing to
@@ -244,11 +256,12 @@ export function Cell({
       // viewTransitionName pairs this cell's before and after when the board
       // repacks, so a card SLIDES to its new spot instead of jumping there —
       // see withViewTransition, which drives the updates that cause a repack.
+      data-held-wide={heldWide ? "" : undefined}
       style={
         {
           order,
           viewTransitionName: cardTransitionName(String(item.id)),
-          ...(heldHeight ? { "--held-h": `${heldHeight}px` } : null),
+          ...heldHeightVars(heldHeight, heldWide),
         } as CSSProperties
       }
     >
@@ -558,7 +571,10 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // How tall each card last stood on this device's phone layout (its
   // placeholder's height) — each card's usual height where this device has
   // none yet.
-  const heldHeights = { ...USUAL_HELD_HEIGHTS, ...parseHeldHeights((await cookies()).get(HELD_HEIGHTS_COOKIE)?.value) };
+  const cookieStore = await cookies();
+  const heldHeights = { ...USUAL_HELD_HEIGHTS, ...parseHeldHeights(cookieStore.get(HELD_HEIGHTS_COOKIE)?.value) };
+  // …and on the wider stack (a phone turned sideways, a tablet), where kept.
+  const heldWide = parseHeldHeights(cookieStore.get(HELD_HEIGHTS_WIDE_COOKIE)?.value);
   // The device-copy shadow check (lib/powersync/dashboard-shadow.ts): the
   // figures below are also worked out on the device and compared. Read time
   // first, so the device only compares once its copy is at least this fresh.
@@ -930,6 +946,7 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
             tier={fewCards ? "hero-fill" : "hero-header"}
             order={boardOrder.get(hero.id) ?? 0}
             heldHeight={heldHeights[String(hero.id)]}
+            heldWide={heldWide[String(hero.id)]}
           />
           {shiftCard ? (
             <Cell
@@ -937,6 +954,7 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
               fill={false}
               order={boardOrder.get(shiftCard.id) ?? 0}
               heldHeight={heldHeights[String(shiftCard.id)]}
+              heldWide={heldWide[String(shiftCard.id)]}
             />
           ) : null}
         </div>
@@ -954,6 +972,7 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
                   tier={fewCards ? undefined : "secondary"}
                   order={boardOrder.get(item.id) ?? 0}
                   heldHeight={heldHeights[String(item.id)]}
+                  heldWide={heldWide[String(item.id)]}
                 />
               ))}
             </div>
@@ -969,6 +988,7 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
                   tier="tertiary"
                   order={boardOrder.get(item.id) ?? 0}
                   heldHeight={heldHeights[String(item.id)]}
+                  heldWide={heldWide[String(item.id)]}
                 />
               ))}
             </div>
