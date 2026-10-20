@@ -11,8 +11,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { formatCurrency } from "@/lib/payroll";
 import { formatShortDate } from "@/lib/date";
 import { israelDateKey } from "@/lib/timezone";
+import { dayKey, RENT_STATE, rentThisMonth } from "@/lib/property-rent";
 import { depositTypeLabel, leaseStatusLabel, type LeaseAgreement, type PropertyPayment } from "@/lib/properties";
-import { dayKey, paymentTitle } from "./propertyMovements";
+import { paymentTitle } from "./propertyMovements";
 
 // The property page's two lease cards, beside "נכס" in its head row (owner,
 // 2026-10-20: like the project page — one clear details page): who rents it
@@ -161,51 +162,6 @@ export function PropertyTenantCard({
     </StatActionCard>
   );
 }
-
-export type RentMonthState = "paid" | "partial" | "check" | "late" | "upcoming" | "none";
-
-/**
- * Where this month's rent stands. A scheduled check is dated the month it's
- * for; any other payment counts in the month it came in — until each payment
- * says which month it covers (the next step on the card).
- */
-export function rentThisMonth(
-  lease: LeaseAgreement | null,
-  payments: PropertyPayment[],
-  today: string = israelDateKey()
-): { state: RentMonthState; collected: number; pending: number; rent: number; dueDay: number | null } {
-  if (!lease || lease.status !== "active") return { state: "none", collected: 0, pending: 0, rent: 0, dueDay: null };
-  const month = today.slice(0, 7);
-  let collected = 0;
-  let pending = 0;
-  for (const payment of payments) {
-    if (dayKey(payment.date)?.slice(0, 7) !== month) continue;
-    if (payment.paymentStatus === "pending") pending += payment.amount;
-    else if (payment.paymentStatus !== "rejected") collected += payment.amount;
-  }
-  const rent = lease.monthlyRentAmount;
-  const dueDay = lease.rentDayOfMonth ?? (lease.startDate ? Number(lease.startDate.slice(8, 10)) || null : null);
-  const state: RentMonthState =
-    rent > 0 && collected >= rent - 0.5
-      ? "paid"
-      : collected > 0
-        ? "partial"
-        : pending > 0
-          ? "check"
-          : dueDay !== null && Number(today.slice(8, 10)) > dueDay
-            ? "late"
-            : "upcoming";
-  return { state, collected, pending, rent, dueDay };
-}
-
-const RENT_STATE: Record<RentMonthState, { label: string; className: string }> = {
-  paid: { label: "שולם", className: "text-success" },
-  partial: { label: "שולם חלקית", className: "text-warning-strong" },
-  check: { label: "צ׳ק ממתין לפירעון", className: "text-secondary" },
-  late: { label: "לא שולם", className: "text-destructive" },
-  upcoming: { label: "טרם שולם", className: "text-foreground" },
-  none: { label: "אין שוכר", className: "text-muted-foreground" },
-};
 
 export function PropertyRentCard({
   lease,

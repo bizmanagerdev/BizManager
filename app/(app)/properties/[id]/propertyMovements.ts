@@ -14,6 +14,9 @@ import { normalizePayrollWorkerType, shouldShowSessionHours } from "@/lib/payrol
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { PropertyExpense, PropertyPayment, PropertySession } from "@/lib/properties";
+import { dayKey } from "@/lib/property-rent";
+
+export { dayKey };
 
 export type PropertyMovementUser = {
   id: string;
@@ -41,12 +44,6 @@ export type PropertyMovementInput = {
   onDeleteSession: (session: PropertySession) => void;
 };
 
-/** "2026-11-01T00:00:00+00:00" → "2026-11-01" — payment_date is a timestamp. */
-export function dayKey(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
-  return match ? match[1] : null;
-}
 
 /** "נובמבר 2026" — the month a rent payment is for (the "weird date" it printed before). */
 export function rentMonthLabel(value: string | null | undefined): string | null {

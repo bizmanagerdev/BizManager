@@ -5,7 +5,7 @@ import {
   rentMonthLabel,
   type PropertyMovementInput,
 } from "@/app/(app)/properties/[id]/propertyMovements";
-import { rentThisMonth } from "@/app/(app)/properties/[id]/PropertyLeaseCards";
+import { rentThisMonth } from "@/lib/property-rent";
 import { donutSlices } from "@/components/charts/CategoryDonut";
 import type { LeaseAgreement, PropertyExpense, PropertyPayment, PropertySession } from "@/lib/properties";
 

@@ -1,16 +1,17 @@
 "use client";
 
 import { useDeferredValue, useMemo, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, BuildingIcon, SearchIcon } from "@/components/ui/icons";
+import { AddIcon, BuildingIcon, MoreIcon, SearchIcon } from "@/components/ui/icons";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Painted, SearchTermsProvider } from "@/components/search/Painted";
 import { searchList, type SearchRecord } from "@/lib/search/listSearch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MetaRow } from "@/components/ui/meta-row";
 import { Card, CardContent } from "@/components/ui/card";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -22,13 +23,23 @@ import {
   propertyTypeLabel,
   type PropertyWithLease,
 } from "@/lib/properties";
+import { RENT_STATE } from "@/lib/property-rent";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createProperty, updateProperty, deleteProperty } from "./actions";
 import { EMPTY_PROPERTY_FORM, propertyToForm, PropertyFormFields, type PropertyInput } from "./PropertyFormFields";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
+
+const ExpenseDialog = dynamic(() => import("@/components/expenses/ExpenseDialog").then((m) => m.ExpenseDialog), {
+  ssr: false,
+});
+const IncomeDialog = dynamic(() => import("@/components/financial/IncomeDialog").then((m) => m.IncomeDialog), {
+  ssr: false,
+});
+
+/** "שכירות אוקטובר" — the month the card's rent chip is about. */
+const MONTH_NAME = new Intl.DateTimeFormat("he-IL", { month: "long", timeZone: "Asia/Jerusalem" });
 
 function numOrNullFromForm(value: string) {
   const trimmed = value.trim();
@@ -121,6 +132,11 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<PropertyInput>(EMPTY_PROPERTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<PropertyWithLease | null>(null);
+  // Adding money straight from a property's card (owner's card, note 1:
+  // "הוצאה והכנסה להוסיף בחוץ"), and a reminder from its ⋮.
+  const [moneyTarget, setMoneyTarget] = useState<{ kind: "income" | "expense"; property: PropertyWithLease } | null>(null);
+  const [reminderTarget, setReminderTarget] = useState<PropertyWithLease | null>(null);
+  const monthName = useMemo(() => MONTH_NAME.format(new Date()), []);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const found = useMemo(() => searchList(properties, propertySearchRecord, deferredSearch), [properties, deferredSearch]);
@@ -255,43 +271,61 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
         <AdaptiveGrid variant="entityCards">
           {shown.map((p) => {
             const net = p.rollup.totalIncomeAmount - p.rollup.paidExpenseAmount;
+            const lease = p.currentLease?.status === "active" ? p.currentLease : null;
+            const rent = RENT_STATE[p.rentThisMonth.state];
+            const name = propertyDisplayName(p);
             return (
               <Card key={p.id} className="flex flex-col">
                 <CardContent className="flex flex-1 flex-col gap-3 p-4">
+                  {/* What it is and where (owner's card, note 2: the facts and the
+                      amenities moved onto the property's own page). */}
                   <div className="flex items-start justify-between gap-2">
                     <Link href={`/properties/${p.id}`} className="min-w-0 flex-1">
-                      <div className="text-lg font-semibold hover:underline"><Painted text={propertyDisplayName(p)} /></div>
-                      {p.name ? <div className="text-sm text-muted-foreground"><Painted text={p.address} /></div> : null}
-                      {p.assetDescription ? (
-                        <div className="text-sm text-muted-foreground"><Painted text={p.assetDescription} /></div>
+                      <div className="text-lg font-semibold hover:underline">
+                        <Painted text={name} />
+                      </div>
+                      {p.name ? (
+                        <div className="text-sm text-muted-foreground">
+                          <Painted text={p.address} />
+                        </div>
                       ) : null}
-                      <MetaRow className="text-xs text-muted-foreground" items={factsLine(p)} />
                     </Link>
-                    <div className="flex shrink-0 gap-1">
-                      <AddReminderButton entityType="property" entityId={p.id} label={propertyDisplayName(p)} className="h-9 w-9 p-0" iconOnly />
-                      <EditButton onClick={() => openEdit(p)} label="עריכה" />
-                      <DeleteButton onClick={() => setDeleteTarget(p)} label="מחיקת נכס" />
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="ghost" size="sm" className="h-9 w-9 shrink-0 p-0" aria-label={`פעולות ל${name}`}>
+                          <MoreIcon className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-36">
+                        <DropdownMenuItem onClick={() => openEdit(p)}>עריכה</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setReminderTarget(p)}>תזכורת</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDeleteTarget(p)} className="text-destructive focus:text-destructive">
+                          מחיקה
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
+                  {/* Who rents it, and whether this month's rent is in (note 17). */}
                   <div className="flex flex-wrap items-center gap-2">
-                    {p.currentLease ? (
-                      <Badge variant="success">
-                        <Link href={`/customers/${p.currentLease.customerId}`} className="hover:underline">
-                          <Painted text={p.currentLease.customerName ?? "שוכר"} />
-                        </Link>
-                        {" · "}
-                        <Painted text={formatCurrency(p.currentLease.monthlyRentAmount)} />/חודש
-                      </Badge>
+                    {lease ? (
+                      <>
+                        <Badge variant="outline">
+                          <Link href={`/customers/${lease.customerId}`} className="hover:underline">
+                            <Painted text={lease.customerName ?? "שוכר"} />
+                          </Link>
+                          {" · "}
+                          <Painted text={formatCurrency(lease.monthlyRentAmount)} />
+                          /חודש
+                        </Badge>
+                        <Badge variant={rent.badge}>
+                          שכירות {monthName}: {rent.label}
+                        </Badge>
+                      </>
                     ) : (
                       <Badge variant="neutral">פנוי</Badge>
                     )}
                     {!p.isActive ? <Badge variant="neutral">לא פעיל</Badge> : null}
-                    {amenityBadges(p).map((label) => (
-                      <Badge key={label} variant="outline">
-                        {label}
-                      </Badge>
-                    ))}
                   </div>
 
                   {/* Three across where they fit, fewer where a figure wouldn't (5.5rem
@@ -299,25 +333,36 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                       its third of the card. */}
                   <div className="mt-auto grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 text-center text-sm">
                     <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">הכנסות</div>
+                      <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-success">
+                        <Painted text={formatCurrency(p.rollup.totalIncomeAmount)} />
+                      </div>
+                    </div>
+                    <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">הוצאות</div>
                       <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
                         <Painted text={formatCurrency(p.rollup.paidExpenseAmount)} />
                       </div>
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground">הכנסות</div>
-                      <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-emerald-600">
-                        <Painted text={formatCurrency(p.rollup.totalIncomeAmount)} />
-                      </div>
-                    </div>
-                    <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">נטו</div>
                       <div
-                        className={`whitespace-nowrap text-xs font-semibold tabular-nums ${net >= 0 ? "text-emerald-600" : "text-destructive"}`}
+                        className={`whitespace-nowrap text-xs font-semibold tabular-nums ${net >= 0 ? "text-success" : "text-destructive"}`}
                       >
                         {formatCurrency(net)}
                       </div>
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => setMoneyTarget({ kind: "income", property: p })}>
+                      <AddIcon className="h-4 w-4" />
+                      הכנסה
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setMoneyTarget({ kind: "expense", property: p })}>
+                      <AddIcon className="h-4 w-4" />
+                      הוצאה
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -339,6 +384,41 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
       >
         <PropertyFormFields form={form} set={set} />
       </FormDialog>
+
+      {moneyTarget?.kind === "income" ? (
+        <IncomeDialog
+          open
+          onOpenChange={(open) => (open ? undefined : setMoneyTarget(null))}
+          projects={[]}
+          orders={[]}
+          properties={[]}
+          lockedPropertyId={moneyTarget.property.id}
+          onSaved={() => {
+            setMoneyTarget(null);
+            startTransition(() => router.refresh());
+          }}
+        />
+      ) : null}
+      {moneyTarget?.kind === "expense" ? (
+        <ExpenseDialog
+          open
+          onOpenChange={(open) => (open ? undefined : setMoneyTarget(null))}
+          lockedPropertyId={moneyTarget.property.id}
+          editingSourceLabel={propertyDisplayName(moneyTarget.property)}
+          showAttachments
+          onSaved={() => startTransition(() => router.refresh())}
+        />
+      ) : null}
+      {reminderTarget ? (
+        <AddReminderButton
+          entityType="property"
+          entityId={reminderTarget.id}
+          label={propertyDisplayName(reminderTarget)}
+          hideTrigger
+          open
+          onOpenChange={(open) => (open ? undefined : setReminderTarget(null))}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}

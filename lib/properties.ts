@@ -3,6 +3,7 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { israelDateKey } from "@/lib/timezone";
+import { rentThisMonth, type RentMonthStatus, type RentPayment } from "@/lib/property-rent";
 import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 import type { StructuredAddress } from "@/lib/address/structured";
 import type { FinancialAttachment } from "@/lib/payments";
@@ -112,6 +113,8 @@ const EMPTY_ROLLUP: PropertyRollup = {
 export type PropertyWithLease = Property & {
   currentLease: LeaseAgreement | null;
   rollup: PropertyRollup;
+  /** Where this month's rent stands (lib/property-rent.ts) — the list card's chip. */
+  rentThisMonth: RentMonthStatus;
 };
 
 export type PropertyWithLeases = Property & { leases: LeaseAgreement[] };
@@ -357,7 +360,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
       fetchAllPaged<Row>((lo, hi) =>
         supabase
           .from("payments")
-          .select("property_id,amount_total,payment_status")
+          .select("property_id,amount_total,payment_status,payment_date")
           .in("property_id", ids)
           .range(lo, hi)
       ),
@@ -390,9 +393,13 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
       rollup.totalExpenseAmount += num(row.amount);
       rollup.paidExpenseAmount += str(row.payment_status) === "paid" ? num(row.amount) : num(row.paid_amount);
     }
+    const rentPaymentsByProperty = new Map<string, RentPayment[]>();
     for (const row of paymentRows) {
       const propertyId = str(row.property_id);
       if (!propertyId) continue;
+      const list = rentPaymentsByProperty.get(propertyId) ?? [];
+      list.push({ date: str(row.payment_date), paymentStatus: str(row.payment_status), amount: num(row.amount_total) });
+      rentPaymentsByProperty.set(propertyId, list);
       if (!isCollectedPaymentStatus(str(row.payment_status))) continue;
       rollupFor(propertyId).totalIncomeAmount += num(row.amount_total);
     }
@@ -410,12 +417,17 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
       rollup.expectedExpenseAmount = rollup.totalExpenseAmount - rollup.paidExpenseAmount;
     }
 
+    const today = israelDateKey();
     return properties
-      .map((property) => ({
-        ...property,
-        currentLease: pickCurrentLease(leasesByProperty.get(property.id) ?? []),
-        rollup: rollupByProperty.get(property.id) ?? EMPTY_ROLLUP,
-      }))
+      .map((property) => {
+        const currentLease = pickCurrentLease(leasesByProperty.get(property.id) ?? []);
+        return {
+          ...property,
+          currentLease,
+          rollup: rollupByProperty.get(property.id) ?? EMPTY_ROLLUP,
+          rentThisMonth: rentThisMonth(currentLease, rentPaymentsByProperty.get(property.id) ?? [], today),
+        };
+      })
       .sort((a, b) => propertyDisplayName(a).localeCompare(propertyDisplayName(b), "he"));
   } catch {
     return [];

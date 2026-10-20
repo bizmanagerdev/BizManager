@@ -7,9 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 // The properties list's placeholder, from PropertiesClient's own pieces: the
 // heading with its subtitle and the add button (under them on a phone), then
 // the property cards (one column, two from md, four from xl) — each with its
-// name, address and facts line and its three buttons, the tenant / amenity
-// badges, and the expenses / income / net figures under their names. Shown
-// while the page streams (loading.tsx).
+// name, address and ⋮, the tenant and this month's rent chips, the income /
+// expenses / net figures under their names, and its + הכנסה / + הוצאה.
+// Shown while the page streams (loading.tsx).
 
 export default function PropertiesSkeleton() {
   return (
@@ -33,27 +33,27 @@ export default function PropertiesSkeleton() {
                 <div className="min-w-0 flex-1">
                   <TextLineSkeleton className="text-lg font-semibold" barClassName="w-40" />
                   <TextLineSkeleton className="text-sm" barClassName="w-32" />
-                  <TextLineSkeleton className="text-xs" barClassName="w-44" />
                 </div>
-                <div className="flex shrink-0 gap-1">
-                  {[0, 1, 2].map((j) => (
-                    <Skeleton key={j} className="h-9 w-9 rounded-xl" />
-                  ))}
-                </div>
+                <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 <Skeleton className="h-[1.625rem] w-28 rounded-full" />
-                <Skeleton className="h-[1.625rem] w-14 rounded-full" />
+                <Skeleton className="h-[1.625rem] w-32 rounded-full" />
               </div>
 
               <div className="mt-auto grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 text-center text-sm">
-                {["הוצאות", "הכנסות", "נטו"].map((label) => (
+                {["הכנסות", "הוצאות", "נטו"].map((label) => (
                   <div key={label} className="min-w-0">
                     <div className="text-xs text-muted-foreground">{label}</div>
                     <TextLineSkeleton className="text-xs" barClassName="w-14" />
                   </div>
                 ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Skeleton className="h-9 rounded-xl" />
+                <Skeleton className="h-9 rounded-xl" />
               </div>
             </CardContent>
           </Card>
