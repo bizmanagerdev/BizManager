@@ -19,6 +19,8 @@ import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
 import { getPropertiesSummary, type PropertiesSummary } from "@/lib/properties";
 import { loadProjectsPage, type ProjectsFilters } from "@/app/(app)/projects/loadProjects";
 import { loadCustomersPage, type CustomersFilters } from "@/app/(app)/customers/loadCustomers";
+import { startCustomerCoreReads, type CustomerPageCore } from "@/app/(app)/customers/[id]/customerPageCore";
+import type { CustomerPaymentsResult } from "@/app/(app)/customers/[id]/customerPageModel";
 import {
   loadProjectsPickerOptions,
   loadProjectsTabCounts,
@@ -100,6 +102,12 @@ export type LocalDashboardCards = {
    * `dashboardRow` null: not on this device's copy (yet).
    */
   projectPage: ProjectPageCore;
+  /**
+   * A customer's page (/customers/<id>), all but what only the server reads
+   * (the call log, promises, Morning documents, a linked worker's pay owed,
+   * the documents and history). `core` null: not on this device's copy (yet).
+   */
+  customerPage: { filters: { id: string }; core: CustomerPageCore | null; payments: CustomerPaymentsResult };
   /** The dashboard's money cards (lib/dashboard/money-cards.ts) — only from a copy with sync rules v1.8. */
   payments: PaymentsSummary;
   collections: CollectionsSummary;
@@ -155,6 +163,14 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
     "projects", "customers", "customer_branches", "users", "user_directory", "tasks", "project_expenses", "expenses",
     "attendance_sessions", "payments", "payslips", "payroll_periods", "salary_agreements", "worker_payments",
     "worker_payment_allocations", "accounts", "business_settings", "recurring_expense_templates",
+  ],
+  // The customer, his orders and projects with their money (the projects'
+  // price: expenses, hours, pay), contacts, tags, leases, tasks, loans and the
+  // receivables (collections_view).
+  customerPage: [
+    "customers", "orders", "order_items", "payments", "projects", "users", "customer_branches", "contacts", "tags", "entity_tags",
+    "lease_agreements", "properties", "tasks", "reminders", "loans", "loan_repayments", "project_expenses", "expenses",
+    "attendance_sessions", "payslips", "payroll_periods", "salary_agreements", "worker_payments", "worker_payment_allocations",
   ],
   payments: MONEY_TABLES,
   collections: MONEY_TABLES,
@@ -373,6 +389,16 @@ export async function computeLocalCard<K extends LocalCardKind>(
       const failed = Object.entries(core.errors).find(([, message]) => message);
       if (failed) throw new Error(`${failed[0]}: ${failed[1]}`);
       return core as LocalDashboardCards[K];
+    }
+    case "customerPage": {
+      const { id } = need<{ id: string }>();
+      const reads = startCustomerCoreReads(local, id, { role: Promise.resolve(role), viewerId: Promise.resolve(userId) });
+      const [core, payments] = await Promise.all([reads.core, reads.payments]);
+      // A read the device couldn't do: the server version shows it instead.
+      const failed = core ? Object.entries(core.errors).find(([, message]) => message) : undefined;
+      if (failed) throw new Error(`${failed[0]}: ${failed[1]}`);
+      if (payments.error) throw new Error(`payments: ${payments.error}`);
+      return { filters: { id }, core, payments } as LocalDashboardCards[K];
     }
     case "payments":
     case "collections":

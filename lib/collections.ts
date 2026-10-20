@@ -340,6 +340,10 @@ async function enrichCollectionTitles(
           .from("order_items")
           .select("order_id,product_id,quantity_ordered,notes")
           .in("order_id", orderIds)
+          // A fixed order: the title lists an order's lines the same way every
+          // time (and on the phone's copy), and paging can't skip or repeat one.
+          .order("order_id", { ascending: true })
+          .order("id", { ascending: true })
           .range(lo, hi)
       );
 
@@ -861,7 +865,9 @@ export async function getCustomerReceivables(
       "source_type,source_id,collection_key,business_domain,reference_date,total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,collection_status"
     )
     .eq("customer_id", customerId)
-    .order("overdue_amount", { ascending: false });
+    .order("overdue_amount", { ascending: false })
+    // Ties in a fixed order — the same on the server and the phone's copy.
+    .order("collection_key", { ascending: true });
 
   if (error || !data) return [];
 

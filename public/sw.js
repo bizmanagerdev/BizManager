@@ -488,7 +488,12 @@ const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales", "/de
 // project page scored 49 on phones, its first byte 1.9 s while the server
 // woke). Only the last DETAIL_FRAMES_MAX opened are kept — a year of orders
 // mustn't fill the phone.
-const DETAIL_FRAME_PATHS = [/^\/projects\/[0-9a-f-]{36}$/i, /^\/sales\/orders\/[0-9a-f-]{36}$/i];
+// A customer's page too (LocalCustomerPage, 2026-10-20).
+const DETAIL_FRAME_PATHS = [
+  /^\/projects\/[0-9a-f-]{36}$/i,
+  /^\/sales\/orders\/[0-9a-f-]{36}$/i,
+  /^\/customers\/[0-9a-f-]{36}$/i,
+];
 const DETAIL_FRAMES_MAX = 40;
 // Frames that read their filters from the address themselves (the drivers'
 // /deliveries reads its region on the phone, the customers list its filters):

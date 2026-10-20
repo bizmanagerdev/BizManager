@@ -70,6 +70,11 @@ export const LOCAL_DATA_PAGES = {
   // first (LOCAL_DATA_PREVIEW_USERS); everyone's after a day of clean
   // comparisons (LOCAL_DATA_SHADOW.customers). Searches stay on the server.
   customers: false,
+  // A customer's page (/customers/<id>) — the same, from 2026-10-20. What only
+  // the server reads (the call log, promises, Morning documents, a linked
+  // worker's pay owed — owner: "leave out those tables", 2026-10-20 — the
+  // documents and history) follows from the server after the page.
+  customerPage: false,
 } as const;
 
 /**
@@ -126,4 +131,5 @@ export const LOCAL_DATA_SHADOW = {
   projectPage: true,
   dashboardMoney: true,
   customers: true,
+  customerPage: true,
 } as const;

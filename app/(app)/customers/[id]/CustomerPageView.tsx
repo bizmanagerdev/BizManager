@@ -70,6 +70,7 @@ export default function CustomerPageView({
   history,
   viewer,
   today,
+  serverPartsReady = true,
 }: {
   top: CustomerPageTop;
   payments: Promise<CustomerPaymentsResult>;
@@ -79,6 +80,13 @@ export default function CustomerPageView({
   viewer: { id: string; role: string };
   /** Israel's today on the server — the first paint's "overdue" and "how long ago". */
   today: string;
+  /**
+   * The page drawn from the device (LocalCustomerPage): false until what only
+   * the server reads — the call log, promises, Morning documents, a linked
+   * worker's pay owed — has arrived. The collection and promises sections
+   * take their data once, so they're drawn again when it does.
+   */
+  serverPartsReady?: boolean;
 }) {
   const { customer } = top;
   const canManage = viewer.role === "admin" || viewer.role === "office";
@@ -231,6 +239,7 @@ export default function CustomerPageView({
           />
           {canManage ? (
             <CustomerCollectionSection
+              key={serverPartsReady ? "collection" : "collection-device"}
               customerId={customer.id}
               customerName={customer.name}
               customerPhone={customer.phone}
@@ -255,7 +264,13 @@ export default function CustomerPageView({
             />
           ) : null}
           <CustomerPaymentsSection customerId={customer.id} customerName={customer.name} payments={payments} />
-          {canManage ? <CustomerPromisesSection customerId={customer.id} promises={top.promises} /> : null}
+          {canManage ? (
+            <CustomerPromisesSection
+              key={serverPartsReady ? "promises" : "promises-device"}
+              customerId={customer.id}
+              promises={top.promises}
+            />
+          ) : null}
         </div>
 
         <div className="min-w-0 space-y-3">

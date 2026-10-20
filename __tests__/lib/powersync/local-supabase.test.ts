@@ -12,6 +12,7 @@ import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
 import { loadTaskPickerOptions, loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
 import { loadOrderPageCore } from "@/lib/orders/order-page";
 import { loadProjectPageCore } from "@/lib/projects/project-page";
+import { mergeCustomerPage, startCustomerCoreReads } from "@/app/(app)/customers/[id]/customerPageCore";
 
 // The on-device stand-in for the Supabase client: the server's loaders run
 // against it unchanged, so it has to answer exactly like PostgREST — values
@@ -1282,6 +1283,84 @@ describe("the + menu's lists on the device", () => {
     const inactive = await computeLocalListPage(db, "customersList", { ...all, activeOnly: "no" }, 1);
     expect((inactive.rows as Row[]).map((r) => r.customer_id)).toEqual(["c3"]);
     expect(inactive.hasMore).toBe(false);
+  });
+
+  // A customer's page from the device (2026-10-20): everything but what only
+  // the server reads — his orders, projects and their money, contacts, tags,
+  // leases, tasks, the debts the collection section opens with, every payment.
+  it("a customer's page on the device: the server's own reads, the same answers", async () => {
+    const cols = <T extends Row>(defaults: Row, rows: T[]) => rows.map((row) => ({ ...defaults, ...row }));
+    const db = createLocalSupabase(
+      fakeReader({
+        customers: [
+          {
+            ...customerRow("c1", "דנה", 1),
+            delivery_instructions: null,
+            morning_synced_at: null,
+            morning_match_status: null,
+            morning_last_sync_error: null,
+          },
+        ],
+        orders: cols({ status: "delivered", due_date: null, payment_terms: null, created_at: "2026-09-01T08:00:00Z" }, [
+          { id: "o1", customer_id: "c1", total_amount: "100", order_date: "2026-09-01" },
+        ]),
+        order_items: [{ id: "i1", order_id: "o1", product_id: "pr", quantity_ordered: "2", notes: null }],
+        products: [{ id: "pr", name: "פח" }],
+        projects: [
+          {
+            id: "p1", customer_id: "c1", name: "הובלה", status: "active", start_date: "2026-09-10", end_date: null,
+            agreed_base_price: null, actual_price: "200", price_includes_vat: 0, vat_rate: null, due_date: null, payment_terms: null,
+          },
+        ],
+        payments: cols(
+          { order_id: null, project_id: null, property_id: null, net_amount: null, due_date: null, payment_method: "cash", check_number: null, created_at: "2026-09-02T08:00:00Z" },
+          [
+            { id: "pay1", order_id: "o1", amount_total: "40", payment_status: "cleared", payment_date: "2026-09-02T08:00:00Z" },
+            { id: "pay2", project_id: "p1", amount_total: "50", payment_status: "cleared", payment_date: "2026-09-12T08:00:00Z" },
+            { id: "pay3", property_id: "prop1", amount_total: "3000", payment_status: "cleared", payment_date: "2026-10-01T08:00:00Z" },
+          ]
+        ),
+        contacts: [
+          { id: "k1", customer_id: "c1", full_name: "יוסי", role: "מנהל", phone: "050", email: null, whatsapp: null, is_primary: 1, active: 1, notes: null },
+        ],
+        tags: [{ id: "t1", name: "VIP", color: "red" }],
+        entity_tags: [{ id: "et1", tag_id: "t1", entity_type: "customer", entity_id: "c1" }],
+        lease_agreements: [
+          {
+            id: "l1", customer_id: "c1", property_id: "prop1", start_date: "2026-01-01", end_date: null, monthly_rent_amount: "3000",
+            status: "active", deposit_type: null, deposit_amount: null,
+          },
+        ],
+        properties: [{ id: "prop1", name: "דירה ברחוב הגפן", address: "הגפן 3" }],
+        tasks: [
+          {
+            id: "task1", customer_id: "c1", subject: "להתקשר", status: "open", priority: "high", due_date: "2026-10-21",
+            assigned_user_id: "u1", is_private: 0, private_owner_id: null,
+          },
+        ],
+        reminders: [{ id: "r1", task_id: "task1", status: "pending" }],
+        users: [{ id: "u1", full_name: "רחל", email: "r@b", avatar_color: null, active: 1, role: "admin" }],
+      })
+    );
+    const reads = startCustomerCoreReads(db, "c1", { role: Promise.resolve("admin"), viewerId: Promise.resolve("u1") });
+    const [core, payments] = await Promise.all([reads.core, reads.payments]);
+    expect(core).not.toBeNull();
+    expect(core!.customer.name).toBe("דנה");
+    expect(core!.errors).toEqual({ orders: null, projects: null });
+    expect(core!.orders.map((o) => o.id)).toEqual(["o1"]);
+    expect(core!.projects.map((p) => p.id)).toEqual(["p1"]);
+    expect(core!.money.openBalance).toBe(210);
+    expect(core!.contacts.map((c) => [c.fullName, c.isPrimary])).toEqual([["יוסי", true]]);
+    expect(core!.tags.map((t) => t.name)).toEqual(["VIP"]);
+    expect(core!.leases.map((l) => l.label)).toEqual(["דירה ברחוב הגפן"]);
+    expect(core!.tasks).toEqual([expect.objectContaining({ id: "task1", has_open_reminder: true, assigned_user_name: "רחל" })]);
+    expect(core!.receivables.map((r) => r.collection_key).sort()).toEqual(["order:o1", "project:p1"]);
+    expect(payments.payments.map((p) => p.id)).toEqual(["pay3", "pay2", "pay1"]);
+
+    // What only the server reads joins it on the page.
+    const page = mergeCustomerPage(core!, null);
+    expect(page.collection).toEqual({ logs: [], reminders: [], receivables: core!.receivables });
+    expect(page.balance).toEqual(expect.objectContaining({ salesOwedToUs: 210 }));
   });
 
   it("products_with_last_used: how many order lines use each product, most-used first", async () => {

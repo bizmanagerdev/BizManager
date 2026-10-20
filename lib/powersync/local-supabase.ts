@@ -443,7 +443,13 @@ function parseSelect(text: string): SelectItem[] {
  */
 type EmbedTarget = { table: string; fkColumn: string; many?: true };
 const EMBEDS: Record<string, Record<string, EmbedTarget>> = {
-  lease_agreements: { customers: { table: "customers", fkColumn: "customer_id" } },
+  lease_agreements: {
+    customers: { table: "customers", fkColumn: "customer_id" },
+    // A customer's page: each lease's property (property:properties(...)).
+    properties: { table: "properties", fkColumn: "property_id" },
+  },
+  // A customer's page: the tags on him (tag:tags(...)).
+  entity_tags: { tags: { table: "tags", fkColumn: "tag_id" } },
   project_expenses: { expenses: { table: "expenses", fkColumn: "expense_id" } },
   task_members: { users: { table: "users", fkColumn: "user_id" } },
   worker_payment_allocations: { worker_payments: { table: "worker_payments", fkColumn: "worker_payment_id" } },

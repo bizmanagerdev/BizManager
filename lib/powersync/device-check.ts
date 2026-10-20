@@ -42,7 +42,8 @@ export type DeviceCheckPage =
   | "orders"
   | "projectPage"
   | "deliveries"
-  | "customers";
+  | "customers"
+  | "customerPage";
 
 /** The cookie a device sets once it has compared `page` today. */
 export function deviceCheckCookie(page: DeviceCheckPage): string {
