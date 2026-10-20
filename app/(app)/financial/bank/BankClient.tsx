@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useDeferredValue, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import QuickEntryRow from "./QuickEntryRow";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
+import { rememberBankStripHeight } from "@/lib/ui/bank-strip-height";
 import {
   getAccountKindLabel,
   ledgerDay,
@@ -459,6 +460,18 @@ export default function BankClient({
   useLayoutEffect(() => {
     selectedCardRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
   }, [selectedId]);
+
+  // The strip's height is kept on this device, for the loading screen's strip
+  // (lib/ui/bank-strip-height.ts) — so the register doesn't move down as the
+  // page comes in.
+  const stripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => rememberBankStripHeight(strip.offsetHeight));
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, []);
 
   // THIS month should be the first thing on screen when you land here or
   // switch accounts — not something you scroll past a year of future-dated
@@ -910,7 +923,7 @@ export default function BankClient({
           </div>
         ) : null}
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div ref={stripRef} className="flex gap-2 overflow-x-auto pb-1">
         {accounts.map((account) => (
           <div
             key={account.id}

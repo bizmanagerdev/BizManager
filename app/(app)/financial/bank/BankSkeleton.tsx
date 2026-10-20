@@ -1,8 +1,12 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { SearchIcon } from "@/components/ui/icons";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TextLineSkeleton } from "@/components/layout/loading-skeletons";
 
 // The accounts page before its data, from BankClient's own classes: the
+// search across the registers (the page's first line — without it here, the
+// whole page moved down 42px as it arrived; owner, 2026-10-20), the
 // account strip (w-36 tiles with the account number and the "N לא נבדקו"
 // pill, the w-48 total at its end — the tiles stretch to its height, as on the
 // page), then the open account's register — its sticky name / tick filter /
@@ -30,7 +34,22 @@ function MonthHeader() {
 export default function BankSkeleton({ routeLoading = false }: { routeLoading?: boolean }) {
   return (
     <div className="space-y-4 text-right" dir="rtl" data-route-loading={routeLoading ? "true" : undefined} aria-busy="true">
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/* The search box as it will stand — read-only until the page is in. */}
+      <div className="space-y-1 md:-mt-3 lg:-mt-4">
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            readOnly
+            tabIndex={-1}
+            aria-hidden
+            placeholder="חיפוש בתנועות — סכום, תאריך, שעה, טלפון או מילה"
+            className="h-10 ps-9"
+          />
+        </div>
+      </div>
+      {/* As tall as the page's strip last stood on this device (its tiles
+          stretch to the tallest; lib/ui/bank-strip-height.ts). */}
+      <div className="flex min-h-[var(--bank-strip-h,0px)] gap-2 overflow-x-auto pb-1">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="w-36 shrink-0">
             <div className="flex h-full w-full flex-col items-stretch rounded-lg border bg-background">

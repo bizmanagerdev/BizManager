@@ -1,6 +1,8 @@
 // Aliased: this route also exports its own `dynamic` (route-segment config,
 // below) which would otherwise collide with next/dynamic's default export.
 import nextDynamic from "next/dynamic";
+import type { CSSProperties } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -8,6 +10,7 @@ import { loadAccountsOverview } from "@/lib/accounts";
 import { fetchLoans } from "@/lib/loans";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
 import { propertyDisplayName } from "@/lib/properties";
+import { BANK_STRIP_COOKIE, bankStripStyle } from "@/lib/ui/bank-strip-height";
 import BankSkeleton from "./BankSkeleton";
 
 // The same placeholder as loading.tsx while the client's code loads.
@@ -91,17 +94,22 @@ export default async function BankPage({
     };
   }
 
+  // For the placeholder while the page's code loads (BankSkeleton's strip).
+  const strip = bankStripStyle((await cookies()).get(BANK_STRIP_COOKIE)?.value);
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      <BankClient
-        accounts={accounts}
-        loans={loans}
-        initialAccountId={params.account ?? ""}
-        projects={projects}
-        recurringProperties={recurringProperties}
-        merchantMemory={merchantMemory}
-        dataIncomplete={accounts.dataIncomplete}
-      />
+      <div className="contents" style={strip as CSSProperties | undefined}>
+        <BankClient
+          accounts={accounts}
+          loans={loans}
+          initialAccountId={params.account ?? ""}
+          projects={projects}
+          recurringProperties={recurringProperties}
+          merchantMemory={merchantMemory}
+          dataIncomplete={accounts.dataIncomplete}
+        />
+      </div>
     </AppShell>
   );
 }
