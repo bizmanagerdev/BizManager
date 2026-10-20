@@ -4,6 +4,8 @@ import { useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { processQueue } from "@/lib/offline-queue";
 import { processUploadQueue } from "@/lib/offline-upload";
+import { clearDeviceFrames } from "@/lib/powersync/device-frames";
+import { RUNNING_BUILD, isNewerBuild, liveBuild, mayReloadFrom, noteReloadFrom, swBuildOf } from "@/lib/pwa/app-version";
 
 // A resumed PWA/installed-app instance (tapping the home-screen icon, not a
 // real relaunch) does NOT re-run this component's mount effect — it never
@@ -94,19 +96,43 @@ export default function PwaRegistration() {
     // Vercel's Skew Protection answers its page moves and refreshes from its own
     // deployment, and the new version arrives on the next opening — its page saved and
     // its code fetched in the background by the service worker (public/sw.js).
+    //
+    // And a newer version found by asking the server (owner, 2026-10-20: the phone app
+    // stayed on 10-17's version for days — Android kept it alive, so it was only ever
+    // resumed, and nothing told the running page a new one existed). Each time the app
+    // comes back to the screen (and once when it opens) it asks which build the server
+    // runs (lib/pwa/app-version.ts); a newer one is loaded the same way — the next time
+    // the app is left. Before that reload the saved page copies go (they are this old
+    // build's pages, and the service worker would answer the reload with them), so it
+    // lands on the new version — and they're saved again from it.
     const hadController = Boolean(navigator.serviceWorker.controller);
     let reloadWhenHidden = false;
-    const reloadOnce = () => {
-      if (sessionStorage.getItem("__sw_reloaded__")) return;
-      sessionStorage.setItem("__sw_reloaded__", "1");
+    // Once per build (a reload that lands on the same build again doesn't loop), and
+    // again after a while — not once per session: a session that never ends never
+    // updated again (lib/pwa/app-version.ts mayReloadFrom).
+    const reloadOntoNewVersion = async () => {
+      if (!mayReloadFrom()) return;
+      noteReloadFrom();
+      await clearDeviceFrames();
       window.location.reload();
+    };
+    const reloadWhenLeft = () => {
+      if (document.visibilityState === "hidden") void reloadOntoNewVersion();
+      else reloadWhenHidden = true;
     };
     const onControllerChange = () => {
       if (!hadController) return;
-      if (document.visibilityState === "hidden") reloadOnce();
-      else reloadWhenHidden = true;
+      // The worker that took over is this page's own build: nothing newer to load.
+      if (swBuildOf((navigator.serviceWorker.controller as ServiceWorker | null)?.scriptURL) === RUNNING_BUILD) return;
+      reloadWhenLeft();
     };
     navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    const checkForNewVersion = () => {
+      void liveBuild().then((live) => {
+        if (isNewerBuild(live)) reloadWhenLeft();
+      });
+    };
+    checkForNewVersion();
 
     // Listen for the SW telling us to drain the queue (Background Sync fallback path)
     const handleMessage = (event: MessageEvent) => {
@@ -128,7 +154,7 @@ export default function PwaRegistration() {
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden" && reloadWhenHidden) {
         reloadWhenHidden = false;
-        reloadOnce();
+        void reloadOntoNewVersion();
         return;
       }
       if (document.visibilityState !== "visible") return;
@@ -136,6 +162,7 @@ export default function PwaRegistration() {
       if (now - lastRevalidatedAtRef.current < RESUME_REVALIDATE_MS) return;
       lastRevalidatedAtRef.current = now;
       void registration.then((reg) => reg.update().catch(() => {}));
+      checkForNewVersion();
       startTransition(() => {
         router.refresh();
       });
