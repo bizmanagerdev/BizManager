@@ -66,6 +66,10 @@ export const LOCAL_DATA_PAGES = {
   // download that also to the phone", so a run works with no signal. The same
   // list as the deliveries tab (/sales, on for staff above).
   deliveries: true,
+  // The customers list (/customers) — from 2026-10-20 on the owner's devices
+  // first (LOCAL_DATA_PREVIEW_USERS); everyone's after a day of clean
+  // comparisons (LOCAL_DATA_SHADOW.customers). Searches stay on the server.
+  customers: false,
 } as const;
 
 /**
@@ -121,4 +125,5 @@ export const LOCAL_DATA_SHADOW = {
   orders: true,
   projectPage: true,
   dashboardMoney: true,
+  customers: true,
 } as const;

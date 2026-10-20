@@ -1,4 +1,5 @@
 import { parseProjectsFilters } from "@/app/(app)/projects/projectsFilters";
+import { parseCustomersFilters } from "@/app/(app)/customers/customersFilters";
 import { localDataPageOn } from "./config";
 import type { LocalCardKind, LocalCardViewer } from "./dashboard-local";
 import type { ResultSpec } from "./local-results";
@@ -39,6 +40,9 @@ export function usualPageViews(viewer: LocalCardViewer): ResultSpec[] {
   if (localDataPageOn("projects", person)) {
     add("projectsList", { ...parseProjectsFilters(() => null), q: "" });
     add("projectsExtras", { customerId: null });
+  }
+  if (localDataPageOn("customers", person)) {
+    add("customersList", parseCustomersFilters(() => null));
   }
   if (localDataPageOn("sales", person)) {
     add("salesOrders", { tab: "orders", customerId: null, q: "", paymentStatus: "", invoice: "" });

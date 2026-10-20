@@ -1188,7 +1188,7 @@ describe("the + menu's lists on the device", () => {
     ]);
   });
 
-  it("customer_overview_view: the display name and trimmed contact details; its totals are refused", async () => {
+  it("customer_overview_view: the display name and trimmed contact details", async () => {
     const db = createLocalSupabase(
       fakeReader({
         customers: [
@@ -1205,8 +1205,83 @@ describe("the + menu's lists on the device", () => {
       { customer_id: "c1", customer_name: "חשבונית בע״מ", name_for_invoice: "חשבונית בע״מ", phone: "050", email: null, address: null },
       { customer_id: "c2", customer_name: "לקוח", name_for_invoice: null, phone: null, email: "a@b", address: "רחוב" },
     ]);
-    const totals = await db.from("customer_overview_view").select("customer_id,total_sales");
-    expect(totals.error?.message).toMatch(/total_sales/);
+  });
+
+  // The customers list's counts and its "חוב פתוח" filter read the view's
+  // totals: on the device, added up as the view does (2026-10-20).
+  // Every column the list reads, as a device row carries them (null when empty).
+  const customerRow = (id: string, name: string, active: number) => ({
+    id, name, active, name_for_invoice: null, registration_number: null, email: null, phone: null, address: null, notes: null,
+    whatsapp: null, morning_client_id: null, requires_prepayment: 0, delivery_lat: null, delivery_lng: null, addr_place_id: null,
+    addr_city: null, addr_street: null, addr_house_number: null, addr_lat: null, addr_lng: null, linked_user_id: null,
+  });
+  const customersWithMoney = () =>
+    fakeReader({
+      customers: [customerRow("c1", "א", 1), customerRow("c2", "ב", 1), customerRow("c3", "ג", 0)],
+      orders: [
+        { id: "o1", customer_id: "c1", total_amount: "100", order_date: "2026-09-01" },
+        { id: "o2", customer_id: "c1", total_amount: "50", order_date: "2026-10-01" },
+        { id: "o3", customer_id: "c2", total_amount: "30", order_date: "2026-08-01" },
+      ],
+      projects: [{ id: "p1", customer_id: "c1", agreed_base_price: null, actual_price: "200", price_includes_vat: 0, vat_rate: null }],
+      payments: [
+        { id: "pay1", order_id: "o1", amount_total: "100", payment_status: "cleared", payment_date: "2026-09-02T08:00:00Z" },
+        { id: "pay2", order_id: "o2", amount_total: "20", payment_status: "pending", due_date: "2000-01-01" },
+        { id: "pay3", order_id: "o2", amount_total: "10", payment_status: "pending", due_date: "2999-01-01" },
+        // No status: counted as cleared, as in the view.
+        { id: "pay4", project_id: "p1", amount_total: "150", payment_status: null, payment_date: "2026-10-05T08:00:00Z" },
+        { id: "pay5", project_id: "p1", amount_total: "999", payment_status: "rejected", payment_date: "2026-10-06T08:00:00Z" },
+      ].map((pay) => ({ order_id: null, project_id: null, net_amount: null, due_date: null, payment_date: null, ...pay })),
+    });
+
+  it("customer_overview_view: each customer's orders, projects and payments, added up as the view does", async () => {
+    const db = createLocalSupabase(customersWithMoney());
+    const { data, error } = await db
+      .from("customer_overview_view")
+      .select(
+        "customer_id,orders_count,projects_count,total_sales,total_paid,open_balance,last_order_at,last_payment_at,expected_amount,overdue_amount"
+      )
+      .order("customer_id");
+    expect(error).toBeNull();
+    const rows = data as Row[];
+    expect({ ...rows[0], last_payment_at: normalizeTimestamp(String(rows[0].last_payment_at)) }).toEqual({
+      customer_id: "c1",
+      orders_count: 2,
+      projects_count: 1,
+      total_sales: 350,
+      total_paid: 250,
+      open_balance: 100,
+      last_order_at: "2026-10-01",
+      last_payment_at: "2026-10-05T08:00:00.000Z",
+      expected_amount: 30,
+      overdue_amount: 20,
+    });
+    expect(rows[1]).toEqual({
+      customer_id: "c2",
+      orders_count: 1,
+      projects_count: 0,
+      total_sales: 30,
+      total_paid: 0,
+      open_balance: 30,
+      last_order_at: "2026-08-01",
+      last_payment_at: null,
+      expected_amount: 0,
+      overdue_amount: 0,
+    });
+    expect(rows[2]).toMatchObject({ customer_id: "c3", orders_count: 0, projects_count: 0, total_sales: 0, open_balance: 0 });
+  });
+
+  it("the customers list on the device: its filters and each row's money, as the server's loader works them out", async () => {
+    const db = createLocalSupabase(customersWithMoney());
+    const all = { withProjects: "all", withOrders: "all", withDebt: "all", activeOnly: "all" } as const;
+    const withProjects = await computeLocalListPage(db, "customersList", { ...all, withProjects: "yes" }, 1);
+    expect((withProjects.rows as Row[]).map((r) => r.customer_id)).toEqual(["c1"]);
+    expect(withProjects.rows[0]).toMatchObject({ total_sales: 350, total_paid: 250, expected_amount: 30, open_balance: 100 });
+    const withDebt = await computeLocalListPage(db, "customersList", { ...all, withDebt: "yes" }, 1);
+    expect((withDebt.rows as Row[]).map((r) => r.customer_id)).toEqual(["c1", "c2"]);
+    const inactive = await computeLocalListPage(db, "customersList", { ...all, activeOnly: "no" }, 1);
+    expect((inactive.rows as Row[]).map((r) => r.customer_id)).toEqual(["c3"]);
+    expect(inactive.hasMore).toBe(false);
   });
 
   it("products_with_last_used: how many order lines use each product, most-used first", async () => {

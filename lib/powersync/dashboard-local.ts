@@ -18,6 +18,7 @@ import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-
 import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
 import { getPropertiesSummary, type PropertiesSummary } from "@/lib/properties";
 import { loadProjectsPage, type ProjectsFilters } from "@/app/(app)/projects/loadProjects";
+import { loadCustomersPage, type CustomersFilters } from "@/app/(app)/customers/loadCustomers";
 import {
   loadProjectsPickerOptions,
   loadProjectsTabCounts,
@@ -69,6 +70,8 @@ export type LocalDashboardCards = {
   properties: PropertiesSummary;
   /** /projects, first page, for the given filters. */
   projectsList: { filters: ProjectsFilters; rows: Record<string, unknown>[]; hasMore: boolean; totalCount: number };
+  /** /customers, first page, for the given filters (searches stay on the server). */
+  customersList: { filters: CustomersFilters; rows: Record<string, unknown>[]; hasMore: boolean; totalCount: number };
   /** /projects tab counts (for the page's customer) and the new-project dialog's lists. */
   projectsExtras: { filters: { customerId: string | null }; tabCounts: ProjectsTabCounts; options: ProjectsPickerOptions };
   /** /sales tabs, first page, for the given filters. */
@@ -131,6 +134,12 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
     "payslips", "payroll_periods", "salary_agreements", "worker_payments", "worker_payment_allocations",
   ],
   projectsExtras: ["projects", "users", "user_directory", "customers"],
+  // The list's money: the orders and their payments, and the projects with
+  // their price (project_financials_view: expenses, hours, pay).
+  customersList: [
+    "customers", "orders", "payments", "projects", "users", "customer_branches", "project_expenses", "expenses",
+    "attendance_sessions", "payslips", "payroll_periods", "salary_agreements", "worker_payments", "worker_payment_allocations",
+  ],
   salesOrders: ["orders", "customers", "users", "user_directory", "customer_branches", "payments", "order_items", "products", "inventory"],
   salesDeliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
   deliveriesRun: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
@@ -278,6 +287,17 @@ export async function computeLocalCard<K extends LocalCardKind>(
         totalCount: result.totalCount,
       } as LocalDashboardCards[K];
     }
+    case "customersList": {
+      const customerFilters = need<CustomersFilters>();
+      const result = await loadCustomersPage(local, { page: 1, filters: customerFilters });
+      if (result.error) throw new Error(result.error);
+      return {
+        filters: customerFilters,
+        rows: result.rows,
+        hasMore: result.hasMore,
+        totalCount: result.totalCount,
+      } as LocalDashboardCards[K];
+    }
     case "projectsExtras": {
       const { customerId } = need<{ customerId: string | null }>();
       const [tabCounts, options] = await Promise.all([loadProjectsTabCounts(local, customerId), loadProjectsPickerOptions(local)]);
@@ -364,7 +384,13 @@ export async function computeLocalCard<K extends LocalCardKind>(
 }
 
 /** The lists whose further pages the device serves as you scroll. */
-export type LocalPagedKind = "projectsList" | "salesOrders" | "salesDeliveries" | "salesPriceList" | "salesInventory";
+export type LocalPagedKind =
+  | "projectsList"
+  | "customersList"
+  | "salesOrders"
+  | "salesDeliveries"
+  | "salesPriceList"
+  | "salesInventory";
 
 /**
  * Page `page` (1-based) of a paged list, from the device copy — the rows the
@@ -384,6 +410,8 @@ export async function computeLocalListPage(
   switch (kind) {
     case "projectsList":
       return read(loadProjectsPage(local, { page, filters: filters as ProjectsFilters }), (r) => r.rows);
+    case "customersList":
+      return read(loadCustomersPage(local, { page, filters: filters as CustomersFilters }), (r) => r.rows);
     case "salesOrders":
       return read(loadOrdersPage(local, { page, filters: filters as OrdersFilters }), (r) => r.rows);
     case "salesDeliveries":

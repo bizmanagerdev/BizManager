@@ -259,6 +259,40 @@ const customer_branches = new Table(
   { indexes: { by_customer: ["customer_id"] } }
 );
 
+// A customer's page and the customers list (sync rules v1.11, admins and
+// office): his contacts, and the tags on him — tags are shared by customers,
+// projects and other records, entity_tags says which record carries which.
+const contacts = new Table(
+  {
+    customer_id: text,
+    full_name: text,
+    role: text,
+    phone: text,
+    email: text,
+    whatsapp: text,
+    is_primary: int,
+    active: int,
+    notes: text,
+    created_at: text,
+    updated_at: text,
+  },
+  { indexes: { by_customer: ["customer_id"] } }
+);
+const tags = new Table({
+  kind: text,
+  name: text,
+  color: text,
+  is_active: int,
+  notes: text,
+  created_by: text,
+  created_at: text,
+  updated_at: text,
+});
+const entity_tags = new Table(
+  { tag_id: text, entity_type: text, entity_id: text, ref_year: int, created_by: text, created_at: text },
+  { indexes: { by_entity: ["entity_type", "entity_id"] } }
+);
+
 const order_items = new Table(
   {
     order_id: text,
@@ -698,6 +732,9 @@ export const AppSchema = new Schema({
   order_delivery_recipients,
   customers,
   customer_branches,
+  contacts,
+  tags,
+  entity_tags,
   order_items,
   products,
   inventory,

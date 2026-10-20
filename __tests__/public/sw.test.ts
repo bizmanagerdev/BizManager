@@ -273,8 +273,23 @@ describe("service worker: the device pages' frames", () => {
     const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
     await open(worker, "https://biz-h.com/tasks?data=server");
     await open(worker, "https://biz-h.com/projects?q=דנה");
-    await open(worker, "https://biz-h.com/customers");
+    await open(worker, "https://biz-h.com/financial/bank");
     expect(worker.frames().size).toBe(0);
+  });
+
+  // The customers list reads its filters from the address on the device (like
+  // the drivers' /deliveries), so the one frame serves every filter.
+  it("saves the customers list's frame, and serves it for any filter", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, "https://biz-h.com/customers");
+    expect(worker.frames().has("https://biz-h.com/customers")).toBe(true);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 60_000));
+    try {
+      expect(await open(worker, "https://biz-h.com/customers?with_debt=yes")).toBe(FRAME);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // A project's page and an order's page: one frame each, the last 40 opened.

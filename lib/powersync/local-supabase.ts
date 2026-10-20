@@ -36,6 +36,8 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   tasks: ["is_private"],
   customers: ["active", "requires_prepayment"],
   customer_branches: ["active"],
+  contacts: ["is_primary", "active"],
+  tags: ["is_active"],
   orders: ["needs_invoice", "collect_payment_on_delivery"],
   projects: ["expenses_billed_separately", "price_includes_vat", "no_charge", "origin_has_elevator", "destination_has_elevator"],
   products: ["active"],
@@ -94,6 +96,9 @@ export const LOCAL_TABLES: ReadonlySet<string> = new Set([
   "order_delivery_recipients",
   "customers",
   "customer_branches",
+  "contacts",
+  "tags",
+  "entity_tags",
   "order_items",
   "products",
   "inventory",
@@ -1205,13 +1210,15 @@ const VIEWS: Record<string, SourceLoader> = {
   },
 
   // customer_overview_view: every customer under its display name (its name,
-  // else its invoice name, else "לקוח"), with the trimmed contact details.
-  // The totals (orders, sales, payments) aren't worked out on the device: a
-  // query that reads them is refused, and its page uses the server.
+  // else its invoice name, else "לקוח"), with the trimmed contact details and
+  // — when the query reads them — the totals, as the view adds them up: the
+  // orders (count, sales, the last order), the projects (count, and their
+  // price from project_financials_view), and the payments on both (collected
+  // = anything not pending or rejected, a payment with no status counting as
+  // cleared; pending; pending and due by Israel's today = overdue).
   customer_overview_view: async (reader, _pushdown, columns) => {
-    const totals = CUSTOMER_OVERVIEW_TOTAL_COLUMNS.filter((name) => columns === null || columns.has(name));
-    if (totals.length) throw new Error(`customer_overview_view's ${totals.join(", ")} aren't worked out on the device`);
-    return (await loadTable(reader, "customers")).map((c) => ({
+    const customers = await loadTable(reader, "customers");
+    const base = customers.map((c) => ({
       customer_id: c.id,
       customer_name: trimOrNull(c.name) ?? trimOrNull(c.name_for_invoice) ?? "לקוח",
       email: trimOrNull(c.email),
@@ -1222,6 +1229,98 @@ const VIEWS: Record<string, SourceLoader> = {
       name_for_invoice: trimOrNull(c.name_for_invoice),
       registration_number: trimOrNull(c.registration_number),
     }));
+    if (columns !== null && !CUSTOMER_OVERVIEW_TOTAL_COLUMNS.some((name) => columns.has(name))) return base;
+
+    const [orders, projects, payments, financials] = await Promise.all([
+      loadTable(reader, "orders"),
+      loadTable(reader, "projects"),
+      loadTable(reader, "payments"),
+      projectFinancials(reader),
+    ]);
+    const today = israelDateKey();
+    const priceByProject = new Map(financials.map((f) => [f.id, num(f.customer_total_price)]));
+    type Totals = {
+      orders: number;
+      orderSales: number;
+      lastOrderAt: string | null;
+      projects: number;
+      projectSales: number;
+      paid: number;
+      expected: number;
+      overdue: number;
+      lastPaymentAt: string | null;
+    };
+    const totals = new Map<Value, Totals>();
+    const totalsOf = (customerId: Value): Totals => {
+      let entry = totals.get(customerId);
+      if (!entry) {
+        entry = { orders: 0, orderSales: 0, lastOrderAt: null, projects: 0, projectSales: 0, paid: 0, expected: 0, overdue: 0, lastPaymentAt: null };
+        totals.set(customerId, entry);
+      }
+      return entry;
+    };
+    /** The later of two timestamps, compared as instants; the original text is kept. */
+    const later = (current: string | null, next: unknown): string | null => {
+      if (typeof next !== "string") return current;
+      return current === null || normalizeTimestamp(next) > normalizeTimestamp(current) ? next : current;
+    };
+
+    const customerOfOrder = new Map<Value, Value>();
+    for (const o of orders) {
+      if (o.customer_id == null) continue;
+      customerOfOrder.set(o.id, o.customer_id);
+      const entry = totalsOf(o.customer_id);
+      entry.orders += 1;
+      entry.orderSales += num(o.total_amount);
+      entry.lastOrderAt = later(entry.lastOrderAt, o.order_date);
+    }
+    const customerOfProject = new Map<Value, Value>();
+    for (const p of projects) {
+      if (p.customer_id == null) continue;
+      customerOfProject.set(p.id, p.customer_id);
+      const entry = totalsOf(p.customer_id);
+      entry.projects += 1;
+      entry.projectSales += priceByProject.get(p.id) ?? 0;
+    }
+    // A payment counts once per side it's on — the view adds its order's and
+    // its project's sums together (UNION ALL).
+    for (const pay of payments) {
+      for (const customerId of [
+        pay.order_id != null ? customerOfOrder.get(pay.order_id) : undefined,
+        pay.project_id != null ? customerOfProject.get(pay.project_id) : undefined,
+      ]) {
+        if (customerId == null) continue;
+        const entry = totalsOf(customerId);
+        const status = String(pay.payment_status ?? "cleared");
+        const cleared = status !== "pending" && status !== "rejected";
+        if (cleared) {
+          entry.paid += num(pay.amount_total);
+          entry.lastPaymentAt = later(entry.lastPaymentAt, pay.payment_date);
+        }
+        if (status === "pending") {
+          entry.expected += num(pay.amount_total);
+          if (pay.due_date != null && String(pay.due_date) <= today) entry.overdue += num(pay.amount_total);
+        }
+      }
+    }
+
+    return base.map((row) => {
+      const t = totals.get(row.customer_id);
+      const sales = clean((t?.orderSales ?? 0) + (t?.projectSales ?? 0));
+      const paid = clean(t?.paid ?? 0);
+      return {
+        ...row,
+        orders_count: t?.orders ?? 0,
+        projects_count: t?.projects ?? 0,
+        total_sales: sales,
+        total_paid: paid,
+        open_balance: clean(Math.max(sales - paid, 0)),
+        last_order_at: t?.lastOrderAt ?? null,
+        last_payment_at: t?.lastPaymentAt ?? null,
+        expected_amount: clean(t?.expected ?? 0),
+        overdue_amount: clean(t?.overdue ?? 0),
+      };
+    });
   },
 
   // products_with_last_used: each product with how many order lines use it
@@ -1251,7 +1350,7 @@ const VIEWS: Record<string, SourceLoader> = {
   },
 };
 
-/** customer_overview_view's columns the device doesn't work out. */
+/** customer_overview_view's totals — worked out only when a query reads them. */
 const CUSTOMER_OVERVIEW_TOTAL_COLUMNS = [
   "orders_count", "projects_count", "total_sales", "total_paid", "open_balance", "last_order_at",
   "last_payment_at", "expected_amount", "overdue_amount",

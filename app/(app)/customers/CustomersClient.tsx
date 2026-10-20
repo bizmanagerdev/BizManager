@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useOnline } from "@/hooks/useOfflineRows";
+import { useLocalListPager } from "@/components/powersync/LocalListPager";
 import {
   searchCustomerEntries,
   useCustomerSearchIndex,
@@ -332,13 +333,17 @@ export default function CustomersClient({
   // create + saving a customer, say) is merged into the list on screen below
   // rather than starting it over: that threw away everything scrolled in.
   const [seed, setSeed] = useState({ key: filtersKey, rows: initialRows, hasMore: initialHasMore });
+  // On the device version (LocalCustomersPage) the next pages come from the
+  // device's copy too.
+  const localPager = useLocalListPager<Row>();
   const fetchListPage = useCallback(
     async (page: number) => {
+      if (localPager) return localPager(page);
       const result = await loadMoreCustomers(page, filters);
       if (result.error) throw new Error(result.error);
       return result;
     },
-    [filters]
+    [filters, localPager]
   );
   const getRowId = useCallback((row: Row) => rowId(row), []);
 
