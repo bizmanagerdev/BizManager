@@ -4,10 +4,11 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EditButton } from "@/components/ui/icon-button";
-import { MetaRow } from "@/components/ui/meta-row";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { StatActionCard } from "@/components/ui/stat-action-card";
+import { AddressLink } from "@/components/ui/address-link";
+import { BuildingIcon, WazeIcon } from "@/components/ui/icons";
+import { structuredPoint } from "@/lib/address/columns";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { updateProperty } from "../actions";
 import { PropertyBasicFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
@@ -75,34 +76,43 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
 }
 
 /**
- * "פרטי הנכס" — name/address/description/physical facts/amenities, edited IN
- * PLACE (no popup). The header above still carries the name+address as the
- * page's identity, so the read view here starts from description/facts/
- * badges; edit mode exposes the full set (name/address included) since this
- * is now the only place those are editable at all.
+ * "נכס" — the first of the property page's three head cards, like the
+ * project page's (owner, 2026-10-20): where it is (Waze), what it is (rooms,
+ * floor, m²…, moved here from the list's card) and its amenities. Edited as
+ * one form, opened from the heading's pencil.
  *
  * The draft holds a FULL PropertyInput (not just this card's fields) so it can
  * be handed straight to the shared `PropertyBasicFields`, but on save only
  * this card's own keys are taken from it — merged onto a FRESH
  * `propertyToForm(property)` snapshot, not the draft's own (possibly stale)
- * copy of the other cards' fields. That's what keeps three independent inline
- * editors on the same row from clobbering each other's already-saved edits.
+ * copy of the other cards' fields. That's what keeps the page's independent
+ * editors from clobbering each other's already-saved edits.
  */
-export default function PropertyDetailsCard({ propertyId, property }: { propertyId: string; property: Property }) {
+export default function PropertyDetailsCard({
+  propertyId,
+  property,
+  editOpen,
+  onEditOpenChange,
+}: {
+  propertyId: string;
+  property: Property;
+  editOpen: boolean;
+  onEditOpenChange: (open: boolean) => void;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [editing, setEditing] = useState(false);
   const [override, setOverride] = useState<Partial<Property> | null>(null);
   const displayProperty: Property = override ? { ...property, ...override } : property;
   const [draft, setDraft] = useState<PropertyInput>(() => propertyToForm(property));
+  const [wasOpen, setWasOpen] = useState(false);
+  // Each opening starts from what's saved now.
+  if (editOpen !== wasOpen) {
+    setWasOpen(editOpen);
+    if (editOpen) setDraft(propertyToForm(displayProperty));
+  }
 
   function setField<K extends keyof PropertyInput>(key: K, value: PropertyInput[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function openEdit() {
-    setDraft(propertyToForm(displayProperty));
-    setEditing(true);
   }
 
   function save() {
@@ -116,7 +126,7 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
     }
     const snapshotDraft = draft;
     const patch = buildDetailsPatch(snapshotDraft);
-    setEditing(false);
+    onEditOpenChange(false);
     scheduleDeferredAction({
       key: `property-details:${propertyId}`,
       message: "הנכס עודכן.",
@@ -132,92 +142,72 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
     });
   }
 
-  if (editing) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">פרטי הנכס</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <PropertyBasicFields form={draft} set={setField} />
-          <div className="flex gap-2">
-            <Button type="button" size="sm" onClick={save}>
-              שמירה
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setDraft(propertyToForm(displayProperty));
-                setEditing(false);
-              }}
-            >
-              ביטול
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
   // A building has apartments, not a room count; a מחסן has neither — it is just
-  // floor area. Everything else keeps showing rooms exactly as before (including
-  // an unset type, unchanged behavior).
-  const hasRoomLayout = propertyHasRoomLayout(displayProperty.propertyType);
-  const facts = [
-    displayProperty.propertyType === "building"
-      ? displayProperty.apartmentsCount != null
-        ? `${displayProperty.apartmentsCount} דירות`
-        : null
-      : hasRoomLayout && displayProperty.rooms != null
-        ? `${displayProperty.rooms} חדרים`
-        : null,
-    displayProperty.floor != null ? `קומה ${displayProperty.floor}` : null,
-    displayProperty.squareMeters != null ? `${displayProperty.squareMeters} מ״ר` : null,
-    hasRoomLayout && displayProperty.bathrooms != null ? `${displayProperty.bathrooms} חדרי רחצה` : null,
-    hasRoomLayout && displayProperty.mezuzahCount != null ? `${displayProperty.mezuzahCount} מזוזות` : null,
-    displayProperty.lightBulbCount != null ? `${displayProperty.lightBulbCount} נורות` : null,
-    displayProperty.keyCount != null ? `${displayProperty.keyCount} מפתחות` : null,
-  ].filter(Boolean);
-  const badges = [
-    displayProperty.propertyType
-      ? { label: propertyTypeLabel(displayProperty.propertyType), variant: "outline" as const }
-      : null,
-    !displayProperty.isActive ? { label: "לא פעיל", variant: "neutral" as const } : null,
-    displayProperty.hasPrivateEntrance ? { label: "כניסה פרטית", variant: "outline" as const } : null,
-    displayProperty.hasStorageRoom ? { label: "מחסן", variant: "outline" as const } : null,
-    displayProperty.hasParking ? { label: "חניה", variant: "outline" as const } : null,
-    displayProperty.hasElevator ? { label: "מעלית", variant: "outline" as const } : null,
-    displayProperty.isFurnished ? { label: "מרוהט", variant: "outline" as const } : null,
-  ].filter((b): b is { label: string; variant: "neutral" | "outline" } => Boolean(b));
-  const hasDetails = Boolean(displayProperty.assetDescription) || facts.length > 0 || badges.length > 0;
+  // floor area.
+  const p = displayProperty;
+  const hasRoomLayout = propertyHasRoomLayout(p.propertyType);
+  const details = [
+    p.propertyType === "building" && p.apartmentsCount != null ? { label: "דירות", value: String(p.apartmentsCount) } : null,
+    p.propertyType !== "building" && hasRoomLayout && p.rooms != null ? { label: "חדרים", value: String(p.rooms) } : null,
+    p.floor != null ? { label: "קומה", value: String(p.floor) } : null,
+    p.squareMeters != null ? { label: "שטח", value: `${p.squareMeters} מ״ר` } : null,
+    hasRoomLayout && p.bathrooms != null ? { label: "חדרי רחצה", value: String(p.bathrooms) } : null,
+    hasRoomLayout && p.mezuzahCount != null ? { label: "מזוזות", value: String(p.mezuzahCount) } : null,
+    p.lightBulbCount != null ? { label: "נורות", value: String(p.lightBulbCount) } : null,
+    p.keyCount != null ? { label: "מפתחות", value: String(p.keyCount) } : null,
+  ].filter((d): d is { label: string; value: string } => Boolean(d));
+  const amenities = [
+    !p.isActive ? "לא פעיל" : null,
+    p.hasPrivateEntrance ? "כניסה פרטית" : null,
+    p.hasStorageRoom ? "מחסן" : null,
+    p.hasParking ? "חניה" : null,
+    p.hasElevator ? "מעלית" : null,
+    p.isFurnished ? "מרוהט" : null,
+  ].filter((label): label is string => Boolean(label));
 
   return (
-    <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">פרטי הנכס</CardTitle>
-        <EditButton onClick={openEdit} label="עריכת פרטי הנכס" />
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {!hasDetails ? (
-          <p className="text-sm text-muted-foreground">לא הוזנו פרטים נוספים לנכס זה.</p>
-        ) : (
-          <>
-            {displayProperty.assetDescription ? <p className="text-sm">{displayProperty.assetDescription}</p> : null}
-            <MetaRow className="text-sm text-muted-foreground" items={facts} />
-            {badges.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {badges.map((b) => (
-                  <Badge key={b.label} variant={b.variant}>
-                    {b.label}
-                  </Badge>
-                ))}
-              </div>
-            ) : null}
-          </>
-        )}
-      </CardContent>
-    </Card>
+    <>
+      <StatActionCard
+        icon={<BuildingIcon className="h-5 w-5" />}
+        label={p.propertyType ? `נכס · ${propertyTypeLabel(p.propertyType)}` : "נכס"}
+        value={
+          // The Waze mark says "tapping this navigates", as every address in the app.
+          <AddressLink
+            address={p.address}
+            pin={structuredPoint(p.addr)}
+            notFound={p.addrNotFound}
+            className="inline-flex min-w-0 items-center gap-1.5 text-base font-bold leading-snug hover:text-secondary"
+          >
+            <WazeIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 break-words">{p.address || "אין כתובת"}</span>
+          </AddressLink>
+        }
+        subtitles={[p.assetDescription]}
+        details={details}
+      >
+        {amenities.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {amenities.map((label) => (
+              <Badge key={label} variant={label === "לא פעיל" ? "neutral" : "outline"}>
+                {label}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+      </StatActionCard>
+
+      <FormDialog
+        open={editOpen}
+        onOpenChange={onEditOpenChange}
+        title="עריכת פרטי הנכס"
+        size="form2xl"
+        onSubmit={save}
+        submitLabel="שמירה"
+      >
+        <div className="mt-4 space-y-3">
+          <PropertyBasicFields form={draft} set={setField} />
+        </div>
+      </FormDialog>
+    </>
   );
 }

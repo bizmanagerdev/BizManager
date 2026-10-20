@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, ChevronDownIcon, DeleteIcon, DocumentIcon, EditIcon, TaskIcon } from "@/components/ui/icons";
-import { SwipeActions } from "@/components/ui/swipe-actions";
+import { AddIcon, DocumentIcon, ImageIcon, MoreIcon, RecurringIcon, SearchIcon, TaskIcon } from "@/components/ui/icons";
 import { MetaRow } from "@/components/ui/meta-row";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -17,7 +18,6 @@ import { deleteRecurringExpenseTemplate } from "@/lib/recurring/deleteTemplate";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -33,23 +33,20 @@ import { CustomerPicker, type PickedCustomer } from "@/components/customers/Cust
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
 import { formatCurrency, type SalaryAgreementRow } from "@/lib/payroll";
-import { shiftHoursText } from "@/components/attendance/DayTile";
 import type { UserRole } from "@/lib/auth/requireProfile";
-import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
-import { paymentRecordStatusLabel } from "@/lib/payments";
 import { appendDictatedText } from "@/lib/dictation";
-import { cn } from "@/lib/utils";
-import { formatDateWithTime, formatShortDate, formatShortDateTime } from "@/lib/date";
+import { filterByText } from "@/lib/search/listSearch";
+import { formatDateWithTime, formatShortDateTime } from "@/lib/date";
 import {
-  depositTypeLabel,
-  leaseStatusLabel,
   pickCurrentLease,
   propertyDisplayName,
+  propertyTypeLabel,
   recurringFrequencyLabel,
   taskStatusLabel,
   type LeaseAgreement,
   type PropertyActivity,
   type PropertyExpense,
+  type PropertyPayment,
   type PropertyRecurringTemplate,
   type PropertySession,
   type PropertyTask,
@@ -57,15 +54,23 @@ import {
 } from "@/lib/properties";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
-import { createLease, updateLease, deleteLease, setLeaseDocument, type LeaseInput } from "../actions";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { createLease, updateLease, deleteLease, deleteProperty, setLeaseDocument, type LeaseInput } from "../actions";
+import { EditButton } from "@/components/ui/icon-button";
 import { DocumentLink, DocumentRow, DocumentTile } from "@/components/ui/document-tile";
 import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
 import { isImageDocument } from "@/lib/documents";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
-import { scheduleDeferredDelete } from "@/lib/undo-engine";
-import RentScheduleSection from "./RentScheduleSection";
+import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
+import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
+import ProjectMovements from "@/app/(app)/projects/[id]/ProjectMovements";
+import AddReminderButton from "@/components/reminders/AddReminderButton";
+import RentScheduleDialog from "./RentScheduleSection";
 import PropertyDetailsCard from "./PropertyDetailsCard";
+import PropertyPageHeading from "./PropertyPageHeading";
+import PropertyMoneyCard from "./PropertyMoneyCard";
+import PropertyIncomeEditDialog from "./PropertyIncomeEditDialog";
+import { PropertyRentCard, PropertyTenantCard } from "./PropertyLeaseCards";
+import { buildPropertyMovements } from "./propertyMovements";
 import PropertyPurchaseCard from "./PropertyPurchaseCard";
 import PropertyFurnitureCard from "./PropertyFurnitureCard";
 import PropertyUtilitiesCard from "./PropertyUtilitiesCard";
@@ -75,290 +80,9 @@ const TaskUpsertDialog = dynamic(
   { loading: () => null }
 );
 
-// Israel's calendar, not the device's: a date-only "2026-10-14" through
-// `new Date()` + Intl is UTC midnight, the 13th on a phone abroad.
-function fmtDate(value: string | null) {
-  return formatShortDate(value, "");
-}
-
 /** For real moments (a file's upload) — the day and the hour (owner, 2026-10-15). */
 function fmtDateTime(value: string | null) {
   return formatShortDateTime(value, "");
-}
-
-/** `long` = free text (description/notes) — rendered label-above-value, wrapping
- *  in full, instead of squeezed into the compact label/value row short facts use. */
-type RowDetail = { label: string; value: string; long?: boolean };
-
-/**
- * Whatever isn't already shown inline on the row — only when actually set.
- * The row's own title wraps onto its own lines rather than clipping, but a
- * long description/comment is still worth surfacing here in full, label-above-
- * value, rather than only as a shorter duplicate of what's already visible.
- */
-function expenseRowDetails(e: PropertyExpense): RowDetail[] {
-  const details: RowDetail[] = [];
-  if (e.description) details.push({ label: "תיאור", value: e.description, long: true });
-  if (e.notes) details.push({ label: "הערות", value: e.notes, long: true });
-  if (e.paymentMethod) details.push({ label: "אמצעי תשלום", value: paymentMethodLabel(e.paymentMethod) });
-  if (e.paymentStatus && e.paymentStatus !== "paid") {
-    details.push({ label: "סטטוס תשלום", value: paymentRecordStatusLabel(e.paymentStatus) });
-  }
-  if (e.paymentStatus === "partial" && e.paidAmount != null) {
-    details.push({ label: "שולם", value: formatCurrency(e.paidAmount) });
-  }
-  return details;
-}
-
-/**
- * The inline notes preview on a session row wraps rather than clips too —
- * same reason as expenseRowDetails above, the full text has to live here too,
- * not just a shorter duplicate of what's already visible.
- */
-function sessionRowDetails(s: PropertySession): RowDetail[] {
-  const details: RowDetail[] = [];
-  if (s.notes) details.push({ label: "הערות", value: s.notes, long: true });
-  if (s.is_billable_to_customer) {
-    details.push({ label: "חיוב לשוכר", value: formatCurrency(s.bill_to_customer_amount ?? 0) });
-  }
-  if (s.payment_status) {
-    details.push({ label: "תשלום לעובד", value: paymentRecordStatusLabel(s.payment_status) });
-  }
-  return details;
-}
-
-/**
- * The row shell shared by both expense and session rows in the merged
- * "הוצאות" list. Two full render paths, matching
- * components/attendance/SessionList.tsx's SessionSwipeRow/SessionTableRow
- * split — a side swipe (mobile pattern) doesn't survive the wider desktop
- * layout, so desktop gets its edit/delete from the SAME chevron that already
- * opens the details panel instead.
- */
-function ExpandableRow(props: {
-  rowKey: string;
-  /** App-wide deep-link target (`?focus=<id>`, see FocusHighlighter). */
-  focusId?: string;
-  details: RowDetail[];
-  expanded: boolean;
-  onToggle: (key: string) => void;
-  amount: ReactNode;
-  onEdit: () => void;
-  editLabel: string;
-  onDelete: () => void;
-  deleteLabel: string;
-  /** last:border-0 doesn't work once every row is its own swipe wrapper — each
-   *  one is the sole child of ITS OWN container, so the pseudo-class would
-   *  always match. Computed explicitly by the caller instead. */
-  isLast: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <>
-      <div className="md:hidden">
-        <ExpandableRowMobile {...props} />
-      </div>
-      <div className="hidden md:block">
-        <ExpandableRowDesktop {...props} />
-      </div>
-    </>
-  );
-}
-
-function RowBody({
-  details,
-  expanded,
-  onToggle,
-  rowKey,
-  focusId,
-  amount,
-  isLast,
-  children,
-  showChevron,
-  panelFooter,
-}: {
-  details: RowDetail[];
-  expanded: boolean;
-  onToggle: (key: string) => void;
-  rowKey: string;
-  focusId?: string;
-  amount: ReactNode;
-  isLast: boolean;
-  children: ReactNode;
-  showChevron: boolean;
-  /** Desktop-only edit/delete buttons, appended inside the details panel. */
-  panelFooter?: ReactNode;
-}) {
-  return (
-    <div className={cn("pb-2", !isLast && "border-b")} data-focus-id={focusId}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {showChevron ? (
-            <button
-              type="button"
-              onClick={() => onToggle(rowKey)}
-              aria-expanded={expanded}
-              aria-label={expanded ? "הסתרת פרטים" : "הצגת פרטים נוספים"}
-              className="shrink-0 text-muted-foreground"
-            >
-              <ChevronDownIcon className={cn("h-4 w-4 transition-transform", expanded ? "" : "-rotate-90")} />
-            </button>
-          ) : (
-            <span className="w-4 shrink-0" />
-          )}
-          <div className="min-w-0 flex-1">{children}</div>
-        </div>
-        <span className="shrink-0 font-semibold text-destructive">{amount}</span>
-      </div>
-      {expanded && (details.length > 0 || panelFooter) ? (
-        <div className="me-5 mt-1 space-y-1.5 rounded-md bg-muted/30 p-2 text-xs">
-          {details.map((d) =>
-            d.long ? (
-              <div key={d.label}>
-                <div className="text-muted-foreground">{d.label}</div>
-                <div className="whitespace-pre-wrap">{d.value}</div>
-              </div>
-            ) : (
-              <div key={d.label} className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">{d.label}</span>
-                <span>{d.value}</span>
-              </div>
-            )
-          )}
-          {panelFooter}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** Mobile: chevron only for details (when there are any); edit/delete via side swipe. */
-function ExpandableRowMobile({
-  rowKey,
-  focusId,
-  details,
-  expanded,
-  onToggle,
-  amount,
-  onEdit,
-  editLabel,
-  onDelete,
-  deleteLabel,
-  isLast,
-  children,
-}: {
-  rowKey: string;
-  focusId?: string;
-  details: RowDetail[];
-  expanded: boolean;
-  onToggle: (key: string) => void;
-  amount: ReactNode;
-  onEdit: () => void;
-  editLabel: string;
-  onDelete: () => void;
-  deleteLabel: string;
-  isLast: boolean;
-  children: ReactNode;
-}) {
-  const [swipeOpen, setSwipeOpen] = useState(false);
-
-  const row = (
-    <RowBody
-      details={details}
-      expanded={expanded}
-      onToggle={onToggle}
-      rowKey={rowKey}
-      focusId={focusId}
-      amount={amount}
-      isLast={isLast}
-      showChevron={details.length > 0}
-    >
-      {children}
-    </RowBody>
-  );
-
-  return (
-    <SwipeActions
-      className="rounded-none"
-      open={swipeOpen}
-      onOpenChange={setSwipeOpen}
-      actions={[
-        {
-          key: "edit",
-          label: editLabel,
-          icon: <EditIcon className="h-5 w-5" />,
-          className: "bg-secondary",
-          onSelect: () => {
-            setSwipeOpen(false);
-            onEdit();
-          },
-        },
-        {
-          key: "delete",
-          label: deleteLabel,
-          icon: <DeleteIcon className="h-5 w-5" />,
-          className: "bg-destructive",
-          onSelect: () => {
-            setSwipeOpen(false);
-            onDelete();
-          },
-        },
-      ]}
-    >
-      {row}
-    </SwipeActions>
-  );
-}
-
-/** Desktop: no swipe — the chevron always opens a panel that carries the
- *  details (when there are any) and the edit/delete buttons. */
-function ExpandableRowDesktop({
-  rowKey,
-  focusId,
-  details,
-  expanded,
-  onToggle,
-  amount,
-  onEdit,
-  editLabel,
-  onDelete,
-  deleteLabel,
-  isLast,
-  children,
-}: {
-  rowKey: string;
-  focusId?: string;
-  details: RowDetail[];
-  expanded: boolean;
-  onToggle: (key: string) => void;
-  amount: ReactNode;
-  onEdit: () => void;
-  editLabel: string;
-  onDelete: () => void;
-  deleteLabel: string;
-  isLast: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <RowBody
-      details={details}
-      expanded={expanded}
-      onToggle={onToggle}
-      rowKey={rowKey}
-      focusId={focusId}
-      amount={amount}
-      isLast={isLast}
-      showChevron
-      panelFooter={
-        <div className="flex items-center gap-2 pt-1">
-          <EditButton label={editLabel} onClick={onEdit} />
-          <DeleteButton label={deleteLabel} onClick={onDelete} />
-        </div>
-      }
-    >
-      {children}
-    </RowBody>
-  );
 }
 
 const EMPTY_LEASE_FORM = {
@@ -473,37 +197,6 @@ const EMPTY_LEASE_DOC: LeaseDocState = { documentId: null, documentUrl: null, do
 
 const PURCHASE_DOCUMENT_CATEGORIES = new Set(["מסמכי רכישה", "נסח טאבו"]);
 
-/**
- * The lease's signed agreement, as a link. documentUrl is a signed URL that the
- * server refreshes on every load; a lease that carries a document_id but no URL
- * (storage key missing, signing failed) still says so rather than rendering
- * nothing, so "no contract attached" and "contract we can't open" stay
- * distinguishable.
- */
-function LeaseDocumentLink({ lease }: { lease: LeaseAgreement }) {
-  if (!lease.documentId) return null;
-  const label = lease.documentFileName || "חוזה חתום";
-  // Opens as it did; הורדה follows it on hover (owner, 2026-10-12).
-  return lease.documentUrl ? (
-    <div className="mt-0.5">
-      <DocumentLink
-        name={label}
-        fileName={lease.documentFileName}
-        url={lease.documentUrl}
-        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-      >
-        <DocumentIcon className="h-3.5 w-3.5" />
-        <span>{label}</span>
-      </DocumentLink>
-    </div>
-  ) : (
-    <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-      <DocumentIcon className="h-3.5 w-3.5" />
-      <span>{label} — לא ניתן לפתוח את הקובץ</span>
-    </div>
-  );
-}
-
 export default function PropertyDetailClient({
   propertyId,
   property,
@@ -554,16 +247,15 @@ export default function PropertyDetailClient({
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<EditingExpenseData | null>(null);
   const [editingSession, setEditingSession] = useState<PropertySession | null>(null);
-  const [expenseFilter, setExpenseFilter] = useState<"all" | "expenses" | "sessions">("all");
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  function toggleExpandedRow(key: string) {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
+  // income
+  const [editingPayment, setEditingPayment] = useState<PropertyPayment | null>(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  // the property itself
+  const [detailsEditOpen, setDetailsEditOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [deletePropertyOpen, setDeletePropertyOpen] = useState(false);
+  // the money table's search (owner's card: "חיפוש בחלק של הוצאות")
+  const [search, setSearch] = useState("");
   // recurring template
   const [templateOpen, setTemplateOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EditingRecurringTemplateData | null>(null);
@@ -606,7 +298,6 @@ export default function PropertyDetailClient({
   const currentLease = pickCurrentLease(leases);
   const otherLeases = leases.filter((l) => l.id !== currentLease?.id);
   const checkPayments = activityPayments.filter((p) => p.method === "check");
-  const otherPayments = activityPayments.filter((p) => p.method !== "check");
   const purchaseDocuments = activityDocuments.filter((d) => PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? ""));
   // A picture of the property is an image with nothing more specific said about
   // it. Matching the file kind as well as the "צילום" category picks up images
@@ -621,13 +312,76 @@ export default function PropertyDetailClient({
     (d) => !PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? "") && !isPropertyPhoto(d)
   );
   const userNameById = new Map(users.map((u) => [u.id, u.label]));
-  const expenseRows: Array<{ kind: "expense"; date: string | null; data: PropertyExpense } | { kind: "session"; date: string | null; data: PropertySession }> = [
-    ...activityExpenses.map((e) => ({ kind: "expense" as const, date: e.date, data: e })),
-    ...activitySessions.map((s) => ({ kind: "session" as const, date: s.clock_in, data: s })),
-  ].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
-  const visibleExpenseRows = expenseRows.filter(
-    (row) => expenseFilter === "all" || (expenseFilter === "expenses" ? row.kind === "expense" : row.kind === "session")
+
+  // Every income, expense and shift as one table, and what's still to come
+  // as a second (propertyMovements.ts).
+  const movements = useMemo(
+    () =>
+      buildPropertyMovements({
+        payments: activityPayments,
+        expenses: activityExpenses,
+        sessions: activitySessions,
+        sessionAttachments: activity.sessionAttachments,
+        accountNames: activity.accountNames,
+        templateNameById,
+        users,
+        onEditPayment: setEditingPayment,
+        onDeletePayment: (payment) => setDel({ kind: "payment", id: payment.id, label: "הכנסה" }),
+        onToggleCleared: toggleCleared,
+        onEditExpense: openEditExpense,
+        onDeleteExpense: (expense) => setDel({ kind: "expense", id: expense.id, label: expenseLabel(expense) }),
+        onEditSession: openEditSession,
+        onDeleteSession: (session) =>
+          setDel({ kind: "session", id: session.id, label: `משמרת (${userNameById.get(session.user_id) ?? "עובד"})` }),
+      }),
+    // The handlers only set state; the rows change with the data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activityPayments, activityExpenses, activitySessions, activity.sessionAttachments, activity.accountNames, templateNameById, users]
   );
+  const movementTexts = (m: (typeof movements.done)[number]) => [
+    m.name,
+    m.category,
+    m.hint,
+    m.account,
+    m.amount != null ? String(m.amount) : null,
+    ...m.extras.map((x) => x.value),
+  ];
+  const visibleDone = filterByText(movements.done, movementTexts, search);
+  const visibleExpected = filterByText(movements.expected, movementTexts, search);
+
+  /** A rent check: נפרע, or back to waiting. */
+  function toggleCleared(payment: PropertyPayment) {
+    const collected = payment.paymentStatus !== "cleared";
+    scheduleDeferredEdit({
+      scope: "property-payment",
+      id: payment.id,
+      message: collected ? "התשלום סומן כנפרע." : "הסימון בוטל.",
+      patch: { paymentStatus: collected ? "cleared" : "pending" },
+      onCommit: async () => {
+        const res = await fetch("/api/payments/mark-collected", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: payment.id, collected }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
+        refresh();
+        return { ok: true };
+      },
+    });
+  }
+
+  async function deleteThisProperty() {
+    setDeletePropertyOpen(false);
+    const result = await deleteProperty(propertyId);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    invalidateQuickCreateCache();
+    toast.success("הנכס נמחק.");
+    router.push("/properties");
+  }
   function openAddExpense() {
     setEditingExpense(null);
     setEditingSession(null);
@@ -902,357 +656,227 @@ export default function PropertyDetailClient({
   }
 
   return (
-    <>
-      <PropertyDetailsCard propertyId={propertyId} property={property} />
-
-      {/* Leases */}
-      <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-          <CardTitle className="text-base">שכירות</CardTitle>
-          <Button size="sm" onClick={openAddLease}>
-            <AddIcon className="h-4 w-4" />
-            חוזה חדש
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {currentLease ? (
-            <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 p-3">
-              <div className="min-w-0 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link href={`/customers/${currentLease.customerId}`} className="font-medium hover:underline">
-                    {currentLease.customerName ?? "שוכר"}
-                  </Link>
-                  <Badge variant={currentLease.status === "active" ? "success" : "neutral"}>
-                    {leaseStatusLabel(currentLease.status)}
-                  </Badge>
-                </div>
-                <MetaRow
-                  className="text-xs text-muted-foreground"
-                  items={[
-                    fmtDate(currentLease.startDate) && `החל מ-${fmtDate(currentLease.startDate)}`,
-                    currentLease.endDate ? `עד ${fmtDate(currentLease.endDate)}` : "ללא תאריך סיום",
-                  ]}
-                />
-                {currentLease.depositType ? (
-                  <MetaRow
-                    className="text-xs text-muted-foreground"
-                    items={[
-                      depositTypeLabel(currentLease.depositType),
-                      currentLease.depositAmount != null ? formatCurrency(currentLease.depositAmount) : null,
-                    ]}
-                  />
+    <div className="space-y-3 md:space-y-5">
+      <PropertyPageHeading
+        name={address}
+        typeLabel={property.propertyType ? propertyTypeLabel(property.propertyType) : null}
+        rented={currentLease?.status === "active"}
+        inactive={!property.isActive}
+        actions={
+          <div className="flex items-center gap-1.5">
+            <EditButton onClick={() => setDetailsEditOpen(true)} label="עריכת פרטי הנכס" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="h-9 w-9 p-0" aria-label="עוד פעולות">
+                  <MoreIcon className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setReminderOpen(true)}>תזכורת</DropdownMenuItem>
+                <DropdownMenuItem onClick={openAddLease}>חוזה חדש</DropdownMenuItem>
+                {currentLease ? (
+                  <DropdownMenuItem onClick={() => setScheduleOpen(true)}>קביעת תשלומים מראש</DropdownMenuItem>
                 ) : null}
-                {/* The signed agreement had no surface anywhere on the page —
-                    uploading one left no visible trace, so it read as if the
-                    upload had failed. */}
-                <LeaseDocumentLink lease={currentLease} />
-                {currentLease.keysHandedOver != null ? (
-                  // "2 מתוך 4" only when the apartment's own count is known —
-                  // that comparison is the whole point at move-out.
-                  <div className="text-xs text-muted-foreground">
-                    {property.keyCount != null
-                      ? `מפתחות שנמסרו: ${currentLease.keysHandedOver} מתוך ${property.keyCount}`
-                      : `מפתחות שנמסרו: ${currentLease.keysHandedOver}`}
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <span className="font-semibold">{formatCurrency(currentLease.monthlyRentAmount)}/חודש</span>
-                <EditButton onClick={() => openEditLease(currentLease)} label="עריכת חוזה" />
-                <DeleteButton
-                  onClick={() => setDel({ kind: "lease", id: currentLease.id, label: "חוזה שכירות" })}
-                  label="מחיקת חוזה"
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">אין חוזה שכירות פעיל — הנכס פנוי.</p>
-          )}
-
-          {otherLeases.length > 0 ? (
-            <CollapsibleSection title={`היסטוריית חוזים (${otherLeases.length})`} defaultOpen={false}>
-              <div className="space-y-2">
-                {otherLeases.map((lease) => (
-                  <div key={lease.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                    <div className="min-w-0 text-sm">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link href={`/customers/${lease.customerId}`} className="font-medium hover:underline">
-                          {lease.customerName ?? "שוכר"}
-                        </Link>
-                        <Badge variant="neutral">{leaseStatusLabel(lease.status)}</Badge>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {[fmtDate(lease.startDate), fmtDate(lease.endDate)].filter(Boolean).join(" – ")}
-                      </div>
-                      <LeaseDocumentLink lease={lease} />
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <span className="text-sm">{formatCurrency(lease.monthlyRentAmount)}/חודש</span>
-                      <EditButton onClick={() => openEditLease(lease)} label="עריכת חוזה" />
-                      <DeleteButton
-                        onClick={() => setDel({ kind: "lease", id: lease.id, label: "חוזה שכירות" })}
-                        label="מחיקת חוזה"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CollapsibleSection>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Expenses — real cash expenses AND worker sessions allocated to this
-            property (their labor cost is a real cost the moment the shift
-            happens, same as on a project — see the rollup comment in
-            lib/properties.ts). One merged, date-sorted list; a filter lets you
-            isolate either kind when there's more than one on the property. */}
-        <Card>
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הוצאות ({activityExpenses.length + activitySessions.length})</CardTitle>
-            <Button size="sm" onClick={openAddExpense}>
-              <AddIcon className="h-4 w-4" />
-              הוצאה
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {activitySessions.length > 0 ? (
-              <div className="flex items-center gap-1 pb-1">
-                <Button
-                  size="sm"
-                  variant={expenseFilter === "all" ? "default" : "outline"}
-                  onClick={() => setExpenseFilter("all")}
+                <DropdownMenuItem
+                  onClick={() => setDeletePropertyOpen(true)}
+                  className="text-destructive focus:text-destructive"
                 >
-                  הכל
-                </Button>
-                <Button
-                  size="sm"
-                  variant={expenseFilter === "expenses" ? "default" : "outline"}
-                  onClick={() => setExpenseFilter("expenses")}
-                >
-                  הוצאות ({activityExpenses.length})
-                </Button>
-                <Button
-                  size="sm"
-                  variant={expenseFilter === "sessions" ? "default" : "outline"}
-                  onClick={() => setExpenseFilter("sessions")}
-                >
-                  משמרות ({activitySessions.length})
-                </Button>
-              </div>
-            ) : null}
-            {visibleExpenseRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין הוצאות לנכס זה.</p>
-            ) : (
-              // Capped and scrolled on its own: a property that's been running a
-              // while accumulates hundreds of expenses and worker shifts, and an
-              // uncapped list pushed every card below it off the screen. max-h
-              // rather than a fixed h so a property with three expenses doesn't
-              // get a tall empty box. The filter buttons stay outside, pinned.
-              <div className="max-h-[26rem] space-y-2 overflow-y-auto pe-1">
-              {visibleExpenseRows.map((row, index) => {
-                const rowKey = row.kind === "expense" ? `e-${row.data.id}` : `s-${row.data.id}`;
-                const details = row.kind === "expense" ? expenseRowDetails(row.data) : sessionRowDetails(row.data);
-                return (
-                  <ExpandableRow
-                    key={rowKey}
-                    rowKey={rowKey}
-                    // Same id the ledger + payments calendar use, so "למקור"
-                    // from the calendar lands on THIS row.
-                    focusId={row.kind === "expense" ? `expense:${row.data.id}` : undefined}
-                    details={details}
-                    expanded={expandedRows.has(rowKey)}
-                    onToggle={toggleExpandedRow}
-                    isLast={index === visibleExpenseRows.length - 1}
-                    amount={formatCurrency(row.kind === "expense" ? row.data.amount : row.data.labor_cost ?? 0)}
-                    editLabel={row.kind === "expense" ? "עריכה" : "עריכת משמרת"}
-                    onEdit={() => (row.kind === "expense" ? openEditExpense(row.data) : openEditSession(row.data))}
-                    deleteLabel={row.kind === "expense" ? "מחיקת הוצאה" : "מחיקת משמרת"}
-                    onDelete={() =>
-                      row.kind === "expense"
-                        ? setDel({ kind: "expense", id: row.data.id, label: expenseLabel(row.data) })
-                        : setDel({
-                            kind: "session",
-                            id: row.data.id,
-                            label: `משמרת (${userNameById.get(row.data.user_id) ?? "עובד"})`,
-                          })
-                    }
-                  >
-                    {row.kind === "expense" ? (
-                      <div className="text-sm">
-                        <div className="font-medium">{expenseLabel(row.data)}</div>
-                        <MetaRow
-                          className="text-xs text-muted-foreground"
-                          items={[row.data.description ? row.data.category : null, fmtDate(row.data.date)]}
-                          fallback="—"
-                        />
-                        {row.data.paymentStatus && row.data.paymentStatus !== "paid" ? (
-                          <span className="mt-1 inline-block rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[0.588rem] font-medium text-warning-strong">
-                            צפוי
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="text-sm">
-                        <div className="font-medium">{userNameById.get(row.data.user_id) ?? "עובד"}</div>
-                        <MetaRow
-                          className="text-xs text-muted-foreground"
-                          items={[fmtDate(row.data.clock_in), shiftHoursText(row.data.clock_in, row.data.clock_out)]}
-                        />
-                        {row.data.notes ? <div className="text-xs text-muted-foreground">{row.data.notes}</div> : null}
-                      </div>
-                    )}
-                  </ExpandableRow>
-                );
-              })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  מחיקת הנכס
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
+      />
 
-        {/* Income (non-check — rent checks live in the rent-schedule section below) */}
-        <Card>
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הכנסות אחרות ({otherPayments.length})</CardTitle>
-            <Button size="sm" onClick={() => setIncomeOpen(true)}>
-              <AddIcon className="h-4 w-4" />
-              הכנסה
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {otherPayments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין הכנסות נוספות לנכס זה.</p>
-            ) : (
-              otherPayments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <div className="font-medium">{p.method || "תשלום"}</div>
-                    <div className="text-xs text-muted-foreground">{fmtDate(p.date) || "—"}</div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <span className="font-semibold text-emerald-600">{formatCurrency(p.amount)}</span>
-                    <DeleteButton onClick={() => setDel({ kind: "payment", id: p.id, label: "הכנסה" })} label="מחיקת הכנסה" />
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <RentScheduleSection
-          propertyId={propertyId}
-          currentLease={currentLease}
-          payments={checkPayments}
-          onDeleteRequest={(id, label) => setDel({ kind: "payment", id, label })}
-        />
-
-        {/* Tasks */}
-        <Card>
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-            <CardTitle className="flex items-center gap-1 text-base">
-              <TaskIcon className="h-4 w-4" />
-              משימות ({activityTasks.length})
-            </CardTitle>
-            <Button size="sm" onClick={openAddTask}>
-              <AddIcon className="h-4 w-4" />
-              משימה
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {activityTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין משימות לנכס זה.</p>
-            ) : (
-              activityTasks.map((t: PropertyTask) => (
-                <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <div className="font-medium">{t.subject || "משימה"}</div>
-                    <div className="text-xs text-muted-foreground">{formatDateWithTime(t.dueDate, t.dueTime, "—")}</div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
-                    <EditButton onClick={() => openEditTask(t.id)} label="עריכה" />
-                    <DeleteButton onClick={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })} label="מחיקת משימה" />
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recurring charges — water/electricity/arnona/vaad bayit etc. */}
-        <Card>
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הוצאות קבועות ({activityTemplates.length})</CardTitle>
-            <Button size="sm" onClick={openAddTemplate}>
-              <AddIcon className="h-4 w-4" />
-              הוצאה קבועה
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {activityTemplates.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין הוצאות קבועות לנכס זה (מים, חשמל, ארנונה, ועד בית וכו׳).</p>
-            ) : (
-              activityTemplates.map((t) => (
-                <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <div className="font-medium">{t.templateName || t.category || "הוצאה קבועה"}</div>
-                    <MetaRow
-                      className="text-xs text-muted-foreground"
-                      items={[t.category, recurringFrequencyLabel(t)]}
-                    />
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {!t.isActive ? <Badge variant="neutral">לא פעיל</Badge> : null}
-                    <span className="font-semibold">{formatCurrency(t.amount ?? 0)}</span>
-                    <EditButton onClick={() => openEditTemplate(t)} label="עריכה" />
-                    <DeleteButton
-                      onClick={() => setDel({ kind: "template", id: t.id, label: t.templateName || t.category || "הוצאה קבועה" })}
-                      label="מחיקת הוצאה קבועה"
-                    />
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <MissingDocumentsChecklist
-          entityType="property"
-          entityId={propertyId}
-          refreshKey={checklistKey}
-          onUpload={openAddDocWithCategory}
-        />
-
-        <PropertyPurchaseCard
+      {/* The head row, like a project's: what it is, who rents it, and where
+          this month's rent stands. The three share the tallest one's height. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <PropertyDetailsCard
           propertyId={propertyId}
           property={property}
-          documents={purchaseDocuments}
-          onAddDocument={openAddPurchaseDoc}
-          onDeleteDocument={(id, label) => setDel({ kind: "document", id, label })}
+          editOpen={detailsEditOpen}
+          onEditOpenChange={setDetailsEditOpen}
         />
+        <PropertyTenantCard
+          lease={currentLease}
+          pastLeases={otherLeases}
+          keyCount={property.keyCount}
+          onEdit={openEditLease}
+          onNew={openAddLease}
+          onDelete={(lease) => setDel({ kind: "lease", id: lease.id, label: "חוזה שכירות" })}
+        />
+        <PropertyRentCard
+          lease={currentLease}
+          payments={activityPayments}
+          onRecord={() => setIncomeOpen(true)}
+          onSchedule={() => setScheduleOpen(true)}
+        />
+      </div>
 
-        <PropertyFurnitureCard propertyId={propertyId} property={property} />
+      {/* The main column takes the head row's first two cards' width, the side
+          column the third's — same gap, so their edges line up. */}
+      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:items-start">
+        <div className="min-w-0 space-y-3">
+          <CollapsibleSection
+            collapsible={false}
+            title={
+              <span className="flex items-center gap-1.5">
+                תנועות
+                <SectionCount count={movements.done.length} />
+              </span>
+            }
+            contentClassName="@container flex flex-col text-sm"
+            action={
+              <div className="flex items-center gap-1.5">
+                <Button type="button" size="sm" variant="outline" onClick={() => setIncomeOpen(true)}>
+                  <AddIcon className="h-4 w-4" />
+                  הכנסה
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={openAddExpense}>
+                  <AddIcon className="h-4 w-4" />
+                  הוצאה
+                </Button>
+              </div>
+            }
+          >
+            <div className="relative mb-2">
+              <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="חיפוש בתנועות — שם, קטגוריה, סכום…"
+                aria-label="חיפוש בתנועות"
+                className="ps-9"
+              />
+            </div>
+            <ProjectMovements
+              movements={visibleDone}
+              groupBy="none"
+              sortBy="date"
+              sortDirection="asc"
+              showBilled={false}
+              emptyText={search.trim() ? "לא נמצאו תנועות לחיפוש הזה." : "אין עדיין הכנסות או הוצאות לנכס הזה."}
+            />
+          </CollapsibleSection>
 
-        <PropertyUtilitiesCard propertyId={propertyId} property={property} />
+          {movements.expected.length > 0 ? (
+            <CollapsibleSection
+              defaultOpen
+              title={
+                <span className="flex items-center gap-1.5">
+                  צפויים
+                  <SectionCount count={movements.expected.length} />
+                </span>
+              }
+              contentClassName="@container flex flex-col text-sm"
+            >
+              <p className="mb-2 text-xs text-muted-foreground">צ׳קים שעוד לא נפרעו, והוצאות שעוד לא שולמו.</p>
+              <ProjectMovements
+                movements={visibleExpected}
+                groupBy="none"
+                sortBy="date"
+                sortDirection="asc"
+                showBilled={false}
+                emptyText="לא נמצאו תנועות לחיפוש הזה."
+              />
+            </CollapsibleSection>
+          ) : null}
 
-        {/* Photo gallery */}
-        <Card>
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">תמונות הנכס ({photos.length})</CardTitle>
-            <Button size="sm" onClick={openAddPhotos}>
-              <AddIcon className="h-4 w-4" />
-              הוספת תמונות
-            </Button>
-          </CardHeader>
-          <CardContent>
+          <CollapsibleSection
+            defaultOpen={activityTasks.length > 0}
+            title="משימות"
+            icon={<TaskIcon className={SECTION_ICON_CLASS} />}
+            summary={activityTasks.length > 0 ? <SectionCount count={activityTasks.length} /> : null}
+            action={
+              <Button type="button" size="sm" variant="outline" onClick={openAddTask}>
+                <AddIcon className="h-4 w-4" />
+                משימה
+              </Button>
+            }
+          >
+            {activityTasks.length === 0 ? (
+              <EmptyState dense>אין משימות לנכס הזה.</EmptyState>
+            ) : (
+              <ul className="divide-y">
+                {activityTasks.map((t: PropertyTask) => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 py-2">
+                    <button type="button" onClick={() => openEditTask(t.id)} className="min-w-0 text-start text-sm">
+                      <div className="font-medium">{t.subject || "משימה"}</div>
+                      <div className="text-xs text-muted-foreground">{formatDateWithTime(t.dueDate, t.dueTime, "—")}</div>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
+                      <RowMenu
+                        label="פעולות למשימה"
+                        onEdit={() => openEditTask(t.id)}
+                        onDelete={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            defaultOpen
+            title="מסמכים"
+            icon={<DocumentIcon className={SECTION_ICON_CLASS} />}
+            summary={otherDocuments.length > 0 ? <SectionCount count={otherDocuments.length} /> : null}
+            action={
+              <Button type="button" size="sm" variant="outline" onClick={openAddDoc}>
+                <AddIcon className="h-4 w-4" />
+                מסמך
+              </Button>
+            }
+            contentClassName="space-y-3"
+          >
+            <MissingDocumentsChecklist
+              entityType="property"
+              entityId={propertyId}
+              refreshKey={checklistKey}
+              onUpload={openAddDocWithCategory}
+            />
+            {otherDocuments.length === 0 ? (
+              <EmptyState dense>אין מסמכים נוספים לנכס הזה.</EmptyState>
+            ) : (
+              // The row opens the file; view and download at its end on hover, the
+              // delete in its quiet ⋮ (owner, 2026-10-12).
+              <div className="space-y-2">
+                {otherDocuments.map((d) => (
+                  <DocumentRow
+                    key={d.id}
+                    name={d.title || d.fileName || "מסמך"}
+                    fileName={d.fileName}
+                    url={d.url}
+                    meta={<MetaRow as="span" items={[d.documentType, fmtDateTime(d.uploadedAt)]} fallback="—" />}
+                    onDelete={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })}
+                    deleteLabel="מחיקת מסמך"
+                  />
+                ))}
+              </div>
+            )}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            defaultOpen={photos.length > 0}
+            title="תמונות"
+            icon={<ImageIcon className={SECTION_ICON_CLASS} />}
+            summary={photos.length > 0 ? <SectionCount count={photos.length} /> : null}
+            action={
+              <Button type="button" size="sm" variant="outline" onClick={openAddPhotos}>
+                <AddIcon className="h-4 w-4" />
+                תמונות
+              </Button>
+            }
+          >
             {photos.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין תמונות לנכס זה.</p>
+              <EmptyState dense>אין תמונות לנכס הזה.</EmptyState>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {/* View and download on hover, the delete in the photo's quiet ⋮
-                    (owner, 2026-10-12: "the edit and delete somewhere else, much
-                    less prominent"). */}
+                    (owner, 2026-10-12). */}
                 {photos.map((photo) => (
                   <DocumentTile
                     key={photo.id}
@@ -1270,41 +894,66 @@ export default function PropertyDetailClient({
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </CollapsibleSection>
+        </div>
 
-        {/* Documents */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-            <CardTitle className="flex items-center gap-1 text-base">
-              <DocumentIcon className="h-4 w-4" />
-              מסמכים ({otherDocuments.length})
-            </CardTitle>
-            <Button size="sm" onClick={openAddDoc}>
-              <AddIcon className="h-4 w-4" />
-              מסמך
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {otherDocuments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין מסמכים נוספים לנכס זה.</p>
+        {/* The side column: the money in one card, then what repeats. */}
+        <div className="min-w-0 space-y-3">
+          <PropertyMoneyCard payments={activityPayments} expenses={activityExpenses} sessions={activitySessions} />
+
+          <CollapsibleSection
+            defaultOpen
+            title="הוצאות קבועות"
+            icon={<RecurringIcon className={SECTION_ICON_CLASS} />}
+            summary={activityTemplates.length > 0 ? <SectionCount count={activityTemplates.length} /> : null}
+            action={
+              <Button type="button" size="sm" variant="outline" onClick={openAddTemplate}>
+                <AddIcon className="h-4 w-4" />
+                הוספה
+              </Button>
+            }
+          >
+            {activityTemplates.length === 0 ? (
+              <EmptyState dense>אין הוצאות קבועות (מים, חשמל, ארנונה, ועד בית…).</EmptyState>
             ) : (
-              // The row opens the file; view and download at its end on hover, the
-              // delete in its quiet ⋮ (owner, 2026-10-12).
-              otherDocuments.map((d) => (
-                <DocumentRow
-                  key={d.id}
-                  name={d.title || d.fileName || "מסמך"}
-                  fileName={d.fileName}
-                  url={d.url}
-                  meta={<MetaRow as="span" items={[d.documentType, fmtDateTime(d.uploadedAt)]} fallback="—" />}
-                  onDelete={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })}
-                  deleteLabel="מחיקת מסמך"
-                />
-              ))
+              <ul className="divide-y">
+                {activityTemplates.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 py-2">
+                    <button type="button" onClick={() => openEditTemplate(t)} className="min-w-0 text-start text-sm">
+                      <div className="font-medium">{t.templateName || t.category || "הוצאה קבועה"}</div>
+                      <MetaRow className="text-xs text-muted-foreground" items={[t.category, recurringFrequencyLabel(t)]} />
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {!t.isActive ? <Badge variant="neutral">לא פעיל</Badge> : null}
+                      <span className="text-sm font-semibold tabular-nums">{formatCurrency(t.amount ?? 0)}</span>
+                      <RowMenu
+                        label="פעולות להוצאה הקבועה"
+                        onEdit={() => openEditTemplate(t)}
+                        onDelete={() =>
+                          setDel({ kind: "template", id: t.id, label: t.templateName || t.category || "הוצאה קבועה" })
+                        }
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
-          </CardContent>
-        </Card>
+          </CollapsibleSection>
+        </div>
+      </div>
+
+      {/* The rest of what's known about it: the purchase, the furniture, the
+          utility account numbers — each edited in place. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <PropertyPurchaseCard
+          propertyId={propertyId}
+          property={property}
+          documents={purchaseDocuments}
+          onAddDocument={openAddPurchaseDoc}
+          onDeleteDocument={(id, label) => setDel({ kind: "document", id, label })}
+        />
+        <PropertyFurnitureCard propertyId={propertyId} property={property} />
+        <PropertyUtilitiesCard propertyId={propertyId} property={property} />
       </div>
 
       {/* Expense dialog — add/edit an expense, or edit a worker session (both close over
@@ -1348,6 +997,37 @@ export default function PropertyDetailClient({
         currentUserId={currentUserId}
         fixedTarget={{ type: "property", id: propertyId }}
         onSaved={() => refresh()}
+      />
+
+      {/* Edit any of its incomes (the note is its title). */}
+      <PropertyIncomeEditDialog payment={editingPayment} onClose={() => setEditingPayment(null)} />
+
+      {/* The year's rent checks, set ahead of time. */}
+      <RentScheduleDialog
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        propertyId={propertyId}
+        currentLease={currentLease}
+        payments={checkPayments}
+      />
+
+      <AddReminderButton
+        entityType="property"
+        entityId={propertyId}
+        label={address}
+        hideTrigger
+        open={reminderOpen}
+        onOpenChange={setReminderOpen}
+      />
+
+      <ConfirmDialog
+        open={deletePropertyOpen}
+        onOpenChange={setDeletePropertyOpen}
+        title="מחיקת הנכס"
+        description={`למחוק את ${address}? אי אפשר למחוק נכס שיש לו חוזים, הכנסות, הוצאות או משימות.`}
+        confirmLabel="מחיקה"
+        destructive
+        onConfirm={deleteThisProperty}
       />
 
       {/* Income dialog (add) */}
@@ -1592,6 +1272,24 @@ export default function PropertyDetailClient({
         destructive
         onConfirm={confirmDelete}
       />
-    </>
+    </div>
+  );
+}
+
+function RowMenu({ label, onEdit, onDelete }: { label: string; onEdit: () => void; onDelete: () => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground" aria-label={label}>
+          <MoreIcon className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-32">
+        <DropdownMenuItem onClick={onEdit}>עריכה</DropdownMenuItem>
+        <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+          מחיקה
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -56,6 +56,7 @@ function lease(overrides: Partial<LeaseAgreement>): LeaseAgreement {
     rentDayOfMonth: null,
     customerId: "cust-1",
     customerName: "שוכר",
+    customerPhone: null,
     startDate: "2024-01-01",
     endDate: null,
     monthlyRentAmount: 3000,

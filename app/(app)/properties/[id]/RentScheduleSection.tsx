@@ -1,82 +1,63 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, CheckIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
-import { MetaRow } from "@/components/ui/meta-row";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormDialog } from "@/components/ui/form-dialog";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
-import { formatCurrency } from "@/lib/payroll";
-import { formatShortDate } from "@/lib/date";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
-import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
-import { normalizeCheckStatus, checkStatusLabel, checkStatusClasses } from "@/lib/checks";
 import { buildRentSchedule, stepMonthly, type RentScheduleRow } from "@/lib/rentSchedule";
 import { type LeaseAgreement, type PropertyPayment } from "@/lib/properties";
-import { toHebrewError } from "@/lib/error-messages";
 import { scheduleRentPayments } from "../actions";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
-import { scheduleDeferredEdit } from "@/lib/undo-engine";
+import { DeleteButton } from "@/components/ui/icon-button";
+import { dayKey } from "./propertyMovements";
 import { israelDateKey } from "@/lib/timezone";
-
-function monthLabel(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" }).format(d);
-}
-
-function fmtDate(value: string | null) {
-  return formatShortDate(value, "—");
-}
-
-type EditForm = {
-  paymentDate: string;
-  dueDate: string;
-  amount: string;
-  paymentMethod: string;
-  checkNumber: string;
-  accountId: string;
-};
 
 /** Rent can be paid any way — the check-only fields appear only for צ'ק. */
 function isCheck(method: string) {
   return method === "check";
 }
 
-export default function RentScheduleSection({
+/**
+ * Setting a lease's rent payments ahead of time (the checks a tenant hands
+ * over for the year). The payments themselves are listed in the property's
+ * money table, with its נפרע / עריכה / מחיקה — this is only the dialog that
+ * makes them.
+ */
+export default function RentScheduleDialog({
+  open,
+  onOpenChange,
   propertyId,
   currentLease,
   payments,
-  onDeleteRequest,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   propertyId: string;
   currentLease: LeaseAgreement | null;
+  /** The property's checks — the next schedule starts the month after the last one. */
   payments: PropertyPayment[];
-  onDeleteRequest: (id: string, label: string) => void;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => { router.refresh(); });
 
-  const lastScheduled = payments.reduce<string | null>(
-    (max, p) => (p.date && (!max || p.date > max) ? p.date : max),
-    null
-  );
+  // payment_date is a timestamp: its day, not the raw value (that broke the next month).
+  const lastScheduled = payments.reduce<string | null>((max, p) => {
+    const day = dayKey(p.date);
+    return day && (!max || day > max) ? day : max;
+  }, null);
   const defaultFirstMonth = lastScheduled
     ? stepMonthly(lastScheduled, 1)
-    : currentLease?.startDate ?? israelDateKey();
+    : dayKey(currentLease?.startDate) ?? israelDateKey();
 
-  const [generatorOpen, setGeneratorOpen] = useState(false);
-  const [genForm, setGenForm] = useState({
+  const emptyForm = () => ({
     count: "12",
     firstMonth: defaultFirstMonth,
     monthlyAmount: currentLease ? String(currentLease.monthlyRentAmount) : "",
@@ -84,33 +65,19 @@ export default function RentScheduleSection({
     startingCheckNumber: "",
     accountId: "",
   });
+  const [genForm, setGenForm] = useState(emptyForm);
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [previewRows, setPreviewRows] = useState<RentScheduleRow[] | null>(null);
   const [genBusy, setGenBusy] = useState(false);
   const genIsCheck = isCheck(genForm.paymentMethod);
 
-  const [editTarget, setEditTarget] = useState<PropertyPayment | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({
-    paymentDate: "",
-    dueDate: "",
-    amount: "",
-    paymentMethod: "check",
-    checkNumber: "",
-    accountId: "",
-  });
-
-  function openGenerator() {
-    setGenForm({
-      count: "12",
-      firstMonth: defaultFirstMonth,
-      monthlyAmount: currentLease ? String(currentLease.monthlyRentAmount) : "",
-      paymentMethod: "check",
-      startingCheckNumber: "",
-      accountId: "",
-    });
+  // Each opening starts from this lease and the month after the last check.
+  useEffect(() => {
+    if (!open) return;
+    setGenForm(emptyForm());
     setPreviewRows(null);
-    setGeneratorOpen(true);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   /**
    * Switching the method re-points the batch at the account kind that method
@@ -180,7 +147,7 @@ export default function RentScheduleSection({
               ? `נקבעו ${result.inserted} תשלומי שכירות (${result.skipped} חודשים דולגו — כבר נקבע להם תשלום).`
               : `נקבעו ${result.inserted} תשלומי שכירות.`
           );
-          setGeneratorOpen(false);
+          onOpenChange(false);
           refresh();
         } else {
           toast.error(result.error);
@@ -191,151 +158,12 @@ export default function RentScheduleSection({
     })();
   }
 
-  function openEdit(payment: PropertyPayment) {
-    setEditTarget(payment);
-    setEditForm({
-      paymentDate: payment.date ?? "",
-      dueDate: payment.dueDate ?? "",
-      amount: String(payment.amount ?? ""),
-      paymentMethod: PAYMENT_METHOD_OPTIONS.some((m) => m.value === payment.method)
-        ? (payment.method as string)
-        : "check",
-      checkNumber: payment.checkNumber ?? "",
-      accountId: payment.accountId ?? "",
-    });
-  }
-
-  function submitEdit() {
-    if (!editTarget) return;
-    if (!editForm.paymentDate || !editForm.dueDate) {
-      toast.error("יש להזין תאריך לחודש ותאריך פרעון.");
-      return;
-    }
-    if (!(Number(editForm.amount) > 0)) {
-      toast.error("יש להזין סכום תקין.");
-      return;
-    }
-    if (accountsList.length > 0 && !editForm.accountId) {
-      toast.error("יש לבחור חשבון.");
-      return;
-    }
-    const targetId = editTarget.id;
-    const snapshotForm = editForm;
-    setEditTarget(null);
-    scheduleDeferredEdit({
-      scope: "property-payment",
-      id: targetId,
-      message: "התשלום עודכן.",
-      patch: {
-        date: snapshotForm.paymentDate,
-        dueDate: snapshotForm.dueDate,
-        amount: Number(snapshotForm.amount),
-        method: snapshotForm.paymentMethod,
-        checkNumber: isCheck(snapshotForm.paymentMethod) ? snapshotForm.checkNumber || null : null,
-        accountId: snapshotForm.accountId || null,
-      },
-      onCommit: async () => {
-        const res = await fetch("/api/payments/update", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            id: targetId,
-            business_domain: "property_management",
-            payment_date: snapshotForm.paymentDate,
-            due_date: snapshotForm.dueDate,
-            amount_total: Number(snapshotForm.amount),
-            payment_method: snapshotForm.paymentMethod,
-            check_number: isCheck(snapshotForm.paymentMethod) ? snapshotForm.checkNumber || null : null,
-            account_id: snapshotForm.accountId || null,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
-        refresh();
-        return { ok: true };
-      },
-    });
-  }
-
-  function toggleCleared(payment: PropertyPayment) {
-    const collected = normalizeCheckStatus(payment.paymentStatus) !== "cleared";
-    scheduleDeferredEdit({
-      scope: "property-payment",
-      id: payment.id,
-      message: collected ? "התשלום סומן כנפרע." : "הסימון בוטל.",
-      patch: { paymentStatus: collected ? "cleared" : "pending" },
-      onCommit: async () => {
-        const res = await fetch("/api/payments/mark-collected", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: payment.id, collected }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
-        refresh();
-        return { ok: true };
-      },
-    });
-  }
-
   return (
-    <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">תשלומי שכירות ({payments.length})</CardTitle>
-        <Button size="sm" onClick={openGenerator} disabled={!currentLease}>
-          <AddIcon className="h-4 w-4" />
-          קביעת תשלומים מראש
-        </Button>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {!currentLease ? (
-          <p className="text-sm text-muted-foreground">אין חוזה שכירות פעיל — אי אפשר לקבוע תשלומים.</p>
-        ) : payments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">עדיין לא נקבעו תשלומי שכירות.</p>
-        ) : (
-          payments.map((p) => {
-            const status = normalizeCheckStatus(p.paymentStatus);
-            return (
-              <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                <div className="min-w-0 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{monthLabel(p.date)}</span>
-                    <span className={"rounded-md border px-2 py-0.5 text-xs " + checkStatusClasses(status)}>
-                      {checkStatusLabel(status)}
-                    </span>
-                  </div>
-                  <MetaRow
-                    className="text-xs text-muted-foreground"
-                    items={[
-                      p.checkNumber ? `צ'ק #${p.checkNumber}` : p.method ? paymentMethodLabel(p.method) : null,
-                      `פרעון: ${fmtDate(p.dueDate)}`,
-                    ]}
-                  />
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <span className="font-semibold">{formatCurrency(p.amount)}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={status === "cleared" ? "secondary" : "default"}
-                    onClick={() => toggleCleared(p)}
-                  >
-                    <CheckIcon className="h-4 w-4" />
-                    {status === "cleared" ? "בטל סימון" : "נפרע"}
-                  </Button>
-                  <EditButton onClick={() => openEdit(p)} label="עריכת תשלום" />
-                  <DeleteButton onClick={() => onDeleteRequest(p.id, `תשלום שכירות (${monthLabel(p.date)})`)} label="מחיקת תשלום" />
-                </div>
-              </div>
-            );
-          })
-        )}
-      </CardContent>
-
+    <>
       {/* Generator dialog */}
       <FormDialog
-        open={generatorOpen}
-        onOpenChange={setGeneratorOpen}
+        open={open}
+        onOpenChange={onOpenChange}
         title="קביעת תשלומי שכירות מראש"
         description="כל תשלום מציין את התאריך לפי חודש השכירות, ואת תאריך הפרעון לפי המועד שבו הכסף מתקבל בפועל."
         size="form2xl"
@@ -451,61 +279,6 @@ export default function RentScheduleSection({
         </div>
       </FormDialog>
 
-      {/* Edit one scheduled payment */}
-      <FormDialog
-        open={Boolean(editTarget)}
-        onOpenChange={(open) => !open && setEditTarget(null)}
-        title="עריכת תשלום שכירות"
-        size="formMd"
-        onSubmit={submitEdit}
-        submitLabel="שמירה"
-      >
-        <div className="mt-4 space-y-4">
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">תאריך (לחודש השכירות)</span>
-            <DateInput value={editForm.paymentDate} onChange={(e) => setEditForm((prev) => ({ ...prev, paymentDate: e.target.value }))} />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">תאריך פרעון</span>
-            <DateInput value={editForm.dueDate} onChange={(e) => setEditForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">סכום</span>
-            <CurrencyInput value={editForm.amount} onChange={(e) => setEditForm((prev) => ({ ...prev, amount: e.target.value }))} />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">אמצעי תשלום</span>
-            <NativeSelect
-              value={editForm.paymentMethod}
-              onChange={(e) =>
-                setEditForm((prev) => ({
-                  ...prev,
-                  paymentMethod: e.target.value,
-                  checkNumber: isCheck(e.target.value) ? prev.checkNumber : "",
-                }))
-              }
-            >
-              {PAYMENT_METHOD_OPTIONS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
-          {isCheck(editForm.paymentMethod) ? (
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">מספר צ&apos;ק</span>
-              <Input value={editForm.checkNumber} onChange={(e) => setEditForm((prev) => ({ ...prev, checkNumber: e.target.value }))} />
-            </label>
-          ) : null}
-          <AccountSelect
-            required
-            value={editForm.accountId}
-            onChange={(value) => setEditForm((prev) => ({ ...prev, accountId: value }))}
-            onLoaded={setAccountsList}
-          />
-        </div>
-      </FormDialog>
-    </Card>
+    </>
   );
 }

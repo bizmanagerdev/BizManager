@@ -94,11 +94,17 @@ export const EXPENSE_CATEGORY_OPTIONS_WITH_WAGE = [
 ] as const;
 // Property-management-specific expense categories, shown IN ADDITION TO the
 // base list only when the expense's domain is property_management. Rent
-// income is NOT here — it's income (a payment), never an expense category.
+// income is NOT here — it's income (a payment), never an expense category;
+// "שכירות" here is rent the business pays (a warehouse it rents). Owner's
+// card, 2026-10-20: "קטגוריות: משכנתא, שכירות, שיפוץ, ריהוט".
 export const EXPENSE_PROPERTY_CATEGORIES = [
-  "הוצאות לשיפוץ",
-  "רכישת ציוד",
   "משכנתא",
+  "הוצאות לשיפוץ",
+  "ריהוט",
+  "רכישת ציוד",
+  "שכירות",
+  "ביטוח",
+  "תיווך",
   "מים",
   "חשמל",
   "גז",

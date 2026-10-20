@@ -554,8 +554,12 @@ export function ExpenseDialog({
     [recurringProperties, sourceSearch]
   );
 
+  // A property's page passes its workers too (a shift on the property), and
+  // the property's own categories were lost behind the wage list.
   const categoryOptions = workerSupport
-    ? [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]
+    ? effectiveDomain === "property_management"
+      ? [WORKER_WAGE_CATEGORY, ...PROPERTY_EXPENSE_CATEGORIES, ...BASE_EXPENSE_CATEGORIES]
+      : [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]
     : isVehicleContext
       ? [...VEHICLE_EXPENSE_CATEGORIES, OTHER_CATEGORY]
       : effectiveDomain === "property_management"

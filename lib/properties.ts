@@ -5,6 +5,7 @@ import type { WorkSessionRow } from "@/lib/payroll";
 import { israelDateKey } from "@/lib/timezone";
 import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 import type { StructuredAddress } from "@/lib/address/structured";
+import type { FinancialAttachment } from "@/lib/payments";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Properties (נכסים) — a real estate asset with a lease history and its own
@@ -71,6 +72,7 @@ export type LeaseAgreement = {
   propertyId: string;
   customerId: string;
   customerName: string | null;
+  customerPhone: string | null;
   startDate: string | null;
   endDate: string | null;
   monthlyRentAmount: number;
@@ -191,6 +193,7 @@ function normalizeLease(row: Row): LeaseAgreement {
     propertyId: str(row.property_id) ?? "",
     customerId: str(row.customer_id) ?? "",
     customerName: str(customerRow?.name),
+    customerPhone: str(customerRow?.phone),
     startDate: str(row.start_date),
     endDate: str(row.end_date),
     monthlyRentAmount: num(row.monthly_rent_amount),
@@ -318,7 +321,7 @@ export function pickCurrentLease(leases: LeaseAgreement[]): LeaseAgreement | nul
 }
 
 const LEASE_SELECT =
-  "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,rent_day_of_month,created_at,customer:customers(name)";
+  "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,rent_day_of_month,created_at,customer:customers(name,phone)";
 
 /**
  * Every property with its current lease + income/expense rollup, computed in
@@ -467,10 +470,13 @@ export type PropertyExpense = {
   propertyId: string | null;
   /** Set when the row was generated from a recurring template (labelled by its name). */
   recurringTemplateId: string | null;
+  /** The files attached to it (a receipt, an invoice). */
+  attachments: FinancialAttachment[];
 };
 
 export type PropertyPayment = {
   id: string;
+  /** For a scheduled rent check: the month the rent is for (its due date is when the money comes in). */
   date: string | null;
   amount: number;
   method: string | null;
@@ -478,6 +484,13 @@ export type PropertyPayment = {
   checkNumber: string | null;
   paymentStatus: string | null;
   accountId: string | null;
+  /** What it was for, as written ("שכירות חודש אב") — the row's title. */
+  notes: string | null;
+  referenceNumber: string | null;
+  requiresSplit: boolean;
+  createdAt: string | null;
+  /** The files attached to it (a check's photo, a transfer confirmation). */
+  attachments: FinancialAttachment[];
 };
 
 export type PropertyDocument = {
@@ -584,8 +597,59 @@ export type PropertyActivity = {
   tasks: PropertyTask[];
   recurringTemplates: PropertyRecurringTemplate[];
   sessions: PropertySession[];
+  /** The files attached to each worker shift, by its id. */
+  sessionAttachments: Record<string, FinancialAttachment[]>;
+  /** Every account's name, by its id — the money table's חשבון column. */
+  accountNames: Record<string, string>;
   rollup: PropertyRollup;
 };
+
+/** Ids in batches of 150 at most (a long .in() list overflows the request). */
+function idBatches(ids: string[]): string[][] {
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += 150) batches.push(ids.slice(i, i + 150));
+  return batches;
+}
+
+/** Each entity's document_links with the documents they point at, in one request per batch. */
+async function linkedFiles(supabase: SupabaseClient, entityType: string, ids: string[]): Promise<Row[]> {
+  const pages = await Promise.all(
+    idBatches(ids).map((batch) =>
+      supabase
+        .from("document_links")
+        .select("entity_id,document_id,created_at,document:documents(id,file_name,storage_key,uploaded_at,document_type)")
+        .eq("entity_type", entityType)
+        .in("entity_id", batch)
+        .then(({ data }) => (data ?? []) as Row[])
+    )
+  );
+  return pages.flat();
+}
+
+function linkDocument(link: Row): Row | null {
+  const embedded = Array.isArray(link.document) ? link.document[0] : link.document;
+  return embedded && typeof embedded === "object" ? (embedded as Row) : null;
+}
+
+function filesByEntity(links: Row[], urlByKey: Map<string, string>): Record<string, FinancialAttachment[]> {
+  const byEntity: Record<string, FinancialAttachment[]> = {};
+  for (const link of links) {
+    const entityId = str(link.entity_id);
+    const documentId = str(link.document_id);
+    if (!entityId || !documentId) continue;
+    const doc = linkDocument(link);
+    const storageKey = str(doc?.storage_key);
+    (byEntity[entityId] ??= []).push({
+      document_id: documentId,
+      file_name: str(doc?.file_name),
+      storage_key: storageKey,
+      uploaded_at: str(doc?.uploaded_at) ?? str(link.created_at),
+      document_type: str(doc?.document_type),
+      url: storageKey ? urlByKey.get(storageKey) ?? null : null,
+    });
+  }
+  return byEntity;
+}
 
 /**
  * Expenses/payments queried directly by property_id (a real FK column — no
@@ -604,6 +668,8 @@ export async function fetchPropertyActivity(
     tasks: [],
     recurringTemplates: [],
     sessions: [],
+    sessionAttachments: {},
+    accountNames: {},
     rollup: EMPTY_ROLLUP,
   };
   try {
@@ -616,7 +682,9 @@ export async function fetchPropertyActivity(
         .eq("property_id", propertyId),
       supabase
         .from("payments")
-        .select("id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id")
+        .select(
+          "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id,notes,reference_number,requires_split,created_at"
+        )
         .eq("property_id", propertyId),
       supabase.from("document_links").select("document_id").eq("entity_type", "property").eq("entity_id", propertyId),
       supabase.from("tasks").select("id,subject,status,due_date,due_time").eq("property_id", propertyId),
@@ -639,15 +707,41 @@ export async function fetchPropertyActivity(
           .in("id", docIds)
       : { data: [] as Row[] };
 
-    const docKeys = ((docRows ?? []) as Row[])
-      .map((row) => str(row.storage_key))
-      .filter((key): key is string => Boolean(key));
+    const idsOf = (res: { data: unknown }) =>
+      ((res.data ?? []) as Row[]).map((row) => str(row.id)).filter((id): id is string => Boolean(id));
+    const [expenseLinks, paymentLinks, sessionLinks, accountRows] = await Promise.all([
+      linkedFiles(supabase, "expense", idsOf(exRes)),
+      linkedFiles(supabase, "payment", idsOf(pmRes)),
+      linkedFiles(supabase, "session", idsOf(ssRes)),
+      supabase
+        .from("accounts")
+        .select("id,name")
+        .then(({ data }) => (data ?? []) as Row[]),
+    ]);
+
+    const docKeys = new Set<string>();
+    for (const row of (docRows ?? []) as Row[]) {
+      const key = str(row.storage_key);
+      if (key) docKeys.add(key);
+    }
+    for (const link of [...expenseLinks, ...paymentLinks, ...sessionLinks]) {
+      const key = str(linkDocument(link)?.storage_key);
+      if (key) docKeys.add(key);
+    }
     const docUrlByKey = new Map<string, string>();
-    if (docKeys.length > 0) {
-      const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(docKeys, 60 * 60);
+    if (docKeys.size > 0) {
+      const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls([...docKeys], 60 * 60);
       for (const s of signed ?? []) {
         if (s.path && s.signedUrl) docUrlByKey.set(s.path, s.signedUrl);
       }
+    }
+    const expenseFiles = filesByEntity(expenseLinks, docUrlByKey);
+    const paymentFiles = filesByEntity(paymentLinks, docUrlByKey);
+    const accountNames: Record<string, string> = {};
+    for (const row of accountRows) {
+      const id = str(row.id);
+      const name = str(row.name)?.trim();
+      if (id && name) accountNames[id] = name;
     }
 
     const expenses: PropertyExpense[] = ((exRes.data ?? []) as Row[]).map((r) => ({
@@ -666,6 +760,7 @@ export async function fetchPropertyActivity(
       orderId: str(r.order_id),
       propertyId: str(r.property_id),
       recurringTemplateId: str(r.recurring_expense_template_id),
+      attachments: expenseFiles[str(r.id) ?? ""] ?? [],
     }));
     const payments: PropertyPayment[] = ((pmRes.data ?? []) as Row[]).map((r) => ({
       id: str(r.id) ?? "",
@@ -676,6 +771,11 @@ export async function fetchPropertyActivity(
       checkNumber: str(r.check_number),
       paymentStatus: str(r.payment_status),
       accountId: str(r.account_id),
+      notes: str(r.notes),
+      referenceNumber: str(r.reference_number),
+      requiresSplit: r.requires_split === true,
+      createdAt: str(r.created_at),
+      attachments: paymentFiles[str(r.id) ?? ""] ?? [],
     }));
     const documents: PropertyDocument[] = ((docRows ?? []) as Row[]).map((r) => {
       const key = str(r.storage_key);
@@ -730,7 +830,17 @@ export async function fetchPropertyActivity(
         .reduce((s, p) => s + p.amount, 0),
     };
 
-    return { expenses, payments, documents, tasks, recurringTemplates, sessions, rollup };
+    return {
+      expenses,
+      payments,
+      documents,
+      tasks,
+      recurringTemplates,
+      sessions,
+      sessionAttachments: filesByEntity(sessionLinks, docUrlByKey),
+      accountNames,
+      rollup,
+    };
   } catch {
     return empty;
   }

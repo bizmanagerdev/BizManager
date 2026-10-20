@@ -1,12 +1,9 @@
 import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
-import { BuildingIcon, TrendDownIcon, TrendUpIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
-import { Card, CardContent } from "@/components/ui/card";
-import { PageStack } from "@/components/layout/page-layout";
-import { formatCurrency, type SalaryAgreementRow } from "@/lib/payroll";
-import { fetchProperty, fetchPropertyActivity, propertyDisplayName } from "@/lib/properties";
+import type { SalaryAgreementRow } from "@/lib/payroll";
+import { fetchProperty, fetchPropertyActivity } from "@/lib/properties";
 import type { PropertyStaffUser } from "./PropertyDetailClient";
 import { PropertyDetailBodySkeleton } from "./PropertyPageSkeleton";
 
@@ -17,32 +14,6 @@ const PropertyDetailClient = dynamic(() => import("./PropertyDetailClient"), {
 });
 
 export const revalidate = 30;
-
-function StatCard({
-  label,
-  value,
-  tone,
-  icon,
-}: {
-  label: string;
-  value: string;
-  tone?: "income" | "expense" | "warning" | "neutral";
-  icon?: React.ReactNode;
-}) {
-  const color =
-    tone === "income" ? "text-emerald-600" : tone === "expense" ? "text-destructive" : tone === "warning" ? "text-warning-strong" : "";
-  return (
-    <Card className="min-w-0">
-      <CardContent className="p-3">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          {icon}
-          {label}
-        </div>
-        <div className={`mt-1 whitespace-nowrap text-lg font-semibold tabular-nums ${color}`}>{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export default async function PropertyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -62,7 +33,6 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
       .select("id,full_name,email,role,active,payroll_worker_type,pay_tracking_mode,avatar_color")
       .order("full_name", { ascending: true }),
   ]);
-  const net = activity.rollup.totalIncomeAmount - activity.rollup.paidExpenseAmount;
 
   const users: PropertyStaffUser[] = ((usersResult.data ?? []) as Array<Record<string, unknown>>).map((u) => ({
     id: String(u.id ?? ""),
@@ -91,47 +61,17 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      <PageStack>
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <BuildingIcon className="h-6 w-6" />
-            {propertyDisplayName(property)}
-          </h1>
-          {property.name ? <p className="text-sm text-muted-foreground">{property.address}</p> : null}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard
-            label="הוצאות ששולמו"
-            value={formatCurrency(activity.rollup.paidExpenseAmount)}
-            tone="expense"
-            icon={<TrendDownIcon className="h-3.5 w-3.5" />}
-          />
-          <StatCard
-            label="הוצאות צפויות"
-            value={formatCurrency(activity.rollup.expectedExpenseAmount)}
-            tone="warning"
-            icon={<TrendDownIcon className="h-3.5 w-3.5" />}
-          />
-          <StatCard
-            label="הכנסות שנגבו (שכירות וכו')"
-            value={formatCurrency(activity.rollup.totalIncomeAmount)}
-            tone="income"
-            icon={<TrendUpIcon className="h-3.5 w-3.5" />}
-          />
-          <StatCard label="נטו" value={formatCurrency(net)} tone={net >= 0 ? "income" : "expense"} />
-        </div>
-
-        <PropertyDetailClient
-          propertyId={id}
-          property={property}
-          activity={activity}
-          users={users}
-          salaryAgreements={salaryAgreements}
-          currentUserId={profile.id}
-          currentUserRole={profile.role}
-        />
-      </PageStack>
+      {/* One details page, like a project's or an order's (owner, 2026-10-20):
+          the heading, the head row and the money are all the client's. */}
+      <PropertyDetailClient
+        propertyId={id}
+        property={property}
+        activity={activity}
+        users={users}
+        salaryAgreements={salaryAgreements}
+        currentUserId={profile.id}
+        currentUserRole={profile.role}
+      />
     </AppShell>
   );
 }

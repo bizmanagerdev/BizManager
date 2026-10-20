@@ -97,6 +97,8 @@ export type Movement = {
   /** Where it lives elsewhere — a check's place on the checks page. */
   link?: { label: string; href: string } | null;
   busy?: boolean;
+  /** More things to do with the row, in its ⋮ before עריכה / מחיקה (a check's "נפרע"). */
+  actions?: { key: string; label: string; onSelect: () => void }[];
   onEdit?: () => void;
   onDelete?: () => void;
 };
@@ -183,7 +185,7 @@ function Attachments({ attachments, label = "קובץ" }: { attachments: Financi
 }
 
 function RowActions({ movement }: { movement: Movement }) {
-  if (!movement.onEdit && !movement.onDelete) return null;
+  if (!movement.onEdit && !movement.onDelete && !movement.actions?.length) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={movement.busy}>
@@ -203,6 +205,11 @@ function RowActions({ movement }: { movement: Movement }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-36">
+        {(movement.actions ?? []).map((action) => (
+          <DropdownMenuItem key={action.key} onClick={action.onSelect}>
+            {action.label}
+          </DropdownMenuItem>
+        ))}
         {movement.onEdit ? (
           <DropdownMenuItem onClick={movement.onEdit}>
             <EditIcon className="me-2 h-4 w-4" />
@@ -459,8 +466,13 @@ export default function ProjectMovements({
   groupBy,
   sortBy,
   sortDirection,
+  showBilled = true,
+  emptyText = "אין תנועות להצגה.",
 }: {
   movements: Movement[];
+  /** The "לחיוב לקוח" column — a project's; a property bills no one. */
+  showBilled?: boolean;
+  emptyText?: string;
   /** קיבוץ — from the תצוגה dropdown in the section header. */
   groupBy: LedgerGroupBy;
   /** מיון — from the same dropdown. */
@@ -505,7 +517,7 @@ export default function ProjectMovements({
 
   if (movements.length === 0) {
     // The app's one empty box (owner, 2026-10-11: "empty lists: one look").
-    return <EmptyState dense>אין תנועות להצגה.</EmptyState>;
+    return <EmptyState dense>{emptyText}</EmptyState>;
   }
 
   function desktopRow(movement: Movement) {
@@ -563,9 +575,11 @@ export default function ProjectMovements({
           <td className={TD}>
             {movement.account ?? <span className="text-muted-foreground/40">—</span>}
           </td>
-          <td className={TD + " whitespace-nowrap font-semibold tabular-nums"}>
-            <BilledCell amount={movement.billedAmount} />
-          </td>
+          {showBilled ? (
+            <td className={TD + " whitespace-nowrap font-semibold tabular-nums"}>
+              <BilledCell amount={movement.billedAmount} />
+            </td>
+          ) : null}
           <td className={TD + " whitespace-nowrap font-semibold tabular-nums"}>
             <AmountCell movement={movement} side="in" />
           </td>
@@ -579,7 +593,7 @@ export default function ProjectMovements({
         {open ? (
           <tr className="border-b border-border/70 bg-muted/10">
             <td />
-            <td className="ps-6 pb-3 pt-0" colSpan={8}>
+            <td className="ps-6 pb-3 pt-0" colSpan={showBilled ? 8 : 7}>
               <Details movement={movement} />
             </td>
           </tr>
@@ -600,7 +614,7 @@ export default function ProjectMovements({
         <td className={GUTTER}>
           <ChevronDownIcon className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
         </td>
-        <td className={TD + " font-semibold"} colSpan={5}>
+        <td className={TD + " font-semibold"} colSpan={showBilled ? 5 : 4}>
           {group.name}
           <span className="ms-1.5 text-xs font-normal text-muted-foreground">· {group.rows.length} תנועות</span>
         </td>
@@ -622,7 +636,8 @@ export default function ProjectMovements({
       Boolean(movement.status) ||
       movement.billed ||
       Boolean(movement.onEdit) ||
-      Boolean(movement.onDelete);
+      Boolean(movement.onDelete) ||
+      Boolean(movement.actions?.length);
     const open = expandable && Boolean(openKeys[movement.key]);
     return (
       <li key={movement.key} data-focus-id={movement.key}>
@@ -631,8 +646,15 @@ export default function ProjectMovements({
           open={swipedKey === movement.key}
           onOpenChange={(next) => setSwipedKey(next ? movement.key : null)}
           actions={
-            movement.onEdit || movement.onDelete
+            movement.onEdit || movement.onDelete || movement.actions?.length
               ? [
+                  ...(movement.actions ?? []).map((action) => ({
+                    key: action.key,
+                    label: action.label,
+                    icon: <CheckIcon className="h-4 w-4" />,
+                    onSelect: action.onSelect,
+                    className: "bg-success text-success-foreground",
+                  })),
                   ...(movement.onEdit
                     ? [
                         {
@@ -781,7 +803,7 @@ export default function ProjectMovements({
               <th className={TH}>תיאור</th>
               <th className={TH}>סטטוס</th>
               <th className={TH}>חשבון</th>
-              <th className={TH}>לחיוב לקוח</th>
+              {showBilled ? <th className={TH}>לחיוב לקוח</th> : null}
               <th className={TH}>הכנסה</th>
               <th className={TH}>הוצאה</th>
               <th className="w-16 px-2 py-3 text-center font-medium">פעולות</th>
@@ -809,9 +831,11 @@ export default function ProjectMovements({
               <td className={TD} colSpan={4}>
                 סה״כ
               </td>
-              <td className={TD + " whitespace-nowrap tabular-nums text-secondary"}>
-                <LtrInline>{formatIls(totals.billed)}</LtrInline>
-              </td>
+              {showBilled ? (
+                <td className={TD + " whitespace-nowrap tabular-nums text-secondary"}>
+                  <LtrInline>{formatIls(totals.billed)}</LtrInline>
+                </td>
+              ) : null}
               <td className={TD + " whitespace-nowrap tabular-nums text-success"}>
                 <LtrInline>{formatIls(totals.in)}</LtrInline>
               </td>
