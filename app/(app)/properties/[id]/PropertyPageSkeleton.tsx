@@ -2,13 +2,15 @@ import { PageStack } from "@/components/layout/page-layout";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { SECTION_ICON_CLASS } from "@/components/ui/section-card";
-import { BuildingIcon, ChartIcon, DocumentIcon, ImageIcon, PaymentIcon, RecurringIcon, TaskIcon, UserIcon } from "@/components/ui/icons";
+import { BuildingIcon, ChartIcon, DocumentIcon, InfoIcon, PaymentIcon, RecurringIcon, TaskIcon, UserIcon } from "@/components/ui/icons";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // A property's page before its data, in the page's own shape (owner,
 // 2026-10-20: one details page like a project's): the heading, the head row
-// (נכס · שוכר · שכירות החודש), and the two columns — the money table and the
-// sections under it, the money summary and the recurring costs beside it.
+// (נכס · שוכר · שכירות החודש), and the two columns — the money card with its
+// two tabs, and beside it the money summary, the recurring costs, the tasks,
+// the files and the details (grouped so, 2026-10-21).
 // The cards are the page's own (StatActionCard, CollapsibleSection) with their
 // names, so nothing moves when the figures arrive. The plain loading screen,
 // the properties list's on the way in from outside /properties
@@ -102,17 +104,15 @@ export function PropertyDetailBodySkeleton() {
               </div>
             }
           >
+            {/* The page's own tab row, so its height is exact. */}
+            <Tabs value="done" dir="rtl">
+              <TabsList variant="underline" className="mb-3">
+                <TabsTrigger value="done">שבוצעו</TabsTrigger>
+                <TabsTrigger value="expected">צפויים</TabsTrigger>
+              </TabsList>
+            </Tabs>
             <Skeleton className="mb-2 h-10 w-full" />
             <TableRows />
-          </CollapsibleSection>
-          <CollapsibleSection collapsible={false} title="משימות" icon={<TaskIcon className={SECTION_ICON_CLASS} />}>
-            <Skeleton className="h-10 w-full" />
-          </CollapsibleSection>
-          <CollapsibleSection collapsible={false} title="מסמכים" icon={<DocumentIcon className={SECTION_ICON_CLASS} />}>
-            <Skeleton className="h-16 w-full" />
-          </CollapsibleSection>
-          <CollapsibleSection collapsible={false} title="תמונות" icon={<ImageIcon className={SECTION_ICON_CLASS} />}>
-            <Skeleton className="h-10 w-full" />
           </CollapsibleSection>
         </div>
         <div className="min-w-0 space-y-3">
@@ -130,10 +130,15 @@ export function PropertyDetailBodySkeleton() {
           <CollapsibleSection collapsible={false} title="הוצאות קבועות" icon={<RecurringIcon className={SECTION_ICON_CLASS} />}>
             <Skeleton className="h-10 w-full" />
           </CollapsibleSection>
-          {/* The purchase, the furniture and the utility numbers (the side, from 2026-10-21). */}
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-28 w-full rounded-card" />
-          ))}
+          <CollapsibleSection collapsible={false} title="משימות" icon={<TaskIcon className={SECTION_ICON_CLASS} />}>
+            <Skeleton className="h-10 w-full" />
+          </CollapsibleSection>
+          <CollapsibleSection collapsible={false} title="מסמכים ותמונות" icon={<DocumentIcon className={SECTION_ICON_CLASS} />}>
+            <Skeleton className="h-16 w-full" />
+          </CollapsibleSection>
+          <CollapsibleSection collapsible={false} title="פרטים" icon={<InfoIcon className={SECTION_ICON_CLASS} />}>
+            <Skeleton className="h-28 w-full" />
+          </CollapsibleSection>
         </div>
       </div>
     </div>

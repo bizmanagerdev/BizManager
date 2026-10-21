@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, DocumentIcon, ImageIcon, MoreIcon, RecurringIcon, SearchIcon, TaskIcon } from "@/components/ui/icons";
+import { AddIcon, DocumentIcon, InfoIcon, MoreIcon, RecurringIcon, SearchIcon, TaskIcon } from "@/components/ui/icons";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MetaRow } from "@/components/ui/meta-row";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
@@ -287,6 +288,7 @@ export default function PropertyDetailClient({
   const [deletePropertyOpen, setDeletePropertyOpen] = useState(false);
   // the money table's search (owner's card: "חיפוש בחלק של הוצאות")
   const [search, setSearch] = useState("");
+  const [moneyTab, setMoneyTab] = useState<"done" | "expected">("done");
   // recurring template
   const [templateOpen, setTemplateOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EditingRecurringTemplateData | null>(null);
@@ -800,14 +802,13 @@ export default function PropertyDetailClient({
               onNew={openAddLease}
             />
           ) : null}
+          {/* The money as one card (owner, 2026-10-21: "tons of info for one page"):
+              what happened and what's still to come as its two tabs — the
+              expected still a list of its own (the card's note 3), one table on
+              screen. The search looks through both. */}
           <CollapsibleSection
             collapsible={false}
-            title={
-              <span className="flex items-center gap-1.5">
-                תנועות
-                <SectionCount count={movements.done.length} />
-              </span>
-            }
+            title="תנועות"
             contentClassName="@container flex flex-col text-sm"
             action={
               <div className="flex items-center gap-1.5">
@@ -822,165 +823,54 @@ export default function PropertyDetailClient({
               </div>
             }
           >
-            <div className="relative mb-2">
-              <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="חיפוש בתנועות — שם, קטגוריה, סכום…"
-                aria-label="חיפוש בתנועות"
-                className="ps-9"
-              />
-            </div>
-            <ProjectMovements
-              movements={visibleDone}
-              groupBy="none"
-              sortBy="date"
-              // Newest first (owner, 2026-10-21); the expected list below stays soonest first.
-              sortDirection="desc"
-              showBilled={false}
-              emptyText={search.trim() ? "לא נמצאו תנועות לחיפוש הזה." : "אין עדיין הכנסות או הוצאות לנכס הזה."}
-            />
-          </CollapsibleSection>
-
-          {movements.expected.length > 0 ? (
-            <CollapsibleSection
-              defaultOpen
-              title={
-                <span className="flex items-center gap-1.5">
+            <Tabs value={moneyTab} onValueChange={(value) => setMoneyTab(value === "expected" ? "expected" : "done")} dir="rtl">
+              {/* Both tabs always, so the card's shape doesn't depend on there being any. */}
+              <TabsList variant="underline" className="mb-3">
+                <TabsTrigger value="done" count={visibleDone.length}>
+                  שבוצעו
+                </TabsTrigger>
+                <TabsTrigger value="expected" count={visibleExpected.length > 0 ? visibleExpected.length : undefined}>
                   צפויים
-                  <SectionCount count={movements.expected.length} />
-                </span>
-              }
-              contentClassName="@container flex flex-col text-sm"
-            >
-              <p className="mb-2 text-xs text-muted-foreground">צ׳קים שעוד לא נפרעו, והוצאות שעוד לא שולמו.</p>
-              <ProjectMovements
-                movements={visibleExpected}
-                groupBy="none"
-                sortBy="date"
-                sortDirection="asc"
-                showBilled={false}
-                emptyText="לא נמצאו תנועות לחיפוש הזה."
-              />
-            </CollapsibleSection>
-          ) : null}
-
-          <CollapsibleSection
-            defaultOpen={activityTasks.length > 0}
-            title="משימות"
-            icon={<TaskIcon className={SECTION_ICON_CLASS} />}
-            summary={activityTasks.length > 0 ? <SectionCount count={activityTasks.length} /> : null}
-            action={
-              <Button type="button" size="sm" variant="outline" onClick={openAddTask}>
-                <AddIcon className="h-4 w-4" />
-                משימה
-              </Button>
-            }
-          >
-            {activityTasks.length === 0 ? (
-              <EmptyState dense>אין משימות לנכס הזה.</EmptyState>
-            ) : (
-              <ul className="divide-y">
-                {activityTasks.map((t: PropertyTask) => (
-                  <li key={t.id} className="flex items-center justify-between gap-2 py-2">
-                    <button type="button" onClick={() => openEditTask(t.id)} className="min-w-0 text-start text-sm">
-                      <div className="font-medium">{t.subject || "משימה"}</div>
-                      <div className="text-xs text-muted-foreground">{formatDateWithTime(t.dueDate, t.dueTime, "—")}</div>
-                    </button>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
-                      <RowMenu
-                        label="פעולות למשימה"
-                        onEdit={() => openEditTask(t.id)}
-                        onDelete={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CollapsibleSection>
-
-          <CollapsibleSection
-            defaultOpen
-            title="מסמכים"
-            icon={<DocumentIcon className={SECTION_ICON_CLASS} />}
-            summary={otherDocuments.length > 0 ? <SectionCount count={otherDocuments.length} /> : null}
-            action={
-              <Button type="button" size="sm" variant="outline" onClick={openAddDoc}>
-                <AddIcon className="h-4 w-4" />
-                מסמך
-              </Button>
-            }
-            contentClassName="space-y-3"
-          >
-            <MissingDocumentsChecklist
-              entityType="property"
-              entityId={propertyId}
-              refreshKey={checklistKey}
-              onUpload={openAddDocWithCategory}
-            />
-            {otherDocuments.length === 0 ? (
-              <EmptyState dense>{serverPartsReady ? "אין מסמכים נוספים לנכס הזה." : "טוען מסמכים…"}</EmptyState>
-            ) : (
-              // The row opens the file; view and download at its end on hover, the
-              // delete in its quiet ⋮ (owner, 2026-10-12).
-              <div className="space-y-2">
-                {otherDocuments.map((d) => (
-                  <DocumentRow
-                    key={d.id}
-                    name={d.title || d.fileName || "מסמך"}
-                    fileName={d.fileName}
-                    url={d.url}
-                    meta={<MetaRow as="span" items={[d.documentType, fmtDateTime(d.uploadedAt)]} fallback="—" />}
-                    onDelete={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })}
-                    deleteLabel="מחיקת מסמך"
-                  />
-                ))}
+                </TabsTrigger>
+              </TabsList>
+              <div className="relative mb-2">
+                <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="חיפוש בתנועות — שם, קטגוריה, סכום…"
+                  aria-label="חיפוש בתנועות"
+                  className="ps-9"
+                />
               </div>
-            )}
-          </CollapsibleSection>
-
-          <CollapsibleSection
-            defaultOpen={photos.length > 0}
-            title="תמונות"
-            icon={<ImageIcon className={SECTION_ICON_CLASS} />}
-            summary={photos.length > 0 ? <SectionCount count={photos.length} /> : null}
-            action={
-              <Button type="button" size="sm" variant="outline" onClick={openAddPhotos}>
-                <AddIcon className="h-4 w-4" />
-                תמונות
-              </Button>
-            }
-          >
-            {photos.length === 0 ? (
-              <EmptyState dense>{serverPartsReady ? "אין תמונות לנכס הזה." : "טוען תמונות…"}</EmptyState>
-            ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {/* View and download on hover, the delete in the photo's quiet ⋮
-                    (owner, 2026-10-12). */}
-                {photos.map((photo) => (
-                  <DocumentTile
-                    key={photo.id}
-                    name={photo.title ?? photo.fileName ?? "תמונה"}
-                    fileName={photo.fileName}
-                    url={photo.url}
-                    isImage
-                    hideName
-                    previewClassName="h-28"
-                    imageSizes="(max-width: 640px) 50vw, 200px"
-                    date={fmtDateTime(photo.uploadedAt)}
-                    onDelete={() => setDel({ kind: "document", id: photo.id, label: photo.title || "תמונה" })}
-                    deleteLabel="מחיקת תמונה"
-                  />
-                ))}
-              </div>
-            )}
+              <TabsContent value="done" className="mt-0">
+                <ProjectMovements
+                  movements={visibleDone}
+                  groupBy="none"
+                  sortBy="date"
+                  // Newest first (owner, 2026-10-21); what's to come stays soonest first.
+                  sortDirection="desc"
+                  showBilled={false}
+                  emptyText={search.trim() ? "לא נמצאו תנועות לחיפוש הזה." : "אין עדיין הכנסות או הוצאות לנכס הזה."}
+                />
+              </TabsContent>
+              <TabsContent value="expected" className="mt-0">
+                <p className="mb-2 text-xs text-muted-foreground">צ׳קים שעוד לא נפרעו, והוצאות שעוד לא שולמו.</p>
+                <ProjectMovements
+                  movements={visibleExpected}
+                  groupBy="none"
+                  sortBy="date"
+                  sortDirection="asc"
+                  showBilled={false}
+                  emptyText={search.trim() ? "לא נמצאו תנועות לחיפוש הזה." : "אין צ׳קים או הוצאות שעוד צפויים."}
+                />
+              </TabsContent>
+            </Tabs>
           </CollapsibleSection>
         </div>
 
-        {/* The side column: the money in one card, then what repeats. */}
+        {/* The side column: the money in one card, then what repeats, what's to
+            do, its files, and the rest of what's known about it. */}
         <div className="min-w-0 space-y-3">
           <PropertyMoneyCard payments={activityPayments} expenses={activityExpenses} sessions={activitySessions} />
 
@@ -1023,18 +913,133 @@ export default function PropertyDetailClient({
             )}
           </CollapsibleSection>
 
-          {/* The rest of what's known about it — the purchase, the furniture, the
-              utility account numbers, each edited in place — at the side
-              (owner, 2026-10-21), so the money has the page's width. */}
-          <PropertyPurchaseCard
-            propertyId={propertyId}
-            property={property}
-            documents={purchaseDocuments}
-            onAddDocument={openAddPurchaseDoc}
-            onDeleteDocument={(id, label) => setDel({ kind: "document", id, label })}
-          />
-          <PropertyFurnitureCard propertyId={propertyId} property={property} />
-          <PropertyUtilitiesCard propertyId={propertyId} property={property} />
+          <CollapsibleSection
+            defaultOpen={activityTasks.length > 0}
+            title="משימות"
+            icon={<TaskIcon className={SECTION_ICON_CLASS} />}
+            summary={activityTasks.length > 0 ? <SectionCount count={activityTasks.length} /> : null}
+            action={
+              <Button type="button" size="sm" variant="outline" onClick={openAddTask}>
+                <AddIcon className="h-4 w-4" />
+                משימה
+              </Button>
+            }
+          >
+            {activityTasks.length === 0 ? (
+              <EmptyState dense>אין משימות לנכס הזה.</EmptyState>
+            ) : (
+              <ul className="divide-y">
+                {activityTasks.map((t: PropertyTask) => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 py-2">
+                    <button type="button" onClick={() => openEditTask(t.id)} className="min-w-0 text-start text-sm">
+                      <div className="font-medium">{t.subject || "משימה"}</div>
+                      <div className="text-xs text-muted-foreground">{formatDateWithTime(t.dueDate, t.dueTime, "—")}</div>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
+                      <RowMenu
+                        label="פעולות למשימה"
+                        onEdit={() => openEditTask(t.id)}
+                        onDelete={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CollapsibleSection>
+
+
+          {/* Its documents and photos as one place (owner, 2026-10-21): the
+              photos a strip at the top, the documents under them. */}
+          <CollapsibleSection
+            defaultOpen
+            title="מסמכים ותמונות"
+            icon={<DocumentIcon className={SECTION_ICON_CLASS} />}
+            summary={otherDocuments.length + photos.length > 0 ? <SectionCount count={otherDocuments.length + photos.length} /> : null}
+            action={
+              <>
+                <Button type="button" size="sm" variant="outline" onClick={openAddDoc}>
+                  <AddIcon className="h-4 w-4" />
+                  מסמך
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={openAddPhotos}>
+                  <AddIcon className="h-4 w-4" />
+                  תמונה
+                </Button>
+              </>
+            }
+            contentClassName="space-y-3"
+          >
+            <MissingDocumentsChecklist
+              entityType="property"
+              entityId={propertyId}
+              refreshKey={checklistKey}
+              onUpload={openAddDocWithCategory}
+            />
+            {photos.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2">
+                {/* View and download on hover, the delete in the photo's quiet ⋮
+                    (owner, 2026-10-12). */}
+                {photos.map((photo) => (
+                  <DocumentTile
+                    key={photo.id}
+                    name={photo.title ?? photo.fileName ?? "תמונה"}
+                    fileName={photo.fileName}
+                    url={photo.url}
+                    isImage
+                    hideName
+                    previewClassName="h-20"
+                    imageSizes="120px"
+                    date={fmtDateTime(photo.uploadedAt)}
+                    onDelete={() => setDel({ kind: "document", id: photo.id, label: photo.title || "תמונה" })}
+                    deleteLabel="מחיקת תמונה"
+                  />
+                ))}
+              </div>
+            ) : null}
+            {otherDocuments.length === 0 ? (
+              photos.length === 0 ? (
+                <EmptyState dense>{serverPartsReady ? "אין עדיין מסמכים או תמונות לנכס הזה." : "טוען מסמכים…"}</EmptyState>
+              ) : null
+            ) : (
+              // The row opens the file; view and download at its end on hover, the
+              // delete in its quiet ⋮ (owner, 2026-10-12).
+              <div className="space-y-2">
+                {otherDocuments.map((d) => (
+                  <DocumentRow
+                    key={d.id}
+                    name={d.title || d.fileName || "מסמך"}
+                    fileName={d.fileName}
+                    url={d.url}
+                    meta={<MetaRow as="span" items={[d.documentType, fmtDateTime(d.uploadedAt)]} fallback="—" />}
+                    onDelete={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })}
+                    deleteLabel="מחיקת מסמך"
+                  />
+                ))}
+              </div>
+            )}
+          </CollapsibleSection>
+
+          {/* What else is known about it — the purchase, the utility account
+              numbers, the furniture — as one card's blocks, each edited in place
+              (owner, 2026-10-21). */}
+          <CollapsibleSection
+            defaultOpen
+            title="פרטים"
+            icon={<InfoIcon className={SECTION_ICON_CLASS} />}
+            contentClassName="divide-y [&>*]:py-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
+          >
+            <PropertyPurchaseCard
+              propertyId={propertyId}
+              property={property}
+              documents={purchaseDocuments}
+              onAddDocument={openAddPurchaseDoc}
+              onDeleteDocument={(id, label) => setDel({ kind: "document", id, label })}
+            />
+            <PropertyUtilitiesCard propertyId={propertyId} property={property} />
+            <PropertyFurnitureCard propertyId={propertyId} property={property} />
+          </CollapsibleSection>
         </div>
       </div>
 

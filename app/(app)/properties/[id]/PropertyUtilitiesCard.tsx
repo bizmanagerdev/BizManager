@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EditButton } from "@/components/ui/icon-button";
 import { updateProperty } from "../actions";
 import {
@@ -88,12 +87,12 @@ export default function PropertyUtilitiesCard({
   const filled = UTILITY_ACCOUNT_FIELDS.filter((f) => displayProperty[f.propertyKey]);
 
   return (
-    <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">מספרי חוזה</CardTitle>
+    <section className="space-y-2" aria-label="מספרי חוזה">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">מספרי חוזה</h3>
         {editing ? null : <EditButton onClick={openEdit} label="עריכת מספרי חוזה" />}
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div>
         {editing ? (
           <div className="space-y-3">
             <PropertyUtilityFields form={draft} set={setField} />
@@ -126,7 +125,7 @@ export default function PropertyUtilitiesCard({
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

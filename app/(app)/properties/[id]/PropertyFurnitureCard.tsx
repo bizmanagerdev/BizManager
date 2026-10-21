@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EditButton } from "@/components/ui/icon-button";
 import { updateProperty } from "../actions";
 import { PropertyFurnitureFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
@@ -63,12 +62,12 @@ export default function PropertyFurnitureCard({ propertyId, property }: { proper
   }
 
   return (
-    <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">ריהוט</CardTitle>
+    <section className="space-y-2" aria-label="ריהוט">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">ריהוט</h3>
         {editing ? null : <EditButton onClick={openEdit} label="עריכת ריהוט" />}
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div>
         {editing ? (
           <div className="space-y-3">
             <PropertyFurnitureFields form={draft} set={setField} />
@@ -102,7 +101,7 @@ export default function PropertyFurnitureCard({ propertyId, property }: { proper
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

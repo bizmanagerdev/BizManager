@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AddIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EditButton } from "@/components/ui/icon-button";
 import { DocumentRow } from "@/components/ui/document-tile";
 import { MetaRow } from "@/components/ui/meta-row";
@@ -115,9 +114,9 @@ export default function PropertyPurchaseCard({
   );
 
   return (
-    <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">רכישת הנכס</CardTitle>
+    <section className="space-y-2" aria-label="רכישת הנכס">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">רכישת הנכס</h3>
         {editing ? null : (
           <div className="flex shrink-0 items-center gap-1">
             <Button size="sm" variant="secondary" onClick={onAddDocument}>
@@ -127,8 +126,8 @@ export default function PropertyPurchaseCard({
             <EditButton onClick={openEdit} label="עריכת פרטי רכישה" />
           </div>
         )}
-      </CardHeader>
-      <CardContent className="space-y-3">
+      </div>
+      <div className="space-y-3">
         {editing ? (
           <>
             <PropertyPurchaseFields form={draft} set={setField} />
@@ -205,7 +204,7 @@ export default function PropertyPurchaseCard({
             ))}
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
