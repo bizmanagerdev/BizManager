@@ -23,7 +23,7 @@ export default function PropertiesSkeleton() {
                 <Skeleton className="h-14 w-14 shrink-0 rounded-xl" />
                 <div className="min-w-0 flex-1">
                   <TextLineSkeleton className="text-lg font-semibold" barClassName="w-32" />
-                  <TextLineSkeleton className="text-sm" barClassName="w-40" />
+                  <TextLineSkeleton className="h-[2lh] text-sm" barClassName="w-40" />
                 </div>
                 <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
               </div>

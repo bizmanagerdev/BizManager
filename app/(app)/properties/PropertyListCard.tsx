@@ -112,11 +112,11 @@ export default function PropertyListCard({
             <div className="truncate text-lg font-semibold">
               <Painted text={name} />
             </div>
-            {p.name ? (
-              <div className="line-clamp-2 text-sm text-muted-foreground">
-                <Painted text={p.address} />
-              </div>
-            ) : null}
+            {/* Always two lines' room, at most two lines (owner, 2026-10-21: "the address should
+                have a set height … all the blues the same height"), so every card's rows start level. */}
+            <div className="line-clamp-2 h-[2lh] text-sm text-muted-foreground">
+              {p.name ? <Painted text={p.address} /> : null}
+            </div>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
