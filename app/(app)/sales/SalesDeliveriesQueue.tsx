@@ -35,7 +35,7 @@ import {
 } from "@/lib/orders/prepayment";
 import { combinedCustomerName, type DeliveryItem, type DeliveryOrderItem } from "@/app/(app)/sales/loadDeliveries";
 import { parseOrderComments } from "@/lib/orders/comments";
-import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
+import { pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
 import { cityColour } from "@/lib/deliveries/city-colours";
@@ -543,31 +543,22 @@ export default function SalesDeliveriesQueue({
                               </td>
                               <td className="px-4 py-4">
                                 <div className="flex items-center gap-2">
-                                  {groupPin ? (
-                                    <a
-                                      href={wazeLinkForPin(groupPin)}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-xs text-secondary-foreground no-underline"
-                                    >
-                                      <WazeIcon className="h-3.5 w-3.5" />
-                                      נקודה
-                                    </a>
-                                  ) : (
-                                    // The icon alone (owner, 2026-10-11: "remove the word waze …
-                                    // leave just the icon") — the Waze glyph says it, as on the phone.
-                                    // Grey when the address isn't a full one: no Waze (components/ui/address-link.tsx).
-                                    <AddressLink
-                                      address={group.address}
-                                      city={city}
-                                      notFound={group.addressNotFound}
-                                      aria-label="נווט עם Waze"
-                                      className="inline-flex shrink-0 items-center rounded-lg bg-secondary px-2 py-1 text-xs text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
-                                      unavailableClassName={NO_ADDRESS_WAZE}
-                                    >
-                                      <WazeIcon className="h-3.5 w-3.5" />
-                                    </AddressLink>
-                                  )}
+                                  {/* The icon alone (owner, 2026-10-11: "remove the word waze …
+                                      leave just the icon") — the Waze glyph says it, as on the phone.
+                                      A saved point goes there, with no word for it either (owner,
+                                      2026-10-21: "take away the word נקודה"); grey when the address
+                                      isn't a full one: no Waze (components/ui/address-link.tsx). */}
+                                  <AddressLink
+                                    address={group.address}
+                                    city={city}
+                                    pin={groupPin}
+                                    notFound={group.addressNotFound}
+                                    aria-label={groupPin ? "נווט לנקודה השמורה" : "נווט עם Waze"}
+                                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
+                                    unavailableClassName={NO_ADDRESS_WAZE}
+                                  >
+                                    <WazeIcon className="h-4 w-4" />
+                                  </AddressLink>
                                   <span className="min-w-0">{displayAddress || "—"}</span>
                                 </div>
                               </td>
@@ -718,29 +709,20 @@ export default function SalesDeliveriesQueue({
                                     <div className={cn("flex items-start gap-3", LIST_CARD_BODY)}>
                                       {/* A saved pin beats the address string — it's what
                                           stops Waze dropping the driver at the wrong
-                                          entrance or the far side of a divided road. */}
-                                      {groupPin ? (
-                                        <a
-                                          href={wazeLinkForPin(groupPin)}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline"
-                                        >
-                                          <WazeIcon className="h-4 w-4" />
-                                          <span className="text-[0.647rem] font-semibold leading-none">נקודה</span>
-                                        </a>
-                                      ) : (
-                                        <AddressLink
-                                          address={group.address}
-                                          city={city}
-                                          notFound={group.addressNotFound}
-                                          aria-label="נווט עם Waze"
-                                          className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
-                                          unavailableClassName={NO_ADDRESS_WAZE}
-                                        >
-                                          <WazeIcon className="h-4 w-4" />
-                                        </AddressLink>
-                                      )}
+                                          entrance or the far side of a divided road. The
+                                          same Waze mark either way, no word under it
+                                          (owner, 2026-10-21: "take away the word נקודה"). */}
+                                      <AddressLink
+                                        address={group.address}
+                                        city={city}
+                                        pin={groupPin}
+                                        notFound={group.addressNotFound}
+                                        aria-label={groupPin ? "נווט לנקודה השמורה" : "נווט עם Waze"}
+                                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
+                                        unavailableClassName={NO_ADDRESS_WAZE}
+                                      >
+                                        <WazeIcon className="h-5 w-5" />
+                                      </AddressLink>
                                       <div className="min-w-0 flex-1">
                                         <div className={LIST_CARD_NAME}><Painted text={combinedCustomerName(group)} /></div>
                                         {displayAddress ? <div className={LIST_CARD_META}>{displayAddress}</div> : null}
