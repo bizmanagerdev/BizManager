@@ -75,6 +75,13 @@ export const LOCAL_DATA_PAGES = {
   // worker's pay owed — owner: "leave out those tables", 2026-10-20 — the
   // documents and history) follows from the server after the page.
   customerPage: false,
+  // The properties list (/properties) — from 2026-10-21 on the owner's devices
+  // first (LOCAL_DATA_PREVIEW_USERS); everyone's after a day of clean
+  // comparisons (LOCAL_DATA_SHADOW.properties).
+  properties: false,
+  // A property's page (/properties/<id>) — the same, from 2026-10-21. Its
+  // documents, files and recurring bills follow from the server after the page.
+  propertyPage: false,
 } as const;
 
 /**
@@ -132,4 +139,6 @@ export const LOCAL_DATA_SHADOW = {
   dashboardMoney: true,
   customers: true,
   customerPage: true,
+  properties: true,
+  propertyPage: true,
 } as const;

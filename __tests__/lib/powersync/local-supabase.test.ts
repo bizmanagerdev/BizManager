@@ -7,7 +7,7 @@ import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadDeliveriesPage } from "@/app/(app)/sales/loadDeliveries";
 import { loadSalesTabCounts } from "@/app/(app)/sales/loadSalesCounts";
 import { loadProjectsPickerOptions, loadProjectsTabCounts, withListCustomers } from "@/app/(app)/projects/loadProjectsPageData";
-import { computeLocalListPage } from "@/lib/powersync/dashboard-local";
+import { computeLocalCard, computeLocalListPage } from "@/lib/powersync/dashboard-local";
 import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
 import { loadTaskPickerOptions, loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
 import { loadOrderPageCore } from "@/lib/orders/order-page";
@@ -1463,5 +1463,156 @@ describe("a versioned reader: each table read once per change", () => {
     versions.set("orders", 1);
     await db.from("orders").select("id");
     expect(base.queries).toEqual(["SELECT * FROM orders", "SELECT * FROM orders"]);
+  });
+});
+
+// Rows as PowerSync stores them: booleans 1/0, money as text, every column.
+const PROPERTY_COLUMNS = [
+  "name", "address", "addr_city", "addr_street", "addr_house_number", "addr_unit", "addr_lat", "addr_lng", "addr_place_id",
+  "addr_formatted", "asset_description", "is_active", "property_type", "apartments_count", "rooms", "square_meters", "floor",
+  "bathrooms", "mezuzah_count", "light_bulb_count", "key_count", "has_private_entrance", "has_storage_room", "has_parking",
+  "has_elevator", "purchased_from", "purchase_date", "purchase_price", "purchase_tax", "land_block", "land_parcel",
+  "land_sub_parcel", "electricity_contract_number", "water_contract_number", "gas_contract_number", "arnona_contract_number",
+  "is_furnished", "furniture_items", "created_at", "updated_at", "sort_order",
+];
+const property = (row: Row) => ({ ...Object.fromEntries(PROPERTY_COLUMNS.map((c) => [c, null])), is_active: 1, ...row });
+const lease = (row: Row) => ({
+  customer_id: "c1", end_date: null, document_id: null, notes: null, deposit_type: null, deposit_amount: null,
+  deposit_reference: null, keys_handed_over: null, rent_day_of_month: null, rent_calendar: "gregorian", rent_hebrew_day: null,
+  period_months: 1, area_sqm: null, unit_label: null, created_at: null, status: "active", ...row,
+});
+const payment = (row: Row) => ({
+  payment_status: "cleared", lease_id: null, rent_period_start: null, rent_periods: 1, counts_as_rent: 1, ...row,
+});
+
+describe("the properties list on the device", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("each property's tenant, this period's rent and money — the server's loader, unchanged", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T10:00:00.000Z"));
+    const db = createLocalSupabase(
+      fakeReader({
+        properties: [
+          property({ id: "p1", name: "D4 הר יונה", address: "האדמו״ר מבעלזא 24", property_type: "apartment" }),
+          property({ id: "p2", name: "הר יונה שונות", address: "הר יונה", property_type: "storage" }),
+          property({ id: "p3", name: "אחיסמך", address: "אברהם אבינו", property_type: "apartment", sort_order: 1 }),
+        ],
+        lease_agreements: [
+          // א׳ of each Hebrew month: חשון from 12 Oct 2026.
+          lease({ id: "l1", property_id: "p1", start_date: "2026-03-19", end_date: "2027-06-06", monthly_rent_amount: "4000", rent_calendar: "hebrew", rent_hebrew_day: 1 }),
+          lease({ id: "s1", property_id: "p2", start_date: "2026-01-01", monthly_rent_amount: "500", unit_label: "תא 1", area_sqm: "6" }),
+          lease({ id: "s2", property_id: "p2", start_date: "2026-01-01", monthly_rent_amount: "2400", unit_label: "תא 2", period_months: 12 }),
+        ],
+        customers: [{ id: "c1", name: "רוזנפלד", phone: "0527695810" }],
+        payments: [
+          payment({ property_id: "p1", payment_date: "2026-10-12T00:00:00.000000", amount_total: "4000" }),
+          payment({ property_id: "p1", payment_date: "2026-09-06T00:00:00.000000", amount_total: "300000", counts_as_rent: 0 }),
+          payment({ property_id: "p2", payment_date: "2026-10-02T00:00:00.000000", amount_total: "500", lease_id: "s1", rent_period_start: "2026-10-01" }),
+        ],
+        expenses: [
+          { property_id: "p1", amount: "1000", payment_status: "paid", paid_amount: null },
+          { property_id: "p1", amount: "400", payment_status: "partial", paid_amount: "100" },
+        ],
+        attendance_sessions: [{ property_id: "p1", labor_cost: "262" }],
+      })
+    );
+    const { properties } = await computeLocalCard(db, "propertiesList", { userId: "u1", role: "admin", locale: "he" });
+    // The owner's own order first, then by name.
+    expect(properties.map((p) => p.id)).toEqual(["p3", "p2", "p1"]);
+    const d4 = properties.find((p) => p.id === "p1")!;
+    expect(d4.currentLease).toMatchObject({ customerName: "רוזנפלד", rentCalendar: "hebrew", rentHebrewDay: 1, monthlyRentAmount: 4000 });
+    expect(d4.rentThisMonth).toMatchObject({ state: "paid", periodLabel: "חשון", collected: 4000 });
+    expect(d4.rollup).toEqual({ totalIncomeAmount: 304000, totalExpenseAmount: 1662, paidExpenseAmount: 1362, expectedExpenseAmount: 300 });
+    expect(d4.renters).toBeNull();
+    // The storage room's renters: one monthly (paid), one yearly (not).
+    expect(properties.find((p) => p.id === "p2")!.renters).toEqual({ count: 2, paid: 1, monthly: 500, yearly: 2400 });
+  });
+});
+
+/** A device row: every column the page reads, null unless given. */
+const fullRow = (columns: string, row: Row) => ({ ...Object.fromEntries(columns.split(",").map((c) => [c, null])), ...row });
+const EXPENSE_COLS =
+  "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id,recurring_expense_template_id";
+const PAYMENT_COLS =
+  "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,counts_as_rent";
+const SESSION_COLS =
+  "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id";
+const SALARY_COLS =
+  "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id";
+
+describe("a property's page on the device", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("the core — the property, its lease, money, shifts, tasks and names — from the server's own read; missing: null", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        properties: [property({ id: "p1", name: "D4 הר יונה", address: "האדמו״ר מבעלזא 24", property_type: "apartment", sort_order: 5, furniture_items: "[]" })],
+        lease_agreements: [
+          lease({
+            id: "l1", property_id: "p1", start_date: "2026-03-19", end_date: "2027-06-06", monthly_rent_amount: "4000",
+            document_id: "doc-1", rent_calendar: "hebrew", rent_hebrew_day: 1,
+          }),
+        ],
+        customers: [{ id: "c1", name: "רוזנפלד", phone: "0527695810" }],
+        payments: [
+          fullRow(PAYMENT_COLS, { id: "pay1", property_id: "p1", payment_date: "2026-10-12T00:00:00.000000", amount_total: "4000", payment_method: "check", payment_status: "cleared", requires_split: 0, rent_periods: 1, counts_as_rent: 1 }),
+          fullRow(PAYMENT_COLS, { id: "pay2", property_id: "p1", payment_date: "2026-11-12T00:00:00.000000", amount_total: "4000", payment_method: "check", payment_status: "pending", requires_split: 0, rent_periods: 1, counts_as_rent: 1 }),
+        ],
+        expenses: [
+          fullRow(EXPENSE_COLS, { id: "e1", property_id: "p1", expense_date: "2026-10-01", amount: "5950", category: "משכנתא", payment_status: "paid", recurring_expense_template_id: "t1", account_id: "a1" }),
+        ],
+        attendance_sessions: [fullRow(SESSION_COLS, { id: "s1", property_id: "p1", user_id: "u2", clock_in: "2026-10-05T08:00:00.000000", labor_cost: "262", is_billable_to_customer: 0 })],
+        tasks: [{ id: "k1", property_id: "p1", subject: "לתקן ברז", status: "todo", due_date: null, due_time: null }],
+        accounts: [{ id: "a1", name: "פועלים" }],
+        users: [
+          { id: "u2", full_name: "נתן", email: null, role: "worker", active: 1, payroll_worker_type: "hourly", pay_tracking_mode: null, avatar_color: null },
+          { id: "u1", full_name: "אבי", email: null, role: "admin", active: 1, payroll_worker_type: null, pay_tracking_mode: null, avatar_color: null },
+        ],
+        recurring_expense_templates: [{ id: "t1", template_name: "משכנתא D4 פועלים" }],
+        salary_agreements: [fullRow(SALARY_COLS, { id: "sa1", user_id: "u2", salary_type: "hourly", hourly_rate: "50", valid_from: "2026-01-01" })],
+      })
+    );
+    const viewer = { userId: "u1", role: "admin", locale: "he" as const };
+    const { core } = await computeLocalCard(db, "propertyPage", viewer, { id: "p1" });
+    expect(core?.property).toMatchObject({ id: "p1", name: "D4 הר יונה", sortOrder: 5 });
+    expect(core?.property.leases[0]).toMatchObject({ customerName: "רוזנפלד", documentId: "doc-1", documentUrl: null, rentCalendar: "hebrew" });
+    expect(core?.activity.payments.map((p) => [p.id, p.amount, p.paymentStatus])).toEqual([
+      ["pay2", 4000, "pending"],
+      ["pay1", 4000, "cleared"],
+    ]);
+    expect(core?.activity.rollup).toEqual({ totalIncomeAmount: 4000, totalExpenseAmount: 6212, paidExpenseAmount: 6212, expectedExpenseAmount: 0 });
+    expect(core?.activity.templateNames).toEqual({ t1: "משכנתא D4 פועלים" });
+    expect(core?.activity.accountNames).toEqual({ a1: "פועלים" });
+    expect(core?.activity.tasks.map((t) => t.subject)).toEqual(["לתקן ברז"]);
+    expect(core?.users.map((u) => u.label)).toEqual(["אבי", "נתן"]);
+    expect(core?.salaryAgreements.map((a) => a.id)).toEqual(["sa1"]);
+    // The documents, files and bills are the server's part.
+    expect(core?.activity.documents).toEqual([]);
+    expect(core?.activity.recurringTemplates).toEqual([]);
+
+    expect((await computeLocalCard(db, "propertyPage", viewer, { id: "nope" })).core).toBeNull();
+  });
+
+  // D4's two transfers on 19/07 came out in a different order on the device
+  // than on the server — the daily comparison's first difference (2026-10-21).
+  it("same-day payments in one order however they're stored: the newest recorded first, then by id", async () => {
+    const pay = (id: string, created: string) =>
+      fullRow(PAYMENT_COLS, {
+        id, property_id: "p1", payment_date: "2026-07-19T00:00:00.000000", amount_total: "500", payment_method: "bank_transfer",
+        payment_status: "cleared", requires_split: 0, rent_periods: 1, counts_as_rent: 1, created_at: created,
+      });
+    const tables = (payments: Row[]) =>
+      fakeReader({
+        properties: [property({ id: "p1", name: "D4", address: "x" })],
+        lease_agreements: [], customers: [], payments, expenses: [], attendance_sessions: [], tasks: [], accounts: [], users: [],
+        recurring_expense_templates: [], salary_agreements: [],
+      });
+    const rows = [pay("b", "2026-07-19T09:00:00.000000"), pay("a", "2026-07-19T09:00:00.000000"), pay("c", "2026-07-20T08:00:00.000000")];
+    const viewer = { userId: "u1", role: "admin", locale: "he" as const };
+    const order = async (payments: Row[]) =>
+      (await computeLocalCard(createLocalSupabase(tables(payments)), "propertyPage", viewer, { id: "p1" })).core?.activity.payments.map((p) => p.id);
+    expect(await order(rows)).toEqual(["c", "a", "b"]);
+    expect(await order([...rows].reverse())).toEqual(["c", "a", "b"]);
   });
 });

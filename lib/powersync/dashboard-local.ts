@@ -16,7 +16,14 @@ import {
 import { loadAttendanceSpark, loadDeliveriesSpark } from "@/lib/dashboard/sparklines";
 import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-reports";
 import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
-import { getPropertiesSummary, type PropertiesSummary } from "@/lib/properties";
+import {
+  getPropertiesSummary,
+  loadProperties,
+  loadPropertyPageCore,
+  type PropertiesSummary,
+  type PropertyPageCore,
+  type PropertyWithLease,
+} from "@/lib/properties";
 import { loadProjectsPage, type ProjectsFilters } from "@/app/(app)/projects/loadProjects";
 import { loadCustomersPage, type CustomersFilters } from "@/app/(app)/customers/loadCustomers";
 import { startCustomerCoreReads, type CustomerPageCore } from "@/app/(app)/customers/[id]/customerPageCore";
@@ -70,6 +77,14 @@ export type LocalDashboardCards = {
     options: Awaited<ReturnType<typeof loadAttendanceClassificationOptions>> | null;
   };
   properties: PropertiesSummary;
+  /** /properties: every property with its tenant, this period's rent and its money. */
+  propertiesList: { properties: PropertyWithLease[] };
+  /**
+   * A property's page (/properties/<id>), all but what only the server reads
+   * (its documents and files, the recurring bills). `core` null: not on this
+   * device's copy (yet).
+   */
+  propertyPage: { filters: { id: string }; core: PropertyPageCore | null };
   /** /projects, first page, for the given filters. */
   projectsList: { filters: ProjectsFilters; rows: Record<string, unknown>[]; hasMore: boolean; totalCount: number };
   /** /customers, first page, for the given filters (searches stay on the server). */
@@ -137,6 +152,13 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   deliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
   attendanceQueue: ["phone_attendance_reports", "users", "user_directory", "attendance_sessions", "projects", "properties", "property_directory"],
   properties: ["properties", "property_directory", "lease_agreements", "customers"],
+  // Each property's tenant, rent this period and money: its payments, bills and shifts.
+  propertiesList: ["properties", "lease_agreements", "customers", "payments", "expenses", "attendance_sessions"],
+  // The property, its leases, money, shifts, tasks; the accounts', bills' and people's names; the workers' rates.
+  propertyPage: [
+    "properties", "lease_agreements", "customers", "payments", "expenses", "attendance_sessions", "tasks", "accounts", "users",
+    "recurring_expense_templates", "salary_agreements",
+  ],
   projectsList: [
     "projects", "customers", "users", "user_directory", "tasks", "payments", "expenses", "project_expenses", "attendance_sessions",
     "payslips", "payroll_periods", "salary_agreements", "worker_payments", "worker_payment_allocations",
@@ -292,6 +314,12 @@ export async function computeLocalCard<K extends LocalCardKind>(
     }
     case "properties":
       return (await getPropertiesSummary(local, israelDateKey())) as LocalDashboardCards[K];
+    case "propertiesList":
+      return { properties: await loadProperties(local) } as LocalDashboardCards[K];
+    case "propertyPage": {
+      const { id } = need<{ id: string }>();
+      return { filters: { id }, core: await loadPropertyPageCore(local, id) } as LocalDashboardCards[K];
+    }
     case "projectsList": {
       const projectFilters = need<ProjectsFilters>();
       const result = await loadProjectsPage(local, { page: 1, filters: projectFilters });

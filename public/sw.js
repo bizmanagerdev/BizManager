@@ -481,18 +481,20 @@ const OFFLINE_HTML = `<!doctype html>
 // a search, or the server version (?data=server). Cleared on every deploy
 // (versioned name), at logout and when someone else signs in
 // (lib/powersync/device-frames.ts).
-const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales", "/deliveries", "/customers"]);
+const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales", "/deliveries", "/customers", "/properties"]);
 // A project's page and an order's page are device pages too (LocalProjectPage,
 // LocalOrderPage): one frame per project and per order opened, so opening one
 // seen before doesn't wait for the server either (owner, 2026-10-11: the
 // project page scored 49 on phones, its first byte 1.9 s while the server
 // woke). Only the last DETAIL_FRAMES_MAX opened are kept — a year of orders
 // mustn't fill the phone.
-// A customer's page too (LocalCustomerPage, 2026-10-20).
+// A customer's page too (LocalCustomerPage, 2026-10-20), and a property's
+// (LocalPropertyPage, 2026-10-21).
 const DETAIL_FRAME_PATHS = [
   /^\/projects\/[0-9a-f-]{36}$/i,
   /^\/sales\/orders\/[0-9a-f-]{36}$/i,
   /^\/customers\/[0-9a-f-]{36}$/i,
+  /^\/properties\/[0-9a-f-]{36}$/i,
 ];
 const DETAIL_FRAMES_MAX = 40;
 // Frames that read their filters from the address themselves (the drivers'

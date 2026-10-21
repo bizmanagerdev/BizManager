@@ -20,9 +20,18 @@ import { paymentTitle, toRentPayment } from "./propertyMovements";
 // 2026-10-20: like the project page — one clear details page): who rents it
 // and on what terms, and where this month's rent stands.
 
-function LeaseFile({ lease }: { lease: LeaseAgreement }) {
+function LeaseFile({ lease, ready = true }: { lease: LeaseAgreement; ready?: boolean }) {
   if (!lease.documentId) return null;
   const label = lease.documentFileName || "חוזה חתום";
+  // Its link comes with the server's part of the page (the device version draws the page first).
+  if (!lease.documentUrl && !ready) {
+    return (
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <DocumentIcon className="h-3.5 w-3.5" />
+        <span>{label}…</span>
+      </div>
+    );
+  }
   // Opens as it did; הורדה follows it on hover (owner, 2026-10-12).
   return lease.documentUrl ? (
     <DocumentLink
@@ -46,6 +55,7 @@ export function PropertyTenantCard({
   lease,
   pastLeases,
   keyCount,
+  filesReady = true,
   onEdit,
   onNew,
   onDelete,
@@ -54,6 +64,8 @@ export function PropertyTenantCard({
   pastLeases: LeaseAgreement[];
   /** The apartment's own set of keys — "2 מתוך 4" at move-out. */
   keyCount: number | null;
+  /** The leases' signed agreements have their links (the server's part of the page). */
+  filesReady?: boolean;
   onEdit: (lease: LeaseAgreement) => void;
   onNew: () => void;
   onDelete: (lease: LeaseAgreement) => void;
@@ -134,7 +146,7 @@ export function PropertyTenantCard({
         </div>
       }
     >
-      {lease ? <LeaseFile lease={lease} /> : null}
+      {lease ? <LeaseFile lease={lease} ready={filesReady} /> : null}
       {lease?.notes ? <p className="whitespace-pre-wrap text-xs text-muted-foreground">{lease.notes}</p> : null}
       {pastLeases.length > 0 ? (
         <details className="group text-xs">
@@ -154,7 +166,7 @@ export function PropertyTenantCard({
                     {" · "}
                     {formatCurrency(past.monthlyRentAmount)} לחודש
                   </div>
-                  <LeaseFile lease={past} />
+                  <LeaseFile lease={past} ready={filesReady} />
                 </div>
                 <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onEdit(past)}>
                   עריכה

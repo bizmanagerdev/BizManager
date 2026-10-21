@@ -75,6 +75,7 @@ import { hasRenters, renterPayments, runningLeases } from "@/lib/property-rent";
 import { israelDateKey } from "@/lib/timezone";
 import { PropertyRentCard, PropertyTenantCard } from "./PropertyLeaseCards";
 import { buildPropertyMovements } from "./propertyMovements";
+import type { PropertyStaffUser } from "@/lib/properties";
 import { hebrewDayName } from "@/lib/rent-periods";
 
 const HEBREW_DAYS = Array.from({ length: 30 }, (_, i) => i + 1);
@@ -189,15 +190,7 @@ function toEditingExpense(e: PropertyExpense): EditingExpenseData {
  * unfiltered query in page.tsx). One shape, filtered differently per use in
  * this component rather than fetched three different ways server-side.
  */
-export type PropertyStaffUser = {
-  id: string;
-  label: string;
-  color: string | null;
-  role: string | null;
-  active: boolean;
-  payrollWorkerType: string | null;
-  payTrackingMode: string | null;
-};
+export type { PropertyStaffUser };
 
 type Props = {
   propertyId: string;
@@ -207,6 +200,12 @@ type Props = {
   salaryAgreements: SalaryAgreementRow[];
   currentUserId: string;
   currentUserRole: UserRole;
+  /**
+   * The server's part of the page has come (lib/properties.ts — its documents,
+   * files and recurring bills). On the device version it fills in after the
+   * page; until then those sections say they're loading, not that there's none.
+   */
+  serverPartsReady?: boolean;
 };
 
 type LeaseDocState = { documentId: string | null; documentUrl: string | null; documentFileName: string | null };
@@ -222,6 +221,7 @@ export default function PropertyDetailClient({
   salaryAgreements,
   currentUserId,
   currentUserRole,
+  serverPartsReady = true,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -234,10 +234,15 @@ export default function PropertyDetailClient({
   const activityTasks = useUndoOverlay(activity.tasks, (t) => t.id, "property-task");
   const activityTemplates = useUndoOverlay(activity.recurringTemplates, (t) => t.id, "property-template");
   // A generated row reads by its template's name — the same label the ledger
-  // and the payments calendar use.
+  // and the payments calendar use. The core knows the names of the bills its
+  // expenses came from; the bills listed here (and edited) win.
   const templateNameById = useMemo(
-    () => new Map(activityTemplates.filter((t) => t.templateName).map((t) => [t.id, t.templateName as string] as const)),
-    [activityTemplates]
+    () =>
+      new Map([
+        ...Object.entries(activity.templateNames ?? {}),
+        ...activityTemplates.filter((t) => t.templateName).map((t) => [t.id, t.templateName as string] as const),
+      ]),
+    [activity.templateNames, activityTemplates]
   );
   const expenseLabel = (e: PropertyExpense) =>
     (e.recurringTemplateId && templateNameById.get(e.recurringTemplateId)) || e.description || e.category || "הוצאה";
@@ -753,6 +758,7 @@ export default function PropertyDetailClient({
               lease={currentLease}
               pastLeases={otherLeases}
               keyCount={property.keyCount}
+              filesReady={serverPartsReady}
               onEdit={openEditLease}
               onNew={openAddLease}
               onDelete={(lease) => setDel({ kind: "lease", id: lease.id, label: "חוזה שכירות" })}
@@ -903,7 +909,7 @@ export default function PropertyDetailClient({
               onUpload={openAddDocWithCategory}
             />
             {otherDocuments.length === 0 ? (
-              <EmptyState dense>אין מסמכים נוספים לנכס הזה.</EmptyState>
+              <EmptyState dense>{serverPartsReady ? "אין מסמכים נוספים לנכס הזה." : "טוען מסמכים…"}</EmptyState>
             ) : (
               // The row opens the file; view and download at its end on hover, the
               // delete in its quiet ⋮ (owner, 2026-10-12).
@@ -936,7 +942,7 @@ export default function PropertyDetailClient({
             }
           >
             {photos.length === 0 ? (
-              <EmptyState dense>אין תמונות לנכס הזה.</EmptyState>
+              <EmptyState dense>{serverPartsReady ? "אין תמונות לנכס הזה." : "טוען תמונות…"}</EmptyState>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {/* View and download on hover, the delete in the photo's quiet ⋮
@@ -978,7 +984,7 @@ export default function PropertyDetailClient({
             }
           >
             {activityTemplates.length === 0 ? (
-              <EmptyState dense>אין הוצאות קבועות (מים, חשמל, ארנונה, ועד בית…).</EmptyState>
+              <EmptyState dense>{serverPartsReady ? "אין הוצאות קבועות (מים, חשמל, ארנונה, ועד בית…)." : "טוען הוצאות קבועות…"}</EmptyState>
             ) : (
               <ul className="divide-y">
                 {activityTemplates.map((t) => (

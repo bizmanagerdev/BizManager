@@ -292,6 +292,14 @@ describe("service worker: the device pages' frames", () => {
     }
   });
 
+  it("saves the properties list's frame (its device version, 2026-10-21)", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, "https://biz-h.com/properties");
+    expect(worker.frames().has("https://biz-h.com/properties")).toBe(true);
+    await open(worker, "https://biz-h.com/properties?data=server");
+    expect(worker.frames().has("https://biz-h.com/properties?data=server")).toBe(false);
+  });
+
   // A project's page and an order's page: one frame each, the last 40 opened.
   const projectUrl = (n: number) => `https://biz-h.com/projects/00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
   const orderUrl = (n: number) => `https://biz-h.com/sales/orders/00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -313,6 +321,13 @@ describe("service worker: the device pages' frames", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("saves a frame per property too (its device version, 2026-10-21)", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    const propertyUrl = "https://biz-h.com/properties/00000000-0000-4000-8000-000000000001";
+    await open(worker, propertyUrl);
+    expect(worker.frames().has(propertyUrl)).toBe(true);
   });
 
   it("keeps only the 40 projects and orders opened last, never touching the main pages' frames", async () => {

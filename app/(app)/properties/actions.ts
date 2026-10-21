@@ -477,6 +477,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * The properties list in the owner's own order (the ניהול נכסים card: "drag
  * the properties into my own order"): each one's place, 1 on, as dragged.
+ * Only the ones whose place changed are written — a drag one place down is
+ * two rows, not the whole list (each write is a line in the activity log).
  */
 export async function setPropertyOrder(ids: string[]): Promise<ActionResult> {
   try {
@@ -486,8 +488,12 @@ export async function setPropertyOrder(ids: string[]): Promise<ActionResult> {
       return { ok: false, error: "סדר לא תקין." };
     }
     if (new Set(ids).size !== ids.length) return { ok: false, error: "סדר לא תקין." };
+    const { data: current, error: readError } = await ctx.supabase.from("properties").select("id,sort_order").in("id", ids);
+    if (readError) return { ok: false, error: toHebrewError(readError, "שמירת הסדר נכשלה.") };
+    const placeNow = new Map(((current ?? []) as Array<{ id: string; sort_order: number | null }>).map((r) => [r.id, r.sort_order]));
+    const moved = ids.map((id, index) => ({ id, place: index + 1 })).filter(({ id, place }) => placeNow.get(id) !== place);
     const results = await Promise.all(
-      ids.map((id, index) => ctx.supabase.from("properties").update({ sort_order: index + 1 }).eq("id", id))
+      moved.map(({ id, place }) => ctx.supabase.from("properties").update({ sort_order: place }).eq("id", id))
     );
     const failed = results.find((result) => result.error);
     if (failed?.error) return { ok: false, error: toHebrewError(failed.error, "שמירת הסדר נכשלה.") };
