@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 // Central "check register": every payment recorded as a צ׳ק, surfaced in one
 // searchable place so the office can answer "which check is this / whose is it /
@@ -25,7 +26,8 @@ export type CheckRow = {
   customer_id: string | null;
   customer_name: string;
   customer_phone: string | null;
-  source_type: "order" | "project" | null;
+  /** What it pays: an order, a project, or a property's rent (its tenant is the customer). */
+  source_type: "order" | "project" | "property" | null;
   source_id: string | null;
   source_label: string | null;
   notes: string | null;
@@ -86,16 +88,22 @@ export function checkStatusClasses(status: CheckStatus): string {
 }
 
 export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
-  const { data, error } = await supabase
-    .from("payments")
-    .select(
-      "id,amount_total,due_date,payment_date,payment_status,cleared_at,check_number,order_id,project_id,notes,account_id,reference_number,requires_split"
-    )
-    .eq("payment_method", "check")
-    .range(0, 999);
-
-  if (error) return { checks: [], loadError: error.message };
-  const rows = (data ?? []) as Row[];
+  let rows: Row[];
+  try {
+    // Every check, paged — the register never stops at a thousand.
+    rows = await fetchAllPaged<Row>((lo, hi) =>
+      supabase
+        .from("payments")
+        .select(
+          "id,amount_total,due_date,payment_date,payment_status,cleared_at,check_number,order_id,project_id,property_id,lease_id,notes,account_id,reference_number,requires_split"
+        )
+        .eq("payment_method", "check")
+        .order("id")
+        .range(lo, hi)
+    );
+  } catch (error) {
+    return { checks: [], loadError: error instanceof Error ? error.message : String((error as { message?: string })?.message ?? error) };
+  }
   if (rows.length === 0) return { checks: [], loadError: null };
 
   const checkIds = rows.map((r) => str(r, "id")).filter((v): v is string => Boolean(v));
@@ -105,6 +113,13 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
   const projectIds = Array.from(
     new Set(rows.map((r) => str(r, "project_id")).filter((v): v is string => Boolean(v)))
   );
+  // A rent check (the rent roll, 2026-10-21): its property, and its tenant — the
+  // lease it names, else the property's only running lease.
+  const propertyIds = Array.from(
+    new Set(rows.map((r) => str(r, "property_id")).filter((v): v is string => Boolean(v)))
+  );
+  const propertyName = new Map<string, string>();
+  const leaseById = new Map<string, { propertyId: string | null; customerId: string | null; unit: string | null; active: boolean }>();
 
   const customerByOrder = new Map<string, string>();
   const customerByProject = new Map<string, string>();
@@ -138,6 +153,36 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
               if (id) projectName.set(id, str(row, "name") ?? "");
             }
           })
+      : Promise.resolve(),
+    propertyIds.length > 0
+      ? Promise.all([
+          supabase
+            .from("properties")
+            .select("id,name,address")
+            .in("id", propertyIds)
+            .then(({ data: p }) => {
+              for (const row of (p ?? []) as Row[]) {
+                const id = str(row, "id");
+                if (id) propertyName.set(id, str(row, "name") ?? str(row, "address") ?? "נכס");
+              }
+            }),
+          supabase
+            .from("lease_agreements")
+            .select("id,property_id,customer_id,unit_label,status")
+            .in("property_id", propertyIds)
+            .then(({ data: l }) => {
+              for (const row of (l ?? []) as Row[]) {
+                const id = str(row, "id");
+                if (!id) continue;
+                leaseById.set(id, {
+                  propertyId: str(row, "property_id"),
+                  customerId: str(row, "customer_id"),
+                  unit: str(row, "unit_label"),
+                  active: str(row, "status") === "active",
+                });
+              }
+            }),
+        ]).then(() => undefined)
       : Promise.resolve(),
     // Check photos: documents linked to the payment via document_links.
     checkIds.length > 0
@@ -176,9 +221,23 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       : Promise.resolve(),
   ]);
 
+  // A rent check's lease: the one it names, else its property's only running one.
+  const leaseOf = (row: Row) => {
+    const named = str(row, "lease_id");
+    if (named && leaseById.has(named)) return leaseById.get(named) ?? null;
+    const propertyId = str(row, "property_id");
+    if (!propertyId) return null;
+    const running = [...leaseById.values()].filter((l) => l.propertyId === propertyId && l.active);
+    return running.length === 1 ? running[0] : null;
+  };
+
   // Customers
   const customerIds = Array.from(
-    new Set([...customerByOrder.values(), ...customerByProject.values()])
+    new Set([
+      ...customerByOrder.values(),
+      ...customerByProject.values(),
+      ...[...leaseById.values()].map((l) => l.customerId).filter((v): v is string => Boolean(v)),
+    ])
   );
   const customerById = new Map<string, { name: string; phone: string | null }>();
   if (customerIds.length > 0) {
@@ -209,11 +268,13 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
   const checks: CheckRow[] = rows.map((row) => {
     const orderId = str(row, "order_id");
     const projectId = str(row, "project_id");
+    const propertyId = str(row, "property_id");
+    const lease = propertyId ? leaseOf(row) : null;
     const customerId = orderId
       ? customerByOrder.get(orderId) ?? null
       : projectId
         ? customerByProject.get(projectId) ?? null
-        : null;
+        : lease?.customerId ?? null;
     const cust = customerId ? customerById.get(customerId) : null;
     const paymentId = str(row, "id") ?? "";
     const keys = photosByPayment.get(paymentId) ?? [];
@@ -223,7 +284,9 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       ? `הזמנה #${orderId.slice(0, 8)}`
       : projectId
         ? projectName.get(projectId) || `פרויקט #${projectId.slice(0, 8)}`
-        : null;
+        : propertyId
+          ? `${propertyName.get(propertyId) ?? "נכס"}${lease?.unit ? ` · ${lease.unit}` : ""}`
+          : null;
 
     return {
       payment_id: paymentId,
@@ -236,8 +299,8 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       customer_id: customerId,
       customer_name: cust?.name ?? "לקוח",
       customer_phone: cust?.phone ?? null,
-      source_type: orderId ? "order" : projectId ? "project" : null,
-      source_id: orderId ?? projectId ?? null,
+      source_type: orderId ? "order" : projectId ? "project" : propertyId ? "property" : null,
+      source_id: orderId ?? projectId ?? propertyId ?? null,
       source_label: sourceLabel,
       notes: str(row, "notes"),
       photo_url: firstUrl,
@@ -248,8 +311,10 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
     };
   });
 
-  // Default order: soonest deposit date first; undated checks last.
-  checks.sort((a, b) => (a.due_date ?? "9999-99-99").localeCompare(b.due_date ?? "9999-99-99"));
+  // Default order: soonest deposit date first; undated checks last; the same day by id.
+  checks.sort(
+    (a, b) => (a.due_date ?? "9999-99-99").localeCompare(b.due_date ?? "9999-99-99") || a.payment_id.localeCompare(b.payment_id)
+  );
 
   return { checks, loadError: null };
 }

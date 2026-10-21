@@ -2,7 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
-// The rent roll (owner, 2026-10-21): on a computer a plain table — what it is,
+// The rent page (owner, 2026-10-21), redone after looking at property software:
+// what to do first, four plain figures, each lease the most urgent first with
+// its details under it, and the year at a glance. Before that: on a computer a plain table — what it is,
 // paid or not, when, how, into which account, the check and its photo — the
 // rent marked from its row, and a filter for who still owes this month.
 
@@ -173,88 +175,118 @@ afterEach(() => {
 
 const table = () => screen.getByRole("table");
 const rowOf = (name: string) => within(table()).getByText(name).closest("tr") as HTMLElement;
+/** "מה לעשות" — the folding section's card. */
+const todo = () => screen.getByRole("button", { name: /מה לעשות/ }).closest(".scroll-mt-24") as HTMLElement;
 
-describe("the rent roll", () => {
-  it("a table row a lease: its month, paid or not, when, how, into which account, the check and its photo", async () => {
-    await act(async () => {
-      render(<RentRollClient data={DATA} />);
-    });
-    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("אוקטובר 2026 · חשון תשפ״ז");
+async function show(props: { todoClosed?: boolean } = {}) {
+  await act(async () => {
+    render(<RentRollClient data={DATA} {...props} />);
+  });
+}
+
+describe("the rent page", () => {
+  it("what to do: the late rent and the lease ending, each with its button", async () => {
+    await show();
+    const lines = within(todo()).getAllByRole("listitem").map((li) => li.textContent);
+    expect(lines[0]).toContain("באיחור");
+    expect(lines[0]).toContain("יהודה הנשיא 15 · ווגשל · ₪8,500 · 20 ימים");
+    expect(lines.some((l) => l?.includes("חוזה מסתיים") && l.includes("15/12/26 (עוד 55 ימים)"))).toBe(true);
+  });
+
+  it("four plain figures: collected of the month, late, checks to deposit, checks in hand — the checks ones open the checks page", async () => {
+    await show();
+    expect(screen.getByText("מתוך ₪12,500 · 1 מתוך 2 שילמו")).toBeInTheDocument();
+    expect(screen.getByText("שוכר אחד").parentElement).toHaveTextContent("באיחור₪8,500");
+    expect(screen.getByRole("link", { name: /צ׳קים להפקדה/ })).toHaveAttribute("href", "/checks?property=rent");
+    const inHand = screen.getByRole("link", { name: /צ׳קים ביד/ });
+    expect(inHand).toHaveTextContent("2 צ׳קים");
+    expect(inHand).toHaveTextContent("₪8,000 שעוד לא הופקדו");
+  });
+
+  it("each lease a row, the most urgent first; a row opens its details — the payment, its account, the check and its photo", async () => {
+    await show();
     expect(within(table()).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
-      "נכס", "שוכר", "מועד", "שכירות", "מצב", "שולם", "תאריך", "אמצעי", "חשבון", "צ׳ק", "חוב קודם", "צ׳קים ביד", "חוזה עד", "פיקדון", "",
+      "נכס", "שוכר", "שכירות", "החודש", "חוב ישן", "צ׳קים ביד", "חוזה עד", "פעולות",
     ]);
-    // What was in, and how much of it by check; the checks in hand.
-    expect(screen.getByText("(מזה בצ׳קים ₪4,000)")).toBeInTheDocument();
-    const d4 = within(rowOf("D4 הר יונה"));
-    expect(d4.getByText("שולם")).toBeInTheDocument();
-    expect(d4.getByText("12/10/26")).toBeInTheDocument();
-    expect(d4.getByText("מזרחי בית")).toBeInTheDocument();
-    expect(d4.getByText("#261")).toBeInTheDocument();
-    // The photo, from the server after the roll is on screen.
-    expect(fetchMock.mock.calls[0][0]).toBe(`/api/rent/files?ids=${CHECK_ID}`);
-    expect(d4.getByTitle("צילום הצ׳ק")).toHaveAttribute("href", "https://files/check.jpg");
-    // Its checks in hand, to כסלו and טבת; its deposit.
-    expect(d4.getByText("2 · עד טבת")).toBeInTheDocument();
-    expect(d4.getByText("צ'ק ביטחון ₪8,000")).toBeInTheDocument();
-    // October not paid yet — September's payment isn't October's; the lease ends within 60 days.
-    const yehuda = within(rowOf("יהודה הנשיא 15"));
-    expect(yehuda.getByText("לא שולם")).toBeInTheDocument();
-    expect(yehuda.getByText("15/12/26 · עוד 55 ימים")).toBeInTheDocument();
+    const rows = within(table()).getAllByRole("row").slice(1).map((r) => r.textContent ?? "");
+    expect(rows[0]).toContain("יהודה הנשיא 15");
+    expect(within(rowOf("יהודה הנשיא 15")).getByText("באיחור")).toBeInTheDocument();
+    expect(within(rowOf("D4 הר יונה")).getByText("2 · עד טבת")).toBeInTheDocument();
+    fireEvent.click(within(rowOf("D4 הר יונה")).getByText("רוזנפלד"));
+    const details = rowOf("D4 הר יונה").nextElementSibling as HTMLElement;
+    expect(details).toHaveTextContent("צ׳ק #261");
+    expect(details).toHaveTextContent("מזרחי בית");
+    expect(details).toHaveTextContent("פיקדון: צ'ק ביטחון ₪8,000");
+    expect(fetchMock.mock.calls[0][0]).toContain(`/api/rent/files?ids=${CHECK_ID}`);
+    expect(within(details).getByTitle("צילום הצ׳ק")).toHaveAttribute("href", "https://files/check.jpg");
+    expect(within(details).getByRole("link", { name: "הצ׳קים של הנכס" })).toHaveAttribute("href", "/checks?property=p-d4");
   });
 
-  it("the year at a glance: a cell a month, this one marked", async () => {
-    await act(async () => {
-      render(<RentRollClient data={DATA} />);
-    });
-    fireEvent.click(screen.getByRole("button", { name: "שנה" }));
-    const cells = within(rowOf("D4 הר יונה")).getAllByRole("button").filter((b) => b.getAttribute("title"));
-    expect(cells[0]).toHaveAttribute("title", expect.stringContaining("חשון תשפ״ז: שולם"));
-    expect(cells[1]).toHaveAttribute("title", expect.stringContaining("צ׳ק ממתין לפירעון"));
+  it("'רישום תשלום' opens on the row's month, paid the lease's usual way — the row and its line show paid at once", async () => {
+    await show();
+    fireEvent.click(within(rowOf("יהודה הנשיא 15")).getByRole("button", { name: "רישום תשלום" }));
+    expect(dialog.props?.prefill).toEqual({ periodStart: "2026-10-01", method: "bank_transfer", accountId: "a2" });
+    fireEvent.click(screen.getByRole("button", { name: "שמירה (מדומה)" }));
+    expect(within(rowOf("יהודה הנשיא 15")).getByText("שולם")).toBeInTheDocument();
+    expect(within(todo()).queryByText("באיחור")).not.toBeInTheDocument();
   });
 
-  it("'who owes' leaves only those still owing", async () => {
-    await act(async () => {
-      render(<RentRollClient data={DATA} />);
-    });
+  it("'רק מי שחייב' shows only who owes", async () => {
+    await show();
     fireEvent.click(screen.getByRole("button", { name: "רק מי שחייב (1)" }));
     expect(within(table()).queryByText("D4 הר יונה")).not.toBeInTheDocument();
     expect(within(table()).getByText("יהודה הנשיא 15")).toBeInTheDocument();
   });
 
-  it("רישום תשלום opens on the row's month, paid the lease's usual way — and the row shows paid at once", async () => {
-    await act(async () => {
-      render(<RentRollClient data={DATA} />);
-    });
-    fireEvent.click(within(rowOf("יהודה הנשיא 15")).getByRole("button", { name: "רישום תשלום" }));
-    expect(dialog.props?.prefill).toEqual({ periodStart: "2026-10-01", method: "bank_transfer", accountId: "a2" });
-    fireEvent.click(screen.getByRole("button", { name: "שמירה (מדומה)" }));
-    const yehuda = within(rowOf("יהודה הנשיא 15"));
-    expect(yehuda.getByText("שולם")).toBeInTheDocument();
-    expect(yehuda.queryByRole("button", { name: "רישום תשלום" })).not.toBeInTheDocument();
-  });
-
-  it("steps through the months by each lease's own", async () => {
-    await act(async () => {
-      render(<RentRollClient data={DATA} />);
-    });
+  it("another month: back and on by each lease's own months, and back to this one; what to do stays with today", async () => {
+    await show();
     fireEvent.click(screen.getByRole("button", { name: "החודש הקודם" }));
-    // D4's lease starts with חשון: September is יהודה הנשיא's alone.
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("ספטמבר 2026");
     expect(within(rowOf("יהודה הנשיא 15")).getByText("שולם")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /מה לעשות/ })).not.toBeInTheDocument();
+    expect(screen.getByText("נגבה בחודש הזה")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "החודש הבא" }));
+    fireEvent.click(screen.getByRole("button", { name: "החודש הבא" }));
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("נובמבר 2026 · כסלו תשפ״ז");
+    expect(within(rowOf("D4 הר יונה")).getByText("צ׳ק ממתין לפירעון")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "לחודש הזה" }));
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("אוקטובר 2026 · חשון תשפ״ז");
   });
-  it("a check that came back: the month back to unpaid, the check shown as returned, at once", async () => {
-    await act(async () => {
-      render(<RentRollClient data={DATA} />);
-    });
-    fireEvent.click(screen.getByRole("button", { name: "החודש הבא" }));
-    const d4 = () => within(rowOf("D4 הר יונה"));
-    expect(d4().getByText("צ׳ק ממתין לפירעון")).toBeInTheDocument();
-    fireEvent.click(d4().getByRole("button", { name: /פעולות לשכירות/ }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "צ׳ק #262 חזר" }));
-    // November isn't due yet (11/11): not paid yet, no longer a check waiting.
-    expect(d4().getByText("טרם שולם")).toBeInTheDocument();
-    expect(d4().getByText(/#262 · חזר/)).toBeInTheDocument();
+
+  it("the year at a glance: a cell a month, the months ahead with a check in hand outlined, each month's share collected", async () => {
+    await show();
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /לוח שנתי/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /לוח שנתי/ }));
+    const cells = within(rowOf("D4 הר יונה")).getAllByRole("button");
+    expect(cells[0]).toHaveAttribute("title", expect.stringContaining("חשון תשפ״ז: שולם"));
+    expect(cells[1]).toHaveAttribute("title", expect.stringContaining("כסלו תשפ״ז: צ׳ק ביד"));
+    expect(cells[1].className).toContain("border-dashed");
+    // October: ₪4,000 in of ₪12,500 due.
+    expect(within(table()).getByText("32%")).toBeInTheDocument();
+  });
+
+  it("'מה לעשות' folds to its title with how many are waiting, and remembers it", async () => {
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: /מה לעשות/ }));
+    expect(screen.getByRole("button", { name: /מה לעשות/ })).toHaveAttribute("aria-expanded", "false");
+    expect(document.cookie).toContain("bizh-rent-todo=closed");
+    fireEvent.click(screen.getByRole("button", { name: /מה לעשות/ }));
+    expect(screen.getByRole("button", { name: /מה לעשות/ })).toHaveAttribute("aria-expanded", "true");
+    expect(document.cookie).not.toContain("bizh-rent-todo=closed");
+  });
+
+  it("folded from the start when the viewer folded it before", async () => {
+    await show({ todoClosed: true });
+    expect(screen.getByRole("button", { name: /מה לעשות/ })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  // Last: the bounce leaves its patch in the undo engine (module state).
+  it("a check that came back: the month back to owing, the check shown as returned, at once", async () => {
+    await show();
+    fireEvent.click(within(rowOf("D4 הר יונה")).getByText("רוזנפלד"));
+    const details = rowOf("D4 הר יונה").nextElementSibling as HTMLElement;
+    fireEvent.click(within(details).getByRole("button", { name: "צ׳ק #261 חזר" }));
+    expect(within(rowOf("D4 הר יונה")).getByText("צ׳ק חזר")).toBeInTheDocument();
+    expect(within(todo()).getByText("צ׳ק חזר")).toBeInTheDocument();
   });
 });

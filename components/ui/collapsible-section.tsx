@@ -22,6 +22,7 @@ export function CollapsibleSection({
   defaultOpen = false,
   openWhenEmptyKnown,
   collapsible = true,
+  onOpenChange,
   className,
   contentClassName,
   children,
@@ -44,6 +45,8 @@ export function CollapsibleSection({
   openWhenEmptyKnown?: boolean;
   /** false = always open, no chevron. For sections that have no reason to fold. */
   collapsible?: boolean;
+  /** Told when the reader folds or opens it — for a page that remembers it (the rent page's "מה לעשות"). */
+  onOpenChange?: (open: boolean) => void;
   className?: string;
   contentClassName?: string;
   children: ReactNode;
@@ -56,7 +59,10 @@ export function CollapsibleSection({
   const open = collapsible ? openState ?? dataOpen : true;
   const contentId = useId();
 
-  const toggle = () => setOpen(!open);
+  const toggle = () => {
+    setOpen(!open);
+    onOpenChange?.(!open);
+  };
 
   // A link to `#this-section` (e.g. the פעולות shortcut to תזכורות) should open
   // it, not just scroll to a closed header.

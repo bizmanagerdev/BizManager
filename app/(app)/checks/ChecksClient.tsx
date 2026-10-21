@@ -59,6 +59,19 @@ function checkSearchRecord(c: CheckRow): SearchRecord {
 }
 
 type FilterKey = "open" | "all" | "today" | "week" | "overdue" | "upcoming" | "cleared";
+
+/**
+ * Whose checks: everyone's (""), every property's rent ("rent"), or one
+ * property's (its id) — the owner, 2026-10-21: "make the checks page like a
+ * filter by properties". The rent page links here with ?property=.
+ */
+type PropertyFilter = string;
+
+function inPropertyFilter(c: CheckRow, filter: PropertyFilter): boolean {
+  if (!filter) return true;
+  if (c.source_type !== "property") return false;
+  return filter === "rent" || c.source_id === filter;
+}
 type SortKey = "due" | "amount" | "name";
 
 function formatCurrency(value: number) {
@@ -98,7 +111,19 @@ export default function ChecksClient({ checks: checksProp }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const searchParams = useSearchParams();
-  const checks = useUndoOverlay(checksProp, (c) => c.payment_id, "check");
+  const allChecks = useUndoOverlay(checksProp, (c) => c.payment_id, "check");
+  const [propertyFilter, setPropertyFilter] = useState<PropertyFilter>(() => searchParams.get("property") ?? "");
+  // The properties that have checks, for the filter (a storage spot's label names its unit: the property's name before it).
+  const propertyOptions = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const c of allChecks) {
+      if (c.source_type === "property" && c.source_id && !names.has(c.source_id)) {
+        names.set(c.source_id, (c.source_label ?? "נכס").split(" · ")[0]);
+      }
+    }
+    return [...names].sort((a, b) => a[1].localeCompare(b[1], "he"));
+  }, [allChecks]);
+  const checks = useMemo(() => allChecks.filter((c) => inPropertyFilter(c, propertyFilter)), [allChecks, propertyFilter]);
   const [filter, setFilter] = useState<FilterKey>("open");
   const [sort, setSort] = useState<SortKey>("due");
   const [search, setSearch] = useState("");
@@ -116,8 +141,8 @@ export default function ChecksClient({ checks: checksProp }: Props) {
   // opens this check's editor directly instead of just landing on the list.
   const focusId = searchParams.get("focus");
   const focusCheck = useMemo(
-    () => (focusId && !focusDismissed ? (checks.find((c) => c.payment_id === focusId) ?? null) : null),
-    [checks, focusId, focusDismissed]
+    () => (focusId && !focusDismissed ? (allChecks.find((c) => c.payment_id === focusId) ?? null) : null),
+    [allChecks, focusId, focusDismissed]
   );
   const activeEditingCheck = editingCheck ?? focusCheck;
 
@@ -278,6 +303,17 @@ export default function ChecksClient({ checks: checksProp }: Props) {
             {tab.label}
           </Button>
         ))}
+        {propertyOptions.length > 0 ? (
+          <NativeSelect dense aria-label="נכס" className="w-auto max-w-full" value={propertyFilter} onChange={(e) => setPropertyFilter(e.target.value)}>
+            <option value="">כל הצ׳קים</option>
+            <option value="rent">שכירות — כל הנכסים</option>
+            {propertyOptions.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </NativeSelect>
+        ) : null}
         <NativeSelect dense
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}
@@ -311,7 +347,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
       <SearchTermsProvider terms={found?.search.terms ?? null}>
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-10 text-center text-sm text-muted-foreground">
-          {checks.length === 0 ? "לא נרשמו צ׳קים עדיין." : "אין צ׳קים שתואמים לסינון."}
+          {allChecks.length === 0 ? "לא נרשמו צ׳קים עדיין." : checks.length === 0 ? "אין צ׳קים לנכס הזה." : "אין צ׳קים שתואמים לסינון."}
         </div>
       ) : (
         <>
@@ -424,7 +460,12 @@ export default function ChecksClient({ checks: checksProp }: Props) {
 
 function SourceLink({ c }: { c: CheckRow }) {
   if (!c.source_type || !c.source_id) return <span className="text-muted-foreground/50">—</span>;
-  const href = c.source_type === "order" ? `/sales/orders/${c.source_id}` : `/projects/${c.source_id}`;
+  const href =
+    c.source_type === "order"
+      ? `/sales/orders/${c.source_id}`
+      : c.source_type === "property"
+        ? `/properties/${c.source_id}`
+        : `/projects/${c.source_id}`;
   return (
     <NavLink to={href} className="text-primary hover:underline">
       <Painted text={c.source_label} />

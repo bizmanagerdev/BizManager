@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LeaseAgreement, RentRollData, RentRollPayment, RentRollProperty } from "@/lib/properties";
-import { rentRollMonth, rentRollOffsetFor, rentRollYear, rentRowOwes } from "@/lib/rent-roll";
+import { rentRollMonth, rentRollOffsetFor, rentRollToday, rentRollYear, rentRowOwes } from "@/lib/rent-roll";
 import { shiftRentPeriod, type RentPeriodLease } from "@/lib/rent-periods";
 
 // The rent roll (owner, 2026-10-21): every lease's rent for one month, each
@@ -202,7 +202,7 @@ describe("who paid", () => {
     expect(row.status.state).toBe("paid");
     expect(row.owed).toBe(0);
     // June 142 days, July 112, August 81, September 50 days ago.
-    expect(row.debt).toEqual({ amount: 8500 * 4 - 3000, periods: 4, upTo30: 0, upTo60: 8500, over60: 8500 * 3 - 3000 });
+    expect(row.debt).toEqual({ amount: 8500 * 4 - 3000, periods: 4, upTo30: 0, upTo60: 8500, over60: 8500 * 3 - 3000, oldest: "2026-06-01" });
     expect(month.totals.debt).toBe(8500 * 4 - 3000);
     expect(rentRowOwes(row)).toBe(true);
   });
@@ -267,5 +267,69 @@ describe("the year at a glance", () => {
     const yehuda = year.rows[1];
     expect(yehuda.cells[7]?.period).toBe("2026-12-01");
     expect(yehuda.cells[8]).toBeNull();
+  });
+});
+
+describe("today: what to do, the four figures, the most urgent first", () => {
+  it("rent late, old debt, a lease ending, no tenant — each a line; the late one first", () => {
+    const julyShort = payment("j1", "yehuda", { leaseId: "greg", rentPeriodStart: "2026-07-01", amount: 8000 });
+    const paidOthers = ["2026-06-01", "2026-08-01", "2026-09-01"].map((start, i) =>
+      payment(`g${i}`, "yehuda", { leaseId: "greg", rentPeriodStart: start, amount: 8500 })
+    );
+    const d4 = payment("p1", "d4", { leaseId: "heb", rentPeriodStart: "2026-10-12", date: "2026-10-12" });
+    const set = data({
+      properties: [property("d4", 1), property("yehuda", 2), property("empty", 3)],
+      leases: [{ ...HEBREW, startDate: "2026-10-12" }, REGULAR],
+      payments: [julyShort, ...paidOthers, d4],
+    });
+    const today = rentRollToday(set, TODAY);
+    // יהודה הנשיא: October late (20 days), July ₪500 short; D4 paid.
+    expect(today.rows.map((r) => r.key)).toEqual(["greg", "heb"]);
+    expect(today.todo.map((t) => t.kind)).toEqual(["late", "debt", "leaseEnd", "vacant"]);
+    const late = today.todo[0];
+    expect(late.kind === "late" && late.days).toBe(20);
+    expect(today.tiles.collected).toEqual({ amount: 4000, expected: 12500, paid: 1, tenants: 2, waitingChecks: 0 });
+    expect(today.tiles.late).toEqual({ amount: 9000, tenants: 1, upTo30: 8500, upTo60: 0, over60: 500 });
+    expect(today.rows[0].debt.oldest).toBe("2026-07-01");
+  });
+
+  it("checks to deposit: those whose day has come, and the week's; checks running out ask for more", () => {
+    const due = payment("c1", "d4", { method: "check", paymentStatus: "pending", leaseId: "heb", rentPeriodStart: "2026-10-12", dueDate: "2026-10-20" });
+    const week = payment("c2", "yehuda", { method: "check", paymentStatus: "pending", amount: 8500, leaseId: "greg", rentPeriodStart: "2026-10-01", dueDate: "2026-10-25" });
+    const today = rentRollToday(data({ payments: [due, week] }), TODAY);
+    const deposit = today.todo.find((t) => t.kind === "deposit");
+    expect(deposit && deposit.kind === "deposit" && [deposit.due.map((p) => p.id), deposit.week.map((p) => p.id)]).toEqual([["c1"], ["c2"]]);
+    expect(today.tiles.deposit).toEqual({ count: 2, amount: 12500, overdue: 1, next: null });
+    // Both pay by check and have no checks for the months after this one.
+    expect(today.todo.filter((t) => t.kind === "checksLow").length).toBe(2);
+  });
+
+  it("nothing to do says so: everything paid, checks in hand to the lease's end", () => {
+    const year = ["2026-10-12", "2026-11-11", "2026-12-11", "2027-01-09"].map((start, i) =>
+      payment(`k${i}`, "d4", {
+        method: "check",
+        paymentStatus: i === 0 ? "cleared" : "pending",
+        leaseId: "heb",
+        rentPeriodStart: start,
+        dueDate: start,
+      })
+    );
+    const set = data({
+      properties: [property("d4", 1)],
+      leases: [{ ...HEBREW, startDate: "2026-10-12", endDate: "2027-01-15" }],
+      payments: year,
+    });
+    const today = rentRollToday(set, TODAY);
+    expect(today.todo.map((t) => t.kind)).toEqual(["leaseEnd"]);
+    expect(today.tiles.inHand.count).toBe(3);
+    expect(today.tiles.inHand.firstOut?.label).toBe("שבט תשפ״ז");
+  });
+
+  it("the year's last line: each month's share collected, of what's due", () => {
+    const paid = payment("p1", "d4", { leaseId: "heb", rentPeriodStart: "2026-10-12" });
+    const year = rentRollYear(data({ payments: [paid] }), 0, TODAY);
+    // October: D4 paid ₪4,000 of ₪12,500 due; the months ahead: none due yet.
+    expect(Math.round((year.rates[5] ?? 0) * 100)).toBe(32);
+    expect(year.rates[6]).toBeNull();
   });
 });

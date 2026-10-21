@@ -32,7 +32,15 @@ import {
 } from "@/lib/rent-periods";
 
 /** What months before this one still owe, by how long past their due day. */
-export type RentDebt = { amount: number; periods: number; upTo30: number; upTo60: number; over60: number };
+export type RentDebt = {
+  amount: number;
+  periods: number;
+  upTo30: number;
+  upTo60: number;
+  over60: number;
+  /** The oldest month still owing (its due date) — where a payment for it starts. */
+  oldest: string | null;
+};
 
 export type RentRollRow = {
   /** The lease's id — one row per lease. */
@@ -172,7 +180,7 @@ function rowFor(
   const forPeriod = payments.filter((p) => paidTowards(lease, toRollRent(p), period) > 0).sort(byDate);
   const paying = forPeriod.filter((p) => p.paymentStatus !== "rejected");
 
-  const debt: RentDebt = { amount: 0, periods: 0, upTo30: 0, upTo60: 0, over60: 0 };
+  const debt: RentDebt = { amount: 0, periods: 0, upTo30: 0, upTo60: 0, over60: 0, oldest: null };
   const first = firstRentPeriod(lease);
   if (first && first < period) {
     for (const start of rentPeriodStarts(lease, first, dayBefore(period)).slice(-DEBT_PERIODS)) {
@@ -183,6 +191,7 @@ function rowFor(
       if (left <= 0.5) continue;
       debt.amount += left;
       debt.periods += 1;
+      debt.oldest ??= start;
       const days = daysBetween(start, today);
       if (days <= 30) debt.upTo30 += left;
       else if (days <= 60) debt.upTo60 += left;
@@ -296,6 +305,8 @@ export type RentRollYear = {
   offsets: number[];
   /** Each month's short names across its leases ("חשון / אוקטובר"). */
   headers: string[];
+  /** Each month's share collected of its rent past due (null: none due yet) — the grid's last line. */
+  rates: (number | null)[];
   rows: { key: string; property: RentRollProperty; lease: LeaseAgreement; cells: (RentRollRow | null)[] }[];
 };
 
@@ -320,7 +331,7 @@ export function rentRollYear(data: RentRollData, offset: number, today: string =
     lease: row.lease,
     cells: months.map((month) => month.rows.find((r) => r.key === row.key) ?? null),
   }));
-  return { offsets, headers, rows };
+  return { offsets, headers, rates: months.map((month) => collectionRate(month, today)), rows };
 }
 
 /** The month where a lease's `period` shows — the rent alert's link lands on it; 0 when it's not within two years. */
@@ -336,4 +347,167 @@ export function rentRollOffsetFor(data: RentRollData, leaseId: string, period: s
 /** Still owing: this month not paid (or in part), or months before still owing — a check waiting counts as in hand. */
 export function rentRowOwes(row: RentRollRow): boolean {
   return row.owed > 0.5 || row.debt.amount > 0.5;
+}
+
+// ── The page's "today" (owner, 2026-10-21, after looking at how property
+// software does it: "it doesn't tell you what to do") ─────────────────────
+//
+// What needs doing first — a check that came back, rent late, checks to
+// deposit, old debt, checks running out, a lease ending, a property with no
+// tenant — then four plain figures, then each lease, the most urgent first.
+
+export type RentToDo =
+  | { kind: "bounced"; row: RentRollRow; check: RentRollPayment }
+  | { kind: "late"; row: RentRollRow; days: number }
+  | { kind: "deposit"; due: RentRollPayment[]; week: RentRollPayment[] }
+  | { kind: "debt"; row: RentRollRow }
+  | { kind: "checksLow"; row: RentRollRow }
+  | { kind: "leaseEnd"; row: RentRollRow; days: number }
+  | { kind: "vacant"; properties: RentRollProperty[] };
+
+export type RentRollToday = {
+  month: RentRollMonth;
+  /** The month's rows, the most urgent first. */
+  rows: RentRollRow[];
+  todo: RentToDo[];
+  tiles: {
+    /** What's in of the month's rent, and how many have paid it. */
+    collected: { amount: number; expected: number; paid: number; tenants: number; waitingChecks: number };
+    /** Everything owed past its day — this month's and before — by age. */
+    late: { amount: number; tenants: number; upTo30: number; upTo60: number; over60: number };
+    /** Checks whose day has come (or comes within the week), not deposited yet. */
+    deposit: { count: number; amount: number; overdue: number; next: string | null };
+    /** Every rent check in hand, and the lease whose checks run out first. */
+    inHand: { count: number; amount: number; firstOut: { row: RentRollRow; label: string } | null };
+  };
+};
+
+/** A lease ending this soon shows on the list (owner's option notice: 90 days, Fair Rental Law). */
+export const LEASE_END_NOTICE_DAYS = 90;
+const WEEK_DAYS = 7;
+
+function addDays(iso: string, days: number): string {
+  const date = noon(iso);
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** This month's part of a row still owed past its due day (0 when not due yet). */
+export function lateThisMonth(row: RentRollRow, today: string): number {
+  return today > row.period ? row.owed : 0;
+}
+
+/** How urgent a row is — the list's order: a check back, late, part paid, old debt, a check waiting, not due, paid. */
+export function rentRowUrgency(row: RentRollRow, today: string): number {
+  if (row.returned.length > 0 && row.owed > 0.5) return 0;
+  if (lateThisMonth(row, today) > 0.5 && row.status.collected <= 0.5) return 1;
+  if (lateThisMonth(row, today) > 0.5) return 2;
+  if (row.debt.amount > 0.5) return 3;
+  if (row.status.state === "check") return 4;
+  if (row.owed > 0.5) return 5;
+  return 6;
+}
+
+/** The checks of a lease that pays by check run out within two periods (or there are none) while the lease goes on. */
+function checksRunningLow(row: RentRollRow, usesChecks: boolean): boolean {
+  if (!usesChecks) return false;
+  const lastLeasePeriod = row.lease.endDate ? rentPeriodOf(row.lease, row.lease.endDate.slice(0, 10)) : null;
+  const last = row.checksInHand.lastPeriod;
+  if (last && lastLeasePeriod && last >= lastLeasePeriod) return false;
+  const horizon = shiftRentPeriod(row.lease, row.period, 2);
+  if (lastLeasePeriod && lastLeasePeriod <= row.period) return false;
+  return !last || last < horizon;
+}
+
+/**
+ * The page for a month — `offset` periods from this one (owner, same day: "I
+ * want to be able to change to see the rent table for a different month").
+ * What to do and the checks figures are about now whatever the month shown;
+ * the page takes them from offset 0.
+ */
+export function rentRollToday(data: RentRollData, today: string = israelDateKey(), offset = 0): RentRollToday {
+  const month = rentRollMonth(data, offset, today);
+  const order = new Map(data.properties.map((p, i) => [p.id, i]));
+  const rows = [...month.rows].sort((a, b) => rentRowUrgency(a, today) - rentRowUrgency(b, today) || compareRows(order)(a, b));
+  const byLease = rentPaymentsByLease(data);
+
+  // Rent checks not deposited yet: those whose day has come, and the week's.
+  const weekEnd = addDays(today, WEEK_DAYS);
+  const pendingChecks = data.payments
+    .filter((p) => p.method === "check" && p.paymentStatus === "pending")
+    .map((p) => ({ p, day: (p.dueDate ?? p.date ?? "").slice(0, 10) }))
+    .filter((x) => x.day)
+    .sort((a, b) => a.day.localeCompare(b.day) || a.p.id.localeCompare(b.p.id));
+  const due = pendingChecks.filter((x) => x.day <= today).map((x) => x.p);
+  const week = pendingChecks.filter((x) => x.day > today && x.day <= weekEnd).map((x) => x.p);
+  const next = pendingChecks.find((x) => x.day > weekEnd)?.day ?? null;
+
+  const todo: RentToDo[] = [];
+  for (const row of rows) {
+    const back = row.returned[0];
+    if (back && row.owed > 0.5) todo.push({ kind: "bounced", row, check: back });
+    else if (lateThisMonth(row, today) > 0.5) todo.push({ kind: "late", row, days: daysBetween(row.period, today) });
+  }
+  if (due.length > 0 || week.length > 0) todo.push({ kind: "deposit", due, week });
+  for (const row of rows) if (row.debt.amount > 0.5) todo.push({ kind: "debt", row });
+  for (const row of rows) {
+    const usesChecks = (byLease.get(row.lease.id) ?? []).some((p) => p.method === "check");
+    if (checksRunningLow(row, usesChecks)) todo.push({ kind: "checksLow", row });
+  }
+  for (const row of rows) {
+    const end = row.lease.endDate?.slice(0, 10);
+    if (!end || end < today) continue;
+    const days = daysBetween(today, end);
+    if (days <= LEASE_END_NOTICE_DAYS) todo.push({ kind: "leaseEnd", row, days });
+  }
+  if (month.vacant.length > 0) todo.push({ kind: "vacant", properties: month.vacant });
+
+  const late = { amount: 0, tenants: 0, upTo30: 0, upTo60: 0, over60: 0 };
+  for (const row of rows) {
+    const now = lateThisMonth(row, today);
+    if (now <= 0.5 && row.debt.amount <= 0.5) continue;
+    late.tenants += 1;
+    late.amount += now + row.debt.amount;
+    late.upTo30 += now + row.debt.upTo30;
+    late.upTo60 += row.debt.upTo60;
+    late.over60 += row.debt.over60;
+  }
+
+  let firstOut: { row: RentRollRow; label: string } | null = null;
+  for (const row of rows) {
+    const last = row.checksInHand.lastPeriod;
+    if (!last || !row.checksInHand.lastLabel) continue;
+    if (!firstOut || last < (firstOut.row.checksInHand.lastPeriod as string)) firstOut = { row, label: row.checksInHand.lastLabel };
+  }
+
+  return {
+    month,
+    rows,
+    todo,
+    tiles: {
+      collected: {
+        amount: month.totals.collected,
+        expected: month.totals.expected,
+        paid: rows.filter((r) => r.status.state === "paid").length,
+        tenants: rows.length,
+        waitingChecks: month.totals.checks,
+      },
+      late,
+      deposit: {
+        count: due.length + week.length,
+        amount: [...due, ...week].reduce((sum, p) => sum + p.amount, 0),
+        overdue: due.length,
+        next,
+      },
+      inHand: { count: month.totals.checksInHand.count, amount: month.totals.checksInHand.amount, firstOut },
+    },
+  };
+}
+
+/** Of a month's rent past its day, the share collected (null: none of it due yet). */
+export function collectionRate(month: RentRollMonth, today: string): number | null {
+  const due = month.rows.filter((r) => r.period <= today);
+  const expected = due.reduce((sum, r) => sum + r.status.rent, 0);
+  if (expected <= 0) return null;
+  return Math.min(1, due.reduce((sum, r) => sum + Math.min(r.status.collected, r.status.rent), 0) / expected);
 }

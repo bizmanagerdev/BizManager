@@ -1,17 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { DataTableShell } from "@/components/ui/data-table-shell";
 import { EmptyState } from "@/components/ui/empty-state";
-import { FilterChip, SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
+import { FilterChip } from "@/components/ui/filter-chip";
+import { IconButton } from "@/components/ui/icon-button";
 import { DocumentLink } from "@/components/ui/document-tile";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { AttachIcon, ChevronLeftIcon, ChevronRightIcon, MoreIcon, PrintIcon, SpreadsheetIcon } from "@/components/ui/icons";
+import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
+import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ViewDialog } from "@/components/ui/view-dialog";
+import {
+  AttachIcon,
+  CalendarIcon,
+  ChatIcon,
+  ChecklistIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DownloadIcon,
+  PrintIcon,
+} from "@/components/ui/icons";
 import { PageStack } from "@/components/layout/page-layout";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { CONNECTION_EVENTS } from "@/lib/offline-queue";
@@ -20,10 +36,23 @@ import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { formatCurrency } from "@/lib/payroll";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { whatsappHref } from "@/lib/whatsapp";
+import { STATUS_PILL_CLASSES } from "@/lib/ui/status-color-classes";
 import type { FinancialAttachment } from "@/lib/payments";
 import { propertyDisplayName, type PropertyPayment, type RentRollData, type RentRollPayment, type RentRollProperty } from "@/lib/properties";
 import { RENT_STATE, type RentMonthState } from "@/lib/property-rent";
-import { daysBetween, rentRollMonth, rentRollOffsetFor, rentRollYear, rentRowOwes, type RentDebt, type RentRollRow, type RentRollYear } from "@/lib/rent-roll";
+import {
+  daysBetween,
+  lateThisMonth,
+  rentRollOffsetFor,
+  rentRollToday,
+  rentRollYear,
+  rentRowOwes,
+  type RentDebt,
+  type RentRollRow,
+  type RentRollYear,
+  type RentToDo,
+} from "@/lib/rent-roll";
 import { rentPeriodLabel } from "@/lib/rent-periods";
 import { israelDateKey } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
@@ -32,24 +61,41 @@ import PropertyCheckArrivedDialog from "@/app/(app)/properties/[id]/PropertyChec
 import PropertyPaidInsteadDialog from "@/app/(app)/properties/[id]/PropertyPaidInsteadDialog";
 import { deposit, downloadExcel, monthSheet, printSheet, yearSheet } from "./rentRollExport";
 
-// The rent roll (owner, 2026-10-21): every lease's rent for the month on one
-// page, marked from its row (the property's own dialogs, the month already
-// set). Plain and dense (the owner, same day: "a table with columns … very
-// narrow rows … just very functional"): on a computer a table — what it is,
-// whether it's paid, when, how, into which account, the check and its photo;
-// on a phone the same as short lines. Then what a rent roll carries (the
-// owner chose all of it after looking at what such a system needs): what
-// earlier months still owe, in its own column by how old; the post-dated
-// checks still in hand and the last month they reach; the lease's end and
-// its deposit; the properties with no tenant; a check that came back; a year
-// at a glance; and the month or the year to Excel or on paper.
+// The rent page (owner, 2026-10-21). Redone after looking at how property
+// software lays it out (the owner: "it doesn't tell you what to do … the
+// numbers one after the next … switching between the months doesn't feel
+// right; the year thing is better"): "היום" — what needs doing, each with its
+// button; four plain figures; then each lease, the most urgent first, one
+// row each, its details opening under it — and "לוח שנתי", the year at a
+// glance with the checks in hand for the months ahead. The checks themselves
+// are managed on the checks page (owner: "we already have a separate page to
+// manage checks"); the figures here link to it, filtered to rent. Built of
+// the app's own parts (owner, same day: "everything needs to be designed
+// according to our design system"): the underline tabs, a folding section,
+// cards, the filter chip, the table shell and its row and cell sizes.
 
 const paymentKey = (p: RentRollPayment) => p.id;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** A lease ending this soon, or checks running out this soon: in colour. */
+/** Checks running out this soon: in colour. */
 const SOON_DAYS = 60;
 
-type View = "month" | "year";
+/**
+ * "מה לעשות" folded (owner, 2026-10-21: "I want this bar to be able to
+ * close"): kept in a cookie the server reads, so the page draws it folded
+ * from the start — nothing moves once it's on screen.
+ */
+export const RENT_TODO_COOKIE = "bizh-rent-todo";
+
+/** The checks page, showing every property's rent checks (or one property's). */
+const rentChecksHref = (propertyId?: string) => `/checks?property=${propertyId ?? "rent"}`;
+
+/** The table's cells — the customers list's sizes. */
+const HEAD_CELL = "whitespace-nowrap px-2 py-2 font-medium";
+const CELL = "px-2 py-1.5";
+/** A row's own buttons — the collections list's size. */
+const ROW_BUTTON = "h-7 text-xs";
+
+type Tab = "month" | "year";
 type Place = { property: RentRollProperty; lease: { unitLabel: string | null } };
 
 /** Two records of the same rent: one just saved here, one read back from the server. */
@@ -73,36 +119,24 @@ function moneyDate(payment: RentRollPayment): string {
   return formatShortDate(payment.method === "check" ? payment.dueDate ?? payment.date : payment.date, "—");
 }
 
-/** The table's short words for how it came (the whole name on the phone's lines and on paper). */
-const SHORT_METHOD: Record<string, string> = { bank_transfer: "העברה", cash: "מזומן", bit: "ביט", credit_card: "אשראי" };
-
-function methodWord(payment: RentRollPayment, short = false): string {
-  if (payment.method === "check") return payment.paymentStatus === "pending" ? "צ׳ק (ממתין)" : "צ׳ק";
-  if (short && payment.method && SHORT_METHOD[payment.method]) return SHORT_METHOD[payment.method];
+function methodWord(payment: RentRollPayment): string {
+  if (payment.method === "check") return payment.checkNumber ? `צ׳ק #${payment.checkNumber}` : "צ׳ק";
   const label = paymentMethodLabel(payment.method);
-  return label && label !== "-" ? label : "—";
+  return label && label !== "-" ? label : "תשלום";
 }
 
 function checkName(payment: RentRollPayment): string {
   return payment.checkNumber ? `צ׳ק #${payment.checkNumber}` : "הצ׳ק";
 }
 
-/** What it paid: its amount, and how many months when more than this one ("₪17,000 · 2 חודשים", in the table "₪17,000 ×2"). */
-function paidWords(payment: RentRollPayment, short = false): string {
-  if (payment.rentPeriods <= 1) return formatCurrency(payment.amount);
-  return short ? `${formatCurrency(payment.amount)} ×${payment.rentPeriods}` : `${formatCurrency(payment.amount)} · ${payment.rentPeriods} חודשים`;
-}
-
-/** The months a payment pays, in words — on hover ("ספטמבר – אוקטובר 2026"). */
-function paidMonths(row: RentRollRow, payment: RentRollPayment): string | undefined {
-  return payment.rentPeriods > 1 && payment.rentPeriodStart
-    ? rentPeriodLabel(row.lease, payment.rentPeriodStart, payment.rentPeriods)
-    : undefined;
+/** The old debt in words: how many months, and how old its oldest part is ("2 חודשים · מעל 60 יום"). */
+function debtWords(debt: RentDebt): string {
+  return `${debt.periods === 1 ? "חודש אחד" : `${debt.periods} חודשים`} · ${debtAge(debt).label}`;
 }
 
 /** The old debt's age in days — its oldest part ("60+") — and the whole of it, by age, on hover. */
 function debtAge(debt: RentDebt): { label: string; title: string } {
-  const label = debt.over60 > 0.5 ? "60+" : debt.upTo60 > 0.5 ? "31–60" : "≤30";
+  const label = debt.over60 > 0.5 ? "מעל 60 יום" : debt.upTo60 > 0.5 ? "31–60 יום" : "עד 30 יום";
   const parts = [
     debt.upTo30 > 0.5 ? `עד 30 יום ${formatCurrency(debt.upTo30)}` : null,
     debt.upTo60 > 0.5 ? `31–60 יום ${formatCurrency(debt.upTo60)}` : null,
@@ -136,51 +170,45 @@ function PaymentFiles({ payment, files }: { payment: RentRollPayment; files: Fin
   );
 }
 
-/** One line per payment in a cell (a month paid in two parts has two). */
-function Lines({ row, render }: { row: RentRollRow; render: (p: RentRollPayment) => ReactNode }) {
-  if (row.payments.length === 0) return <span className="text-muted-foreground">—</span>;
-  return (
-    <>
-      {row.payments.map((p) => (
-        <div key={p.id} className="whitespace-nowrap">
-          {render(p)}
-        </div>
-      ))}
-    </>
-  );
-}
-
-/** A year cell's look: what the month's state is, at a glance. */
-const CELL: Record<RentMonthState, { mark: string; className: string }> = {
-  paid: { mark: "✓", className: "bg-success/15 text-success" },
-  check: { mark: "צ׳", className: "bg-secondary/15 text-secondary" },
-  partial: { mark: "½", className: "bg-warning/20 text-warning-strong" },
-  late: { mark: "✗", className: "bg-destructive/15 text-destructive" },
-  upcoming: { mark: "·", className: "bg-muted text-muted-foreground" },
+/** A year cell: the month's state in the app's status colours. A check in hand for a month ahead: outlined. */
+const CELL_LOOK: Record<RentMonthState, { mark: string; className: string }> = {
+  paid: { mark: "✓", className: STATUS_PILL_CLASSES.success },
+  check: { mark: "צ׳", className: STATUS_PILL_CLASSES.info },
+  partial: { mark: "½", className: STATUS_PILL_CLASSES.warning },
+  late: { mark: "✗", className: STATUS_PILL_CLASSES.danger },
+  upcoming: { mark: "·", className: STATUS_PILL_CLASSES.neutral },
   none: { mark: "", className: "" },
 };
+const AHEAD_CHECK = "border border-dashed border-info bg-transparent text-info-soft-foreground";
 
-/** The property column stays in view while the table scrolls sideways. */
-const STICKY = "sticky start-0 z-10 bg-card";
+/** The property column stays in view while a wide table scrolls sideways. */
+const STICKY = "sticky start-0 z-[1] bg-card";
 
-export default function RentRollClient({ data }: { data: RentRollData }) {
+export default function RentRollClient({ data, todoClosed = false }: { data: RentRollData; todoClosed?: boolean }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   // One day for the whole visit: the months don't move under the owner's hand at midnight.
   const [today] = useState(() => israelDateKey());
-  const [view, setView] = useState<View>("month");
+  const [tab, setTab] = useState<Tab>("month");
+  // The month shown — each lease's own, periods from this one — and the year's window, around it.
   const [offset, setOffset] = useState(0);
   const [owingOnly, setOwingOnly] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
   // The rent recorded here, shown at once — until the page's own data has it.
   const [recorded, setRecorded] = useState<RentRollPayment[]>([]);
-  const [landed, setLanded] = useState<string | null>(null);
-  // The payments' files (a check's photo) — from the server, after the roll is on screen.
+  // The payments' files (a check's photo) — from the server, after the page is on screen.
   const [files, setFiles] = useState<Record<string, FinancialAttachment[]>>({});
 
-  const [paying, setPaying] = useState<RentRollRow | null>(null);
+  const [paying, setPaying] = useState<{ row: RentRollRow; period: string } | null>(null);
   const [payingOpen, setPayingOpen] = useState(false);
   const [arrival, setArrival] = useState<{ payment: PropertyPayment; title: string } | null>(null);
   const [instead, setInstead] = useState<{ row: RentRollRow; payment: PropertyPayment; title: string } | null>(null);
+  const [cell, setCell] = useState<RentRollRow | null>(null);
+  function rememberTodo(isOpen: boolean) {
+    document.cookie = isOpen
+      ? `${RENT_TODO_COOKIE}=; path=/; max-age=0; samesite=lax`
+      : `${RENT_TODO_COOKIE}=closed; path=/; max-age=31536000; samesite=lax`;
+  }
 
   // Checks marked cleared, moved on, bounced or edited here show so at once (their patches).
   const overlaid = useUndoOverlay(data.payments, paymentKey, "property-payment");
@@ -193,19 +221,23 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
     return shown.length > 0 ? [...overlaid, ...shown] : overlaid;
   }, [overlaid, recorded]);
   const rollData = useMemo(() => ({ ...data, payments }), [data, payments]);
-  const month = useMemo(() => rentRollMonth(rollData, offset, today), [rollData, offset, today]);
-  const year = useMemo(() => (view === "year" ? rentRollYear(rollData, offset, today) : null), [view, rollData, offset, today]);
-  const owing = month.rows.filter(rentRowOwes);
-  const rows = owingOnly ? owing : month.rows;
-  const vacant = owingOnly ? [] : month.vacant;
+  // Now — what to do, the checks figures — and the month shown (the same, this month).
+  const now = useMemo(() => rentRollToday(rollData, today), [rollData, today]);
+  const view = useMemo(() => (offset === 0 ? now : rentRollToday(rollData, today, offset)), [now, rollData, today, offset]);
+  const year = useMemo(() => (tab === "year" ? rentRollYear(rollData, offset, today) : null), [tab, rollData, offset, today]);
+  const owing = view.rows.filter(rentRowOwes);
+  const rows = owingOnly ? owing : view.rows;
+  const { month } = view;
+  const { todo } = now;
+  const tiles = { ...view.tiles, deposit: now.tiles.deposit, inHand: now.tiles.inHand };
 
-  // The rent alert's link — /rent#<lease>@<period> — opens its month, at its row.
+  // The rent alert's link — /rent#<lease>@<period> — opens that lease's row (a month ahead: in the year).
   useEffect(() => {
     const match = /^#([0-9a-f-]{36})@(\d{4}-\d{2}-\d{2})$/i.exec(window.location.hash);
     if (!match) return;
     const [, leaseId, period] = match;
     setOffset(rentRollOffsetFor(data, leaseId, period, today));
-    setLanded(leaseId);
+    setOpen(leaseId);
     requestAnimationFrame(() => {
       const wide = document.getElementById(`lease-${leaseId}`);
       (wide?.offsetParent ? wide : document.getElementById(`lease-m-${leaseId}`))?.scrollIntoView({ block: "center" });
@@ -214,7 +246,7 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A save waiting for signal went out: read the roll again (the one saved here gives way to it).
+  // A save waiting for signal went out: read the page again (the one saved here gives way to it).
   useEffect(() => {
     const refresh = () => startTransition(() => router.refresh());
     window.addEventListener(CONNECTION_EVENTS.synced, refresh);
@@ -252,16 +284,15 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
   // The lease's usual way to pay: as its last payment came.
   const usual = paying
     ? [...payments]
-        .filter((p) => p.leaseId === paying.lease.id && p.paymentStatus !== "rejected")
+        .filter((p) => p.leaseId === paying.row.lease.id && p.paymentStatus !== "rejected")
         .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || b.id.localeCompare(a.id))[0] ?? null
     : null;
-  const payingPayments = paying ? payments.filter((p) => p.propertyId === paying.property.id) : [];
+  const payingPayments = paying ? payments.filter((p) => p.propertyId === paying.row.property.id) : [];
   const insteadPayments = instead ? payments.filter((p) => p.propertyId === instead.row.property.id) : [];
-  const { totals } = month;
   const accountName = (id: string | null) => (id ? data.accountNames[id] ?? "—" : "—");
 
-  function openPayment(row: RentRollRow) {
-    setPaying(row);
+  function openPayment(row: RentRollRow, period: string = row.period) {
+    setPaying({ row, period });
     setPayingOpen(true);
   }
 
@@ -286,440 +317,454 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
     });
   }
 
-  function actionsFor(row: RentRollRow, compact: boolean) {
+  /** The row's one main button, by where its rent stands. */
+  function mainAction(row: RentRollRow): ReactNode {
+    const pending = row.payments.find((p) => p.method === "check" && p.paymentStatus === "pending") ?? null;
+    if (pending && (pending.dueDate ?? pending.date ?? "") <= today) {
+      return (
+        <Button type="button" size="sm" className={ROW_BUTTON} onClick={() => setArrival({ payment: pending, title: `שכירות ${row.periodLabel}` })}>
+          נפרע
+        </Button>
+      );
+    }
+    if (!pending && row.owed > 0.5) {
+      return (
+        <Button
+          type="button"
+          size="sm"
+          className={ROW_BUTTON}
+          variant={lateThisMonth(row, today) > 0.5 ? "default" : "outline"}
+          onClick={() => openPayment(row)}
+        >
+          רישום תשלום
+        </Button>
+      );
+    }
+    if (row.debt.amount > 0.5 && row.debt.oldest) {
+      return (
+        <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => openPayment(row, row.debt.oldest as string)}>
+          רישום תשלום
+        </Button>
+      );
+    }
+    return null;
+  }
+
+  /** Everything else for a row's month: the check's ways, in its details. */
+  function otherActions(row: RentRollRow): ReactNode {
     const pending = row.payments.find((p) => p.method === "check" && p.paymentStatus === "pending") ?? null;
     const cleared = row.payments.filter((p) => p.method === "check" && p.paymentStatus !== "pending");
     const title = `שכירות ${row.periodLabel}`;
-    const size = compact ? "h-7 px-2.5 text-xs" : undefined;
-    const menu: { key: string; label: string; onSelect: () => void; danger?: boolean }[] = [];
-    if (pending) {
-      menu.push({ key: "cleared", label: "נפרע", onSelect: () => setArrival({ payment: pending, title }) });
-      menu.push({ key: "instead", label: "שולם אחרת החודש (העברה / מזומן)", onSelect: () => setInstead({ row, payment: pending, title }) });
-      menu.push({ key: "bounce", label: `${checkName(pending)} חזר`, onSelect: () => setBounced(pending, true), danger: true });
-    }
-    for (const check of cleared) {
-      menu.push({ key: `bounce-${check.id}`, label: `${checkName(check)} חזר`, onSelect: () => setBounced(check, true), danger: true });
-    }
-    for (const check of row.returned) {
-      menu.push({ key: `back-${check.id}`, label: `ביטול: ${checkName(check)} לא חזר`, onSelect: () => setBounced(check, false) });
-    }
-    const due = pending !== null && (pending.dueDate ?? pending.date ?? "") <= today;
     return (
-      <div className="flex items-center justify-end gap-1">
-        {pending && due ? (
-          <Button type="button" size="sm" className={size} onClick={() => setArrival({ payment: pending, title })}>
-            נפרע
-          </Button>
-        ) : !pending && row.owed > 0.5 ? (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {pending ? (
+          <>
+            <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => setArrival({ payment: pending, title })}>
+              נפרע
+            </Button>
+            <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => setInstead({ row, payment: pending, title })}>
+              שולם אחרת החודש
+            </Button>
+          </>
+        ) : null}
+        {[...(pending ? [pending] : []), ...cleared].map((check) => (
           <Button
+            key={`bounce-${check.id}`}
             type="button"
             size="sm"
-            className={size}
-            variant={row.status.state === "late" ? "default" : "outline"}
-            onClick={() => openPayment(row)}
+            variant="destructive-outline"
+            className={ROW_BUTTON}
+            onClick={() => setBounced(check, true)}
           >
+            {checkName(check)} חזר
+          </Button>
+        ))}
+        {row.returned.map((check) => (
+          <Button key={`back-${check.id}`} type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => setBounced(check, false)}>
+            ביטול: {checkName(check)} לא חזר
+          </Button>
+        ))}
+        {row.owed > 0.5 && pending ? (
+          <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => openPayment(row)}>
             רישום תשלום
           </Button>
-        ) : null}
-        {menu.length > 0 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className={cn("p-0 text-muted-foreground hover:text-foreground", compact ? "h-7 w-7" : "h-9 w-9")}
-                aria-label={`פעולות לשכירות של ${propertyDisplayName(row.property)}`}
-              >
-                <MoreIcon className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {menu.map((item) => (
-                <DropdownMenuItem
-                  key={item.key}
-                  onClick={item.onSelect}
-                  className={item.danger ? "text-destructive focus:text-destructive" : undefined}
-                >
-                  {item.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
         ) : null}
       </div>
     );
   }
 
-  const stateBadge = (row: RentRollRow) => {
+  /** The month's state in words, beside its chip: when, how much is missing, how late. */
+  function stateNote(row: RentRollRow): string | null {
+    const late = lateThisMonth(row, today);
+    if (row.returned.length > 0 && row.owed > 0.5) return `${checkName(row.returned[0])} חזר`;
+    if (row.status.state === "partial") return `חסר ${formatCurrency(row.owed)}`;
+    if (late > 0.5) return `${daysBetween(row.period, today)} ימים`;
+    if (row.status.state === "check") {
+      const check = row.payments.find((p) => p.method === "check" && p.paymentStatus === "pending");
+      return check ? `לפירעון ${moneyDate(check)}` : null;
+    }
+    if (row.status.state === "upcoming") return `ב-${row.dueLabel}`;
+    if (row.status.state === "paid") {
+      const last = row.payments[row.payments.length - 1];
+      return last ? moneyDate(last) : null;
+    }
+    return null;
+  }
+
+  const stateChip = (row: RentRollRow) => {
+    const late = lateThisMonth(row, today) > 0.5;
     const state = RENT_STATE[row.status.state];
-    return (
-      <Badge variant={state.badge} className="px-2 py-0.5">
-        {state.label}
-      </Badge>
-    );
+    const label = row.returned.length > 0 && row.owed > 0.5 ? "צ׳ק חזר" : late && row.status.state !== "partial" ? "באיחור" : state.label;
+    return <Badge variant={late || row.returned.length > 0 ? "destructive" : state.badge}>{label}</Badge>;
   };
 
-  const leaseEnd = (row: RentRollRow): ReactNode => {
-    const end = row.lease.endDate?.slice(0, 10);
-    if (!end) return <span className="text-muted-foreground">—</span>;
-    const days = daysBetween(today, end);
-    if (days < 0) return <span className="text-muted-foreground">הסתיים {formatShortDate(end)}</span>;
-    return (
-      <span className={days <= SOON_DAYS ? "font-medium text-destructive" : undefined}>
-        {formatShortDate(end)}
-        {days <= SOON_DAYS ? ` · עוד ${days} ימים` : ""}
-      </span>
-    );
-  };
   const checksInHand = (row: RentRollRow): ReactNode => {
     const hand = row.checksInHand;
     if (hand.count === 0) return <span className="text-muted-foreground">—</span>;
     const soon = hand.lastPeriod !== null && daysBetween(today, hand.lastPeriod) <= SOON_DAYS;
     return (
-      <span
-        className={soon ? "font-medium text-warning-strong" : undefined}
-        title={`${hand.count} צ׳קים · ${formatCurrency(hand.amount)} · עד ${hand.lastLabel}${soon ? " — נגמרים בקרוב, לבקש חדשים" : ""}`}
-      >
+      <span className={soon ? "font-medium text-warning-strong" : undefined} title={`${hand.count} צ׳קים · ${formatCurrency(hand.amount)}`}>
         {hand.count} · עד {hand.lastLabel?.replace(/ (תש\S*|\d{4})$/, "")}
       </span>
     );
   };
+  const leaseEnd = (row: RentRollRow): ReactNode => {
+    const end = row.lease.endDate?.slice(0, 10);
+    if (!end) return <span className="text-muted-foreground">—</span>;
+    const days = daysBetween(today, end);
+    return <span className={days <= 90 ? "font-medium text-warning-strong" : undefined}>{formatShortDate(end)}</span>;
+  };
   const debtCell = (row: RentRollRow): ReactNode => {
     if (row.debt.amount <= 0.5) return <span className="text-muted-foreground">—</span>;
-    const age = debtAge(row.debt);
     return (
-      <span className="text-destructive" title={age.title}>
-        <span className="font-medium tabular-nums">{formatCurrency(row.debt.amount)}</span>
-        <span className="text-xs"> ({age.label})</span>
+      <span className="font-medium tabular-nums text-destructive" title={debtAge(row.debt).title}>
+        {formatCurrency(row.debt.amount)}
       </span>
     );
   };
 
-  const sheet = () => (view === "year" && year ? yearSheet(year) : monthSheet(month, data.accountNames));
-  const label = view === "year" && year ? `${year.headers[0]} – ${year.headers[year.headers.length - 1]}` : month.label;
+  /** A row's details, opened under it: the month's payments, its due day and deposit, links, the rest of its actions. */
+  const details = (row: RentRollRow) => (
+    <div className="space-y-2 text-xs">
+      {row.payments.length === 0 && row.returned.length === 0 ? (
+        <div className="text-muted-foreground">לא נרשם תשלום ל{row.periodLabel}.</div>
+      ) : null}
+      {row.payments.map((p) => (
+        <div key={p.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span
+            className="tabular-nums"
+            title={p.rentPeriods > 1 && p.rentPeriodStart ? rentPeriodLabel(row.lease, p.rentPeriodStart, p.rentPeriods) : undefined}
+          >
+            {formatCurrency(p.amount)}
+            {p.rentPeriods > 1 ? ` (${p.rentPeriods} חודשים)` : ""}
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span>{moneyDate(p)}</span>
+          <span className="text-muted-foreground">·</span>
+          <span>
+            {methodWord(p)}
+            {p.method === "check" && p.paymentStatus === "pending" ? " (ממתין)" : ""}
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span>{accountName(p.accountId)}</span>
+          <PaymentFiles payment={p} files={files[p.id]} />
+        </div>
+      ))}
+      {row.returned.map((p) => (
+        <div key={p.id} className="flex flex-wrap items-center gap-x-2 text-destructive">
+          <span>
+            {checkName(p)} חזר · {formatCurrency(p.amount)}
+          </span>
+          <PaymentFiles payment={p} files={files[p.id]} />
+        </div>
+      ))}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+        <span>מועד: {row.dueLabel}</span>
+        {row.debt.amount > 0.5 ? (
+          <span className="text-destructive" title={debtAge(row.debt).title}>
+            חוב ישן: {formatCurrency(row.debt.amount)} · {debtWords(row.debt)}
+          </span>
+        ) : null}
+        <span>פיקדון: {deposit(row) || "—"}</span>
+        <Link href={`/properties/${row.property.id}#rent`} className="text-secondary hover:underline">
+          לדף הנכס
+        </Link>
+        <Link href={rentChecksHref(row.property.id)} className="text-secondary hover:underline">
+          הצ׳קים של הנכס
+        </Link>
+      </div>
+      {otherActions(row)}
+    </div>
+  );
+
+  const sheet = () => (tab === "year" && year ? yearSheet(year) : monthSheet(month, data.accountNames));
 
   return (
     <PageStack>
-      {/* One row on top: the view, the month, its money, the "who owes" filter, and out to Excel / paper. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div role="group" aria-label="תצוגה" className={cn(SEGMENTED_GROUP, "h-9 rounded-lg p-0.5 shadow-none")}>
-          {(
-            [
-              ["month", "חודש"],
-              ["year", "שנה"],
-            ] as const
-          ).map(([value, text]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={view === value}
-              onClick={() => setView(value)}
-              className={cn(SEGMENT, "flex items-center rounded-md px-3 py-0 text-xs", view === value ? TOGGLE_ON : TOGGLE_OFF)}
-            >
-              {text}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <div className="inline-flex h-9 items-center rounded-lg border bg-card">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
-              aria-label="החודש הקודם"
-              onClick={() => setOffset((n) => n - 1)}
-            >
-              <ChevronRightIcon className="h-4 w-4" />
-            </Button>
-            <h2 className="whitespace-nowrap px-1 text-sm font-semibold">{label}</h2>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
-              aria-label="החודש הבא"
-              onClick={() => setOffset((n) => n + 1)}
-            >
-              <ChevronLeftIcon className="h-4 w-4" />
-            </Button>
-          </div>
+      {/* The app's underline tabs — a fixed-height bar that never moves. */}
+      {/* One bar (owner, 2026-10-22: "there's wasted space here"): the app's
+          underline tabs, the month shown (the year: which twelve months) — back,
+          on, and back to this one — and out to Excel / paper, on the tabs' line. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60">
+        <Tabs value={tab} onValueChange={(value) => setTab(value === "year" ? "year" : "month")}>
+          <TabsList variant="underline" className="w-auto border-b-0">
+            <TabsTrigger value="month" count={todo.length > 0 ? todo.length : undefined}>
+              <ChecklistIcon className="h-4 w-4" />
+              חודש
+            </TabsTrigger>
+            <TabsTrigger value="year">
+              <CalendarIcon className="h-4 w-4" />
+              לוח שנתי
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="flex items-center gap-1.5 pb-1">
+          <Button type="button" variant="outline" size="icon-sm" aria-label="החודש הקודם" onClick={() => setOffset((n) => n - 1)}>
+            <ChevronRightIcon className="h-4 w-4" />
+          </Button>
+          <h2 className="whitespace-nowrap text-sm font-semibold">
+            {tab === "year" && year ? `${year.headers[0]} – ${year.headers[year.headers.length - 1]}` : month.label}
+          </h2>
+          <Button type="button" variant="outline" size="icon-sm" aria-label="החודש הבא" onClick={() => setOffset((n) => n + 1)}>
+            <ChevronLeftIcon className="h-4 w-4" />
+          </Button>
           {offset !== 0 ? (
-            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs text-secondary" onClick={() => setOffset(0)}>
+            <Button type="button" variant="ghost" size="sm" className="text-secondary" onClick={() => setOffset(0)}>
               לחודש הזה
             </Button>
           ) : null}
         </div>
+        <div className="ms-auto flex items-center gap-1.5 pb-1">
+          <IconButton
+            icon={DownloadIcon}
+            label="ייצוא לאקסל"
+            variant="outline"
+            onClick={() => void downloadExcel(sheet()).catch(() => toast.error("ההורדה נכשלה."))}
+          />
+          <IconButton
+            icon={PrintIcon}
+            label="הדפסה"
+            variant="outline"
+            onClick={() => {
+              if (!printSheet(sheet())) toast.error("הדפדפן חסם את חלון ההדפסה.");
+            }}
+          />
+        </div>
+      </div>
 
-        {view === "month" ? (
-          <>
-            <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <Figure label="שכירות החודש" value={totals.expected} />
-              <Figure
-                label="התקבל"
-                value={totals.collected}
-                className="text-success"
-                note={totals.collectedByCheck > 0.5 ? `מזה בצ׳קים ${formatCurrency(totals.collectedByCheck)}` : undefined}
-              />
-              <Figure label="צ׳קים לפירעון" value={totals.checks} />
-              <Figure label="חסר" value={totals.owed} className={totals.owed > 0.5 ? "text-destructive" : undefined} />
-              {totals.debt > 0.5 ? <Figure label="חוב קודם" value={totals.debt} className="text-destructive" /> : null}
-              {totals.checksInHand.count > 0 ? (
-                <div className="flex items-baseline gap-1.5">
-                  <dt className="text-muted-foreground">צ׳קים ביד</dt>
-                  <dd className="font-semibold tabular-nums">
-                    {totals.checksInHand.count} · <span dir="ltr">{formatCurrency(totals.checksInHand.amount)}</span>
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
+      {tab === "year" && year ? (
+        <YearTable
+          year={year}
+          today={today}
+          owedNow={new Map(now.rows.map((r) => [r.key, r.debt.amount + lateThisMonth(r, today)]))}
+          onCell={(row) => {
+            const pending = row.payments.find((p) => p.method === "check" && p.paymentStatus === "pending");
+            if (!pending && row.owed > 0.5 && row.period <= today) openPayment(row);
+            else setCell(row);
+          }}
+        />
+      ) : (
+        <>
+          {/* What to do is about now — shown on this month only. */}
+          {offset === 0 ? (
+            <ToDoSection todo={todo} today={today} onPay={openPayment} defaultOpen={!todoClosed} onOpenChange={rememberTodo} />
+          ) : null}
+
+          {/* Four plain figures — the month shown's collected and late, and today's checks — the checks ones open the checks page, filtered to rent. */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Tile
+              label={offset === 0 ? "נגבה החודש" : "נגבה בחודש הזה"}
+              value={formatCurrency(tiles.collected.amount)}
+              tone={tiles.collected.expected > 0 && tiles.collected.amount >= tiles.collected.expected - 0.5 ? "success" : undefined}
+              progress={tiles.collected.expected > 0 ? tiles.collected.amount / tiles.collected.expected : null}
+              lines={[
+                `מתוך ${formatCurrency(tiles.collected.expected)} · ${tiles.collected.paid} מתוך ${tiles.collected.tenants} שילמו`,
+                tiles.collected.waitingChecks > 0.5 ? `ועוד ${formatCurrency(tiles.collected.waitingChecks)} בצ׳קים לחודש הזה` : null,
+              ]}
+            />
+            <Tile
+              label="באיחור"
+              value={formatCurrency(tiles.late.amount)}
+              tone={tiles.late.amount > 0.5 ? "danger" : undefined}
+              lines={
+                tiles.late.amount > 0.5
+                  ? [
+                      tiles.late.tenants === 1 ? "שוכר אחד" : `${tiles.late.tenants} שוכרים`,
+                      [
+                        tiles.late.upTo30 > 0.5 ? `עד 30 יום ${formatCurrency(tiles.late.upTo30)}` : null,
+                        tiles.late.upTo60 > 0.5 ? `31–60 יום ${formatCurrency(tiles.late.upTo60)}` : null,
+                        tiles.late.over60 > 0.5 ? `מעל 60 יום ${formatCurrency(tiles.late.over60)}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
+                    ]
+                  : ["אף אחד לא באיחור"]
+              }
+            />
+            <Tile
+              label="צ׳קים להפקדה"
+              value={tiles.deposit.count === 0 ? "אין השבוע" : tiles.deposit.count === 1 ? "צ׳ק אחד" : `${tiles.deposit.count} צ׳קים`}
+              tone={tiles.deposit.overdue > 0 ? "warning" : undefined}
+              lines={
+                tiles.deposit.count === 0
+                  ? [tiles.deposit.next ? `הבא ב-${formatShortDate(tiles.deposit.next)}` : "אין צ׳קים ממתינים"]
+                  : [formatCurrency(tiles.deposit.amount), tiles.deposit.overdue > 0 ? `${tiles.deposit.overdue} הגיע זמנם להפקדה` : "השבוע"]
+              }
+              href={rentChecksHref()}
+            />
+            <Tile
+              label="צ׳קים ביד"
+              value={tiles.inHand.count === 1 ? "צ׳ק אחד" : `${tiles.inHand.count} צ׳קים`}
+              lines={[
+                tiles.inHand.count > 0 ? `${formatCurrency(tiles.inHand.amount)} שעוד לא הופקדו` : "אין צ׳קים ביד",
+                tiles.inHand.firstOut
+                  ? `נגמרים ראשונים: ${placeName(tiles.inHand.firstOut.row)}, ב${tiles.inHand.firstOut.label.replace(/ (תש\S*|\d{4})$/, "")}`
+                  : null,
+              ]}
+              href={rentChecksHref()}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <FilterChip
               active={owingOnly}
               label={owing.length > 0 ? `רק מי שחייב (${owing.length})` : "רק מי שחייב"}
               onClick={() => setOwingOnly((v) => !v)}
             />
-          </>
-        ) : null}
+          </div>
 
-        <div className="ms-auto flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs"
-            onClick={() => void downloadExcel(sheet()).catch(() => toast.error("ההורדה נכשלה."))}
-          >
-            <SpreadsheetIcon className="h-4 w-4" />
-            אקסל
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs"
-            onClick={() => {
-              if (!printSheet(sheet())) toast.error("הדפדפן חסם את חלון ההדפסה.");
-            }}
-          >
-            <PrintIcon className="h-4 w-4" />
-            הדפסה
-          </Button>
-        </div>
-      </div>
-
-      {view === "year" && year ? (
-        <YearTable
-          year={year}
-          onCell={(row, i) => {
-            if (!row.payments.some((p) => p.paymentStatus === "pending") && row.owed > 0.5) {
-              openPayment(row);
-              return;
-            }
-            setView("month");
-            setOffset(year.offsets[i]);
-            setLanded(row.key);
-          }}
-        />
-      ) : rows.length === 0 && vacant.length === 0 ? (
-        <Card className="p-4">
-          <EmptyState dense>{month.rows.length === 0 ? "אין שכירות לחודש הזה." : "אף אחד לא חייב."}</EmptyState>
-        </Card>
-      ) : (
-        <div>
-          {/* A computer: the table (scrolling sideways in its card when wider than it, the property column held). */}
-          <Card className="hidden overflow-x-auto lg:block">
-            <table className="w-full text-[0.8125rem]">
-              <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
-                <tr>
-                  {[
-                    "נכס",
-                    "שוכר",
-                    "מועד",
-                    "שכירות",
-                    "מצב",
-                    "שולם",
-                    "תאריך",
-                    "אמצעי",
-                    "חשבון",
-                    "צ׳ק",
-                    "חוב קודם",
-                    "צ׳קים ביד",
-                    "חוזה עד",
-                    "פיקדון",
-                    "",
-                  ].map((head, i) => (
-                    <th key={i} scope="col" className={cn("whitespace-nowrap px-1.5 py-2 text-start font-medium", i === 0 && cn(STICKY, "bg-muted"))}>
-                      {head}
+          {rows.length === 0 ? (
+            <Card>
+              <CardContent className="p-4">
+                <EmptyState dense>{month.rows.length === 0 ? "אין שכירות לחודש הזה." : "אף אחד לא חייב."}</EmptyState>
+              </CardContent>
+            </Card>
+          ) : (
+            <ResponsiveDataView
+              breakpoint="lg"
+              desktop={
+                <DataTableShell
+                  maxHeight="none"
+                  tbodyClassName=""
+                  tableClassName="text-[0.8125rem]"
+                  header={["נכס", "שוכר", "שכירות", "החודש", "חוב ישן", "צ׳קים ביד", "חוזה עד", ""].map((head, i) => (
+                    <th key={i} scope="col" className={cn(HEAD_CELL, i === 0 && cn(STICKY, "bg-muted"))}>
+                      {head || <span className="sr-only">פעולות</span>}
                     </th>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {rows.map((row) => (
-                  <tr
-                    key={row.key}
-                    id={`lease-${row.key}`}
-                    className={cn("scroll-mt-24 align-top hover:bg-muted/20", landed === row.key && "bg-secondary/10")}
-                  >
-                    <td className={cn("whitespace-nowrap px-1.5 py-1.5", STICKY)}>
-                      <Link href={`/properties/${row.property.id}#rent`} className="font-medium hover:underline">
-                        {placeName(row)}
-                      </Link>
-                    </td>
-                    <td className="whitespace-nowrap px-1.5 py-1.5">{row.lease.customerName ?? "—"}</td>
-                    <td className="whitespace-nowrap px-1.5 py-1.5">{row.dueLabel}</td>
-                    <td className="whitespace-nowrap px-1.5 py-1.5 tabular-nums">{formatCurrency(row.status.rent)}</td>
-                    <td className="whitespace-nowrap px-1.5 py-1.5">
-                      {stateBadge(row)}
-                      {row.status.state === "partial" && row.owed > 0.5 ? (
-                        <div className="text-xs text-destructive">חסר {formatCurrency(row.owed)}</div>
-                      ) : null}
-                      {row.returned.length > 0 ? <div className="text-xs text-destructive">צ׳ק חזר</div> : null}
-                    </td>
-                    <td className="px-1.5 py-1.5 tabular-nums">
-                      <Lines row={row} render={(p) => <span title={paidMonths(row, p)}>{paidWords(p, true)}</span>} />
-                    </td>
-                    <td className="px-1.5 py-1.5">
-                      <Lines row={row} render={moneyDate} />
-                    </td>
-                    <td className="px-1.5 py-1.5">
-                      <Lines row={row} render={(p) => methodWord(p, true)} />
-                    </td>
-                    <td className="px-1.5 py-1.5">
-                      <Lines row={row} render={(p) => accountName(p.accountId)} />
-                    </td>
-                    <td className="px-1.5 py-1.5">
-                      {row.payments.length === 0 && row.returned.length === 0 ? <span className="text-muted-foreground">—</span> : null}
-                      {row.payments.map((p) => (
-                        <div key={p.id} className="flex items-center gap-1.5 whitespace-nowrap">
-                          {p.method === "check" ? (
-                            <span>{p.checkNumber ? `#${p.checkNumber}` : "—"}</span>
-                          ) : files[p.id]?.some((f) => f.url) ? null : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                          <PaymentFiles payment={p} files={files[p.id]} />
-                        </div>
-                      ))}
-                      {row.returned.map((p) => (
-                        <div key={p.id} className="flex items-center gap-1.5 whitespace-nowrap text-destructive">
-                          <span>
-                            {p.checkNumber ? `#${p.checkNumber}` : "צ׳ק"} · חזר ({formatCurrency(p.amount)})
-                          </span>
-                          <PaymentFiles payment={p} files={files[p.id]} />
-                        </div>
-                      ))}
-                    </td>
-                    <td className="whitespace-nowrap px-1.5 py-1.5">{debtCell(row)}</td>
-                    <td className="whitespace-nowrap px-1.5 py-1.5">{checksInHand(row)}</td>
-                    <td className="whitespace-nowrap px-1.5 py-1.5">{leaseEnd(row)}</td>
-                    <td className="whitespace-nowrap px-1.5 py-1.5">{deposit(row) || <span className="text-muted-foreground">—</span>}</td>
-                    <td className="px-1.5 py-1">{actionsFor(row, true)}</td>
-                  </tr>
-                ))}
-                {vacant.map((property) => (
-                  <tr key={`vacant-${property.id}`} className="align-top text-muted-foreground">
-                    <td className={cn("whitespace-nowrap px-1.5 py-1.5", STICKY)}>
-                      <Link href={`/properties/${property.id}`} className="font-medium text-foreground hover:underline">
-                        {propertyDisplayName(property)}
-                      </Link>
-                    </td>
-                    <td className="px-1.5 py-1.5">—</td>
-                    <td className="px-1.5 py-1.5" />
-                    <td className="px-1.5 py-1.5" />
-                    <td className="whitespace-nowrap px-1.5 py-1.5">
-                      <Badge variant="neutral" className="px-2 py-0.5">
-                        אין שוכר
-                      </Badge>
-                    </td>
-                    <td colSpan={10} />
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-
-          {/* A phone: each lease as short lines. */}
-          <Card className="lg:hidden">
-            <ul className="divide-y">
-              {rows.map((row) => (
-                <li key={row.key} id={`lease-m-${row.key}`} className={cn("scroll-mt-24 px-3 py-2", landed === row.key && "bg-secondary/10")}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 text-sm">
-                      <Link href={`/properties/${row.property.id}#rent`} className="font-medium hover:underline">
-                        {placeName(row)}
-                      </Link>
-                      <span className="text-muted-foreground"> · {row.lease.customerName ?? "שוכר"}</span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <span className="text-sm font-semibold tabular-nums">{formatCurrency(row.status.rent)}</span>
-                      {stateBadge(row)}
-                    </div>
-                  </div>
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <div className="min-w-0 space-y-0.5 text-xs text-muted-foreground">
-                      {row.payments.length === 0 ? (
-                        <div>{row.status.state === "late" ? `היה לשלם ב-${row.dueLabel}` : `לתשלום ב-${row.dueLabel}`}</div>
-                      ) : (
-                        row.payments.map((p) => (
-                          <div key={p.id} className="flex flex-wrap items-center gap-x-1.5">
-                            <span>
-                              {[
-                                moneyDate(p),
-                                p.method === "check" && p.checkNumber ? `צ׳ק #${p.checkNumber}` : methodWord(p),
-                                accountName(p.accountId),
-                                row.payments.length > 1 || p.rentPeriods > 1 ? paidWords(p) : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
+                >
+                  {rows.map((row) => {
+                    const isOpen = open === row.key;
+                    const note = stateNote(row);
+                    return (
+                      <Fragment key={row.key}>
+                        <tr
+                          id={`lease-${row.key}`}
+                          className={cn("scroll-mt-24 cursor-pointer border-b border-border/50 align-middle hover:bg-muted/20", isOpen && "bg-muted/20")}
+                          onClick={() => setOpen(isOpen ? null : row.key)}
+                        >
+                          <td className={cn(CELL, STICKY, "whitespace-nowrap")}>
+                            <span className="flex items-center gap-1">
+                              <ChevronDownIcon
+                                className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180")}
+                              />
+                              <Link
+                                href={`/properties/${row.property.id}#rent`}
+                                className="font-medium hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {placeName(row)}
+                              </Link>
                             </span>
-                            <PaymentFiles payment={p} files={files[p.id]} />
-                          </div>
-                        ))
-                      )}
-                      {row.returned.map((p) => (
-                        <div key={p.id} className="text-destructive">
-                          {checkName(p)} חזר · {formatCurrency(p.amount)}
-                        </div>
-                      ))}
-                      {row.status.state === "partial" && row.owed > 0.5 ? (
-                        <div className="text-destructive">חסר {formatCurrency(row.owed)}</div>
-                      ) : null}
-                      {/* What the month's state doesn't say: old debt, checks in hand, the lease's end. */}
-                      <div className="flex flex-wrap gap-x-3">
-                        {row.debt.amount > 0.5 ? <span>חוב קודם {debtCell(row)}</span> : null}
-                        {row.checksInHand.count > 0 ? <span>צ׳קים ביד {checksInHand(row)}</span> : null}
-                        {row.lease.endDate ? <span>חוזה עד {leaseEnd(row)}</span> : null}
-                      </div>
-                    </div>
-                    <div className="shrink-0">{actionsFor(row, false)}</div>
-                  </div>
-                </li>
-              ))}
-              {vacant.map((property) => (
-                <li key={`vacant-${property.id}`} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                  <Link href={`/properties/${property.id}`} className="font-medium hover:underline">
-                    {propertyDisplayName(property)}
-                  </Link>
-                  <Badge variant="neutral" className="px-2 py-0.5">
-                    אין שוכר
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </div>
+                          </td>
+                          <td className={cn(CELL, "whitespace-nowrap")}>{row.lease.customerName ?? "—"}</td>
+                          <td className={cn(CELL, "whitespace-nowrap tabular-nums")}>{formatCurrency(row.status.rent)}</td>
+                          <td className={cn(CELL, "whitespace-nowrap")}>
+                            <span className="inline-flex items-center gap-1.5">
+                              {stateChip(row)}
+                              {note ? <span className="text-xs text-muted-foreground">{note}</span> : null}
+                            </span>
+                          </td>
+                          <td className={cn(CELL, "whitespace-nowrap")}>{debtCell(row)}</td>
+                          <td className={cn(CELL, "whitespace-nowrap")}>{checksInHand(row)}</td>
+                          <td className={cn(CELL, "whitespace-nowrap")}>{leaseEnd(row)}</td>
+                          <td className={cn(CELL, "py-1")} onClick={(e) => e.stopPropagation()}>
+                            <div className="flex justify-end">{mainAction(row)}</div>
+                          </td>
+                        </tr>
+                        {isOpen ? (
+                          <tr className="border-b border-border/50 bg-muted/20">
+                            <td colSpan={8} className="px-3 pb-3 pt-1">
+                              {details(row)}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                </DataTableShell>
+              }
+              mobile={
+                <Card>
+                  <ul className="divide-y">
+                    {rows.map((row) => {
+                      const isOpen = open === row.key;
+                      const note = stateNote(row);
+                      const action = mainAction(row);
+                      return (
+                        <li key={row.key} id={`lease-m-${row.key}`} className="scroll-mt-24 px-3 py-2">
+                          <button type="button" className="block w-full text-start" onClick={() => setOpen(isOpen ? null : row.key)}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 text-sm">
+                                <span className="font-medium">{placeName(row)}</span>
+                                <span className="text-muted-foreground"> · {row.lease.customerName ?? "שוכר"}</span>
+                              </div>
+                              <span className="shrink-0 text-sm font-semibold tabular-nums">{formatCurrency(row.status.rent)}</span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                              {stateChip(row)}
+                              {note ? <span>{note}</span> : null}
+                              {row.debt.amount > 0.5 ? <span className="text-destructive">חוב ישן {formatCurrency(row.debt.amount)}</span> : null}
+                              {row.checksInHand.count > 0 ? <span>צ׳קים ביד {checksInHand(row)}</span> : null}
+                            </div>
+                          </button>
+                          {action ? <div className="mt-1.5 flex">{action}</div> : null}
+                          {isOpen ? <div className="mt-2 rounded-lg bg-muted/30 p-2">{details(row)}</div> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </Card>
+              }
+            />
+          )}
+        </>
       )}
+
+      {/* A year cell's month: what paid it and its ways. */}
+      <ViewDialog
+        open={cell !== null}
+        onOpenChange={(next) => (next ? undefined : setCell(null))}
+        title={cell ? `${placeName(cell)} · ${cell.periodLabel}` : ""}
+        description={cell ? `${cell.lease.customerName ?? ""} · ${formatCurrency(cell.status.rent)} · ${RENT_STATE[cell.status.state].label}` : undefined}
+        size="formMd"
+      >
+        {cell ? (
+          <div className="space-y-3">
+            {details(cell)}
+            {mainAction(cell)}
+          </div>
+        ) : null}
+      </ViewDialog>
 
       <PropertyRentPaymentDialog
         open={payingOpen}
         onOpenChange={setPayingOpen}
-        propertyId={paying?.property.id ?? ""}
-        lease={paying?.lease ?? null}
+        propertyId={paying?.row.property.id ?? ""}
+        lease={paying?.row.lease ?? null}
         payments={payingPayments}
         prefill={paying ? { periodStart: paying.period, method: usual?.method, accountId: usual?.accountId } : undefined}
-        onRecorded={paying ? remember(paying.property.id) : undefined}
+        onRecorded={paying ? remember(paying.row.property.id) : undefined}
         onUndone={(id) => setRecorded((prev) => prev.filter((p) => p.id !== id))}
       />
       <PropertyCheckArrivedDialog payment={arrival?.payment ?? null} title={arrival?.title ?? ""} onClose={() => setArrival(null)} />
@@ -736,8 +781,217 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
   );
 }
 
-/** The year at a glance: each lease a row, each month a cell; this month's column marked. */
-function YearTable({ year, onCell }: { year: RentRollYear; onCell: (row: RentRollRow, index: number) => void }) {
+/** "מה לעשות" — what needs doing now, each line with its one button; it folds to its title (the owner: "able to close"). */
+function ToDoSection({
+  todo,
+  today,
+  onPay,
+  defaultOpen,
+  onOpenChange,
+}: {
+  todo: RentToDo[];
+  today: string;
+  onPay: (row: RentRollRow, period?: string) => void;
+  defaultOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const line = (key: string, tone: "danger" | "warning" | "muted", label: string, text: ReactNode, action: ReactNode) => (
+    <li key={key} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
+      <span className="min-w-0 text-sm">
+        <span
+          className={cn(
+            "font-medium",
+            tone === "danger" && "text-destructive",
+            tone === "warning" && "text-warning-strong",
+            tone === "muted" && "text-muted-foreground"
+          )}
+        >
+          {label}
+        </span>
+        <span className="text-muted-foreground"> · </span>
+        {text}
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5">{action}</span>
+    </li>
+  );
+  const who = (row: RentRollRow) => `${placeName(row)} · ${row.lease.customerName ?? "שוכר"}`;
+  const pay = (row: RentRollRow, period?: string, main = false) => (
+    <Button type="button" size="sm" variant={main ? "default" : "outline"} className={ROW_BUTTON} onClick={() => onPay(row, period)}>
+      רישום תשלום
+    </Button>
+  );
+
+  return (
+    <CollapsibleSection
+      title="מה לעשות"
+      icon={<ChecklistIcon className={SECTION_ICON_CLASS} />}
+      summary={todo.length > 0 ? <SectionCount count={todo.length} /> : null}
+      defaultOpen={defaultOpen}
+      onOpenChange={onOpenChange}
+    >
+      {todo.length === 0 ? (
+        <EmptyState dense>הכול בסדר — אין כרגע מה לטפל בו.</EmptyState>
+      ) : (
+        <ul className="divide-y">
+          {todo.map((item, i) => {
+            switch (item.kind) {
+              case "bounced":
+                return line(
+                  `b${i}`,
+                  "danger",
+                  "צ׳ק חזר",
+                  `${who(item.row)} · ${checkName(item.check)} · ${formatCurrency(item.check.amount)} — לבקש צ׳ק אחר או תשלום`,
+                  pay(item.row, undefined, true)
+                );
+              case "late":
+                return line(
+                  `l${i}`,
+                  "danger",
+                  "באיחור",
+                  `${who(item.row)} · ${formatCurrency(lateThisMonth(item.row, today))} · ${item.days} ימים (${item.row.periodLabel})`,
+                  pay(item.row, undefined, true)
+                );
+              case "deposit": {
+                const dueSum = item.due.reduce((s, p) => s + p.amount, 0);
+                const weekSum = item.week.reduce((s, p) => s + p.amount, 0);
+                return line(
+                  `d${i}`,
+                  item.due.length > 0 ? "warning" : "muted",
+                  "צ׳קים להפקדה",
+                  [
+                    item.due.length > 0 ? `${item.due.length} הגיע זמנם · ${formatCurrency(dueSum)}` : null,
+                    item.week.length > 0 ? `השבוע ${item.week.length} · ${formatCurrency(weekSum)}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                  <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
+                    <Link href={rentChecksHref()}>לצ׳קים</Link>
+                  </Button>
+                );
+              }
+              case "debt":
+                return line(
+                  `o${i}`,
+                  "danger",
+                  "חוב ישן",
+                  `${who(item.row)} · ${formatCurrency(item.row.debt.amount)} · ${debtWords(item.row.debt)}`,
+                  item.row.debt.oldest ? pay(item.row, item.row.debt.oldest) : null
+                );
+              case "checksLow": {
+                const hand = item.row.checksInHand;
+                const text = hand.count === 0 ? "אין צ׳קים ביד" : `נשארו ${hand.count}, עד ${hand.lastLabel}`;
+                const href = whatsappHref(
+                  item.row.lease.customerPhone,
+                  `שלום ${item.row.lease.customerName ?? ""}, הצ׳קים לשכירות ב${placeName(item.row)} ${hand.count === 0 ? "נגמרו" : `נגמרים ב${hand.lastLabel}`}. אפשר להעביר את הצ׳קים הבאים?`
+                );
+                return line(
+                  `c${i}`,
+                  "warning",
+                  "צ׳קים נגמרים",
+                  `${who(item.row)} · ${text} — לבקש צ׳קים חדשים`,
+                  href ? (
+                    <Button asChild size="sm" variant="outline" className={cn(ROW_BUTTON, "gap-1")}>
+                      <a href={href} target="_blank" rel="noreferrer">
+                        <ChatIcon className="h-3.5 w-3.5" />
+                        וואטסאפ
+                      </a>
+                    </Button>
+                  ) : null
+                );
+              }
+              case "leaseEnd":
+                return line(
+                  `e${i}`,
+                  "warning",
+                  "חוזה מסתיים",
+                  `${who(item.row)} · ${formatShortDate(item.row.lease.endDate)} (עוד ${item.days} ימים) — לחדש או להודיע`,
+                  <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
+                    <Link href={`/properties/${item.row.property.id}#tenant`}>לחוזה</Link>
+                  </Button>
+                );
+              case "vacant":
+                return line(
+                  `v${i}`,
+                  "muted",
+                  "בלי שוכר",
+                  item.properties.map((p) => propertyDisplayName(p)).join(" · "),
+                  <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
+                    <Link href="/properties">לנכסים</Link>
+                  </Button>
+                );
+            }
+          })}
+        </ul>
+      )}
+    </CollapsibleSection>
+  );
+}
+
+/** One plain figure, on a Card: what it is, its value, a line or two saying what's in it; a link when it opens a page. */
+function Tile({
+  label,
+  value,
+  lines,
+  tone,
+  progress,
+  href,
+}: {
+  label: string;
+  value: string;
+  lines: (string | null)[];
+  tone?: "success" | "danger" | "warning";
+  progress?: number | null;
+  href?: string;
+}) {
+  const body = (
+    <CardContent className="p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div
+        className={cn(
+          "mt-0.5 text-lg font-semibold tabular-nums",
+          tone === "success" && "text-success",
+          tone === "danger" && "text-destructive",
+          tone === "warning" && "text-warning-strong"
+        )}
+      >
+        {value}
+      </div>
+      {progress != null ? (
+        <div className="my-1 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-success" style={{ width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%` }} />
+        </div>
+      ) : null}
+      {lines
+        .filter((l): l is string => Boolean(l))
+        .map((l) => (
+          <div key={l} className="text-xs text-muted-foreground">
+            {l}
+          </div>
+        ))}
+    </CardContent>
+  );
+  if (href) {
+    return (
+      <Link href={href} className="block rounded-card">
+        <Card className="h-full transition-colors hover:bg-muted/20">{body}</Card>
+      </Link>
+    );
+  }
+  return <Card className="h-full">{body}</Card>;
+}
+
+/** The year at a glance: each lease a row, each month a cell — the months ahead show the checks in hand — what it owes now, and each month's share collected. */
+function YearTable({
+  year,
+  today,
+  owedNow,
+  onCell,
+}: {
+  year: RentRollYear;
+  today: string;
+  owedNow: Map<string, number>;
+  onCell: (row: RentRollRow) => void;
+}) {
   // A narrow screen scrolls the months sideways: it opens on this one, not on the oldest.
   const currentHead = useRef<HTMLTableCellElement>(null);
   useEffect(() => {
@@ -745,103 +999,117 @@ function YearTable({ year, onCell }: { year: RentRollYear; onCell: (row: RentRol
   }, []);
   if (year.rows.length === 0) {
     return (
-      <Card className="p-4">
-        <EmptyState dense>אין שכירות בחודשים האלה.</EmptyState>
+      <Card>
+        <CardContent className="p-4">
+          <EmptyState dense>אין שכירות בחודשים האלה.</EmptyState>
+        </CardContent>
       </Card>
     );
   }
   const current = year.offsets.indexOf(0);
   return (
     <div className="space-y-2">
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
-            <tr>
-              <th scope="col" className={cn("whitespace-nowrap px-2 py-2 text-start font-medium", STICKY, "bg-muted")}>
-                נכס
+      <DataTableShell
+        maxHeight="none"
+        header={
+          <>
+            <th scope="col" className={cn(HEAD_CELL, STICKY, "bg-muted")}>
+              נכס
+            </th>
+            <th scope="col" className={HEAD_CELL}>
+              שוכר
+            </th>
+            {year.headers.map((head, i) => (
+              <th
+                key={i}
+                ref={i === current ? currentHead : undefined}
+                scope="col"
+                className={cn(HEAD_CELL, "px-1 text-center", i === current && "bg-secondary/10 text-foreground")}
+              >
+                {head}
               </th>
-              <th scope="col" className="whitespace-nowrap px-2 py-2 text-start font-medium">
-                שוכר
-              </th>
-              {year.headers.map((head, i) => (
-                <th
-                  key={i}
-                  ref={i === current ? currentHead : undefined}
-                  scope="col"
-                  className={cn("whitespace-nowrap px-1 py-2 text-center font-medium", i === current && "bg-secondary/10 text-foreground")}
-                >
-                  {head}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {year.rows.map((row) => (
-              <tr key={row.key} className="hover:bg-muted/20">
-                <td className={cn("whitespace-nowrap px-2 py-1", STICKY)}>
-                  <Link href={`/properties/${row.property.id}#rent`} className="font-medium hover:underline">
-                    {placeName(row)}
-                  </Link>
-                </td>
-                <td className="whitespace-nowrap px-2 py-1">{row.lease.customerName ?? "—"}</td>
-                {row.cells.map((cell, i) => {
-                  if (!cell) return <td key={i} className={cn("px-1 py-1", i === current && "bg-secondary/5")} />;
-                  const look = CELL[cell.status.state];
-                  const words = [
-                    `${cell.periodLabel}: ${RENT_STATE[cell.status.state].label}`,
-                    ...cell.payments.map((p) => `${formatCurrency(p.amount)} · ${moneyDate(p)} · ${methodWord(p)}`),
-                    ...cell.returned.map((p) => `${checkName(p)} חזר`),
-                  ].join("\n");
-                  return (
-                    <td key={i} className={cn("px-1 py-1 text-center", i === current && "bg-secondary/5")}>
-                      <button
-                        type="button"
-                        title={words}
-                        aria-label={words}
-                        onClick={() => onCell(cell, i)}
-                        className={cn(
-                          "inline-flex h-7 min-w-9 items-center justify-center rounded-md px-1.5 text-xs font-semibold hover:ring-2 hover:ring-ring/30",
-                          look.className,
-                          cell.returned.length > 0 && "ring-2 ring-destructive/60"
-                        )}
-                      >
-                        {look.mark}
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
             ))}
-          </tbody>
-        </table>
-      </Card>
+            <th scope="col" className={HEAD_CELL}>
+              חייב
+            </th>
+          </>
+        }
+        tfoot={
+          <tr className="border-t-2 border-border/70 bg-muted/30 text-xs font-semibold">
+            <td className={cn(CELL, STICKY, "bg-muted")}>נגבה</td>
+            <td />
+            {year.rates.map((rate, i) => (
+              <td key={i} className={cn(CELL, "px-1 text-center tabular-nums", i === current && "bg-secondary/10")}>
+                {rate === null ? "—" : `${Math.round(rate * 100)}%`}
+              </td>
+            ))}
+            <td />
+          </tr>
+        }
+      >
+        {year.rows.map((row) => {
+          const owed = owedNow.get(row.key) ?? 0;
+          return (
+            <tr key={row.key} className="hover:bg-muted/20">
+              <td className={cn(CELL, STICKY, "whitespace-nowrap")}>
+                <Link href={`/properties/${row.property.id}#rent`} className="font-medium hover:underline">
+                  {placeName(row)}
+                </Link>
+              </td>
+              <td className={cn(CELL, "whitespace-nowrap")}>{row.lease.customerName ?? "—"}</td>
+              {row.cells.map((cell, i) => {
+                if (!cell) return <td key={i} className={cn(CELL, "px-1", i === current && "bg-secondary/5")} />;
+                const ahead = cell.status.state === "check" && cell.period > today;
+                const look = CELL_LOOK[cell.status.state];
+                const words = [
+                  `${cell.periodLabel}: ${ahead ? "צ׳ק ביד" : RENT_STATE[cell.status.state].label}`,
+                  ...cell.payments.map((p) => `${formatCurrency(p.amount)} · ${moneyDate(p)} · ${methodWord(p)}`),
+                  ...cell.returned.map((p) => `${checkName(p)} חזר`),
+                ].join("\n");
+                return (
+                  <td key={i} className={cn(CELL, "px-1 text-center", i === current && "bg-secondary/5")}>
+                    <button
+                      type="button"
+                      title={words}
+                      aria-label={words}
+                      onClick={() => onCell(cell)}
+                      className={cn(
+                        "inline-flex h-7 min-w-9 items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors hover:ring-2 hover:ring-ring/30",
+                        ahead ? AHEAD_CHECK : look.className,
+                        cell.returned.length > 0 && "ring-2 ring-destructive/60"
+                      )}
+                    >
+                      {look.mark}
+                    </button>
+                  </td>
+                );
+              })}
+              <td className={cn(CELL, "whitespace-nowrap tabular-nums")}>
+                {owed > 0.5 ? <span className="font-medium text-destructive">{formatCurrency(owed)}</span> : <span className="text-muted-foreground">—</span>}
+              </td>
+            </tr>
+          );
+        })}
+      </DataTableShell>
       {/* What the marks mean. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {(["paid", "check", "partial", "late", "upcoming"] as const).map((state) => (
           <span key={state} className="inline-flex items-center gap-1">
-            <span className={cn("inline-flex h-5 min-w-6 items-center justify-center rounded px-1 font-semibold", CELL[state].className)}>
-              {CELL[state].mark}
+            <span className={cn("inline-flex h-5 min-w-6 items-center justify-center rounded-full px-1.5 font-semibold", CELL_LOOK[state].className)}>
+              {CELL_LOOK[state].mark}
             </span>
-            {RENT_STATE[state].label}
+            {state === "check" ? "צ׳ק ממתין לפירעון" : RENT_STATE[state].label}
           </span>
         ))}
         <span className="inline-flex items-center gap-1">
-          <span className="inline-flex h-5 min-w-6 rounded ring-2 ring-destructive/60" />
+          <span className={cn("inline-flex h-5 min-w-6 items-center justify-center rounded-full px-1.5 font-semibold", AHEAD_CHECK)}>צ׳</span>
+          צ׳ק ביד לחודש הבא
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-flex h-5 min-w-6 rounded-full ring-2 ring-destructive/60" />
           צ׳ק חזר
         </span>
       </div>
-    </div>
-  );
-}
-
-function Figure({ label, value, className, note }: { label: string; value: number; className?: string; note?: string }) {
-  return (
-    <div className="flex items-baseline gap-1.5">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={cn("font-semibold tabular-nums", className)}>
-        <span dir="ltr">{formatCurrency(value)}</span>
-        {note ? <span className="ms-1 text-xs font-normal text-muted-foreground">({note})</span> : null}
-      </dd>
     </div>
   );
 }
