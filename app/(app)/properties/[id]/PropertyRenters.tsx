@@ -49,6 +49,7 @@ export function PropertyRentersCard({ renters, onNew }: { renters: Renter[]; onN
   ].filter((d): d is { label: string; value: string } => Boolean(d));
   return (
     <StatActionCard
+      id="tenant"
       icon={<UserIcon className="h-5 w-5" />}
       label="שוכרים"
       value={renters.length === 0 ? "פנוי" : renters.length === 1 ? "שוכר אחד" : `${renters.length} שוכרים`}
@@ -73,6 +74,7 @@ export function PropertyRentersRentCard({ renters }: { renters: Renter[] }) {
   const all = due.length > 0 && open.length === 0;
   return (
     <StatActionCard
+      id="rent"
       icon={<PaymentIcon className="h-5 w-5" />}
       label="שכירות התקופה"
       value={due.length === 0 ? "אין שוכרים" : all ? "כולם שילמו" : `${paid.length} מתוך ${due.length} שילמו`}
@@ -106,6 +108,7 @@ export function PropertyRentersSection({
 }) {
   return (
     <CollapsibleSection
+      id="renters"
       collapsible={false}
       title={
         <span className="flex items-center gap-1.5">

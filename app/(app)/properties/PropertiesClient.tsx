@@ -1,7 +1,6 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState, useTransition, type ReactNode } from "react";
-import dynamic from "next/dynamic";
+import { useDeferredValue, useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -14,28 +13,22 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, BuildingIcon, DragIcon, MoreIcon, SearchIcon } from "@/components/ui/icons";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DragIcon, SearchIcon } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
-import { Painted, SearchTermsProvider } from "@/components/search/Painted";
+import { SearchTermsProvider } from "@/components/search/Painted";
 import { searchList, type SearchRecord } from "@/lib/search/listSearch";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageStack, AdaptiveGrid } from "@/components/layout/page-layout";
-import { formatCurrency } from "@/lib/payroll";
 import {
   propertyDisplayName,
   propertyHasRoomLayout,
   propertyTypeLabel,
   type PropertyWithLease,
 } from "@/lib/properties";
-import { RENT_STATE } from "@/lib/property-rent";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createProperty, updateProperty, deleteProperty, setPropertyOrder } from "./actions";
 import { cn } from "@/lib/utils";
@@ -43,13 +36,26 @@ import { EMPTY_PROPERTY_FORM, propertyToForm, PropertyFormFields, type PropertyI
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
+import PropertyListCard from "./PropertyListCard";
 
-const ExpenseDialog = dynamic(() => import("@/components/expenses/ExpenseDialog").then((m) => m.ExpenseDialog), {
-  ssr: false,
-});
-const IncomeDialog = dynamic(() => import("@/components/financial/IncomeDialog").then((m) => m.IncomeDialog), {
-  ssr: false,
-});
+/**
+ * The properties' photos for the cards (/api/properties/photos — signed, so the
+ * server's), asked for once the list is on screen and kept for the visit, so
+ * coming back to the list doesn't ask again. No signal: the building icon.
+ */
+let photosCache: Record<string, string> | null = null;
+let photosRequest: Promise<Record<string, string>> | null = null;
+function loadPhotos(): Promise<Record<string, string>> {
+  if (photosCache) return Promise.resolve(photosCache);
+  photosRequest ??= fetch("/api/properties/photos")
+    .then((res) => (res.ok ? (res.json() as Promise<{ photos?: Record<string, string> }>) : { photos: {} }))
+    .then((json) => (photosCache = json.photos ?? {}))
+    .catch(() => {
+      photosRequest = null;
+      return {};
+    });
+  return photosRequest;
+}
 
 function numOrNullFromForm(value: string) {
   const trimmed = value.trim();
@@ -158,7 +164,7 @@ function SortableCard({
     <button
       type="button"
       ref={setActivatorNodeRef}
-      className="flex h-9 w-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:text-foreground active:cursor-grabbing"
+      className="flex h-7 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground/70 hover:bg-muted hover:text-foreground active:cursor-grabbing"
       aria-label={`גרירה לשינוי הסדר — ${name}`}
       title="גרירה לשינוי הסדר"
       {...attributes}
@@ -186,10 +192,18 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<PropertyInput>(EMPTY_PROPERTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<PropertyWithLease | null>(null);
-  // Adding money straight from a property's card (owner's card, note 1:
-  // "הוצאה והכנסה להוסיף בחוץ"), and a reminder from its ⋮.
-  const [moneyTarget, setMoneyTarget] = useState<{ kind: "income" | "expense"; property: PropertyWithLease } | null>(null);
+  // A reminder from a card's ⋮.
   const [reminderTarget, setReminderTarget] = useState<PropertyWithLease | null>(null);
+  const [photos, setPhotos] = useState<Record<string, string>>(() => photosCache ?? {});
+  useEffect(() => {
+    let live = true;
+    void loadPhotos().then((loaded) => {
+      if (live) setPhotos(loaded);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   // The order just dragged, until the list comes back from the server in it.
@@ -240,6 +254,14 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
     setForm(EMPTY_PROPERTY_FORM);
     setDialogOpen(true);
   }
+
+  // The + menu's own "נכס" tile (on this page instead of קליטת תשלום — see
+  // QuickCreateMenu.tsx) opens this dialog, as the cars page does.
+  useEffect(() => {
+    const onQuickCreate = () => openCreate();
+    window.addEventListener("bizh:property-quick-create", onQuickCreate);
+    return () => window.removeEventListener("bizh:property-quick-create", onQuickCreate);
+  }, []);
 
   function openEdit(p: PropertyWithLease) {
     setEditId(p.id);
@@ -316,22 +338,6 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
 
   return (
     <PageStack>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <BuildingIcon className="h-6 w-6" />
-            ניהול נכסים
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            נכסים להשכרה, חוזי שכירות, והוצאות/הכנסות לכל נכס במקום אחד.
-          </p>
-        </div>
-        <Button onClick={openCreate}>
-          <AddIcon className="h-4 w-4" />
-          הוספת נכס
-        </Button>
-      </div>
-
       {properties.length > 0 ? (
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -352,7 +358,7 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
       ) : properties.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
-            עדיין אין נכסים. הוסיפו נכס כדי להתחיל לעקוב אחרי חוזי השכירות וההכנסות/הוצאות שלו.
+            עדיין אין נכסים. הוסיפו נכס מה-+ כדי להתחיל לעקוב אחרי חוזי השכירות וההכנסות/הוצאות שלו.
           </CardContent>
         </Card>
       ) : (
@@ -361,122 +367,20 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
         <DndContext id="properties-order-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
         <SortableContext items={shown.map((p) => p.id)} strategy={rectSortingStrategy} disabled={Boolean(found)}>
         <AdaptiveGrid variant="entityCards">
-          {shown.map((p) => {
-            const net = p.rollup.totalIncomeAmount - p.rollup.paidExpenseAmount;
-            const lease = p.currentLease?.status === "active" ? p.currentLease : null;
-            const rent = RENT_STATE[p.rentThisMonth.state];
-            const name = propertyDisplayName(p);
-            return (
-              <SortableCard key={p.id} id={p.id} name={name} disabled={Boolean(found) || shown.length < 2}>
+          {shown.map((p) => (
+            <SortableCard key={p.id} id={p.id} name={propertyDisplayName(p)} disabled={Boolean(found) || shown.length < 2}>
               {(handle) => (
-              <Card className="flex flex-1 flex-col">
-                <CardContent className="flex flex-1 flex-col gap-3 p-4">
-                  {/* What it is and where (owner's card, note 2: the facts and the
-                      amenities moved onto the property's own page). */}
-                  <div className="flex items-start justify-between gap-2">
-                    <Link href={`/properties/${p.id}`} className="min-w-0 flex-1">
-                      <div className="text-lg font-semibold hover:underline">
-                        <Painted text={name} />
-                      </div>
-                      {p.name ? (
-                        <div className="text-sm text-muted-foreground">
-                          <Painted text={p.address} />
-                        </div>
-                      ) : null}
-                    </Link>
-                    {handle}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="ghost" size="sm" className="h-9 w-9 shrink-0 p-0" aria-label={`פעולות ל${name}`}>
-                          <MoreIcon className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-36">
-                        <DropdownMenuItem onClick={() => openEdit(p)}>עריכה</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setReminderTarget(p)}>תזכורת</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setDeleteTarget(p)} className="text-destructive focus:text-destructive">
-                          מחיקה
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-
-                  {/* Who rents it, and whether this month's rent is in (note 17). */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {p.renters && p.renters.count > 0 ? (
-                      // A storage property: its renters together (the ניהול נכסים card).
-                      <>
-                        <Badge variant="outline">
-                          {p.renters.count === 1 ? "שוכר אחד" : `${p.renters.count} שוכרים`}
-                          {p.renters.monthly > 0 ? ` · ${formatCurrency(p.renters.monthly)}/חודש` : ""}
-                          {p.renters.yearly > 0 ? ` · ${formatCurrency(p.renters.yearly)}/שנה` : ""}
-                        </Badge>
-                        <Badge variant={p.renters.paid >= p.renters.count ? "success" : "warning"}>
-                          {p.renters.paid >= p.renters.count ? "שכירות: כולם שילמו" : `שכירות: ${p.renters.paid} מתוך ${p.renters.count} שילמו`}
-                        </Badge>
-                      </>
-                    ) : lease ? (
-                      <>
-                        <Badge variant="outline">
-                          <Link href={`/customers/${lease.customerId}`} className="hover:underline">
-                            <Painted text={lease.customerName ?? "שוכר"} />
-                          </Link>
-                          {" · "}
-                          <Painted text={formatCurrency(lease.monthlyRentAmount)} />
-                          {lease.periodMonths === 12 ? "/שנה" : "/חודש"}
-                        </Badge>
-                        <Badge variant={rent.badge}>
-                          שכירות {p.rentThisMonth.periodLabel ?? "החודש"}: {rent.label}
-                        </Badge>
-                      </>
-                    ) : (
-                      <Badge variant="neutral">פנוי</Badge>
-                    )}
-                    {!p.isActive ? <Badge variant="neutral">לא פעיל</Badge> : null}
-                  </div>
-
-                  {/* Three across where they fit, fewer where a figure wouldn't (5.5rem
-                      each — rem, so it follows the text size): "₪-416,275.23" ran out of
-                      its third of the card. */}
-                  <div className="mt-auto grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 text-center text-sm">
-                    <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground">הכנסות</div>
-                      <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-success">
-                        <Painted text={formatCurrency(p.rollup.totalIncomeAmount)} />
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground">הוצאות</div>
-                      <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
-                        <Painted text={formatCurrency(p.rollup.paidExpenseAmount)} />
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground">נטו</div>
-                      <div
-                        className={`whitespace-nowrap text-xs font-semibold tabular-nums ${net >= 0 ? "text-success" : "text-destructive"}`}
-                      >
-                        {formatCurrency(net)}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={() => setMoneyTarget({ kind: "income", property: p })}>
-                      <AddIcon className="h-4 w-4" />
-                      הכנסה
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setMoneyTarget({ kind: "expense", property: p })}>
-                      <AddIcon className="h-4 w-4" />
-                      הוצאה
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                <PropertyListCard
+                  property={p}
+                  photoUrl={photos[p.id] ?? null}
+                  handle={handle}
+                  onEdit={() => openEdit(p)}
+                  onReminder={() => setReminderTarget(p)}
+                  onDelete={() => setDeleteTarget(p)}
+                />
               )}
-              </SortableCard>
-            );
-          })}
+            </SortableCard>
+          ))}
         </AdaptiveGrid>
         </SortableContext>
         </DndContext>
@@ -496,30 +400,6 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
         <PropertyFormFields form={form} set={set} />
       </FormDialog>
 
-      {moneyTarget?.kind === "income" ? (
-        <IncomeDialog
-          open
-          onOpenChange={(open) => (open ? undefined : setMoneyTarget(null))}
-          projects={[]}
-          orders={[]}
-          properties={[]}
-          lockedPropertyId={moneyTarget.property.id}
-          onSaved={() => {
-            setMoneyTarget(null);
-            startTransition(() => router.refresh());
-          }}
-        />
-      ) : null}
-      {moneyTarget?.kind === "expense" ? (
-        <ExpenseDialog
-          open
-          onOpenChange={(open) => (open ? undefined : setMoneyTarget(null))}
-          lockedPropertyId={moneyTarget.property.id}
-          editingSourceLabel={propertyDisplayName(moneyTarget.property)}
-          showAttachments
-          onSaved={() => startTransition(() => router.refresh())}
-        />
-      ) : null}
       {reminderTarget ? (
         <AddReminderButton
           entityType="property"

@@ -99,6 +99,7 @@ export function PropertyTenantCard({
 
   return (
     <StatActionCard
+      id="tenant"
       icon={<UserIcon className="h-5 w-5" />}
       label="שוכר"
       value={
@@ -229,6 +230,7 @@ export function PropertyRentCard({
 
   return (
     <StatActionCard
+      id="rent"
       icon={<PaymentIcon className="h-5 w-5" />}
       label={status.periodLabel ? `שכירות ${status.periodLabel}` : "שכירות החודש"}
       value={state.label}

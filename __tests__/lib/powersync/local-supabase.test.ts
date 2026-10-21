@@ -1515,6 +1515,15 @@ describe("the properties list on the device", () => {
           { property_id: "p1", amount: "400", payment_status: "partial", paid_amount: "100" },
         ],
         attendance_sessions: [{ property_id: "p1", labor_cost: "262" }],
+        tasks: [
+          { property_id: "p1", status: "todo" },
+          { property_id: "p1", status: "done" },
+        ],
+        document_links: [
+          { entity_type: "property", entity_id: "p1" },
+          { entity_type: "property", entity_id: "p1" },
+          { entity_type: "expense", entity_id: "p1" },
+        ],
       })
     );
     const { properties } = await computeLocalCard(db, "propertiesList", { userId: "u1", role: "admin", locale: "he" });
@@ -1525,6 +1534,8 @@ describe("the properties list on the device", () => {
     expect(d4.rentThisMonth).toMatchObject({ state: "paid", periodLabel: "חשון", collected: 4000 });
     expect(d4.rollup).toEqual({ totalIncomeAmount: 304000, totalExpenseAmount: 1662, paidExpenseAmount: 1362, expectedExpenseAmount: 300 });
     expect(d4.renters).toBeNull();
+    // The card's footer: open of all tasks, and its documents (not an expense's).
+    expect(d4.counts).toEqual({ tasks: 2, openTasks: 1, documents: 2 });
     // The storage room's renters: one monthly (paid), one yearly (not).
     expect(properties.find((p) => p.id === "p2")!.renters).toEqual({ count: 2, paid: 1, monthly: 500, yearly: 2400 });
   });

@@ -26,6 +26,7 @@ export function StatActionCard({
   className,
   cornerHref,
   cornerLabel,
+  id,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -44,11 +45,16 @@ export function StatActionCard({
    *  slot is busy with the card's real action (so the two never compete). */
   cornerHref?: string;
   cornerLabel?: string;
+  /** An anchor: linking to #id lands on this card (a property's tenant / rent from its list card). */
+  id?: string;
 }) {
   const subs = (subtitles ?? []).filter((line): line is React.ReactNode => Boolean(line));
   return (
     <div
+      id={id}
       className={cn(
+        // scroll-mt: landing on it (#id) leaves it clear of the top bar.
+        id && "scroll-mt-24",
         // h-full: the three cards in a row are one block, so they share the
         // tallest one's height and their buttons land on the same line.
         // The card look (rounded-card, white, light all-round shadow), as every

@@ -153,7 +153,7 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   attendanceQueue: ["phone_attendance_reports", "users", "user_directory", "attendance_sessions", "projects", "properties", "property_directory"],
   properties: ["properties", "property_directory", "lease_agreements", "customers"],
   // Each property's tenant, rent this period and money: its payments, bills and shifts.
-  propertiesList: ["properties", "lease_agreements", "customers", "payments", "expenses", "attendance_sessions"],
+  propertiesList: ["properties", "lease_agreements", "customers", "payments", "expenses", "attendance_sessions", "tasks", "document_links"],
   // The property, its leases, money, shifts, tasks; the accounts', bills' and people's names; the workers' rates.
   propertyPage: [
     "properties", "lease_agreements", "customers", "payments", "expenses", "attendance_sessions", "tasks", "accounts", "users",

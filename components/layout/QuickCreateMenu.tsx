@@ -15,7 +15,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { AddIcon, CashIcon, ClockIcon, CloseIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon, UserIcon, VehicleIcon } from "@/components/ui/icons";
+import { AddIcon, BuildingIcon, CashIcon, ClockIcon, CloseIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon, UserIcon, VehicleIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
@@ -311,6 +311,10 @@ export function QuickCreateMenu({
   // QuickCreateDialogs for what's otherwise a one-page tile.
   const pathname = usePathname();
   const isVehiclesPage = pathname?.startsWith("/vehicles") ?? false;
+  // The same on the properties list: "נכס" (owner, 2026-10-21 — the list lost
+  // its own add button with its heading). A property's own page keeps
+  // קליטת תשלום: rent is collected there.
+  const isPropertiesList = pathname === "/properties";
   // Hover reveals the whole grid; clicking the + still toggles it, and on touch
   // (where there is no hover) the tap is the only interaction.
   const panel = useHoverPanel();
@@ -458,6 +462,22 @@ export function QuickCreateMenu({
           }}
         >
           <QuickTileContent icon={VehicleIcon} label="רכב" size="sm" />
+        </Button>
+      );
+    }
+    if (isPropertiesList && item.action === "collect") {
+      return (
+        <Button
+          key="property"
+          type="button"
+          variant="outline"
+          className={tileClass}
+          onClick={() => {
+            panel.hide();
+            window.dispatchEvent(new CustomEvent("bizh:property-quick-create"));
+          }}
+        >
+          <QuickTileContent icon={BuildingIcon} label="נכס" size="sm" />
         </Button>
       );
     }

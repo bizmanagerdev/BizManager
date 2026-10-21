@@ -1,59 +1,42 @@
 import { AdaptiveGrid, PageStack } from "@/components/layout/page-layout";
 import { TextLineSkeleton } from "@/components/layout/loading-skeletons";
 import { Card, CardContent } from "@/components/ui/card";
-import { BuildingIcon } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// The properties list's placeholder, from PropertiesClient's own pieces: the
-// heading with its subtitle and the add button (under them on a phone), then
-// the property cards (one column, two from md, four from xl) — each with its
-// name, address and ⋮, the tenant and this month's rent chips, the income /
-// expenses / net figures under their names, and its + הכנסה / + הוצאה.
-// Shown while the page streams (loading.tsx).
+// The properties list's placeholder, in PropertiesClient's own shape: the
+// search box, then the property cards (one column, two from md, four from
+// xl) — each with its photo, name and address and ⋮, the renter and rent
+// rows, and the tasks / documents / money line under them (PropertyListCard).
+// Shown while the page streams (loading.tsx) and while the device works the
+// list out (LocalPropertiesPage).
 
 export default function PropertiesSkeleton() {
   return (
     <PageStack aria-busy="true">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <BuildingIcon className="h-6 w-6" />
-            ניהול נכסים
-          </h1>
-          <p className="text-sm text-muted-foreground">נכסים להשכרה, חוזי שכירות, והוצאות/הכנסות לכל נכס במקום אחד.</p>
-        </div>
-        <Skeleton className="h-11 rounded-xl sm:w-[7.5rem]" />
-      </div>
+      <Skeleton className="h-10 rounded-xl" />
 
       <AdaptiveGrid variant="entityCards">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} className="flex flex-col">
             <CardContent className="flex flex-1 flex-col gap-3 p-4">
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-3 ps-3">
+                <Skeleton className="h-14 w-14 shrink-0 rounded-xl" />
                 <div className="min-w-0 flex-1">
-                  <TextLineSkeleton className="text-lg font-semibold" barClassName="w-40" />
-                  <TextLineSkeleton className="text-sm" barClassName="w-32" />
+                  <TextLineSkeleton className="text-lg font-semibold" barClassName="w-32" />
+                  <TextLineSkeleton className="text-sm" barClassName="w-40" />
                 </div>
                 <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Skeleton className="h-[1.625rem] w-28 rounded-full" />
-                <Skeleton className="h-[1.625rem] w-32 rounded-full" />
+              <div className="space-y-2">
+                <Skeleton className="h-11 rounded-xl" />
+                <Skeleton className="h-11 rounded-xl" />
               </div>
 
-              <div className="mt-auto grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 text-center text-sm">
-                {["הכנסות", "הוצאות", "נטו"].map((label) => (
-                  <div key={label} className="min-w-0">
-                    <div className="text-xs text-muted-foreground">{label}</div>
-                    <TextLineSkeleton className="text-xs" barClassName="w-14" />
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Skeleton className="h-9 rounded-xl" />
-                <Skeleton className="h-9 rounded-xl" />
+              <div className="mt-auto flex items-center gap-3">
+                <TextLineSkeleton className="text-xs" barClassName="w-20" />
+                <TextLineSkeleton className="text-xs" barClassName="w-16" />
+                <TextLineSkeleton className="text-xs" barClassName="w-16" />
               </div>
             </CardContent>
           </Card>

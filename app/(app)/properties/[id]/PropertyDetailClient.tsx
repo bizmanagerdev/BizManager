@@ -247,6 +247,12 @@ export default function PropertyDetailClient({
   const expenseLabel = (e: PropertyExpense) =>
     (e.recurringTemplateId && templateNameById.get(e.recurringTemplateId)) || e.description || e.category || "הוצאה";
   const address = propertyDisplayName(property);
+  // Opened from a list card's renter or rent row (#tenant, #rent, #renters):
+  // that part of the page, once it's on screen.
+  useEffect(() => {
+    const target = window.location.hash.slice(1);
+    if (target) document.getElementById(target)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
 
   // Task assignment stays limited to active, dashboard-having staff (unchanged
   // behavior from before `users` widened to include everyone).

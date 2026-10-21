@@ -2,8 +2,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
-// The properties list (owner's card, 2026-10-20): each card says who rents it
-// and whether this month's rent is in, and money is added straight from it.
+// The properties list (owner, 2026-10-21 — "like the cars cards"): each card
+// its photo, name and address, a row for who rents it and one for this
+// period's rent — each opening that part of the property's page — and its
+// tasks, documents and money; the whole card opens the property.
 
 vi.mock("next/navigation", () => import("@/__tests__/mocks/next-navigation"));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
@@ -27,16 +29,16 @@ vi.mock("@dnd-kit/core", async (importOriginal) => {
   };
 });
 vi.mock("@/components/reminders/AddReminderButton", () => ({ default: () => null }));
-vi.mock("@/components/expenses/ExpenseDialog", () => ({
-  ExpenseDialog: ({ lockedPropertyId }: { lockedPropertyId: string }) => <p>טופס הוצאה לנכס {lockedPropertyId}</p>,
-}));
-vi.mock("@/components/financial/IncomeDialog", () => ({
-  IncomeDialog: ({ lockedPropertyId }: { lockedPropertyId: string }) => <p>טופס הכנסה לנכס {lockedPropertyId}</p>,
-}));
+// The cards' photos (/api/properties/photos).
+vi.stubGlobal(
+  "fetch",
+  vi.fn(async () => new Response(JSON.stringify({ photos: { p1: "https://x/p1.jpg" } }), { status: 200 }))
+);
 
 import PropertiesClient from "@/app/(app)/properties/PropertiesClient";
 import { setPropertyOrder } from "@/app/(app)/properties/actions";
 import { toast } from "sonner";
+import { push } from "@/__tests__/mocks/next-navigation";
 import type { PropertyWithLease } from "@/lib/properties";
 
 function property(fields: Partial<PropertyWithLease>): PropertyWithLease {
@@ -105,6 +107,7 @@ function property(fields: Partial<PropertyWithLease>): PropertyWithLease {
     rollup: { totalExpenseAmount: 1000, paidExpenseAmount: 1000, expectedExpenseAmount: 0, totalIncomeAmount: 17000 },
     rentThisMonth: { state: "late", collected: 0, pending: 0, rent: 8500, periodStart: "2026-10-01", periodLabel: "אוקטובר" },
     renters: null,
+    counts: { tasks: 3, openTasks: 1, documents: 5 },
     ...fields,
   };
 }
@@ -112,21 +115,36 @@ function property(fields: Partial<PropertyWithLease>): PropertyWithLease {
 const card = (name: string) => screen.getByText(name).closest("[class*='rounded']") as HTMLElement;
 
 describe("the properties list", () => {
-  it("a rented property: the tenant with the rent, and this month's rent as a chip", () => {
+  it("a rented property: the renter with the rent, and this period's rent — each opening that part of its page", async () => {
     render(<PropertiesClient properties={[property({})]} />);
     const c = within(card("יהודה הנשיא 15"));
-    expect(c.getByText("וואגשל")).toBeInTheDocument();
-    expect(c.getByText("שכירות אוקטובר: לא שולם")).toBeInTheDocument();
-    // The rooms and the amenities live on the property's own page now.
+    const renter = c.getByRole("link", { name: /שוכר.*וואגשל/ });
+    expect(renter).toHaveAttribute("href", "/properties/p1#tenant");
+    expect(renter).toHaveTextContent("₪8,500/חודש");
+    const rent = c.getByRole("link", { name: /שכירות אוקטובר.*לא שולם/ });
+    expect(rent).toHaveAttribute("href", "/properties/p1#rent");
+    // Its tasks, documents and money, like a car's; no income/expense figures or buttons.
+    expect(c.getByText("1/3 משימות")).toBeInTheDocument();
+    expect(c.getByText("5 מסמכים")).toBeInTheDocument();
+    expect(c.getByText(/נטו/)).toHaveTextContent("₪16,000");
+    expect(c.queryByRole("button", { name: "הכנסה" })).not.toBeInTheDocument();
+    // The rooms and the amenities live on the property's own page.
     expect(c.queryByText(/4 חדרים/)).not.toBeInTheDocument();
-    expect(c.queryByText("חניה")).not.toBeInTheDocument();
+    // Its photo, once asked for.
+    expect(await c.findByRole("img", { name: "יהודה הנשיא 15" })).toHaveAttribute("src", "https://x/p1.jpg");
   });
 
-  it("an empty one just says פנוי", () => {
+  it("the whole card opens the property", () => {
+    render(<PropertiesClient properties={[property({})]} />);
+    fireEvent.click(screen.getByText("שדרות רבי יהודה הנשיא 15, בית שמש"));
+    expect(push).toHaveBeenCalledWith("/properties/p1");
+  });
+
+  it("an empty one says פנוי, and there's no rent", () => {
     render(<PropertiesClient properties={[property({ currentLease: null, rentThisMonth: { state: "none", collected: 0, pending: 0, rent: 0, periodStart: null, periodLabel: null } })]} />);
     const c = within(card("יהודה הנשיא 15"));
-    expect(c.getByText("פנוי")).toBeInTheDocument();
-    expect(c.queryByText(/שכירות .+:/)).not.toBeInTheDocument();
+    expect(c.getByRole("link", { name: /שוכר.*פנוי/ })).toHaveAttribute("href", "/properties/p1#tenant");
+    expect(c.getByText("אין שוכר")).toBeInTheDocument();
   });
 
   it("a storage property with renters: how many, what they pay together, and how many have paid", () => {
@@ -136,21 +154,17 @@ describe("the properties list", () => {
       />
     );
     const c = within(card("הר יונה שונות"));
-    expect(c.getByText(/3 שוכרים/)).toHaveTextContent("3 שוכרים · ₪900/חודש · ₪2,400/שנה");
-    expect(c.getByText("שכירות: 2 מתוך 3 שילמו")).toBeInTheDocument();
+    expect(c.getByRole("link", { name: /שוכרים.*3 שוכרים/ })).toHaveAttribute("href", "/properties/p1#renters");
+    expect(c.getByText("2 מתוך 3 שילמו")).toBeInTheDocument();
   });
 
-  it("+ הכנסה and + הוצאה open the forms already set to that property", async () => {
+  it("the + menu's נכס opens the new-property form (the page has no add button of its own)", async () => {
     render(<PropertiesClient properties={[property({})]} />);
-    const c = within(card("יהודה הנשיא 15"));
+    expect(screen.queryByRole("button", { name: /הוספת נכס/ })).not.toBeInTheDocument();
     await act(async () => {
-      fireEvent.click(c.getByRole("button", { name: "הכנסה" }));
+      window.dispatchEvent(new CustomEvent("bizh:property-quick-create"));
     });
-    expect(await screen.findByText("טופס הכנסה לנכס p1")).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(c.getByRole("button", { name: "הוצאה" }));
-    });
-    expect(await screen.findByText("טופס הוצאה לנכס p1")).toBeInTheDocument();
+    expect(await screen.findByText("הוספת נכס")).toBeInTheDocument();
   });
 
   it("dragged into the owner's order: shown at once and saved; a failed save puts it back", async () => {

@@ -14,6 +14,7 @@ import {
 import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 import type { StructuredAddress } from "@/lib/address/structured";
 import type { FinancialAttachment } from "@/lib/payments";
+import { isImageDocument } from "@/lib/documents";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Properties (נכסים) — a real estate asset with a lease history and its own
@@ -139,6 +140,8 @@ export type PropertyWithLease = Property & {
    * a property with one tenant.
    */
   renters: { count: number; paid: number; monthly: number; yearly: number } | null;
+  /** Its tasks (open of all) and documents — the card's footer, like a car's. */
+  counts: { tasks: number; openTasks: number; documents: number };
 };
 
 export type PropertyWithLeases = Property & { leases: LeaseAgreement[] };
@@ -350,7 +353,7 @@ export async function loadProperties(supabase: SupabaseClient): Promise<Property
   const ids = properties.map((p) => p.id).filter(Boolean);
   if (ids.length === 0) return [];
 
-  const [leaseRows, expenseRows, paymentRows, sessionRows] = await Promise.all([
+  const [leaseRows, expenseRows, paymentRows, sessionRows, taskRows, documentRows] = await Promise.all([
     fetchAllPaged<Row>((lo, hi) =>
       supabase.from("lease_agreements").select(LEASE_SELECT).in("property_id", ids).range(lo, hi)
     ),
@@ -370,6 +373,15 @@ export async function loadProperties(supabase: SupabaseClient): Promise<Property
     ),
     fetchAllPaged<Row>((lo, hi) =>
       supabase.from("attendance_sessions").select("property_id,labor_cost").in("property_id", ids).range(lo, hi)
+    ),
+    fetchAllPaged<Row>((lo, hi) => supabase.from("tasks").select("property_id,status").in("property_id", ids).range(lo, hi)),
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase
+        .from("document_links")
+        .select("entity_id")
+        .eq("entity_type", "property")
+        .in("entity_id", ids)
+        .range(lo, hi)
     ),
   ]);
 
@@ -428,6 +440,25 @@ export async function loadProperties(supabase: SupabaseClient): Promise<Property
   for (const rollup of rollupByProperty.values()) {
     rollup.expectedExpenseAmount = rollup.totalExpenseAmount - rollup.paidExpenseAmount;
   }
+  const countsByProperty = new Map<string, PropertyWithLease["counts"]>();
+  const countsFor = (propertyId: string) => {
+    const existing = countsByProperty.get(propertyId);
+    if (existing) return existing;
+    const created = { tasks: 0, openTasks: 0, documents: 0 };
+    countsByProperty.set(propertyId, created);
+    return created;
+  };
+  for (const row of taskRows) {
+    const propertyId = str(row.property_id);
+    if (!propertyId) continue;
+    const counts = countsFor(propertyId);
+    counts.tasks += 1;
+    if (!["done", "cancelled"].includes(str(row.status) ?? "todo")) counts.openTasks += 1;
+  }
+  for (const row of documentRows) {
+    const propertyId = str(row.entity_id);
+    if (propertyId) countsFor(propertyId).documents += 1;
+  }
 
   const today = israelDateKey();
   return properties
@@ -453,9 +484,50 @@ export async function loadProperties(supabase: SupabaseClient): Promise<Property
         rollup: rollupByProperty.get(property.id) ?? EMPTY_ROLLUP,
         rentThisMonth: rentThisPeriod(currentLease, payments, today),
         renters,
+        counts: countsByProperty.get(property.id) ?? { tasks: 0, openTasks: 0, documents: 0 },
       };
     })
     .sort(compareProperties);
+}
+
+/**
+ * Each property's photo for the list's cards — its newest picture (a
+ * document filed as צילום, or an image with nothing more specific said about
+ * it, as the property's page tells its photos apart), by property id, with a
+ * signed link. The server's only (the device copy has no documents).
+ */
+export async function loadPropertyPhotos(supabase: SupabaseClient): Promise<Record<string, string>> {
+  const links = await fetchAllPaged<Row>((lo, hi) =>
+    supabase
+      .from("document_links")
+      .select("entity_id,document:documents(file_name,storage_key,document_type,uploaded_at)")
+      .eq("entity_type", "property")
+      .range(lo, hi)
+  );
+  const newest = new Map<string, { key: string; at: string }>();
+  for (const link of links) {
+    const propertyId = str(link.entity_id);
+    const doc = linkDocument(link);
+    const key = str(doc?.storage_key);
+    if (!propertyId || !key) continue;
+    const type = str(doc?.document_type);
+    const photo = type === "צילום" || (!type && isImageDocument({ file_name: str(doc?.file_name), document_type: null }));
+    if (!photo) continue;
+    const at = str(doc?.uploaded_at) ?? "";
+    const kept = newest.get(propertyId);
+    if (!kept || at > kept.at) newest.set(propertyId, { key, at });
+  }
+  if (newest.size === 0) return {};
+  const { data: signed } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .createSignedUrls([...new Set([...newest.values()].map((p) => p.key))], 60 * 60);
+  const urlByKey = new Map((signed ?? []).filter((s) => s.path && s.signedUrl).map((s) => [s.path as string, s.signedUrl]));
+  const photos: Record<string, string> = {};
+  for (const [propertyId, { key }] of newest) {
+    const url = urlByKey.get(key);
+    if (url) photos[propertyId] = url;
+  }
+  return photos;
 }
 
 /** The list's order: the owner's own (sort_order), then the rest by name. */
