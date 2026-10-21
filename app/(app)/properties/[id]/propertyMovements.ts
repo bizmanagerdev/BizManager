@@ -39,8 +39,10 @@ export type PropertyMovementInput = {
   users: PropertyMovementUser[];
   onEditPayment: (payment: PropertyPayment) => void;
   onDeletePayment: (payment: PropertyPayment) => void;
-  /** A rent check: נפרע / ביטול הסימון. */
+  /** A rent check that's in: ביטול הסימון. */
   onToggleCleared: (payment: PropertyPayment) => void;
+  /** A rent check that's due, and it cleared — into which account (PropertyCheckArrivedDialog). */
+  onCheckArrived: (payment: PropertyPayment, title: string) => void;
   onEditExpense: (expense: PropertyExpense) => void;
   onDeleteExpense: (expense: PropertyExpense) => void;
   onEditSession: (session: PropertySession) => void;
@@ -151,7 +153,9 @@ export function buildPropertyMovements(input: PropertyMovementInput): { done: Mo
       attachments: payment.attachments,
       fileLabel: isCheck ? "צילום הצ׳ק" : undefined,
       actions: isCheck
-        ? [{ key: "cleared", label: pending ? "נפרע" : "ביטול הסימון", onSelect: () => input.onToggleCleared(payment) }]
+        ? pending
+          ? [{ key: "cleared", label: "נפרע", onSelect: () => input.onCheckArrived(payment, title) }]
+          : [{ key: "cleared", label: "ביטול הסימון", onSelect: () => input.onToggleCleared(payment) }]
         : undefined,
       onEdit: () => input.onEditPayment(payment),
       onDelete: () => input.onDeletePayment(payment),

@@ -70,6 +70,7 @@ function input(fields: Partial<PropertyMovementInput>): PropertyMovementInput {
     onEditPayment: vi.fn(),
     onDeletePayment: vi.fn(),
     onToggleCleared: vi.fn(),
+    onCheckArrived: vi.fn(),
     onEditExpense: vi.fn(),
     onDeleteExpense: vi.fn(),
     onEditSession: vi.fn(),
@@ -136,14 +137,23 @@ describe("the property's money table", () => {
   });
 
   it("a check not yet cleared is expected, on its due date, with נפרע in its menu", () => {
-    const onToggleCleared = vi.fn();
+    const onCheckArrived = vi.fn();
     const check = payment({ id: "c1", method: "check", paymentStatus: "pending", date: "2026-12-01", dueDate: "2026-12-05", checkNumber: "1001" });
-    const { done, expected } = buildPropertyMovements(input({ payments: [check], onToggleCleared }));
+    const { done, expected } = buildPropertyMovements(input({ payments: [check], onCheckArrived }));
     expect(done).toHaveLength(0);
     expect(expected[0]).toMatchObject({ name: "שכירות דצמבר 2026", date: "2026-12-05", hint: "צ׳ק #1001" });
+    expect(expected[0].actions?.map((a) => a.label)).toEqual(["נפרע"]);
     expected[0].actions?.[0].onSelect();
+    expect(onCheckArrived).toHaveBeenLastCalledWith(check, "שכירות דצמבר 2026");
+  });
+
+  it("a check that's in: ביטול הסימון", () => {
+    const onToggleCleared = vi.fn();
+    const check = payment({ id: "c1", method: "check", paymentStatus: "cleared", date: "2026-12-01", dueDate: "2026-12-05" });
+    const { done } = buildPropertyMovements(input({ payments: [check], onToggleCleared }));
+    expect(done[0].actions?.map((a) => a.label)).toEqual(["ביטול הסימון"]);
+    done[0].actions?.[0].onSelect();
     expect(onToggleCleared).toHaveBeenCalledWith(check);
-    expect(expected[0].actions?.[0].label).toBe("נפרע");
   });
 
   it("an unpaid bill is expected; a paid one, a shift and the incomes are in the table, oldest first", () => {

@@ -70,6 +70,7 @@ import PropertyPageHeading from "./PropertyPageHeading";
 import PropertyMoneyCard from "./PropertyMoneyCard";
 import PropertyIncomeEditDialog from "./PropertyIncomeEditDialog";
 import PropertyRentPaymentDialog from "./PropertyRentPaymentDialog";
+import PropertyCheckArrivedDialog from "./PropertyCheckArrivedDialog";
 import { PropertyRentersCard, PropertyRentersRentCard, PropertyRentersSection, renterStatuses } from "./PropertyRenters";
 import { hasRenters, renterPayments, runningLeases } from "@/lib/property-rent";
 import { israelDateKey } from "@/lib/timezone";
@@ -294,6 +295,8 @@ export default function PropertyDetailClient({
   // a lease's rent, with the month(s) it pays
   const [rentPaymentOpen, setRentPaymentOpen] = useState(false);
   const [rentPaymentLeaseId, setRentPaymentLeaseId] = useState<string | null>(null);
+  // A due rent check that cleared — into which account.
+  const [arrival, setArrival] = useState<{ payment: PropertyPayment; title: string } | null>(null);
   // lease
   const [leaseOpen, setLeaseOpen] = useState(false);
   const [editLeaseId, setEditLeaseId] = useState<string | null>(null);
@@ -378,6 +381,7 @@ export default function PropertyDetailClient({
         onEditPayment: setEditingPayment,
         onDeletePayment: (payment) => setDel({ kind: "payment", id: payment.id, label: "הכנסה" }),
         onToggleCleared: toggleCleared,
+        onCheckArrived: (payment, title) => setArrival({ payment, title }),
         onEditExpense: openEditExpense,
         onDeleteExpense: (expense) => setDel({ kind: "expense", id: expense.id, label: expenseLabel(expense) }),
         onEditSession: openEditSession,
@@ -832,7 +836,8 @@ export default function PropertyDetailClient({
               movements={visibleDone}
               groupBy="none"
               sortBy="date"
-              sortDirection="asc"
+              // Newest first (owner, 2026-10-21); the expected list below stays soonest first.
+              sortDirection="desc"
               showBilled={false}
               emptyText={search.trim() ? "לא נמצאו תנועות לחיפוש הזה." : "אין עדיין הכנסות או הוצאות לנכס הזה."}
             />
@@ -1017,21 +1022,20 @@ export default function PropertyDetailClient({
               </ul>
             )}
           </CollapsibleSection>
-        </div>
-      </div>
 
-      {/* The rest of what's known about it: the purchase, the furniture, the
-          utility account numbers — each edited in place. */}
-      <div className="grid grid-cols-1 gap-3 lg:@[31rem]:grid-cols-3">
-        <PropertyPurchaseCard
-          propertyId={propertyId}
-          property={property}
-          documents={purchaseDocuments}
-          onAddDocument={openAddPurchaseDoc}
-          onDeleteDocument={(id, label) => setDel({ kind: "document", id, label })}
-        />
-        <PropertyFurnitureCard propertyId={propertyId} property={property} />
-        <PropertyUtilitiesCard propertyId={propertyId} property={property} />
+          {/* The rest of what's known about it — the purchase, the furniture, the
+              utility account numbers, each edited in place — at the side
+              (owner, 2026-10-21), so the money has the page's width. */}
+          <PropertyPurchaseCard
+            propertyId={propertyId}
+            property={property}
+            documents={purchaseDocuments}
+            onAddDocument={openAddPurchaseDoc}
+            onDeleteDocument={(id, label) => setDel({ kind: "document", id, label })}
+          />
+          <PropertyFurnitureCard propertyId={propertyId} property={property} />
+          <PropertyUtilitiesCard propertyId={propertyId} property={property} />
+        </div>
       </div>
 
       {/* Expense dialog — add/edit an expense, or edit a worker session (both close over
@@ -1078,6 +1082,12 @@ export default function PropertyDetailClient({
       />
 
       {/* Edit any of its incomes (the note is its title). */}
+      <PropertyCheckArrivedDialog
+        payment={arrival?.payment ?? null}
+        title={arrival?.title ?? ""}
+        onClose={() => setArrival(null)}
+      />
+
       <PropertyIncomeEditDialog
         payment={editingPayment}
         onClose={() => setEditingPayment(null)}

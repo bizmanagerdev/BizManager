@@ -130,6 +130,10 @@ export function PropertyDetailBodySkeleton() {
           <CollapsibleSection collapsible={false} title="הוצאות קבועות" icon={<RecurringIcon className={SECTION_ICON_CLASS} />}>
             <Skeleton className="h-10 w-full" />
           </CollapsibleSection>
+          {/* The purchase, the furniture and the utility numbers (the side, from 2026-10-21). */}
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-28 w-full rounded-card" />
+          ))}
         </div>
       </div>
     </div>
