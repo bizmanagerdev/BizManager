@@ -711,7 +711,9 @@ export default function PropertyDetailClient({
   }
 
   return (
-    <div className="space-y-3 md:space-y-5">
+    // @container: the page's columns go by the room there is in text units —
+    // at the largest text a laptop gets them stacked, not squeezed (8rem cards).
+    <div className="space-y-3 @container md:space-y-5">
       <PropertyPageHeading
         name={address}
         typeLabel={property.propertyType ? propertyTypeLabel(property.propertyType) : null}
@@ -746,7 +748,7 @@ export default function PropertyDetailClient({
 
       {/* The head row, like a project's: what it is, who rents it, and where
           this month's rent stands. The three share the tallest one's height. */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:@[31rem]:grid-cols-3">
         <PropertyDetailsCard
           propertyId={propertyId}
           property={property}
@@ -781,7 +783,7 @@ export default function PropertyDetailClient({
 
       {/* The main column takes the head row's first two cards' width, the side
           column the third's — same gap, so their edges line up. */}
-      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:items-start">
+      <div className="flex flex-col gap-3 lg:@[31rem]:grid lg:@[31rem]:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:@[31rem]:items-start">
         <div className="min-w-0 space-y-3">
           {withRenters ? (
             <PropertyRentersSection
@@ -1020,7 +1022,7 @@ export default function PropertyDetailClient({
 
       {/* The rest of what's known about it: the purchase, the furniture, the
           utility account numbers — each edited in place. */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:@[31rem]:grid-cols-3">
         <PropertyPurchaseCard
           propertyId={propertyId}
           property={property}

@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import { donutSlices, type CategoryDonutDatum } from "./category-donut-data";
 
 export { donutSlices, type CategoryDonutDatum } from "./category-donut-data";
@@ -13,6 +14,9 @@ export { donutSlices, type CategoryDonutDatum } from "./category-donut-data";
 // is also its table view: three of the colours are light on white, so the
 // list's labels carry the names, never the colour alone. The list draws at
 // once; only the circle's code comes later, into a box of its own size.
+// Pointing at a slice — or its row, or focusing the row — shows that one in
+// the middle in place of the total, value first (owner, 2026-10-21: the
+// floating tooltip covered the total).
 
 const CategoryDonutChart = dynamic(() => import("./CategoryDonutChart"), {
   ssr: false,
@@ -30,22 +34,47 @@ export default function CategoryDonut({
 }) {
   const slices = useMemo(() => donutSlices(data), [data]);
   const total = slices.reduce((sum, s) => sum + s.value, 0);
+  const [active, setActive] = useState<string | null>(null);
+  const shown = slices.find((s) => s.label === active) ?? null;
   if (slices.length === 0) return <p className="text-sm text-muted-foreground">{emptyText}</p>;
 
   return (
     <div className="flex flex-col items-center gap-3 @[22em]:flex-row @[22em]:items-start">
       <div className="relative h-36 w-36 shrink-0" aria-hidden>
-        <CategoryDonutChart slices={slices} />
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-[0.7rem] text-muted-foreground">סה״כ</span>
-          <span className="text-sm font-bold tabular-nums" dir="ltr">
-            {ILS.format(total)}
-          </span>
+        <CategoryDonutChart slices={slices} active={active} onActive={setActive} />
+        <div className="pointer-events-none absolute inset-[22%] flex flex-col items-center justify-center text-center">
+          {shown ? (
+            <>
+              <span className="text-sm font-bold tabular-nums" dir="ltr">
+                {ILS.format(shown.value)}
+              </span>
+              <span className="line-clamp-2 text-[0.7rem] leading-tight text-muted-foreground">{shown.label}</span>
+              <span className="text-[0.7rem] tabular-nums text-muted-foreground">{Math.round(shown.share * 100)}%</span>
+            </>
+          ) : (
+            <>
+              <span className="text-[0.7rem] text-muted-foreground">סה״כ</span>
+              <span className="text-sm font-bold tabular-nums" dir="ltr">
+                {ILS.format(total)}
+              </span>
+            </>
+          )}
         </div>
       </div>
       <ul className="w-full min-w-0 space-y-1.5 text-sm" aria-label="הוצאות לפי קטגוריה">
         {slices.map((slice) => (
-          <li key={slice.label} className="flex items-center gap-2">
+          <li
+            key={slice.label}
+            tabIndex={0}
+            className={cn(
+              "-mx-1.5 flex items-center gap-2 rounded-md px-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+              active === slice.label && "bg-muted/60"
+            )}
+            onMouseEnter={() => setActive(slice.label)}
+            onMouseLeave={() => setActive(null)}
+            onFocus={() => setActive(slice.label)}
+            onBlur={() => setActive(null)}
+          >
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: slice.color }} aria-hidden />
             <span className="min-w-0 flex-1 truncate">{slice.label}</span>
             <span className="shrink-0 tabular-nums" dir="ltr">

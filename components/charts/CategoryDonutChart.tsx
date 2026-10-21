@@ -1,30 +1,24 @@
 "use client";
 
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import type { DonutSlice } from "./category-donut-data";
 
 // The donut itself (recharts), loaded after the page — its box is held by
-// CategoryDonut at its final size, so nothing moves when it arrives.
+// CategoryDonut at its final size, so nothing moves when it arrives. No
+// floating tooltip: it landed on the total in the middle (owner, 2026-10-21).
+// The slice under the pointer (or the finger) says itself in the middle
+// instead — CategoryDonut's readout — and the others step back.
 
-const ILS = new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 });
-
-function SliceTooltip({ active, payload }: { active?: boolean; payload?: { payload: DonutSlice }[] }) {
-  const slice = active ? payload?.[0]?.payload : undefined;
-  if (!slice) return null;
-  return (
-    <div className="rounded-xl border bg-background px-3 py-2 text-sm shadow-md" dir="rtl">
-      <div className="flex items-center gap-1.5 font-semibold">
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: slice.color }} />
-        {slice.label}
-      </div>
-      <div className="tabular-nums text-muted-foreground">
-        <span dir="ltr">{ILS.format(slice.value)}</span> · {Math.round(slice.share * 100)}%
-      </div>
-    </div>
-  );
-}
-
-export default function CategoryDonutChart({ slices }: { slices: DonutSlice[] }) {
+export default function CategoryDonutChart({
+  slices,
+  active,
+  onActive,
+}: {
+  slices: DonutSlice[];
+  /** The slice being read (its label), or null. */
+  active: string | null;
+  onActive: (label: string | null) => void;
+}) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <PieChart>
@@ -40,12 +34,23 @@ export default function CategoryDonutChart({ slices }: { slices: DonutSlice[] })
           stroke="#ffffff"
           strokeWidth={2}
           isAnimationActive={false}
+          onMouseEnter={(_, index) => onActive(slices[index]?.label ?? null)}
+          onMouseLeave={() => onActive(null)}
+          // A tap on a phone: that slice, or back to the total.
+          onClick={(_, index) => {
+            const label = slices[index]?.label ?? null;
+            onActive(label === active ? null : label);
+          }}
         >
           {slices.map((slice) => (
-            <Cell key={slice.label} fill={slice.color} />
+            <Cell
+              key={slice.label}
+              fill={slice.color}
+              fillOpacity={active && active !== slice.label ? 0.35 : 1}
+              className="cursor-pointer outline-none"
+            />
           ))}
         </Pie>
-        <Tooltip content={<SliceTooltip />} />
       </PieChart>
     </ResponsiveContainer>
   );

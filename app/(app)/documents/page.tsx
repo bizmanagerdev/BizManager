@@ -159,6 +159,53 @@ const LEDGER_LINK_LABELS: Record<string, string> = {
   loan: "הלוואה",
 };
 
+/** What a money/work record belongs to — so a file on it is filed under that (owner's card, 2026-10-21). */
+type LedgerParent = { projectId: string | null; orderId: string | null; propertyId: string | null };
+type LedgerKind = "expense" | "payment" | "session";
+
+const LEDGER_PARENT_SOURCES: Record<LedgerKind, { table: string; columns: string }> = {
+  expense: { table: "expenses", columns: "id,project_id,order_id,property_id" },
+  payment: { table: "payments", columns: "id,project_id,order_id,property_id" },
+  session: { table: "attendance_sessions", columns: "id,project_id,property_id" },
+};
+
+/**
+ * The project / order / property of each expense, payment and shift a file is
+ * attached to, keyed `kind:id` — in batches of 150 (a long .in() list
+ * overflows the request). A receipt on a property's expense is that
+ * property's: it lands under it, not under "ללא שיוך".
+ */
+async function loadLedgerParents(
+  supabase: Awaited<ReturnType<typeof requireStaffPage>>["supabase"],
+  ids: Record<LedgerKind, Set<string>>
+): Promise<Map<string, LedgerParent>> {
+  const parents = new Map<string, LedgerParent>();
+  const reads: Promise<void>[] = [];
+  for (const kind of Object.keys(ids) as LedgerKind[]) {
+    const all = Array.from(ids[kind]);
+    const { table, columns } = LEDGER_PARENT_SOURCES[kind];
+    for (let i = 0; i < all.length; i += 150) {
+      const batch = all.slice(i, i + 150);
+      reads.push(
+        (async () => {
+          const { data } = await supabase.from(table).select(columns).in("id", batch);
+          for (const row of (data ?? []) as unknown as Array<Record<string, unknown>>) {
+            const id = normalizeString(row.id);
+            if (!id) continue;
+            parents.set(`${kind}:${id}`, {
+              projectId: normalizeString(row.project_id) || null,
+              orderId: normalizeString(row.order_id) || null,
+              propertyId: normalizeString(row.property_id) || null,
+            });
+          }
+        })()
+      );
+    }
+  }
+  await Promise.all(reads);
+  return parents;
+}
+
 function compareByLabel(a: { label: string }, b: { label: string }) {
   return a.label.localeCompare(b.label, "he");
 }
@@ -461,11 +508,13 @@ export default async function DocumentsPage({
   const customerIds = new Set<string>();
   const orderIds = new Set<string>();
   const userIds = new Set<string>();
+  const ledgerIds: Record<LedgerKind, Set<string>> = { expense: new Set(), payment: new Set(), session: new Set() };
 
   for (const link of links) {
     const entityType = normalizeString(link.entity_type);
     const entityId = normalizeString(link.entity_id);
     if (!entityType || !entityId) continue;
+    if (entityType === "expense" || entityType === "payment" || entityType === "session") ledgerIds[entityType].add(entityId);
     if (entityType === "project") projectIds.add(entityId);
     if (entityType === "task") taskIds.add(entityId);
     if (entityType === "customer") customerIds.add(entityId);
@@ -475,7 +524,7 @@ export default async function DocumentsPage({
 
   // Worker names for session attachments linked via entity_type='user'
   // (attendance_sessions.user_id = public.users.id).
-  const [workerNames, tasksOverviewResult, tasksMetaResult, ordersResult, independentResults] = await Promise.all([
+  const [workerNames, tasksOverviewResult, tasksMetaResult, ordersResult, independentResults, ledgerParents] = await Promise.all([
     userIds.size > 0
       ? resolveUserDisplayNamesForValues(supabase, Array.from(userIds))
       : Promise.resolve({} as Awaited<ReturnType<typeof resolveUserDisplayNamesForValues>>),
@@ -495,6 +544,7 @@ export default async function DocumentsPage({
           .in("order_id", Array.from(orderIds))
       : Promise.resolve({ data: [] as OrderLookupRow[], error: null }),
     independentLookups,
+    loadLedgerParents(supabase, ledgerIds).catch(() => new Map<string, LedgerParent>()),
   ]);
   const [
     allProjectsResult,
@@ -746,11 +796,42 @@ export default async function DocumentsPage({
         // document_links row existed the whole time. They get no href (there is
         // no page for a single expense), but they must still count as linked.
         if (LEDGER_LINK_LABELS[entityType]) {
+          // And it's filed under what that record belongs to: a property's
+          // expense receipt under the property ("הוצאה · D4 הר יונה"), opening it.
+          const parent = ledgerParents.get(`${entityType}:${entityId}`);
+          let owner: { label: string; href: string | null } | null = null;
+          if (parent?.propertyId) {
+            const property = propertiesById.get(parent.propertyId);
+            const label = propertyDisplayName({ name: property?.name ?? null, address: property?.address ?? "" }) || "נכס";
+            relatedProperties.set(parent.propertyId, { id: parent.propertyId, label });
+            relatedBusinessDomains.add("property_management");
+            owner = { label, href: entityHref("property", parent.propertyId) };
+          } else if (parent?.projectId) {
+            const project = projectsById.get(parent.projectId);
+            const label = normalizeString(project?.name) || "פרויקט";
+            relatedProjects.set(parent.projectId, { id: parent.projectId, label });
+            relatedBusinessDomains.add(mapProjectTypeToExpenseDomain(project?.project_type));
+            const customerId = normalizeString(project?.customer_id);
+            if (customerId) {
+              relatedCustomers.set(customerId, {
+                id: customerId,
+                label: normalizeString(project?.customer_name) || customersById.get(customerId)?.customer_name || "לקוח",
+              });
+            }
+            owner = { label, href: entityHref("project", parent.projectId) };
+          } else if (parent?.orderId) {
+            const order = ordersById.get(parent.orderId);
+            const customerName = normalizeString(order?.customer_name);
+            const label = customerName ? `הזמנה · ${customerName}` : "הזמנה";
+            relatedOrders.set(parent.orderId, { id: parent.orderId, label });
+            relatedBusinessDomains.add("sales");
+            owner = { label, href: entityHref("order", parent.orderId) };
+          }
           linkedEntities.set(`${entityType}:${entityId}`, {
             type: entityType,
             id: entityId,
-            label: LEDGER_LINK_LABELS[entityType]!,
-            href: null,
+            label: owner ? `${LEDGER_LINK_LABELS[entityType]} · ${owner.label}` : LEDGER_LINK_LABELS[entityType]!,
+            href: owner?.href ?? null,
           });
         }
       }

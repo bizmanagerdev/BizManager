@@ -71,9 +71,9 @@ function TableRows() {
 /** The whole page under the app's frame (PropertyDetailClient's own layout). */
 export function PropertyDetailBodySkeleton() {
   return (
-    <div className="space-y-3 md:space-y-5" aria-hidden>
+    <div className="space-y-3 @container md:space-y-5" aria-hidden>
       <Heading />
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:@[31rem]:grid-cols-3">
         <StatActionCard icon={<BuildingIcon className="h-5 w-5" />} label="נכס" value={VALUE} details={rows(["חדרים", "קומה"])} />
         <StatActionCard
           icon={<UserIcon className="h-5 w-5" />}
@@ -90,7 +90,7 @@ export function PropertyDetailBodySkeleton() {
           action={ACTION}
         />
       </div>
-      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:items-start">
+      <div className="flex flex-col gap-3 lg:@[31rem]:grid lg:@[31rem]:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:@[31rem]:items-start">
         <div className="min-w-0 space-y-3">
           <CollapsibleSection
             collapsible={false}
