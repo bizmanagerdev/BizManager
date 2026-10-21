@@ -71,6 +71,7 @@ function input(fields: Partial<PropertyMovementInput>): PropertyMovementInput {
     onDeletePayment: vi.fn(),
     onToggleCleared: vi.fn(),
     onCheckArrived: vi.fn(),
+    onPaidInstead: vi.fn(),
     onEditExpense: vi.fn(),
     onDeleteExpense: vi.fn(),
     onEditSession: vi.fn(),
@@ -142,7 +143,7 @@ describe("the property's money table", () => {
     const { done, expected } = buildPropertyMovements(input({ payments: [check], onCheckArrived }));
     expect(done).toHaveLength(0);
     expect(expected[0]).toMatchObject({ name: "שכירות דצמבר 2026", date: "2026-12-05", hint: "צ׳ק #1001" });
-    expect(expected[0].actions?.map((a) => a.label)).toEqual(["נפרע"]);
+    expect(expected[0].actions?.map((a) => a.label)).toEqual(["נפרע", "שולם אחרת החודש (העברה / מזומן)"]);
     expected[0].actions?.[0].onSelect();
     expect(onCheckArrived).toHaveBeenLastCalledWith(check, "שכירות דצמבר 2026");
   });

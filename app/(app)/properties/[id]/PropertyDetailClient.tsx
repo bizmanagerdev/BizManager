@@ -72,6 +72,7 @@ import PropertyMoneyCard from "./PropertyMoneyCard";
 import PropertyIncomeEditDialog from "./PropertyIncomeEditDialog";
 import PropertyRentPaymentDialog from "./PropertyRentPaymentDialog";
 import PropertyCheckArrivedDialog from "./PropertyCheckArrivedDialog";
+import PropertyPaidInsteadDialog from "./PropertyPaidInsteadDialog";
 import { PropertyRentersCard, PropertyRentersRentCard, PropertyRentersSection, renterStatuses } from "./PropertyRenters";
 import { hasRenters, renterPayments, runningLeases } from "@/lib/property-rent";
 import { israelDateKey } from "@/lib/timezone";
@@ -299,6 +300,8 @@ export default function PropertyDetailClient({
   const [rentPaymentLeaseId, setRentPaymentLeaseId] = useState<string | null>(null);
   // A due rent check that cleared — into which account.
   const [arrival, setArrival] = useState<{ payment: PropertyPayment; title: string } | null>(null);
+  // A month paid another way than its check: the check moves on to the next month nothing pays.
+  const [paidInstead, setPaidInstead] = useState<{ payment: PropertyPayment; title: string } | null>(null);
   // lease
   const [leaseOpen, setLeaseOpen] = useState(false);
   const [editLeaseId, setEditLeaseId] = useState<string | null>(null);
@@ -384,6 +387,7 @@ export default function PropertyDetailClient({
         onDeletePayment: (payment) => setDel({ kind: "payment", id: payment.id, label: "הכנסה" }),
         onToggleCleared: toggleCleared,
         onCheckArrived: (payment, title) => setArrival({ payment, title }),
+        onPaidInstead: (payment, title) => setPaidInstead({ payment, title }),
         onEditExpense: openEditExpense,
         onDeleteExpense: (expense) => setDel({ kind: "expense", id: expense.id, label: expenseLabel(expense) }),
         onEditSession: openEditSession,
@@ -1091,6 +1095,15 @@ export default function PropertyDetailClient({
         payment={arrival?.payment ?? null}
         title={arrival?.title ?? ""}
         onClose={() => setArrival(null)}
+      />
+
+      <PropertyPaidInsteadDialog
+        check={paidInstead?.payment ?? null}
+        lease={leases.find((l) => l.id === paidInstead?.payment.leaseId) ?? currentLease}
+        payments={activityPayments}
+        propertyId={propertyId}
+        title={paidInstead?.title ?? ""}
+        onClose={() => setPaidInstead(null)}
       />
 
       <PropertyIncomeEditDialog

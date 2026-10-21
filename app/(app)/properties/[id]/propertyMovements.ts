@@ -43,6 +43,8 @@ export type PropertyMovementInput = {
   onToggleCleared: (payment: PropertyPayment) => void;
   /** A rent check that's due, and it cleared — into which account (PropertyCheckArrivedDialog). */
   onCheckArrived: (payment: PropertyPayment, title: string) => void;
+  /** That month they paid another way: a new income, the check moved on (PropertyPaidInsteadDialog). */
+  onPaidInstead: (payment: PropertyPayment, title: string) => void;
   onEditExpense: (expense: PropertyExpense) => void;
   onDeleteExpense: (expense: PropertyExpense) => void;
   onEditSession: (session: PropertySession) => void;
@@ -154,7 +156,10 @@ export function buildPropertyMovements(input: PropertyMovementInput): { done: Mo
       fileLabel: isCheck ? "צילום הצ׳ק" : undefined,
       actions: isCheck
         ? pending
-          ? [{ key: "cleared", label: "נפרע", onSelect: () => input.onCheckArrived(payment, title) }]
+          ? [
+              { key: "cleared", label: "נפרע", onSelect: () => input.onCheckArrived(payment, title) },
+              { key: "instead", label: "שולם אחרת החודש (העברה / מזומן)", onSelect: () => input.onPaidInstead(payment, title) },
+            ]
           : [{ key: "cleared", label: "ביטול הסימון", onSelect: () => input.onToggleCleared(payment) }]
         : undefined,
       onEdit: () => input.onEditPayment(payment),
