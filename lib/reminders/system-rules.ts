@@ -19,6 +19,8 @@ import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
 import { israelDateKey } from "@/lib/timezone";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { summarizeStatement, type StatementMathCharge, type StatementMathRow } from "@/lib/financial/cardStatementMath";
+import { paidTowards, type RentLease, type RentPayment } from "@/lib/property-rent";
+import { firstRentPeriod, rentDueDateLabel, rentPeriodLabel, rentPeriodOf } from "@/lib/rent-periods";
 
 // ---------------------------------------------------------------------------
 // Reminders/Alerts unification — Phase 2: the system-rule engine.
@@ -414,6 +416,126 @@ const leaseExpiryRule: SystemRule = {
   },
 };
 
+/** How many days before rent is due its alert comes (push_alert_config.days_before; the owner's 2). */
+async function rentAlertDaysBefore(supabase: SupabaseClient): Promise<number> {
+  const { data, error } = await supabase.from("push_alert_config").select("days_before").eq("rule_key", "rent_due").limit(1);
+  const n = error ? null : getNumber(((data ?? []) as Row[])[0], "days_before");
+  return n != null && n >= 0 && n <= 30 ? Math.round(n) : 2;
+}
+
+/**
+ * Rent coming due (owner, 2026-10-20 — the ניהול נכסים card: "admins choose to
+ * get the alert, and when — about 2 days before"). From `days_before` days
+ * before a lease's due date — א׳ of the Hebrew month for a Hebrew lease —
+ * until that period is paid or a check for it is in, one alert per lease and
+ * period. The settings page sets who gets it, the hour and the days.
+ */
+const rentDueRule: SystemRule = {
+  key: "rent_due",
+  label: "שכירות לגבייה",
+  async evaluate(supabase, ctx) {
+    const daysBefore = await rentAlertDaysBefore(supabase);
+    const ahead = new Date(ctx.today);
+    ahead.setDate(ahead.getDate() + daysBefore);
+    const aheadIso = isoOf(ahead);
+    const { data, error } = await supabase
+      .from("lease_agreements")
+      .select(
+        "id,property_id,customer_id,status,start_date,end_date,monthly_rent_amount,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months,unit_label,property:properties(name,address,is_active),customer:customers(name)"
+      )
+      .eq("status", "active");
+    throwIf(error, "lease_agreements(rent)");
+    const leases = ((data ?? []) as Row[]).filter((row) => getString(row, "id") && getString(row, "property_id"));
+    if (leases.length === 0) return [];
+
+    const propertyIds = [...new Set(leases.map((row) => getString(row, "property_id") as string))];
+    const payments = await fetchAllPagedResult<Row>((from, to) =>
+      supabase
+        .from("payments")
+        .select("property_id,payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,counts_as_rent")
+        .in("property_id", propertyIds)
+        .range(from, to)
+    );
+    if (payments.error) throwIf(payments.error, "payments(rent)");
+    const paymentsByProperty = new Map<string, RentPayment[]>();
+    for (const row of payments.data ?? []) {
+      const propertyId = getString(row, "property_id");
+      if (!propertyId || getString(row, "payment_status") === "rejected") continue;
+      const list = paymentsByProperty.get(propertyId) ?? [];
+      list.push({
+        date: getString(row, "payment_date"),
+        paymentStatus: getString(row, "payment_status"),
+        amount: getNumber(row, "amount_total") ?? 0,
+        leaseId: getString(row, "lease_id"),
+        periodStart: getString(row, "rent_period_start"),
+        periods: getNumber(row, "rent_periods"),
+        countsAsRent: getBoolean(row, "counts_as_rent"),
+      });
+      paymentsByProperty.set(propertyId, list);
+    }
+
+    const items: SystemReminderItem[] = [];
+    for (const row of leases) {
+      const id = getString(row, "id") as string;
+      const propertyId = getString(row, "property_id") as string;
+      const propertyRow = (Array.isArray(row.property) ? row.property[0] : row.property) as Row | undefined;
+      if (getBoolean(propertyRow, "is_active") === false) continue;
+      const lease: RentLease = {
+        id,
+        status: getString(row, "status"),
+        startDate: getString(row, "start_date"),
+        endDate: getString(row, "end_date"),
+        monthlyRentAmount: getNumber(row, "monthly_rent_amount") ?? 0,
+        rentDayOfMonth: getNumber(row, "rent_day_of_month"),
+        rentCalendar: getString(row, "rent_calendar"),
+        rentHebrewDay: getNumber(row, "rent_hebrew_day"),
+        periodMonths: getNumber(row, "period_months"),
+      };
+      if (!(lease.monthlyRentAmount > 0)) continue;
+      // The period due by `days_before` from now — inside the lease.
+      const period = rentPeriodOf(lease, aheadIso);
+      const first = firstRentPeriod(lease);
+      if (!first || period < first || period > aheadIso) continue;
+      if (lease.endDate && period > lease.endDate.slice(0, 10)) continue;
+
+      let collected = 0;
+      let pending = 0;
+      for (const payment of paymentsByProperty.get(propertyId) ?? []) {
+        const part = paidTowards(lease, payment, period);
+        if (part <= 0) continue;
+        if (payment.paymentStatus === "pending") pending += part;
+        else collected += part;
+      }
+      // Paid, or a check for it waiting to clear: nothing to chase.
+      if (collected >= lease.monthlyRentAmount - 0.5 || (collected === 0 && pending > 0)) continue;
+
+      const customerRow = (Array.isArray(row.customer) ? row.customer[0] : row.customer) as Row | undefined;
+      const place = getString(propertyRow, "name") || getString(propertyRow, "address") || "נכס";
+      const unit = getString(row, "unit_label");
+      const tenant = getString(customerRow, "name");
+      const owed = lease.monthlyRentAmount - collected;
+      const late = period < ctx.todayIso;
+      const when = rentDueDateLabel(lease, period);
+      items.push({
+        key: `${id}:${period}`,
+        title: `שכירות ${rentPeriodLabel(lease, period)} — ${unit ? `${place} · ${unit}` : place}`,
+        content: [
+          tenant,
+          `${ils(owed)}${collected > 0 ? ` (נותרו מתוך ${ils(lease.monthlyRentAmount)})` : ""}`,
+          late ? `היה לשלם ב-${when}` : period === ctx.todayIso ? "לתשלום היום" : `לתשלום ב-${when}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        url: `/properties/${propertyId}`,
+        severity: (late ? "danger" : "warning") as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "admin" as AudienceRole,
+        links: { property_id: propertyId, customer_id: getString(row, "customer_id") },
+      });
+    }
+    return items;
+  },
+};
 
 const documentExpiryRule: SystemRule = {
   key: "document_expiry",
@@ -1365,6 +1487,7 @@ export const SYSTEM_RULES: SystemRule[] = [
   wageOverdueRule,
   vehicleExpiryRule,
   leaseExpiryRule,
+  rentDueRule,
   documentExpiryRule,
   unlinkedMoneyDocumentsRule,
   // New coverage (Phase 5): payments & checks

@@ -79,6 +79,15 @@ const PAGE_SECTIONS: PageSection[] = [
 ];
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
+/** "ביום עצמו", "יום לפני", "יומיים לפני", "3 ימים לפני". */
+function daysBeforeLabel(n: number) {
+  if (n === 0) return "ביום עצמו";
+  if (n === 1) return "יום לפני";
+  if (n === 2) return "יומיים לפני";
+  return `${n} ימים לפני`;
+}
+const DAYS_BEFORE = Array.from({ length: 15 }, (_, i) => i);
+
 function fmtHour(h: number) {
   return `${String(h).padStart(2, "0")}:00`;
 }
@@ -94,6 +103,8 @@ type FormState = {
   recipient_user_ids: string[];
   audience_role: string;
   send_hour_end_israel: number;
+  /** A live rule that warns ahead (the rent alert): how many days; null = no such setting. */
+  days_before: number | null;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -107,6 +118,7 @@ const DEFAULT_FORM: FormState = {
   recipient_user_ids: [],
   audience_role: "office",
   send_hour_end_israel: 1,
+  days_before: null,
 };
 
 export default function NotificationSettings({ users }: { users: UserOption[] }) {
@@ -158,6 +170,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
       recipient_user_ids: alert.recipient_user_ids ?? [],
       audience_role: alert.audience_role ?? "office",
       send_hour_end_israel: alert.send_hour_end_israel ?? 1,
+      days_before: alert.days_before ?? null,
     });
     setDialogOpen(true);
   }
@@ -253,9 +266,10 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
   function metaFor(alert: AlertRow, mode: AlertMode) {
     const hasRecipients = (alert.recipient_user_ids?.length ?? 0) > 0;
     if (mode === "live") {
-      return hasRecipients
+      const who = hasRecipients
         ? recipientLabel(alert.recipient_user_ids)
         : AUDIENCE_LABEL[alert.audience_role ?? ""] ?? "לפי אחראי";
+      return alert.days_before != null ? `${who} · ${daysBeforeLabel(alert.days_before)}` : who;
     }
     if (mode === "night") {
       return `${fmtHour(alert.send_hour_israel)}–${fmtHour(alert.send_hour_end_israel ?? 1)} · ${
@@ -499,6 +513,19 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                     ))}
                   </NativeSelect>
                 </Field>
+                {editingMode === "live" && form.days_before !== null ? (
+                  // The rent alert (owner, 2026-10-20): "admins choose … and when — about 2 days before".
+                  <Field size="xs" label="מתי להתריע">
+                    <NativeSelect
+                      value={form.days_before}
+                      onChange={(e) => setForm((f) => ({ ...f, days_before: Number(e.target.value) }))}
+                    >
+                      {DAYS_BEFORE.map((n) => (
+                        <option key={n} value={n}>{daysBeforeLabel(n)}</option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                ) : null}
                 {editingMode === "live" ? (
                   <>
                     <Field size="xs" label="או לאנשים מסוימים (גובר על התפקיד)">

@@ -13,17 +13,21 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import AccountSelect from "@/components/financial/AccountSelect";
 import type { Account } from "@/lib/accounts";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
-import type { PropertyPayment } from "@/lib/properties";
+import type { LeaseAgreement, PropertyPayment } from "@/lib/properties";
 import { toHebrewError } from "@/lib/error-messages";
 import { scheduleDeferredEdit } from "@/lib/undo-engine";
-import { dayKey } from "./propertyMovements";
+import { leaseForPayment, rentCoverage } from "@/lib/property-rent";
+import { rentPeriodChoices, rentPeriodLabel } from "@/lib/rent-periods";
+import { formatShortDate } from "@/lib/date";
+import { dayKey, toRentPayment } from "./propertyMovements";
 
 // Editing one of a property's incomes — any of them, whatever it was paid
 // with (owner's card, note 8: "לראות את כל הפרטים בהכנסות ושיהיה אופציה של
 // עדכון ושהכותרת תהיה מה שכתוב"). The note is the income's title, so it's
 // asked first. Everything already on the payment goes back with the save: the
 // update route clears a field it isn't sent, which is how editing a rent
-// check used to wipe its note.
+// check used to wipe its note. A rent payment also says which month(s) it pays
+// for, by its lease's calendar; one that isn't rent (a refund) says so.
 
 type Form = {
   title: string;
@@ -34,9 +38,14 @@ type Form = {
   checkNumber: string;
   referenceNumber: string;
   accountId: string;
+  countsAsRent: boolean;
+  leaseId: string;
+  periodStart: string;
+  periods: string;
 };
 
-function toForm(payment: PropertyPayment): Form {
+function toForm(payment: PropertyPayment, leases: LeaseAgreement[], currentLease: LeaseAgreement | null): Form {
+  const lease = leaseForPayment(leases, toRentPayment(payment), currentLease) ?? currentLease;
   return {
     title: payment.notes ?? "",
     paymentDate: dayKey(payment.date) ?? "",
@@ -46,27 +55,44 @@ function toForm(payment: PropertyPayment): Form {
     checkNumber: payment.checkNumber ?? "",
     referenceNumber: payment.referenceNumber ?? "",
     accountId: payment.accountId ?? "",
+    countsAsRent: payment.countsAsRent !== false,
+    leaseId: lease?.id ?? "",
+    // The month(s) it's for, by the same rule the table reads it with.
+    periodStart: (lease && rentCoverage(lease, { ...toRentPayment(payment), countsAsRent: true })?.start) || "",
+    periods: String(payment.rentPeriods ?? 1),
   };
+}
+
+function leaseName(lease: LeaseAgreement): string {
+  const dates = [lease.startDate, lease.endDate].map((d) => formatShortDate(d, "")).filter(Boolean).join(" – ");
+  return [lease.unitLabel, lease.customerName ?? "שוכר", dates].filter(Boolean).join(" · ");
 }
 
 export default function PropertyIncomeEditDialog({
   payment,
   onClose,
+  leases = [],
+  currentLease = null,
 }: {
   /** The income being edited; null keeps the dialog closed. */
   payment: PropertyPayment | null;
   onClose: () => void;
+  /** The property's leases: which one the rent is for, and its months. */
+  leases?: LeaseAgreement[];
+  currentLease?: LeaseAgreement | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [form, setForm] = useState<Form | null>(payment ? toForm(payment) : null);
+  const [form, setForm] = useState<Form | null>(payment ? toForm(payment, leases, currentLease) : null);
   const [formFor, setFormFor] = useState<PropertyPayment | null>(payment);
   const [accounts, setAccounts] = useState<Account[]>([]);
   // Each opening starts from the payment as saved.
   if (payment !== formFor) {
     setFormFor(payment);
-    setForm(payment ? toForm(payment) : null);
+    setForm(payment ? toForm(payment, leases, currentLease) : null);
   }
+  const lease = form ? leases.find((l) => l.id === form.leaseId) ?? null : null;
+  const yearly = lease?.periodMonths === 12;
 
   const isCheck = form?.paymentMethod === "check";
   const set = (key: keyof Form, value: string) => setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -91,6 +117,19 @@ export default function PropertyIncomeEditDialog({
     }
     const id = payment.id;
     const saved = form;
+    // Rent: its lease and month(s); not rent: neither (the route clears them).
+    const rentLease = saved.countsAsRent ? leases.find((l) => l.id === saved.leaseId) ?? null : null;
+    const rentPeriods = Math.max(1, Number(saved.periods) || 1);
+    const rent: Record<string, unknown> = !saved.countsAsRent
+      ? { counts_as_rent: false }
+      : rentLease && saved.periodStart
+        ? { counts_as_rent: true, lease_id: rentLease.id, rent_period_start: saved.periodStart, rent_periods: rentPeriods }
+        : { counts_as_rent: true };
+    const rentPatch = !saved.countsAsRent
+      ? { countsAsRent: false, leaseId: null, rentPeriodStart: null, rentPeriods: 1 }
+      : rentLease && saved.periodStart
+        ? { countsAsRent: true, leaseId: rentLease.id, rentPeriodStart: saved.periodStart, rentPeriods }
+        : { countsAsRent: true };
     onClose();
     scheduleDeferredEdit({
       scope: "property-payment",
@@ -105,6 +144,7 @@ export default function PropertyIncomeEditDialog({
         checkNumber: saved.paymentMethod === "check" ? saved.checkNumber || null : null,
         referenceNumber: saved.referenceNumber.trim() || null,
         accountId: saved.accountId || null,
+        ...rentPatch,
       },
       onCommit: async () => {
         const res = await fetch("/api/payments/update", {
@@ -122,6 +162,7 @@ export default function PropertyIncomeEditDialog({
             notes: saved.title.trim(),
             requires_split: payment.requiresSplit,
             account_id: saved.accountId || null,
+            ...rent,
           }),
         });
         const json = await res.json().catch(() => ({}));
@@ -151,6 +192,63 @@ export default function PropertyIncomeEditDialog({
               placeholder="שכירות חודש חשוון"
             />
           </Field>
+          {leases.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="סוג">
+                <NativeSelect
+                  value={form.countsAsRent ? "rent" : "other"}
+                  onChange={(e) => setForm((prev) => (prev ? { ...prev, countsAsRent: e.target.value === "rent" } : prev))}
+                >
+                  <option value="rent">שכירות</option>
+                  <option value="other">לא שכירות (החזר וכד׳)</option>
+                </NativeSelect>
+              </Field>
+              {form.countsAsRent && leases.length > 1 ? (
+                <Field label="חוזה">
+                  <NativeSelect
+                    value={form.leaseId}
+                    onChange={(e) => {
+                      // Another lease: the month its date falls in on that lease's calendar.
+                      const next = leases.find((l) => l.id === e.target.value);
+                      const start =
+                        next && payment
+                          ? rentCoverage(next, { ...toRentPayment(payment), leaseId: next.id, periodStart: null, countsAsRent: true })?.start
+                          : null;
+                      setForm((prev) => (prev ? { ...prev, leaseId: e.target.value, periodStart: start ?? prev.periodStart } : prev));
+                    }}
+                  >
+                    {leases.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {leaseName(l)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+              ) : null}
+              {form.countsAsRent && lease && form.periodStart ? (
+                <>
+                  <Field label={yearly ? "לשנה" : "לחודש"}>
+                    <NativeSelect value={form.periodStart} onChange={(e) => set("periodStart", e.target.value)}>
+                      {rentPeriodChoices(lease, form.periodStart, yearly ? 2 : 12, yearly ? 3 : 12).map((start) => (
+                        <option key={start} value={start}>
+                          {rentPeriodLabel(lease, start)}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                  <Field label={yearly ? "כמה שנים" : "כמה חודשים"}>
+                    <NativeSelect value={form.periods} onChange={(e) => set("periods", e.target.value)}>
+                      {Array.from({ length: yearly ? 3 : 12 }, (_, i) => i + 1).map((n) => (
+                        <option key={n} value={String(n)}>
+                          {n === 1 ? (yearly ? "שנה אחת" : "חודש אחד") : `${n} ${yearly ? "שנים" : "חודשים"}`}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="סכום">
               <CurrencyInput value={form.amount} onChange={(e) => set("amount", e.target.value)} />

@@ -27,13 +27,14 @@ import { POST } from "@/app/api/payments/create/route";
 
 type Resp = { data: unknown; error: unknown };
 
-function makeSupabase(responses: Record<string, Resp>, calls: string[] = []) {
+function makeSupabase(responses: Record<string, Resp>, calls: string[] = [], inserted: unknown[] = []) {
   const from = (table: string) => {
     const resp = responses[table] ?? { data: null, error: null };
     const builder: Record<string, unknown> = {};
     for (const m of ["select", "insert", "update", "delete", "eq", "not", "gte", "in", "order", "limit"]) {
       builder[m] = (..._args: unknown[]) => {
         calls.push(`${table}.${m}`);
+        if (m === "insert") inserted.push(_args[0]);
         return builder;
       };
     }
@@ -123,6 +124,34 @@ describe("POST /api/payments/create — persistence & audit", () => {
     grant(makeSupabase({ projects: { data: null, error: null } }));
     const res = await post({ ...VALID, business_domain: undefined, project_id: "missing" });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/payments/create — a property's rent", () => {
+  const RENT = { lease_id: "lease-1", rent_period_start: "2026-10-12", rent_periods: 2, counts_as_rent: true };
+
+  it("a property income keeps the lease and the month(s) it pays", async () => {
+    const inserted: unknown[] = [];
+    grant(makeSupabase({ properties: { data: { id: "prop-1" }, error: null }, payments: { data: { id: "pay-1" }, error: null } }, [], inserted));
+    const res = await post({ ...VALID, business_domain: "property_management", property_id: "prop-1", ...RENT });
+    expect(res.status).toBe(200);
+    expect(inserted[0]).toMatchObject({ property_id: "prop-1", ...RENT });
+  });
+
+  it("any other income ignores them", async () => {
+    const inserted: unknown[] = [];
+    grant(makeSupabase({ payments: { data: { id: "pay-1" }, error: null } }, [], inserted));
+    await post({ ...VALID, ...RENT });
+    expect(inserted[0]).not.toHaveProperty("lease_id");
+    expect(inserted[0]).not.toHaveProperty("rent_period_start");
+  });
+
+  it("a month that isn't a date is refused before anything is saved", async () => {
+    const calls: string[] = [];
+    grant(makeSupabase({}, calls));
+    const res = await post({ ...VALID, property_id: "prop-1", rent_period_start: "חשון" });
+    expect(res.status).toBe(400);
+    expect(calls).not.toContain("payments.insert");
   });
 });
 

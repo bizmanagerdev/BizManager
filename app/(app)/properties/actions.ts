@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
 import { buildPaymentInsert, PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
+import { paidTowards, type RentLease } from "@/lib/property-rent";
 import type { PropertyInput } from "./property-types";
 import { addressColumnsKeepingMark, parseStructuredAddress } from "@/lib/address/columns";
 import { addressLine } from "@/lib/address/structured";
@@ -22,6 +23,12 @@ export type LeaseInput = {
   deposit_reference: string;
   keys_handed_over: string; // how many keys this tenant got at move-in
   rent_day_of_month: string; // "" → null (fall back to the start date's day)
+  /** 'gregorian' | 'hebrew' — paid on a day of the regular or the Hebrew month. */
+  rent_calendar?: string;
+  rent_hebrew_day?: string; // 1–30, for a Hebrew-calendar lease
+  period_months?: string; // "1" monthly, "12" yearly
+  area_sqm?: string;
+  unit_label?: string;
 };
 
 function clean(value: string | null | undefined) {
@@ -34,6 +41,11 @@ function numOrNull(value: string) {
   if (!trimmed) return null;
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
+}
+
+function positiveOrNull(value: string | null | undefined) {
+  const n = numOrNull(value ?? "");
+  return n != null && n > 0 ? n : null;
 }
 
 async function getStaffContext() {
@@ -202,7 +214,18 @@ function leaseFields(input: LeaseInput) {
     deposit_reference: clean(input.deposit_reference),
     keys_handed_over: numOrNull(input.keys_handed_over),
     rent_day_of_month: rentDay(input.rent_day_of_month),
+    ...rentCalendarFields(input),
+    period_months: input.period_months === "12" ? 12 : 1,
+    area_sqm: positiveOrNull(input.area_sqm),
+    unit_label: clean(input.unit_label),
   };
+}
+
+/** A Hebrew-calendar lease needs its Hebrew day; without one it stays on the regular calendar. */
+function rentCalendarFields(input: LeaseInput): { rent_calendar: "gregorian" | "hebrew"; rent_hebrew_day: number | null } {
+  const day = Math.round(Number(input.rent_hebrew_day));
+  if (input.rent_calendar === "hebrew" && day >= 1 && day <= 30) return { rent_calendar: "hebrew", rent_hebrew_day: day };
+  return { rent_calendar: "gregorian", rent_hebrew_day: null };
 }
 
 /** 1–31, or null to keep falling back to the lease's start day. */
@@ -220,7 +243,10 @@ export async function createLease(propertyId: string, input: LeaseInput): Promis
     if (!propertyId) return { ok: false, error: "חסר מזהה נכס." };
     if (!input.customer_id) return { ok: false, error: "יש לבחור לקוח." };
     if (!input.start_date) return { ok: false, error: "יש להזין תאריך התחלת שכירות." };
-    if (!(Number(input.monthly_rent_amount) > 0)) return { ok: false, error: "יש להזין מחיר חודשי תקין." };
+    if (!(Number(input.monthly_rent_amount) > 0)) return { ok: false, error: "יש להזין סכום תקין." };
+    if (input.rent_calendar === "hebrew" && !(Number(input.rent_hebrew_day) >= 1)) {
+      return { ok: false, error: "יש לבחור את היום בחודש העברי." };
+    }
 
     const { data, error } = await ctx.supabase
       .from("lease_agreements")
@@ -247,7 +273,10 @@ export async function updateLease(
     if (!leaseId) return { ok: false, error: "חסר מזהה חוזה." };
     if (!input.customer_id) return { ok: false, error: "יש לבחור לקוח." };
     if (!input.start_date) return { ok: false, error: "יש להזין תאריך התחלת שכירות." };
-    if (!(Number(input.monthly_rent_amount) > 0)) return { ok: false, error: "יש להזין מחיר חודשי תקין." };
+    if (!(Number(input.monthly_rent_amount) > 0)) return { ok: false, error: "יש להזין סכום תקין." };
+    if (input.rent_calendar === "hebrew" && !(Number(input.rent_hebrew_day) >= 1)) {
+      return { ok: false, error: "יש לבחור את היום בחודש העברי." };
+    }
 
     const { error } = await ctx.supabase
       .from("lease_agreements")
@@ -307,6 +336,8 @@ export type RentScheduleRowInput = {
   dueDate: string;
   amount: number;
   checkNumber: string;
+  /** The lease period it pays (lib/rent-periods.ts), when the schedule follows a lease. */
+  periodStart?: string | null;
 };
 
 export type ScheduleRentResult =
@@ -323,12 +354,16 @@ export type ScheduleRentResult =
  * safe — but rows whose rental month already has a scheduled payment for this
  * property are skipped rather than double-booked (a double-submit or an
  * overlapping "extend the schedule" run should not create duplicates).
+ * With its lease, each row is that lease's rent for its period (lease_id,
+ * rent_period_start), and a period one of its payments already covers is the
+ * one skipped — a Hebrew lease's period is א׳ of the month, whatever its date.
  */
 export async function scheduleRentPayments(
   propertyId: string,
   rows: RentScheduleRowInput[],
   accountId: string,
-  paymentMethod: string = "check"
+  paymentMethod: string = "check",
+  leaseId: string | null = null
 ): Promise<ScheduleRentResult> {
   try {
     const ctx = await getStaffContext();
@@ -343,27 +378,76 @@ export async function scheduleRentPayments(
     const invalid = rows.find((row) => !row.paymentDate || !row.dueDate || !(row.amount > 0));
     if (invalid) return { ok: false, error: "כל תשלום חייב תאריך לחודש, תאריך פרעון וסכום תקין." };
 
-    const { data: existingRows, error: existingError } = await ctx.supabase
-      .from("payments")
-      .select("payment_date")
-      .eq("property_id", propertyId)
-      .eq("business_domain", "property_management")
-      .in(
-        "payment_date",
-        rows.map((row) => row.paymentDate)
+    let lease: RentLease | null = null;
+    if (leaseId) {
+      const { data: leaseRow, error: leaseError } = await ctx.supabase
+        .from("lease_agreements")
+        .select("id,status,start_date,end_date,monthly_rent_amount,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months")
+        .eq("id", leaseId)
+        .eq("property_id", propertyId)
+        .maybeSingle();
+      if (leaseError) return { ok: false, error: toHebrewError(leaseError, "שגיאה בקביעת התשלומים.") };
+      if (!leaseRow) return { ok: false, error: "החוזה לא נמצא בנכס הזה." };
+      lease = {
+        id: leaseRow.id,
+        status: leaseRow.status,
+        startDate: leaseRow.start_date,
+        endDate: leaseRow.end_date,
+        monthlyRentAmount: Number(leaseRow.monthly_rent_amount) || 0,
+        rentDayOfMonth: leaseRow.rent_day_of_month,
+        rentCalendar: leaseRow.rent_calendar,
+        rentHebrewDay: leaseRow.rent_hebrew_day,
+        periodMonths: leaseRow.period_months,
+      };
+    }
+
+    let newRows: RentScheduleRowInput[];
+    if (lease) {
+      // A period this lease's payments already cover (by the month they say, or their date).
+      const { data: existingRows, error: existingError } = await ctx.supabase
+        .from("payments")
+        .select("payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,counts_as_rent")
+        .eq("property_id", propertyId)
+        .eq("business_domain", "property_management");
+      if (existingError) return { ok: false, error: toHebrewError(existingError, "שגיאה בקביעת התשלומים.") };
+      const rentLease = lease;
+      // A bounced check covers nothing (its status can be empty, so it's left out here, not in the query).
+      const existing = (existingRows ?? []).filter((row) => row.payment_status !== "rejected").map((row) => ({
+        date: row.payment_date as string | null,
+        paymentStatus: row.payment_status as string | null,
+        amount: Number(row.amount_total) || 0,
+        leaseId: row.lease_id as string | null,
+        periodStart: row.rent_period_start as string | null,
+        periods: row.rent_periods as number | null,
+        countsAsRent: row.counts_as_rent as boolean | null,
+      }));
+      newRows = rows.filter((row) => {
+        const period = row.periodStart ?? row.paymentDate;
+        return !existing.some((payment) => paidTowards(rentLease, { ...payment, amount: 1 }, period) > 0);
+      });
+    } else {
+      const { data: existingRows, error: existingError } = await ctx.supabase
+        .from("payments")
+        .select("payment_date")
+        .eq("property_id", propertyId)
+        .eq("business_domain", "property_management")
+        .in(
+          "payment_date",
+          rows.map((row) => row.paymentDate)
+        );
+      if (existingError) return { ok: false, error: toHebrewError(existingError, "שגיאה בקביעת התשלומים.") };
+      const existingMonths = new Set(
+        (existingRows ?? []).map((row) => (row as { payment_date: string }).payment_date)
       );
-    if (existingError) return { ok: false, error: toHebrewError(existingError, "שגיאה בקביעת התשלומים.") };
-    const existingMonths = new Set(
-      (existingRows ?? []).map((row) => (row as { payment_date: string }).payment_date)
-    );
-    const newRows = rows.filter((row) => !existingMonths.has(row.paymentDate));
+      newRows = rows.filter((row) => !existingMonths.has(row.paymentDate));
+    }
     const skipped = rows.length - newRows.length;
     if (newRows.length === 0) {
       return { ok: false, error: "לכל החודשים שנבחרו כבר נקבע תשלום קודם." };
     }
 
-    const inserts = newRows.map((row) =>
-      buildPaymentInsert({
+    const inserts = newRows.map((row) => ({
+      ...buildPaymentInsert({
         amountTotal: row.amount,
         businessDomain: "property_management",
         propertyId,
@@ -374,8 +458,9 @@ export async function scheduleRentPayments(
         dueDate: row.dueDate,
         accountId,
         recordedBy: ctx.profile.id,
-      })
-    );
+      }),
+      ...(lease ? { lease_id: lease.id, rent_period_start: row.periodStart ?? row.paymentDate, rent_periods: 1 } : {}),
+    }));
 
     const { error } = await ctx.supabase.from("payments").insert(inserts);
     if (error) return { ok: false, error: toHebrewError(error, "שגיאה בקביעת התשלומים.") };
@@ -384,5 +469,31 @@ export async function scheduleRentPayments(
     return { ok: true, inserted: newRows.length, skipped };
   } catch (error) {
     return { ok: false, error: toHebrewError(error, "שגיאה בקביעת התשלומים.") };
+  }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The properties list in the owner's own order (the ניהול נכסים card: "drag
+ * the properties into my own order"): each one's place, 1 on, as dragged.
+ */
+export async function setPropertyOrder(ids: string[]): Promise<ActionResult> {
+  try {
+    const ctx = await getStaffContext();
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || !ids.every((id) => UUID.test(id))) {
+      return { ok: false, error: "סדר לא תקין." };
+    }
+    if (new Set(ids).size !== ids.length) return { ok: false, error: "סדר לא תקין." };
+    const results = await Promise.all(
+      ids.map((id, index) => ctx.supabase.from("properties").update({ sort_order: index + 1 }).eq("id", id))
+    );
+    const failed = results.find((result) => result.error);
+    if (failed?.error) return { ok: false, error: toHebrewError(failed.error, "שמירת הסדר נכשלה.") };
+    revalidatePath("/properties");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: toHebrewError(error, "שמירת הסדר נכשלה.") };
   }
 }

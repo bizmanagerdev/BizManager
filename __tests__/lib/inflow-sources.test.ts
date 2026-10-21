@@ -80,6 +80,28 @@ describe("incoming source rows", () => {
     expect(rows[0].scheduleLabel).toBe("10 לכל חודש");
   });
 
+  it("a Hebrew lease: next due on א׳ of the Hebrew month, said so", async () => {
+    const { loadRentSources } = await import("@/lib/inflow-sources");
+    const leases = [
+      {
+        id: "L3", property_id: "p1", start_date: "2026-07-15", end_date: "2027-06-06", monthly_rent_amount: 4000,
+        status: "active", rent_calendar: "hebrew", rent_hebrew_day: 1, period_months: 1,
+      },
+    ];
+    const supabase = {
+      from: (table: string) => {
+        const builder: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "in", "not", "gte", "order", "limit"]) builder[m] = () => builder;
+        const data = table === "lease_agreements" ? leases : [{ id: "p1", name: "D4 הר יונה", address: "" }];
+        (builder as { then: unknown }).then = (resolve: (v: unknown) => void) => resolve({ data, error: null });
+        return builder;
+      },
+    } as never;
+    const rows = await loadRentSources(supabase, { todayIso: "2026-10-20" });
+    // א׳ כסלו תשפ״ז = 11 Nov 2026.
+    expect(rows[0]).toMatchObject({ nextDate: "2026-11-11", scheduleLabel: "א׳ לכל חודש עברי", monthly: true });
+  });
+
   it("drops a lease that has already ended", async () => {
     const { loadRentSources } = await import("@/lib/inflow-sources");
     const leases = [

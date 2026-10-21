@@ -13,8 +13,8 @@ import { formatMinutes, sessionWorkedMinutes, formatCurrency } from "@/lib/payro
 import { normalizePayrollWorkerType, shouldShowSessionHours } from "@/lib/payroll-worker-type";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
-import type { PropertyExpense, PropertyPayment, PropertySession } from "@/lib/properties";
-import { dayKey } from "@/lib/property-rent";
+import type { LeaseAgreement, PropertyExpense, PropertyPayment, PropertySession } from "@/lib/properties";
+import { dayKey, leaseForPayment, paymentPeriodLabel, type RentPayment } from "@/lib/property-rent";
 
 export { dayKey };
 
@@ -27,6 +27,9 @@ export type PropertyMovementUser = {
 
 export type PropertyMovementInput = {
   payments: PropertyPayment[];
+  /** The property's leases: each rent payment says the month(s) it's for by its lease's calendar. */
+  leases?: LeaseAgreement[];
+  currentLease?: LeaseAgreement | null;
   expenses: PropertyExpense[];
   sessions: PropertySession[];
   sessionAttachments: Record<string, FinancialAttachment[]>;
@@ -55,10 +58,27 @@ export function rentMonthLabel(value: string | null | undefined): string | null 
   );
 }
 
-/** A payment's title: what it was for, as written; a check from the rent schedule by its month. */
-export function paymentTitle(payment: PropertyPayment): string {
+/** A payment's rent fields, as lib/property-rent.ts reads them. */
+export function toRentPayment(payment: PropertyPayment): RentPayment {
+  return {
+    date: payment.date,
+    paymentStatus: payment.paymentStatus,
+    amount: payment.amount,
+    leaseId: payment.leaseId,
+    periodStart: payment.rentPeriodStart,
+    periods: payment.rentPeriods,
+    countsAsRent: payment.countsAsRent,
+  };
+}
+
+/**
+ * A payment's title: what it was for, as written; otherwise a check from the
+ * rent schedule, or a payment that says its month, by the month(s) it pays.
+ */
+export function paymentTitle(payment: PropertyPayment, periodLabel: string | null = null): string {
   const note = payment.notes?.trim().split("\n")[0]?.trim();
   if (note) return note;
+  if (periodLabel && (payment.method === "check" || payment.rentPeriodStart)) return `שכירות ${periodLabel}`;
   if (payment.method === "check") {
     const month = rentMonthLabel(payment.date);
     return month ? `שכירות ${month}` : "שכירות";
@@ -89,13 +109,20 @@ export function buildPropertyMovements(input: PropertyMovementInput): { done: Mo
   const userById = new Map(input.users.map((u) => [u.id, u]));
 
   for (const payment of input.payments) {
-    const title = paymentTitle(payment);
+    const rent = toRentPayment(payment);
+    const lease = leaseForPayment(input.leases ?? [], rent, input.currentLease ?? null);
+    const period = paymentPeriodLabel(lease, rent);
+    const title = paymentTitle(payment, period);
     const extras: { label: string; value: string }[] = [];
     const method = paymentMethodLabel(payment.method);
     if (method && method !== "-") extras.push({ label: "אמצעי", value: method });
-    if (payment.method === "check") {
+    if (payment.countsAsRent === false) extras.push({ label: "סוג", value: "לא שכירות" });
+    else if (period) extras.push({ label: (payment.rentPeriods ?? 1) > 1 ? "לחודשים" : "לחודש", value: period });
+    else if (payment.method === "check") {
       const month = rentMonthLabel(payment.date);
       if (month) extras.push({ label: "לחודש", value: month });
+    }
+    if (payment.method === "check") {
       if (payment.checkNumber) extras.push({ label: "מס' צ'ק", value: payment.checkNumber });
       if (payment.dueDate) extras.push({ label: "פירעון", value: formatShortDate(payment.dueDate, "—") });
     }

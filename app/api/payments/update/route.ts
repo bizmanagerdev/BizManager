@@ -6,6 +6,7 @@ import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
+import { rentColumnsFrom, type RentFieldsBody } from "@/lib/payments/rent-fields";
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
       notes?: string;
       account_id?: string | null;
       tag_ids?: unknown;
-    };
+    } & RentFieldsBody;
 
     const paymentId = typeof body.id === "string" ? body.id.trim() : "";
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
@@ -57,6 +58,9 @@ export async function POST(req: Request) {
     if (paymentMethod === "check" && !dueDate) {
       return NextResponse.json({ error: "Missing due_date for check payment" }, { status: 400 });
     }
+    // A property's rent: the lease and the month(s) it pays — only what's sent changes.
+    const rent = rentColumnsFrom(body);
+    if ("error" in rent) return NextResponse.json({ error: rent.error }, { status: 400 });
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
@@ -143,7 +147,7 @@ export async function POST(req: Request) {
 
     const { data: payment, error: paymentError } = await supabase
       .from("payments")
-      .update(paymentValues)
+      .update({ ...paymentValues, ...(existingPayment.property_id ? rent : {}) })
       .eq("id", paymentId)
       .select(PAYMENT_SELECT)
       .maybeSingle();

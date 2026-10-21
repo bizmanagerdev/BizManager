@@ -30,6 +30,8 @@ export type AlertRow = {
   rule_key?: string | null;
   audience_role?: string | null; // all | office | admin (live/night)
   send_hour_end_israel?: number | null; // window end (night)
+  /** How many days ahead a live rule warns (the rent alert's 2); null = the rule has no such setting. */
+  days_before?: number | null;
 };
 
 export const BUILTIN_ALERT_TYPES = [

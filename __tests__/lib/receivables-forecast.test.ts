@@ -213,6 +213,40 @@ describe("projectRent", () => {
   });
 });
 
+describe("projectRent — the lease's own calendar and the months payments say", () => {
+  const hebrew: LeaseRow = {
+    id: "D4", propertyId: "prop-d4", customerId: "c1", propertyLabel: "D4 הר יונה",
+    startDate: "2026-07-15", endDate: "2027-06-06", monthlyAmount: 4000,
+    rentCalendar: "hebrew", rentHebrewDay: 1, periodMonths: 1,
+  };
+  const window = { fromIso: "2026-10-01", toIso: "2027-03-31", todayIso: "2026-10-20" };
+
+  it("a Hebrew lease is due on א׳ of each Hebrew month — both Adars of the leap year", () => {
+    const rows = projectRent([hebrew], new Map(), window);
+    expect(rows.map((r) => r.date)).toEqual([
+      "2026-10-12", "2026-11-11", "2026-12-11", "2027-01-09", "2027-02-08", "2027-03-10",
+    ]);
+    expect(rows[0].id).toBe("rent_proj:D4:2026-10-12");
+  });
+
+  it("a period a payment pays for isn't projected — a two-month one covers both", () => {
+    const pay = (fields: Record<string, unknown>) => ({ date: "2026-10-12", paymentStatus: "cleared", amount: 4000, ...fields });
+    const rentPayments = new Map([
+      [
+        "prop-d4",
+        [
+          pay({}), // חשון, by its date
+          pay({ date: "2026-11-05", amount: 8000, leaseId: "D4", periodStart: "2026-11-11", periods: 2 }), // כסלו + טבת
+          pay({ date: "2027-01-12", paymentStatus: "rejected" }), // bounced: שבט is still owed
+          pay({ date: "2027-02-08", countsAsRent: false }), // a refund isn't אדר א׳'s rent
+        ],
+      ],
+    ]);
+    const rows = projectRent([hebrew], new Map(), window, rentPayments);
+    expect(rows.map((r) => r.date)).toEqual(["2027-01-09", "2027-02-08", "2027-03-10"]);
+  });
+});
+
 describe("projectRent — the agreed rent day", () => {
   // A lease signed on the 17th does not mean rent is due on the 17th. The
   // agreed day wins; the start day is only the fallback for leases that

@@ -14,6 +14,7 @@ import { fetchLoans } from "@/lib/loans";
 import { propertyDisplayName } from "@/lib/properties";
 import type { InflowSourceKind, OutflowSourceRow } from "@/lib/outflow-source-settings";
 import { cardScanSince, cardSettlementDate, labelSettlementPayments, loadSettlementAccountId } from "@/lib/card-settlements";
+import { hebrewDayName, isHebrewLease, rentPeriodStarts, type RentPeriodLease } from "@/lib/rent-periods";
 
 type Row = Record<string, unknown>;
 function str(row: Row, key: string): string | null {
@@ -78,14 +79,22 @@ function inflowRow(
   };
 }
 
-/** Rent expected every month, one row per active lease. */
+/** A lease's next due date on or after `todayIso`, by its own calendar (lib/rent-periods.ts). */
+function nextRentDue(lease: RentPeriodLease, todayIso: string): string | null {
+  const [y, m, d] = todayIso.slice(0, 10).split("-").map(Number);
+  const ahead = isoLocal(new Date(y, m - 1, d + 400));
+  const start = lease.startDate && lease.startDate > todayIso ? lease.startDate.slice(0, 10) : todayIso;
+  return rentPeriodStarts(lease, start, ahead)[0] ?? null;
+}
+
+/** Rent expected every month (or once a year), one row per active lease. */
 export async function loadRentSources(
   supabase: SupabaseClient,
   { todayIso }: { todayIso: string }
 ): Promise<OutflowSourceRow[]> {
   const { data, error } = await supabase
     .from("lease_agreements")
-    .select("id,property_id,start_date,end_date,monthly_rent_amount,rent_day_of_month,status")
+    .select("id,property_id,start_date,end_date,monthly_rent_amount,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months,status")
     .eq("status", "active");
   if (error || !data) return [];
 
@@ -106,22 +115,38 @@ export async function loadRentSources(
     const start = str(r, "start_date");
     if (!id || !propertyId || !start) return [];
     // The agreed rent day when the lease has one; otherwise the day it started,
-    // which is all the app had before the column existed.
+    // which is all the app had before the column existed. A Hebrew lease: its
+    // day of each Hebrew month (owner, 2026-10-20 — "every א׳ of the month").
     const day = rentDayOf(r, start);
     const end = str(r, "end_date");
-    const next = nextMonthlyDate(day, todayIso);
+    const yearly = num(r, "period_months") === 12;
+    const lease: RentPeriodLease = {
+      startDate: start,
+      endDate: end,
+      rentDayOfMonth: day,
+      rentCalendar: str(r, "rent_calendar"),
+      rentHebrewDay: num(r, "rent_hebrew_day") || null,
+      periodMonths: yearly ? 12 : 1,
+    };
+    const hebrew = isHebrewLease(lease);
+    const next = hebrew || yearly ? nextRentDue(lease, todayIso) : nextMonthlyDate(day, todayIso);
     // A lease that has already ended is not monthly income any more.
-    if (end && next > end.slice(0, 10)) return [];
+    if (!next || (end && next > end.slice(0, 10))) return [];
     const label = labelById.get(propertyId) ?? "נכס";
     return [
       inflowRow({
         kind: "rent",
         key: id,
         name: `שכר דירה — ${label}`,
-        scheduleLabel: `${day} לכל חודש`,
+        scheduleLabel: yearly
+          ? "פעם בשנה"
+          : hebrew
+            ? `${hebrewDayName(Number(lease.rentHebrewDay))} לכל חודש עברי`
+            : `${day} לכל חודש`,
         nextDate: next,
         amount: num(r, "monthly_rent_amount"),
         href: `/properties/${propertyId}`,
+        monthly: !yearly,
       }),
     ];
   });

@@ -25,6 +25,7 @@ import {
   settlementAccountFor,
 } from "@/lib/card-settlements";
 import { rentDayOf } from "@/lib/inflow-sources";
+import type { RentPayment } from "@/lib/property-rent";
 
 type Row = Record<string, unknown>;
 function str(row: Row, key: string): string | null {
@@ -185,24 +186,25 @@ export async function loadSettlementRows(
 export async function loadLeasesAndBookedMonths(
   supabase: SupabaseClient,
   { fromIso }: { fromIso: string }
-): Promise<{ leases: LeaseRow[]; bookedMonths: Map<string, Set<string>> }> {
+): Promise<{ leases: LeaseRow[]; bookedMonths: Map<string, Set<string>>; rentPayments: Map<string, RentPayment[]> }> {
   const { data, error } = await supabase
     .from("lease_agreements")
-    .select("id,property_id,customer_id,start_date,end_date,monthly_rent_amount,rent_day_of_month,status")
+    .select("id,property_id,customer_id,start_date,end_date,monthly_rent_amount,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months,status")
     .eq("status", "active");
-  if (error || !data) return { leases: [], bookedMonths: new Map() };
+  if (error || !data) return { leases: [], bookedMonths: new Map(), rentPayments: new Map() };
 
   const rows = (data ?? []) as Row[];
   const propertyIds = Array.from(new Set(rows.map((r) => str(r, "property_id")).filter((v): v is string => Boolean(v))));
-  if (propertyIds.length === 0) return { leases: [], bookedMonths: new Map() };
+  if (propertyIds.length === 0) return { leases: [], bookedMonths: new Map(), rentPayments: new Map() };
 
   const [propsResult, paidResult] = await Promise.all([
     supabase.from("properties").select("id,name,address").in("id", propertyIds),
+    // Also a payment from before the window that says it pays a month inside it.
     supabase
       .from("payments")
-      .select("property_id,payment_date")
+      .select("property_id,payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,counts_as_rent")
       .in("property_id", propertyIds)
-      .gte("payment_date", fromIso),
+      .or(`payment_date.gte.${fromIso},rent_period_start.gte.${fromIso.slice(0, 10)}`),
   ]);
 
   const labelById = new Map<string, string>();
@@ -212,6 +214,8 @@ export async function loadLeasesAndBookedMonths(
   }
 
   const bookedMonths = new Map<string, Set<string>>();
+  // Which lease and month(s) each pays — what the projection checks (lib/property-rent.ts).
+  const rentPayments = new Map<string, RentPayment[]>();
   for (const r of ((paidResult.data ?? []) as Row[])) {
     const propertyId = str(r, "property_id");
     const date = str(r, "payment_date");
@@ -219,6 +223,17 @@ export async function loadLeasesAndBookedMonths(
     const set = bookedMonths.get(propertyId) ?? new Set<string>();
     set.add(date.slice(0, 7));
     bookedMonths.set(propertyId, set);
+    const list = rentPayments.get(propertyId) ?? [];
+    list.push({
+      date,
+      paymentStatus: str(r, "payment_status"),
+      amount: num(r, "amount_total"),
+      leaseId: str(r, "lease_id"),
+      periodStart: str(r, "rent_period_start"),
+      periods: num(r, "rent_periods") || 1,
+      countsAsRent: r.counts_as_rent !== false,
+    });
+    rentPayments.set(propertyId, list);
   }
 
   const leases: LeaseRow[] = rows
@@ -232,10 +247,13 @@ export async function loadLeasesAndBookedMonths(
       monthlyAmount: num(r, "monthly_rent_amount"),
       // The agreed rent day; projectRent falls back to the start day when null.
       rentDay: rentDayOf(r, (str(r, "start_date") ?? "").slice(0, 10)),
+      rentCalendar: str(r, "rent_calendar"),
+      rentHebrewDay: num(r, "rent_hebrew_day") || null,
+      periodMonths: num(r, "period_months") || 1,
     }))
     .filter((l) => l.id && l.propertyId && l.startDate && l.monthlyAmount > 0);
 
-  return { leases, bookedMonths };
+  return { leases, bookedMonths, rentPayments };
 }
 
 /**
@@ -261,7 +279,11 @@ export async function loadIncomeCalendarItems(
     loadCustomerNames(supabase, inflows).catch(() => new Map<string, string>()),
     loadOpenPromises(supabase, { fromIso }).catch(() => [] as PaymentPromise[]),
     loadSettlementRows(supabase, { fromIso }).catch(() => [] as SettlementPaymentRow[]),
-    loadLeasesAndBookedMonths(supabase, { fromIso }).catch(() => ({ leases: [] as LeaseRow[], bookedMonths: new Map<string, Set<string>>() })),
+    loadLeasesAndBookedMonths(supabase, { fromIso }).catch(() => ({
+      leases: [] as LeaseRow[],
+      bookedMonths: new Map<string, Set<string>>(),
+      rentPayments: new Map<string, RentPayment[]>(),
+    })),
     loadSettlementConfirmations(supabase).catch(() => NO_CONFIRMATIONS),
   ]);
 
@@ -286,6 +308,6 @@ export async function loadIncomeCalendarItems(
     ...dropSettledCardPayments(suppressPromisedReceivables(ledgerItems, promises), batches),
     ...toPromiseItems(promises, referenceDate, customerNames),
     ...toSettlementItems(batches, referenceDate, confirmations),
-    ...projectRent(rent.leases, rent.bookedMonths, { fromIso, toIso, todayIso: referenceDate }),
+    ...projectRent(rent.leases, rent.bookedMonths, { fromIso, toIso, todayIso: referenceDate }, rent.rentPayments),
   ];
 }

@@ -3,7 +3,14 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { israelDateKey } from "@/lib/timezone";
-import { rentThisMonth, type RentMonthStatus, type RentPayment } from "@/lib/property-rent";
+import {
+  hasRenters,
+  renterPayments,
+  rentThisPeriod,
+  runningLeases,
+  type RentMonthStatus,
+  type RentPayment,
+} from "@/lib/property-rent";
 import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 import type { StructuredAddress } from "@/lib/address/structured";
 import type { FinancialAttachment } from "@/lib/payments";
@@ -60,6 +67,8 @@ export type Property = {
   furnitureItems: string[];
   createdAt: string | null;
   updatedAt: string | null;
+  /** Its place in the list, dragged by hand (owner's card); none yet: after them, by name. */
+  sortOrder: number | null;
 };
 
 /** The label to show for a property everywhere in the app: its name if set,
@@ -92,6 +101,15 @@ export type LeaseAgreement = {
    * which is what the app did before the column existed.
    */
   rentDayOfMonth: number | null;
+  /** Paid on the regular or the Hebrew calendar (lib/rent-periods.ts). */
+  rentCalendar: "gregorian" | "hebrew";
+  /** The Hebrew month's day it's due (1–30), for a Hebrew-calendar lease. */
+  rentHebrewDay: number | null;
+  /** 1 = monthly, 12 = yearly; monthlyRentAmount is the amount per period. */
+  periodMonths: number;
+  /** A storage spot's size and name ("תא 4", "מחסן ליד D4"). */
+  areaSqm: number | null;
+  unitLabel: string | null;
   createdAt: string | null;
 };
 
@@ -115,6 +133,12 @@ export type PropertyWithLease = Property & {
   rollup: PropertyRollup;
   /** Where this month's rent stands (lib/property-rent.ts) — the list card's chip. */
   rentThisMonth: RentMonthStatus;
+  /**
+   * A property with renters (a storage property, or two leases at once): how
+   * many, how many have paid this period, and what they pay together. Null for
+   * a property with one tenant.
+   */
+  renters: { count: number; paid: number; monthly: number; yearly: number } | null;
 };
 
 export type PropertyWithLeases = Property & { leases: LeaseAgreement[] };
@@ -185,6 +209,7 @@ function normalizeProperty(row: Row): Property {
       : [],
     createdAt: str(row.created_at),
     updatedAt: str(row.updated_at),
+    sortOrder: numOrNull(row.sort_order),
   };
 }
 
@@ -210,6 +235,11 @@ function normalizeLease(row: Row): LeaseAgreement {
     depositReference: str(row.deposit_reference),
     keysHandedOver: numOrNull(row.keys_handed_over),
     rentDayOfMonth: numOrNull(row.rent_day_of_month),
+    rentCalendar: str(row.rent_calendar) === "hebrew" ? "hebrew" : "gregorian",
+    rentHebrewDay: numOrNull(row.rent_hebrew_day),
+    periodMonths: numOrNull(row.period_months) === 12 ? 12 : 1,
+    areaSqm: numOrNull(row.area_sqm),
+    unitLabel: str(row.unit_label),
     createdAt: str(row.created_at),
   };
 }
@@ -324,7 +354,7 @@ export function pickCurrentLease(leases: LeaseAgreement[]): LeaseAgreement | nul
 }
 
 const LEASE_SELECT =
-  "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,rent_day_of_month,created_at,customer:customers(name,phone)";
+  "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months,area_sqm,unit_label,created_at,customer:customers(name,phone)";
 
 /**
  * Every property with its current lease + income/expense rollup, computed in
@@ -338,7 +368,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
         supabase
           .from("properties")
           .select(
-        "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at,sort_order"
       )
           .range(lo, hi)
       )
@@ -360,7 +390,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
       fetchAllPaged<Row>((lo, hi) =>
         supabase
           .from("payments")
-          .select("property_id,amount_total,payment_status,payment_date")
+          .select("property_id,amount_total,payment_status,payment_date,lease_id,rent_period_start,rent_periods,counts_as_rent")
           .in("property_id", ids)
           .range(lo, hi)
       ),
@@ -398,7 +428,15 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
       const propertyId = str(row.property_id);
       if (!propertyId) continue;
       const list = rentPaymentsByProperty.get(propertyId) ?? [];
-      list.push({ date: str(row.payment_date), paymentStatus: str(row.payment_status), amount: num(row.amount_total) });
+      list.push({
+        date: str(row.payment_date),
+        paymentStatus: str(row.payment_status),
+        amount: num(row.amount_total),
+        leaseId: str(row.lease_id),
+        periodStart: str(row.rent_period_start),
+        periods: numOrNull(row.rent_periods),
+        countsAsRent: row.counts_as_rent !== false,
+      });
       rentPaymentsByProperty.set(propertyId, list);
       if (!isCollectedPaymentStatus(str(row.payment_status))) continue;
       rollupFor(propertyId).totalIncomeAmount += num(row.amount_total);
@@ -420,18 +458,41 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
     const today = israelDateKey();
     return properties
       .map((property) => {
-        const currentLease = pickCurrentLease(leasesByProperty.get(property.id) ?? []);
+        const leases = leasesByProperty.get(property.id) ?? [];
+        const currentLease = pickCurrentLease(leases);
+        const payments = rentPaymentsByProperty.get(property.id) ?? [];
+        const running = runningLeases(leases, today);
+        const renters = hasRenters(property.propertyType, running.length)
+          ? {
+              count: running.length,
+              paid: running.filter((lease) => {
+                const state = rentThisPeriod(lease, renterPayments(lease.id, payments, running.length === 1), today).state;
+                return state === "paid" || state === "check";
+              }).length,
+              monthly: running.filter((l) => l.periodMonths !== 12).reduce((sum, l) => sum + l.monthlyRentAmount, 0),
+              yearly: running.filter((l) => l.periodMonths === 12).reduce((sum, l) => sum + l.monthlyRentAmount, 0),
+            }
+          : null;
         return {
           ...property,
           currentLease,
           rollup: rollupByProperty.get(property.id) ?? EMPTY_ROLLUP,
-          rentThisMonth: rentThisMonth(currentLease, rentPaymentsByProperty.get(property.id) ?? [], today),
+          rentThisMonth: rentThisPeriod(currentLease, payments, today),
+          renters,
         };
       })
-      .sort((a, b) => propertyDisplayName(a).localeCompare(propertyDisplayName(b), "he"));
+      .sort(compareProperties);
   } catch {
     return [];
   }
+}
+
+/** The list's order: the owner's own (sort_order), then the rest by name. */
+export function compareProperties(a: Property, b: Property): number {
+  if (a.sortOrder != null && b.sortOrder != null && a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  if (a.sortOrder != null && b.sortOrder == null) return -1;
+  if (a.sortOrder == null && b.sortOrder != null) return 1;
+  return propertyDisplayName(a).localeCompare(propertyDisplayName(b), "he");
 }
 
 /** One property + its FULL lease history (newest start_date first). */
@@ -443,7 +504,7 @@ export async function fetchProperty(
     const { data, error } = await supabase
       .from("properties")
       .select(
-        "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at,sort_order"
       )
       .eq("id", id)
       .maybeSingle();
@@ -501,6 +562,12 @@ export type PropertyPayment = {
   referenceNumber: string | null;
   requiresSplit: boolean;
   createdAt: string | null;
+  /** The lease it's rent for, the period it starts paying and how many (lib/property-rent.ts). */
+  leaseId: string | null;
+  rentPeriodStart: string | null;
+  rentPeriods: number;
+  /** False for income that isn't rent (a refund). */
+  countsAsRent: boolean;
   /** The files attached to it (a check's photo, a transfer confirmation). */
   attachments: FinancialAttachment[];
 };
@@ -695,7 +762,7 @@ export async function fetchPropertyActivity(
       supabase
         .from("payments")
         .select(
-          "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id,notes,reference_number,requires_split,created_at"
+          "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,counts_as_rent"
         )
         .eq("property_id", propertyId),
       supabase.from("document_links").select("document_id").eq("entity_type", "property").eq("entity_id", propertyId),
@@ -787,6 +854,10 @@ export async function fetchPropertyActivity(
       referenceNumber: str(r.reference_number),
       requiresSplit: r.requires_split === true,
       createdAt: str(r.created_at),
+      leaseId: str(r.lease_id),
+      rentPeriodStart: str(r.rent_period_start),
+      rentPeriods: numOrNull(r.rent_periods) ?? 1,
+      countsAsRent: r.counts_as_rent !== false,
       attachments: paymentFiles[str(r.id) ?? ""] ?? [],
     }));
     const documents: PropertyDocument[] = ((docRows ?? []) as Row[]).map((r) => {

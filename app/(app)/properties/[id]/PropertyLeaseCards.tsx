@@ -11,9 +11,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { formatCurrency } from "@/lib/payroll";
 import { formatShortDate } from "@/lib/date";
 import { israelDateKey } from "@/lib/timezone";
-import { dayKey, RENT_STATE, rentThisMonth } from "@/lib/property-rent";
+import { dayKey, paymentPeriodLabel, RENT_STATE, rentThisPeriod } from "@/lib/property-rent";
+import { rentDueLabel } from "@/lib/rent-periods";
 import { depositTypeLabel, leaseStatusLabel, type LeaseAgreement, type PropertyPayment } from "@/lib/properties";
-import { paymentTitle } from "./propertyMovements";
+import { paymentTitle, toRentPayment } from "./propertyMovements";
 
 // The property page's two lease cards, beside "נכס" in its head row (owner,
 // 2026-10-20: like the project page — one clear details page): who rents it
@@ -59,7 +60,11 @@ export function PropertyTenantCard({
 }) {
   const details = lease
     ? [
-        { label: "שכר דירה", value: `${formatCurrency(lease.monthlyRentAmount)} לחודש` },
+        { label: "שכר דירה", value: `${formatCurrency(lease.monthlyRentAmount)} ${lease.periodMonths === 12 ? "לשנה" : "לחודש"}` },
+        { label: "מועד תשלום", value: rentDueLabel(lease) },
+        lease.unitLabel || lease.areaSqm
+          ? { label: "יחידה", value: [lease.unitLabel, lease.areaSqm ? `${lease.areaSqm} מ״ר` : null].filter(Boolean).join(" · ") }
+          : null,
         {
           label: "תקופה",
           value: [formatShortDate(lease.startDate, ""), lease.endDate ? formatShortDate(lease.endDate, "") : "ללא סיום"]
@@ -175,19 +180,21 @@ export function PropertyRentCard({
   onSchedule: () => void;
 }) {
   const today = israelDateKey();
-  const status = rentThisMonth(lease, payments, today);
+  // Its rent only: not a refund, not a storage spot's lease on the same property.
+  const rentPayments = payments.filter((p) => p.countsAsRent && (!p.leaseId || !lease || p.leaseId === lease.id));
+  const status = rentThisPeriod(lease, rentPayments.map(toRentPayment), today);
   const year = today.slice(0, 4);
-  const collectedThisYear = payments
+  const collectedThisYear = rentPayments
     .filter((p) => p.paymentStatus !== "pending" && p.paymentStatus !== "rejected")
     .filter((p) => ((p.method === "check" ? p.dueDate : null) ?? dayKey(p.date) ?? "").startsWith(year))
     .reduce((sum, p) => sum + p.amount, 0);
-  const waiting = payments.filter((p) => p.paymentStatus === "pending");
+  const waiting = rentPayments.filter((p) => p.paymentStatus === "pending");
   const waitingTotal = waiting.reduce((sum, p) => sum + p.amount, 0);
   const nextCheck = waiting
     .map((p) => ({ p, day: p.dueDate ?? dayKey(p.date) ?? "" }))
     .filter((x) => x.day >= today)
     .sort((a, b) => a.day.localeCompare(b.day))[0];
-  const last = payments
+  const last = rentPayments
     .filter((p) => p.paymentStatus !== "pending" && p.paymentStatus !== "rejected")
     .map((p) => ({ p, day: (p.method === "check" ? p.dueDate : null) ?? dayKey(p.date) ?? "" }))
     .sort((a, b) => b.day.localeCompare(a.day))[0];
@@ -195,19 +202,23 @@ export function PropertyRentCard({
 
   const details = [
     status.state !== "none" && status.collected > 0 && status.state !== "paid"
-      ? { label: "נגבה החודש", value: `${formatCurrency(status.collected)} מתוך ${formatCurrency(status.rent)}` }
+      ? { label: "נגבה", value: `${formatCurrency(status.collected)} מתוך ${formatCurrency(status.rent)}` }
       : null,
-    status.state === "upcoming" && status.dueDay ? { label: "מועד", value: `ה-${status.dueDay} בחודש` } : null,
+    status.periodStart && (status.state === "upcoming" || status.state === "late")
+      ? { label: "מועד", value: formatShortDate(status.periodStart, "") }
+      : null,
     { label: `נגבה ב-${year}`, value: formatCurrency(collectedThisYear) },
     waiting.length > 0 ? { label: "צ׳קים ממתינים", value: `${waiting.length} · ${formatCurrency(waitingTotal)}` } : null,
     nextCheck ? { label: "הצ׳ק הבא", value: `${formatShortDate(nextCheck.day, "")} · ${formatCurrency(nextCheck.p.amount)}` } : null,
-    last ? { label: "תשלום אחרון", value: `${formatShortDate(last.day, "")} · ${paymentTitle(last.p)}` } : null,
+    last
+      ? { label: "תשלום אחרון", value: `${formatShortDate(last.day, "")} · ${paymentTitle(last.p, paymentPeriodLabel(lease, toRentPayment(last.p)))}` }
+      : null,
   ].filter((d): d is { label: string; value: string } => Boolean(d));
 
   return (
     <StatActionCard
       icon={<PaymentIcon className="h-5 w-5" />}
-      label="שכירות החודש"
+      label={status.periodLabel ? `שכירות ${status.periodLabel}` : "שכירות החודש"}
       value={state.label}
       valueClassName={state.className}
       details={details}

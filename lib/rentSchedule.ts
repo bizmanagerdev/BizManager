@@ -1,12 +1,19 @@
 // Pure helpers for pre-scheduling a lease's rent payments — no I/O. Each row
 // carries TWO independent dates: paymentDate (which rental month it covers)
 // and dueDate (when the actual post-dated check clears), per the owner's spec.
+// With its lease, the rows follow the lease's own periods (lib/rent-periods.ts:
+// א׳ of each Hebrew month — 13 in a leap year — or once a year), and each says
+// the period it pays (periodStart).
+
+import { addRentPeriods, type RentPeriodLease } from "@/lib/rent-periods";
 
 export type RentScheduleRow = {
   paymentDate: string;
   dueDate: string;
   amount: number;
   checkNumber: string;
+  /** The lease period this row pays (its due date) — set when the schedule follows a lease. */
+  periodStart?: string;
 };
 
 /** dateStr + N months, clamping to the last day of a short month. */
@@ -45,23 +52,29 @@ export function buildRentSchedule({
   count,
   monthlyAmount,
   startingCheckNumber = "",
+  lease = null,
 }: {
   firstMonth: string;
   count: number;
   monthlyAmount: number;
   startingCheckNumber?: string;
+  /** Step by this lease's periods instead of a regular month. */
+  lease?: RentPeriodLease | null;
 }): RentScheduleRow[] {
   const n = Math.round(count);
   if (!firstMonth || !(monthlyAmount > 0) || !(n > 0)) return [];
   const hasSequence = startingCheckNumber.trim() !== "" && Number.isFinite(Number(startingCheckNumber.trim()));
   const rows: RentScheduleRow[] = [];
   for (let i = 0; i < n; i += 1) {
-    const paymentDate = stepMonthly(firstMonth, i);
+    const paymentDate = lease ? addRentPeriods(lease, firstMonth, i) : stepMonthly(firstMonth, i);
+    // Not past the lease's end.
+    if (lease?.endDate && paymentDate > lease.endDate.slice(0, 10)) break;
     rows.push({
       paymentDate,
       dueDate: paymentDate,
       amount: monthlyAmount,
       checkNumber: hasSequence ? incrementPaddedNumber(startingCheckNumber, i) : "",
+      ...(lease ? { periodStart: paymentDate } : {}),
     });
   }
   return rows;

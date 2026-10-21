@@ -69,8 +69,15 @@ import PropertyDetailsCard from "./PropertyDetailsCard";
 import PropertyPageHeading from "./PropertyPageHeading";
 import PropertyMoneyCard from "./PropertyMoneyCard";
 import PropertyIncomeEditDialog from "./PropertyIncomeEditDialog";
+import PropertyRentPaymentDialog from "./PropertyRentPaymentDialog";
+import { PropertyRentersCard, PropertyRentersRentCard, PropertyRentersSection, renterStatuses } from "./PropertyRenters";
+import { hasRenters, renterPayments, runningLeases } from "@/lib/property-rent";
+import { israelDateKey } from "@/lib/timezone";
 import { PropertyRentCard, PropertyTenantCard } from "./PropertyLeaseCards";
 import { buildPropertyMovements } from "./propertyMovements";
+import { hebrewDayName } from "@/lib/rent-periods";
+
+const HEBREW_DAYS = Array.from({ length: 30 }, (_, i) => i + 1);
 import PropertyPurchaseCard from "./PropertyPurchaseCard";
 import PropertyFurnitureCard from "./PropertyFurnitureCard";
 import PropertyUtilitiesCard from "./PropertyUtilitiesCard";
@@ -97,6 +104,11 @@ const EMPTY_LEASE_FORM = {
   deposit_reference: "",
   keys_handed_over: "",
   rent_day_of_month: "",
+  rent_calendar: "gregorian",
+  rent_hebrew_day: "1",
+  period_months: "1",
+  area_sqm: "",
+  unit_label: "",
 };
 
 type LeaseForm = typeof EMPTY_LEASE_FORM;
@@ -114,6 +126,11 @@ function toLeaseForm(lease: LeaseAgreement): LeaseForm {
     deposit_reference: lease.depositReference ?? "",
     keys_handed_over: lease.keysHandedOver != null ? String(lease.keysHandedOver) : "",
     rent_day_of_month: lease.rentDayOfMonth != null ? String(lease.rentDayOfMonth) : "",
+    rent_calendar: lease.rentCalendar,
+    rent_hebrew_day: lease.rentHebrewDay != null ? String(lease.rentHebrewDay) : "1",
+    period_months: String(lease.periodMonths),
+    area_sqm: lease.areaSqm != null ? String(lease.areaSqm) : "",
+    unit_label: lease.unitLabel ?? "",
   };
 }
 
@@ -250,6 +267,8 @@ export default function PropertyDetailClient({
   // income
   const [editingPayment, setEditingPayment] = useState<PropertyPayment | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  // Which renter's schedule, on a property with several (null: the current lease).
+  const [scheduleLeaseId, setScheduleLeaseId] = useState<string | null>(null);
   // the property itself
   const [detailsEditOpen, setDetailsEditOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
@@ -261,6 +280,9 @@ export default function PropertyDetailClient({
   const [editingTemplate, setEditingTemplate] = useState<EditingRecurringTemplateData | null>(null);
   // income
   const [incomeOpen, setIncomeOpen] = useState(false);
+  // a lease's rent, with the month(s) it pays
+  const [rentPaymentOpen, setRentPaymentOpen] = useState(false);
+  const [rentPaymentLeaseId, setRentPaymentLeaseId] = useState<string | null>(null);
   // lease
   const [leaseOpen, setLeaseOpen] = useState(false);
   const [editLeaseId, setEditLeaseId] = useState<string | null>(null);
@@ -296,8 +318,23 @@ export default function PropertyDetailClient({
   const [del, setDel] = useState<{ kind: "expense" | "payment" | "document" | "lease" | "task" | "template" | "session"; id: string; label: string } | null>(null);
 
   const currentLease = pickCurrentLease(leases);
+  // A storage property, or one let to several at once: its renters, each with
+  // its own rent (PropertyRenters.tsx).
+  const today = israelDateKey();
+  const running = runningLeases(leases, today);
+  const withRenters = hasRenters(property.propertyType, running.length);
+  const renters = withRenters ? renterStatuses(running, activityPayments, today) : [];
+  const scheduleLease = leases.find((l) => l.id === scheduleLeaseId) ?? currentLease;
+  const rentPaymentLease = leases.find((l) => l.id === rentPaymentLeaseId) ?? currentLease;
+  const openSchedule = (lease: LeaseAgreement | null) => {
+    setScheduleLeaseId(lease?.id ?? null);
+    setScheduleOpen(true);
+  };
+  const openRentPayment = (lease: LeaseAgreement) => {
+    setRentPaymentLeaseId(lease.id);
+    setRentPaymentOpen(true);
+  };
   const otherLeases = leases.filter((l) => l.id !== currentLease?.id);
-  const checkPayments = activityPayments.filter((p) => p.method === "check");
   const purchaseDocuments = activityDocuments.filter((d) => PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? ""));
   // A picture of the property is an image with nothing more specific said about
   // it. Matching the file kind as well as the "צילום" category picks up images
@@ -319,6 +356,8 @@ export default function PropertyDetailClient({
     () =>
       buildPropertyMovements({
         payments: activityPayments,
+        leases,
+        currentLease,
         expenses: activityExpenses,
         sessions: activitySessions,
         sessionAttachments: activity.sessionAttachments,
@@ -336,7 +375,7 @@ export default function PropertyDetailClient({
       }),
     // The handlers only set state; the rows change with the data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activityPayments, activityExpenses, activitySessions, activity.sessionAttachments, activity.accountNames, templateNameById, users]
+    [activityPayments, leases, currentLease, activityExpenses, activitySessions, activity.sessionAttachments, activity.accountNames, templateNameById, users]
   );
   const movementTexts = (m: (typeof movements.done)[number]) => [
     m.name,
@@ -523,7 +562,7 @@ export default function PropertyDetailClient({
       return;
     }
     if (!(Number(leaseForm.monthly_rent_amount) > 0)) {
-      toast.error("יש להזין מחיר חודשי תקין.");
+      toast.error("יש להזין סכום תקין.");
       return;
     }
     const input: LeaseInput = {
@@ -538,6 +577,11 @@ export default function PropertyDetailClient({
       deposit_reference: leaseForm.deposit_reference,
       keys_handed_over: leaseForm.keys_handed_over,
       rent_day_of_month: leaseForm.rent_day_of_month,
+      rent_calendar: leaseForm.rent_calendar,
+      rent_hebrew_day: leaseForm.rent_hebrew_day,
+      period_months: leaseForm.period_months,
+      area_sqm: leaseForm.area_sqm,
+      unit_label: leaseForm.unit_label,
     };
     setLeaseBusy(true);
     try {
@@ -675,7 +719,7 @@ export default function PropertyDetailClient({
                 <DropdownMenuItem onClick={() => setReminderOpen(true)}>תזכורת</DropdownMenuItem>
                 <DropdownMenuItem onClick={openAddLease}>חוזה חדש</DropdownMenuItem>
                 {currentLease ? (
-                  <DropdownMenuItem onClick={() => setScheduleOpen(true)}>קביעת תשלומים מראש</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openSchedule(null)}>קביעת תשלומים מראש</DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem
                   onClick={() => setDeletePropertyOpen(true)}
@@ -698,26 +742,46 @@ export default function PropertyDetailClient({
           editOpen={detailsEditOpen}
           onEditOpenChange={setDetailsEditOpen}
         />
-        <PropertyTenantCard
-          lease={currentLease}
-          pastLeases={otherLeases}
-          keyCount={property.keyCount}
-          onEdit={openEditLease}
-          onNew={openAddLease}
-          onDelete={(lease) => setDel({ kind: "lease", id: lease.id, label: "חוזה שכירות" })}
-        />
-        <PropertyRentCard
-          lease={currentLease}
-          payments={activityPayments}
-          onRecord={() => setIncomeOpen(true)}
-          onSchedule={() => setScheduleOpen(true)}
-        />
+        {withRenters ? (
+          <>
+            <PropertyRentersCard renters={renters} onNew={openAddLease} />
+            <PropertyRentersRentCard renters={renters} />
+          </>
+        ) : (
+          <>
+            <PropertyTenantCard
+              lease={currentLease}
+              pastLeases={otherLeases}
+              keyCount={property.keyCount}
+              onEdit={openEditLease}
+              onNew={openAddLease}
+              onDelete={(lease) => setDel({ kind: "lease", id: lease.id, label: "חוזה שכירות" })}
+            />
+            <PropertyRentCard
+              lease={currentLease}
+              payments={activityPayments}
+              onRecord={() => (currentLease ? openRentPayment(currentLease) : setIncomeOpen(true))}
+              onSchedule={() => openSchedule(null)}
+            />
+          </>
+        )}
       </div>
 
       {/* The main column takes the head row's first two cards' width, the side
           column the third's — same gap, so their edges line up. */}
       <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:items-start">
         <div className="min-w-0 space-y-3">
+          {withRenters ? (
+            <PropertyRentersSection
+              renters={renters}
+              ended={leases.filter((l) => !running.some((r) => r.id === l.id))}
+              onRecord={openRentPayment}
+              onSchedule={openSchedule}
+              onEdit={openEditLease}
+              onDelete={(lease) => setDel({ kind: "lease", id: lease.id, label: "חוזה שכירות" })}
+              onNew={openAddLease}
+            />
+          ) : null}
           <CollapsibleSection
             collapsible={false}
             title={
@@ -1000,15 +1064,30 @@ export default function PropertyDetailClient({
       />
 
       {/* Edit any of its incomes (the note is its title). */}
-      <PropertyIncomeEditDialog payment={editingPayment} onClose={() => setEditingPayment(null)} />
+      <PropertyIncomeEditDialog
+        payment={editingPayment}
+        onClose={() => setEditingPayment(null)}
+        leases={leases}
+        currentLease={currentLease}
+      />
 
       {/* The year's rent checks, set ahead of time. */}
       <RentScheduleDialog
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
         propertyId={propertyId}
-        currentLease={currentLease}
-        payments={checkPayments}
+        currentLease={scheduleLease}
+        payments={withRenters && scheduleLease ? renterPayments(scheduleLease.id, activityPayments, running.length === 1) : activityPayments}
+      />
+
+      <PropertyRentPaymentDialog
+        open={rentPaymentOpen}
+        onOpenChange={setRentPaymentOpen}
+        propertyId={propertyId}
+        lease={rentPaymentLease}
+        payments={
+          withRenters && rentPaymentLease ? renterPayments(rentPaymentLease.id, activityPayments, running.length === 1) : activityPayments
+        }
       />
 
       <AddReminderButton
@@ -1082,7 +1161,7 @@ export default function PropertyDetailClient({
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <div className="text-sm font-medium">מחיר חודשי *</div>
+              <div className="text-sm font-medium">{leaseForm.period_months === "12" ? "סכום לשנה *" : "מחיר חודשי *"}</div>
               <CurrencyInput
                 type="number"
                 min="0"
@@ -1143,21 +1222,80 @@ export default function PropertyDetailClient({
                 placeholder={property.keyCount != null ? `בדירה יש ${property.keyCount}` : undefined}
               />
             </div>
+          </div>
+          {/* When it's paid (owner, 2026-10-20): on a day of the regular month or
+              of the Hebrew month — "every א׳ … whatever the English date is,
+              that's when it's due, the alert, everything" — monthly or yearly. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1">
-              {/* Drives where rent lands on the payments board. Left empty it
-                  falls back to the day the lease started, which is what the
-                  board used before this existed — and why rent showed up
-                  scattered across the month. */}
-              <div className="text-sm font-medium">יום תשלום בחודש</div>
-              <Input
-                inputMode="numeric"
-                value={leaseForm.rent_day_of_month}
-                onChange={(e) => setLeaseForm((prev) => ({ ...prev, rent_day_of_month: e.target.value }))}
-                placeholder={leaseForm.start_date ? `כברירת מחדל: ${Number(leaseForm.start_date.slice(8, 10)) || 1}` : "1–31"}
-              />
-              <div className="text-xs text-muted-foreground">ריק = לפי היום שבו החוזה התחיל</div>
+              <div className="text-sm font-medium">תשלום לפי</div>
+              <NativeSelect
+                value={leaseForm.rent_calendar}
+                onChange={(e) => setLeaseForm((prev) => ({ ...prev, rent_calendar: e.target.value }))}
+              >
+                <option value="gregorian">תאריך לועזי</option>
+                <option value="hebrew">תאריך עברי</option>
+              </NativeSelect>
+            </div>
+            {leaseForm.rent_calendar === "hebrew" ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">יום בחודש העברי</div>
+                <NativeSelect
+                  value={leaseForm.rent_hebrew_day}
+                  onChange={(e) => setLeaseForm((prev) => ({ ...prev, rent_hebrew_day: e.target.value }))}
+                >
+                  {HEBREW_DAYS.map((day) => (
+                    <option key={day} value={String(day)}>
+                      {hebrewDayName(day)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {/* Drives where rent lands on the payments board. Left empty it
+                    falls back to the day the lease started. */}
+                <div className="text-sm font-medium">יום תשלום בחודש</div>
+                <Input
+                  inputMode="numeric"
+                  value={leaseForm.rent_day_of_month}
+                  onChange={(e) => setLeaseForm((prev) => ({ ...prev, rent_day_of_month: e.target.value }))}
+                  placeholder={leaseForm.start_date ? `כברירת מחדל: ${Number(leaseForm.start_date.slice(8, 10)) || 1}` : "1–31"}
+                />
+              </div>
+            )}
+            <div className="space-y-1">
+              <div className="text-sm font-medium">תדירות</div>
+              <NativeSelect
+                value={leaseForm.period_months}
+                onChange={(e) => setLeaseForm((prev) => ({ ...prev, period_months: e.target.value }))}
+              >
+                <option value="1">כל חודש</option>
+                <option value="12">פעם בשנה</option>
+              </NativeSelect>
             </div>
           </div>
+          {/* A storage spot: which one, and how big. */}
+          {property.propertyType === "storage" || leaseForm.unit_label || leaseForm.area_sqm ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">יחידה / תא</div>
+                <Input
+                  value={leaseForm.unit_label}
+                  onChange={(e) => setLeaseForm((prev) => ({ ...prev, unit_label: e.target.value }))}
+                  placeholder="תא 4"
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm font-medium">שטח (מ״ר)</div>
+                <Input
+                  inputMode="decimal"
+                  value={leaseForm.area_sqm}
+                  onChange={(e) => setLeaseForm((prev) => ({ ...prev, area_sqm: e.target.value }))}
+                />
+              </div>
+            </div>
+          ) : null}
           <div className="space-y-1">
             <div className="text-sm font-medium">הערות</div>
             <div className="relative">

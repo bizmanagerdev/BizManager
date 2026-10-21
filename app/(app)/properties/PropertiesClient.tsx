@@ -1,11 +1,23 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useMemo, useState, useTransition, type ReactNode } from "react";
 import dynamic from "next/dynamic";
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, BuildingIcon, MoreIcon, SearchIcon } from "@/components/ui/icons";
+import { AddIcon, BuildingIcon, DragIcon, MoreIcon, SearchIcon } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Painted, SearchTermsProvider } from "@/components/search/Painted";
@@ -25,7 +37,8 @@ import {
 } from "@/lib/properties";
 import { RENT_STATE } from "@/lib/property-rent";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
-import { createProperty, updateProperty, deleteProperty } from "./actions";
+import { createProperty, updateProperty, deleteProperty, setPropertyOrder } from "./actions";
+import { cn } from "@/lib/utils";
 import { EMPTY_PROPERTY_FORM, propertyToForm, PropertyFormFields, type PropertyInput } from "./PropertyFormFields";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
@@ -37,9 +50,6 @@ const ExpenseDialog = dynamic(() => import("@/components/expenses/ExpenseDialog"
 const IncomeDialog = dynamic(() => import("@/components/financial/IncomeDialog").then((m) => m.IncomeDialog), {
   ssr: false,
 });
-
-/** "שכירות אוקטובר" — the month the card's rent chip is about. */
-const MONTH_NAME = new Intl.DateTimeFormat("he-IL", { month: "long", timeZone: "Asia/Jerusalem" });
 
 function numOrNullFromForm(value: string) {
   const trimmed = value.trim();
@@ -103,7 +113,7 @@ function propertySearchRecord(p: PropertyWithLease): SearchRecord {
       [null, p.currentLease?.customerName],
       [null, factsLine(p).filter(Boolean).join(" · ")],
       [null, amenityBadges(p).join(" ")],
-      [null, p.currentLease ? null : "פנוי"],
+      [null, p.currentLease || p.renters?.count ? null : "פנוי"],
     ],
     amounts: [
       [null, p.currentLease?.monthlyRentAmount],
@@ -124,6 +134,50 @@ function amenityBadges(p: PropertyWithLease) {
   return items;
 }
 
+/**
+ * A card that can be dragged into the owner's own order (the ניהול נכסים card)
+ * by its handle — only the handle, so a tap on the card still opens it, and a
+ * phone scrolls past it (the touch waits a moment before it drags).
+ */
+function SortableCard({
+  id,
+  name,
+  disabled,
+  children,
+}: {
+  id: string;
+  name: string;
+  disabled: boolean;
+  children: (handle: ReactNode) => ReactNode;
+}) {
+  const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
+    id,
+    disabled,
+  });
+  const handle = disabled ? null : (
+    <button
+      type="button"
+      ref={setActivatorNodeRef}
+      className="flex h-9 w-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:text-foreground active:cursor-grabbing"
+      aria-label={`גרירה לשינוי הסדר — ${name}`}
+      title="גרירה לשינוי הסדר"
+      {...attributes}
+      {...listeners}
+    >
+      <DragIcon className="h-4 w-4" />
+    </button>
+  );
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={cn("flex flex-col", isDragging && "relative z-10 opacity-90 shadow-lg")}
+    >
+      {children(handle)}
+    </div>
+  );
+}
+
 export default function PropertiesClient({ properties: propertiesProp }: { properties: PropertyWithLease[] }) {
   const router = useRouter();
   const properties = useUndoOverlay(propertiesProp, (p) => p.id, "property");
@@ -136,11 +190,46 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
   // "הוצאה והכנסה להוסיף בחוץ"), and a reminder from its ⋮.
   const [moneyTarget, setMoneyTarget] = useState<{ kind: "income" | "expense"; property: PropertyWithLease } | null>(null);
   const [reminderTarget, setReminderTarget] = useState<PropertyWithLease | null>(null);
-  const monthName = useMemo(() => MONTH_NAME.format(new Date()), []);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
-  const found = useMemo(() => searchList(properties, propertySearchRecord, deferredSearch), [properties, deferredSearch]);
-  const shown = found ? found.items : properties;
+  // The order just dragged, until the list comes back from the server in it.
+  const [order, setOrder] = useState<string[] | null>(null);
+  const [orderFor, setOrderFor] = useState(propertiesProp);
+  if (propertiesProp !== orderFor) {
+    setOrderFor(propertiesProp);
+    setOrder(null);
+  }
+  const ordered = useMemo(() => {
+    if (!order) return properties;
+    const place = new Map(order.map((id, index) => [id, index]));
+    return [...properties].sort((a, b) => (place.get(a.id) ?? Infinity) - (place.get(b.id) ?? Infinity));
+  }, [properties, order]);
+  const found = useMemo(() => searchList(ordered, propertySearchRecord, deferredSearch), [ordered, deferredSearch]);
+  const shown = found ? found.items : ordered;
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function dragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = ordered.map((p) => p.id);
+    const next = arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)));
+    setOrder(next);
+    setPropertyOrder(next)
+      .then((result) => {
+        if (result.ok) return startTransition(() => router.refresh());
+        toast.error(result.error);
+        setOrder(null);
+      })
+      .catch(() => {
+        // It never reached the server (no signal): back as it was.
+        toast.error("שמירת הסדר נכשלה — בדקו את החיבור.");
+        setOrder(null);
+      });
+  }
 
   function set<K extends keyof PropertyInput>(key: K, value: PropertyInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -268,6 +357,9 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
         </Card>
       ) : (
         <SearchTermsProvider terms={found?.search.terms ?? null}>
+        {/* Dragged into the owner's order; while searching, the order stays put. */}
+        <DndContext id="properties-order-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
+        <SortableContext items={shown.map((p) => p.id)} strategy={rectSortingStrategy} disabled={Boolean(found)}>
         <AdaptiveGrid variant="entityCards">
           {shown.map((p) => {
             const net = p.rollup.totalIncomeAmount - p.rollup.paidExpenseAmount;
@@ -275,7 +367,9 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
             const rent = RENT_STATE[p.rentThisMonth.state];
             const name = propertyDisplayName(p);
             return (
-              <Card key={p.id} className="flex flex-col">
+              <SortableCard key={p.id} id={p.id} name={name} disabled={Boolean(found) || shown.length < 2}>
+              {(handle) => (
+              <Card className="flex flex-1 flex-col">
                 <CardContent className="flex flex-1 flex-col gap-3 p-4">
                   {/* What it is and where (owner's card, note 2: the facts and the
                       amenities moved onto the property's own page). */}
@@ -290,6 +384,7 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                         </div>
                       ) : null}
                     </Link>
+                    {handle}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button type="button" variant="ghost" size="sm" className="h-9 w-9 shrink-0 p-0" aria-label={`פעולות ל${name}`}>
@@ -308,7 +403,19 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
 
                   {/* Who rents it, and whether this month's rent is in (note 17). */}
                   <div className="flex flex-wrap items-center gap-2">
-                    {lease ? (
+                    {p.renters && p.renters.count > 0 ? (
+                      // A storage property: its renters together (the ניהול נכסים card).
+                      <>
+                        <Badge variant="outline">
+                          {p.renters.count === 1 ? "שוכר אחד" : `${p.renters.count} שוכרים`}
+                          {p.renters.monthly > 0 ? ` · ${formatCurrency(p.renters.monthly)}/חודש` : ""}
+                          {p.renters.yearly > 0 ? ` · ${formatCurrency(p.renters.yearly)}/שנה` : ""}
+                        </Badge>
+                        <Badge variant={p.renters.paid >= p.renters.count ? "success" : "warning"}>
+                          {p.renters.paid >= p.renters.count ? "שכירות: כולם שילמו" : `שכירות: ${p.renters.paid} מתוך ${p.renters.count} שילמו`}
+                        </Badge>
+                      </>
+                    ) : lease ? (
                       <>
                         <Badge variant="outline">
                           <Link href={`/customers/${lease.customerId}`} className="hover:underline">
@@ -316,10 +423,10 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                           </Link>
                           {" · "}
                           <Painted text={formatCurrency(lease.monthlyRentAmount)} />
-                          /חודש
+                          {lease.periodMonths === 12 ? "/שנה" : "/חודש"}
                         </Badge>
                         <Badge variant={rent.badge}>
-                          שכירות {monthName}: {rent.label}
+                          שכירות {p.rentThisMonth.periodLabel ?? "החודש"}: {rent.label}
                         </Badge>
                       </>
                     ) : (
@@ -366,9 +473,13 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                   </div>
                 </CardContent>
               </Card>
+              )}
+              </SortableCard>
             );
           })}
         </AdaptiveGrid>
+        </SortableContext>
+        </DndContext>
         </SearchTermsProvider>
       )}
 

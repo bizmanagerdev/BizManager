@@ -5,7 +5,7 @@ import {
   rentMonthLabel,
   type PropertyMovementInput,
 } from "@/app/(app)/properties/[id]/propertyMovements";
-import { rentThisMonth } from "@/lib/property-rent";
+import { rentThisPeriod } from "@/lib/property-rent";
 import { donutSlices } from "@/components/charts/CategoryDonut";
 import type { LeaseAgreement, PropertyExpense, PropertyPayment, PropertySession } from "@/lib/properties";
 
@@ -27,6 +27,10 @@ function payment(fields: Partial<PropertyPayment>): PropertyPayment {
     referenceNumber: null,
     requiresSplit: false,
     createdAt: null,
+    leaseId: null,
+    rentPeriodStart: null,
+    rentPeriods: 1,
+    countsAsRent: true,
     attachments: [],
     ...fields,
   };
@@ -102,6 +106,35 @@ describe("the property's money table", () => {
     ]);
   });
 
+  it("rent says the month(s) it pays by its lease's calendar; a refund says it isn't rent", () => {
+    const hebrew = {
+      id: "l1",
+      status: "active",
+      monthlyRentAmount: 4000,
+      startDate: "2026-07-15",
+      rentCalendar: "hebrew",
+      rentHebrewDay: 1,
+      periodMonths: 1,
+    } as LeaseAgreement;
+    const { done } = buildPropertyMovements(
+      input({
+        leases: [hebrew],
+        currentLease: hebrew,
+        payments: [
+          payment({ id: "a", date: "2026-10-12", leaseId: "l1", rentPeriodStart: "2026-10-12", rentPeriods: 2 }),
+          payment({ id: "b", date: "2026-09-14", method: "check", amount: 4000 }),
+          payment({ id: "c", date: "2026-10-06", amount: 300000, notes: "החזר", countsAsRent: false }),
+        ],
+      })
+    );
+    const row = (key: string) => done.find((m) => m.key === `payment:${key}`);
+    expect(row("a")?.name).toBe("שכירות חשון – כסלו תשפ״ז");
+    expect(row("a")?.extras).toContainEqual({ label: "לחודשים", value: "חשון – כסלו תשפ״ז" });
+    // An older check, saved before it said its month: the Hebrew month of its date.
+    expect(row("b")?.extras).toContainEqual({ label: "לחודש", value: "תשרי תשפ״ז" });
+    expect(row("c")?.extras).toContainEqual({ label: "סוג", value: "לא שכירות" });
+  });
+
   it("a check not yet cleared is expected, on its due date, with נפרע in its menu", () => {
     const onToggleCleared = vi.fn();
     const check = payment({ id: "c1", method: "check", paymentStatus: "pending", date: "2026-12-01", dueDate: "2026-12-05", checkNumber: "1001" });
@@ -135,14 +168,24 @@ describe("the property's money table", () => {
   });
 });
 
-describe("this month's rent", () => {
+describe("this period's rent", () => {
   const lease = {
     id: "l1",
     status: "active",
     monthlyRentAmount: 8500,
     rentDayOfMonth: 1,
     startDate: "2026-06-01",
+    rentCalendar: "gregorian",
   } as LeaseAgreement;
+  const rent = (p: PropertyPayment) => ({
+    date: p.date,
+    paymentStatus: p.paymentStatus,
+    amount: p.amount,
+    leaseId: p.leaseId,
+    periodStart: p.rentPeriodStart,
+    periods: p.rentPeriods,
+    countsAsRent: p.countsAsRent,
+  });
 
   it.each([
     ["paid", [payment({ date: "2026-10-03" })]],
@@ -150,15 +193,34 @@ describe("this month's rent", () => {
     ["check", [payment({ method: "check", paymentStatus: "pending", date: "2026-10-01" })]],
     ["late", []],
   ])("%s", (state, payments) => {
-    expect(rentThisMonth(lease, payments, "2026-10-20").state).toBe(state);
+    expect(rentThisPeriod(lease, payments.map(rent), "2026-10-20")).toMatchObject({ state, periodLabel: "אוקטובר" });
   });
 
-  it("before the day it's due: not yet, rather than late", () => {
-    expect(rentThisMonth({ ...lease, rentDayOfMonth: 25 }, [], "2026-10-20").state).toBe("upcoming");
+  it("on the day it's due: not yet, rather than late", () => {
+    expect(rentThisPeriod({ ...lease, rentDayOfMonth: 20 }, [], "2026-10-20").state).toBe("upcoming");
   });
 
   it("no active lease: nothing is owed", () => {
-    expect(rentThisMonth(null, [], "2026-10-20").state).toBe("none");
+    expect(rentThisPeriod(null, [], "2026-10-20").state).toBe("none");
+  });
+
+  it("a two-month payment covers both months, by the months it says", () => {
+    const both = payment({ amount: 17000, date: "2026-09-01", rentPeriodStart: "2026-09-01", rentPeriods: 2 });
+    expect(rentThisPeriod(lease, [both].map(rent), "2026-10-20")).toMatchObject({ state: "paid", collected: 8500 });
+  });
+
+  it("a refund isn't rent, and neither is another lease's payment", () => {
+    const refund = payment({ amount: 300000, date: "2026-10-06", countsAsRent: false });
+    const storage = payment({ amount: 8500, date: "2026-10-02", leaseId: "storage-lease" });
+    expect(rentThisPeriod(lease, [refund, storage].map(rent), "2026-10-20").state).toBe("late");
+  });
+
+  it("a Hebrew lease: this period is the Hebrew month (חשון from 12 Oct 2026)", () => {
+    const hebrew = { ...lease, rentCalendar: "hebrew" as const, rentHebrewDay: 1, startDate: "2026-07-15" };
+    const paid = payment({ method: "check", date: "2026-10-12", amount: 8500 });
+    expect(rentThisPeriod(hebrew, [paid].map(rent), "2026-10-20")).toMatchObject({ state: "paid", periodLabel: "חשון" });
+    // Before 12 Oct it's still תשרי's, which that check doesn't pay.
+    expect(rentThisPeriod(hebrew, [paid].map(rent), "2026-10-05")).toMatchObject({ state: "late", periodLabel: "תשרי" });
   });
 });
 

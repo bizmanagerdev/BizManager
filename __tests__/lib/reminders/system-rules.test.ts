@@ -472,3 +472,67 @@ describe("card_charge_missing", () => {
     ).rejects.toThrow(/card_statement_rows/);
   });
 });
+
+describe("rent_due — rent coming due, by the lease's own calendar", () => {
+  // הר יונה D4: ₪4,000 on א׳ of each Hebrew month (owner, 2026-10-20); א׳ כסלו תשפ״ז = 11 Nov 2026.
+  const lease = {
+    id: "lease-d4",
+    property_id: "prop-d4",
+    customer_id: "cust-1",
+    status: "active",
+    start_date: "2026-07-15",
+    end_date: null,
+    monthly_rent_amount: 4000,
+    rent_day_of_month: null,
+    rent_calendar: "hebrew",
+    rent_hebrew_day: 1,
+    period_months: 1,
+    unit_label: null,
+    property: { name: "הר יונה D4", address: "", is_active: true },
+    customer: { name: "כהן" },
+  };
+  // The alerts' own money format.
+  const ils = (n: number) => new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(n);
+  // חשון's rent, paid — so only כסלו's is to come.
+  const cheshvan = { property_id: "prop-d4", payment_date: "2026-10-12", payment_status: "cleared", amount_total: 4000, lease_id: null, rent_period_start: null, rent_periods: 1, counts_as_rent: true };
+  const evaluate = (today: string, payments: unknown[] = [cheshvan], daysBefore: number | null = 2) =>
+    rule("rent_due").evaluate(
+      makeSupabase({
+        push_alert_config: { data: [{ days_before: daysBefore }] },
+        lease_agreements: { data: [lease] },
+        payments: { data: payments },
+      }),
+      ctx(today)
+    );
+
+  it("comes two days before א׳ כסלו — not three — for the admins, opening the property", async () => {
+    expect(await evaluate("2026-11-08")).toHaveLength(0);
+    const items = await evaluate("2026-11-09");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      key: "lease-d4:2026-11-11",
+      title: "שכירות כסלו תשפ״ז — הר יונה D4",
+      content: `כהן · ${ils(4000)} · לתשלום ב-א׳ כסלו`,
+      url: "/properties/prop-d4",
+      severity: "warning",
+      audienceRole: "admin",
+    });
+  });
+
+  it("the days come from the setting", async () => {
+    expect(await evaluate("2026-11-06", [cheshvan], 5)).toHaveLength(1);
+  });
+
+  it("quiet once it's paid, or a check for it is in; what's left of a part payment", async () => {
+    const paid = { property_id: "prop-d4", payment_date: "2026-11-10", payment_status: "cleared", amount_total: 4000, lease_id: "lease-d4", rent_period_start: "2026-11-11", rent_periods: 1, counts_as_rent: true };
+    expect(await evaluate("2026-11-10", [paid])).toHaveLength(0);
+    expect(await evaluate("2026-11-10", [{ ...paid, payment_status: "pending" }])).toHaveLength(0);
+    const part = await evaluate("2026-11-10", [{ ...paid, amount_total: 1500 }]);
+    expect(part[0].content).toBe(`כהן · ${ils(2500)} (נותרו מתוך ${ils(4000)}) · לתשלום ב-א׳ כסלו`);
+  });
+
+  it("late: danger, until the next month's comes", async () => {
+    const items = await evaluate("2026-11-20");
+    expect(items[0]).toMatchObject({ key: "lease-d4:2026-11-11", severity: "danger", content: `כהן · ${ils(4000)} · היה לשלם ב-א׳ כסלו` });
+  });
+});

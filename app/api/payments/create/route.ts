@@ -11,6 +11,7 @@ import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { paymentFieldsFrom, paymentRowFrom, type PaymentBody } from "@/lib/payments/payment-input";
 import { clientRowId } from "@/lib/client-row-id";
+import { rentColumnsFrom, type RentFieldsBody } from "@/lib/payments/rent-fields";
 
 export async function POST(req: Request) {
   try {
@@ -19,11 +20,14 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "payments/create", async () => {
-    const body = (await req.json()) as PaymentBody;
+    const body = (await req.json()) as PaymentBody & RentFieldsBody;
     // Read and checked the same way the phone does (lib/payments/payment-input.ts).
     const fields = paymentFieldsFrom(body);
     if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
     const { projectId, orderId, propertyId, requiresSplit } = fields;
+    // A property's rent: the lease and the month(s) it pays (lib/payments/rent-fields.ts).
+    const rent = rentColumnsFrom(body);
+    if ("error" in rent) return NextResponse.json({ error: rent.error }, { status: 400 });
     // A payment saved on the phone first comes with the app's own id (lib/powersync/local-writes.ts).
     const clientId = clientRowId(body.id);
 
@@ -85,6 +89,7 @@ export async function POST(req: Request) {
       .insert({
         ...(clientId ? { id: clientId } : {}),
         ...paymentRowFrom(fields, { businessDomain, vatRate, recordedBy: user.id }),
+        ...(propertyId ? rent : {}),
       })
       .select(PAYMENT_SELECT)
       .maybeSingle();

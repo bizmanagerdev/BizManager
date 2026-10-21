@@ -12,6 +12,8 @@
 //     pre-creates N months from a lease, and the months past that are invisible.
 import type { PaymentCalendarItem } from "@/lib/payables";
 import { NO_CONFIRMATIONS, isSettlementArrived, type SettlementConfirmations, type SettlementPayment } from "@/lib/card-settlements";
+import { paidTowards, type RentLease, type RentPayment } from "@/lib/property-rent";
+import { isHebrewLease, rentPeriodStarts } from "@/lib/rent-periods";
 
 /** The fields every incoming item shares; callers fill what distinguishes theirs. */
 function incomeItem(
@@ -248,22 +250,15 @@ export type LeaseRow = {
   monthlyAmount: number;
   /** Day of the month rent is due; falls back to the start day when absent. */
   rentDay?: number | null;
+  /** On the Hebrew calendar: due on that day of each Hebrew month (lib/rent-periods.ts). */
+  rentCalendar?: string | null;
+  rentHebrewDay?: number | null;
+  /** 1 = monthly, 12 = once a year; the amount is per period. */
+  periodMonths?: number | null;
 };
 
 function ym(iso: string): string {
   return iso.slice(0, 7);
-}
-
-function isoLocal(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** Whole months from `a` to `b`, never negative. */
-function monthsBetween(a: string, b: string): number {
-  const [ay, am] = a.slice(0, 7).split("-").map(Number);
-  const [by, bm] = b.slice(0, 7).split("-").map(Number);
-  if (!ay || !am || !by || !bm) return 0;
-  return Math.max(0, (by - ay) * 12 + (bm - am));
 }
 
 /**
@@ -272,44 +267,53 @@ function monthsBetween(a: string, b: string): number {
  * lease; the months past whatever it created are real, expected money that
  * nothing in the app currently shows.
  *
- * Day of the month: the lease's own start day — `lease_agreements` has no rent
- * day-of-month column, so that is the only signal there is. Every month is
- * computed from that day (clamped to a short month), never by stepping the
- * previous month's date: a lease starting on the 31st is due on the 30th in
- * September and the 31st again in October, not the 30th forever after. A
- * generated row for the same month always wins, whatever day it sits on.
+ * When it's due: the lease's own periods (lib/rent-periods.ts) — its agreed day
+ * of the month (the start day when none is agreed), clamped to a short month
+ * and never stepped from the previous month's date (a lease starting on the
+ * 31st is due on the 30th in September and the 31st again in October); א׳ of
+ * each Hebrew month for a lease on the Hebrew calendar (owner, 2026-10-20); or
+ * once a year. A period some payment already pays for is never projected —
+ * by the month(s) it says, or the period its date falls in (`rentPayments`);
+ * without them, a payment row in the same calendar month takes it.
  */
 export function projectRent(
   leases: LeaseRow[],
   existingMonthsByProperty: Map<string, Set<string>>,
-  { fromIso, toIso, todayIso }: { fromIso: string; toIso: string; todayIso: string }
+  { fromIso, toIso, todayIso }: { fromIso: string; toIso: string; todayIso: string },
+  rentPayments?: Map<string, RentPayment[]>
 ): PaymentCalendarItem[] {
   const items: PaymentCalendarItem[] = [];
   for (const lease of leases) {
     if (!(lease.monthlyAmount > 0) || !lease.startDate) continue;
     const startIso = lease.startDate.slice(0, 10);
-    const [sy, sm, startDay] = startIso.split("-").map(Number);
-    if (!sy || !sm || !startDay) continue;
-    // The agreed rent day wins; the lease's start day is only the fallback.
-    const sd =
-      typeof lease.rentDay === "number" && lease.rentDay >= 1 && lease.rentDay <= 31 ? lease.rentDay : startDay;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startIso)) continue;
+    const periodLease: RentLease = {
+      id: lease.id,
+      status: "active",
+      monthlyRentAmount: lease.monthlyAmount,
+      startDate: startIso,
+      endDate: lease.endDate,
+      rentDayOfMonth: lease.rentDay,
+      rentCalendar: lease.rentCalendar,
+      rentHebrewDay: lease.rentHebrewDay,
+      periodMonths: lease.periodMonths,
+    };
     const taken = existingMonthsByProperty.get(lease.propertyId) ?? new Set<string>();
+    const payments = rentPayments?.get(lease.propertyId)?.filter((p) => p.paymentStatus !== "rejected");
+    const paidFor = (due: string) =>
+      payments ? payments.some((p) => paidTowards(periodLease, { ...p, amount: 1 }, due) > 0) : taken.has(ym(due));
     const endIso = lease.endDate ? lease.endDate.slice(0, 10) : null;
-    // Start at whichever month is later: the lease's or the window's.
-    const firstOffset = monthsBetween(startIso, fromIso);
+    // Two Hebrew months can start in one calendar month: those are told apart by their day.
+    const idPart = (due: string) => (isHebrewLease(periodLease) ? due : ym(due));
 
-    for (let k = firstOffset, guard = 0; guard < 400; k += 1, guard += 1) {
-      const monthIndex = sm - 1 + k;
-      const lastDay = new Date(sy, monthIndex + 1, 0).getDate();
-      const due = isoLocal(new Date(sy, monthIndex, Math.min(sd, lastDay)));
-      if (due > toIso) break;
-      if (due < fromIso || due < startIso) continue;
+    // From whichever is later: the lease or the window.
+    for (const due of rentPeriodStarts(periodLease, fromIso > startIso ? fromIso : startIso, toIso)) {
       if (endIso && due > endIso) break;
-      if (taken.has(ym(due))) continue;
+      if (paidFor(due)) continue;
       const future = due > todayIso;
       items.push(
         incomeItem({
-          id: `rent_proj:${lease.id}:${ym(due)}`,
+          id: `rent_proj:${lease.id}:${idPart(due)}`,
           date: due,
           amount: lease.monthlyAmount,
           label: `שכר דירה — ${lease.propertyLabel}`,

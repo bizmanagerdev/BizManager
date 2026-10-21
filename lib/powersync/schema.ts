@@ -355,6 +355,11 @@ const payments = new Table(
     vat_amount: text,
     account_id: text,
     cleared_at: text,
+    // A property's rent: its lease and the month(s) it pays (lib/property-rent.ts).
+    lease_id: text,
+    rent_period_start: text,
+    rent_periods: int,
+    counts_as_rent: int,
     // Local only (never synced): a payment added or marked collected on the
     // phone first — the request it goes up with (lib/powersync/local-writes.ts).
     // An order's own payments, written with the order, have none.
@@ -438,6 +443,7 @@ const properties = new Table({
   gas_contract_number: text,
   arnona_contract_number: text,
   key_count: int,
+  sort_order: int,
 });
 
 const lease_agreements = new Table(
@@ -457,6 +463,12 @@ const lease_agreements = new Table(
     deposit_reference: text,
     keys_handed_over: int,
     rent_day_of_month: int,
+    // Paid on the regular or the Hebrew month, monthly or yearly; a storage spot's size.
+    rent_calendar: text,
+    rent_hebrew_day: int,
+    period_months: int,
+    area_sqm: text,
+    unit_label: text,
   },
   { indexes: { by_property: ["property_id"] } }
 );

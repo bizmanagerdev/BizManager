@@ -41,7 +41,7 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   orders: ["needs_invoice", "collect_payment_on_delivery"],
   projects: ["expenses_billed_separately", "price_includes_vat", "no_charge", "origin_has_elevator", "destination_has_elevator"],
   products: ["active"],
-  payments: ["requires_split"],
+  payments: ["requires_split", "counts_as_rent"],
   properties: ["is_active", "has_private_entrance", "has_storage_room", "has_parking", "has_elevator", "is_furnished"],
   attendance_sessions: ["is_billable_to_customer"],
   project_expenses: ["included_in_base_price", "billed_to_customer"],
@@ -56,7 +56,7 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
 const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
   customers: ["delivery_lat", "delivery_lng"],
   inventory: ["quantity_on_hand", "quantity_reserved"],
-  lease_agreements: ["monthly_rent_amount", "deposit_amount"],
+  lease_agreements: ["monthly_rent_amount", "deposit_amount", "area_sqm"],
   order_items: ["quantity_ordered", "quantity_delivered", "unit_price", "discount_amount", "line_total"],
   orders: ["subtotal", "discount_amount", "total_amount"],
   payments: ["amount_total", "amount_including_vat", "amount_before_vat", "net_amount", "vat_rate", "vat_amount"],

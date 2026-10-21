@@ -35,7 +35,7 @@ export async function createAlertConfig(input: Partial<AlertRow>): Promise<{ ok:
 
 const PATCHABLE_KEYS = [
   "title", "body", "url", "enabled", "send_hour_israel", "schedule",
-  "recipient_user_ids", "sort_order", "audience_role", "send_hour_end_israel",
+  "recipient_user_ids", "sort_order", "audience_role", "send_hour_end_israel", "days_before",
 ] as const;
 
 export async function updateAlertConfig(id: string, patch: Partial<AlertRow>): Promise<boolean> {
