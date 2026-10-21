@@ -6,8 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 // The activity page's placeholder, drawn from its own pieces, so nothing moves
-// when the page arrives: "היום בעסק" (its four numbers and the hours chart),
-// "מי עובד עכשיו" (a row of people), the wide-screen search row, then today's
+// when the page arrives: one card with "מי עובד עכשיו" (a row of people) and
+// "היום בעסק" (the hours chart), the wide-screen search row, then today's
 // heading and the feed's entries (icon, sentence, who, time). Shown while the
 // page streams (loading.tsx) and while the client's code loads (dynamic()).
 
@@ -23,65 +23,50 @@ export function ActivityStripSkeleton() {
   );
 }
 
-function TileSkeleton() {
-  return (
-    <div className="flex min-w-0 flex-col items-start gap-0.5 rounded-xl border border-border/60 bg-background p-2.5">
-      <span className="flex w-full items-start gap-1.5 text-xs leading-tight">
-        <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
-        <Skeleton className="h-[0.75em] w-16" />
-      </span>
-      <TextLineSkeleton className="text-lg leading-tight sm:text-xl" barClassName="w-20" />
-      <TextLineSkeleton className="w-full text-[0.647rem] leading-snug" barClassName="w-24" />
-    </div>
-  );
-}
-
 export default function ActivitySkeleton() {
   return (
     <div className="space-y-4 text-right" dir="rtl" aria-busy="true">
-      {/* היום בעסק */}
-      <section className="rounded-xl border border-border/60 bg-card p-3 shadow-sm sm:p-4">
-        <div className="mb-2.5 flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-foreground">היום בעסק</h2>
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
-            מתחבר…
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <TileSkeleton key={i} />
-          ))}
-        </div>
-        <div className="mt-3">
-          <div className="flex h-14 items-end gap-[3px]">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="flex h-full min-w-0 flex-1 flex-col justify-end">
-                <Skeleton className="w-full rounded-b-none rounded-t-[3px]" style={{ height: `${20 + ((i * 37) % 60)}%` }} />
-              </div>
-            ))}
-          </div>
-          <div className="mt-1 text-[0.588rem]">&nbsp;</div>
-          <TextLineSkeleton className="mt-1 text-xs" barClassName="w-48" />
-        </div>
-      </section>
-
-      {/* מי עובד עכשיו */}
-      <section className="rounded-xl border border-border/60 bg-card p-3 shadow-sm sm:p-4">
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-          <h2 className="text-base font-semibold text-foreground">מי עובד עכשיו</h2>
-          <TextLineSkeleton className="text-xs" barClassName="w-32" />
-        </div>
-        <div className="-mx-1 flex gap-1 overflow-hidden px-1 pb-1 md:flex-wrap">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className="flex w-[4.75rem] shrink-0 flex-col items-center gap-0.5 px-1 py-1.5">
-              <Skeleton className="h-9 w-9 rounded-full" />
-              <TextLineSkeleton className="text-xs leading-tight" barClassName="w-12" />
-              <TextLineSkeleton className="text-[0.588rem] leading-tight" barClassName="w-10" />
+      {/* מי עובד עכשיו + היום בעסק, one card (as ActivityClient) */}
+      <div className="@container">
+        <section className="flex flex-col gap-2.5 rounded-xl border border-border/60 bg-card p-3 shadow-sm @min-[40rem]:flex-row @min-[40rem]:gap-4">
+          <div className="min-w-0 @min-[40rem]:flex-1">
+            <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <h2 className="text-sm font-semibold text-foreground">מי עובד עכשיו</h2>
+              <TextLineSkeleton className="text-xs" barClassName="w-32" />
             </div>
-          ))}
-        </div>
-      </section>
+            <div className="-mx-1 flex gap-0.5 overflow-hidden px-1 md:flex-wrap">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div key={i} className="flex w-16 shrink-0 flex-col items-center gap-0.5 px-0.5 py-1">
+                  <Skeleton className="h-7 w-7 rounded-full" />
+                  <TextLineSkeleton className="text-xs leading-tight" barClassName="w-10" />
+                  <TextLineSkeleton className="text-[0.588rem] leading-tight" barClassName="w-8" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div aria-hidden className="h-px bg-border/60 @min-[40rem]:h-auto @min-[40rem]:w-px" />
+          <div className="min-w-0 @min-[40rem]:w-[30%] @min-[60rem]:w-[40%] @min-[40rem]:shrink-0">
+            <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                היום בעסק
+                <span className="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+                  מתחבר…
+                </span>
+              </h2>
+              <TextLineSkeleton className="text-xs" barClassName="w-40" />
+            </div>
+            <div className="flex h-10 items-end gap-[3px]">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div key={i} className="flex h-full min-w-0 flex-1 flex-col justify-end">
+                  <Skeleton className="w-full rounded-b-none rounded-t-[3px]" style={{ height: `${20 + ((i * 37) % 60)}%` }} />
+                </div>
+              ))}
+            </div>
+            <div className="mt-1 text-[0.588rem]">&nbsp;</div>
+          </div>
+        </section>
+      </div>
 
       {/* Wide screens: search, three dropdowns and the chip. */}
       <div className="hidden flex-wrap items-center gap-2 md:flex">

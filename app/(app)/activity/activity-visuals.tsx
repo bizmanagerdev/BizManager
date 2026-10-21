@@ -20,27 +20,36 @@ import {
 } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
-// One icon and one colour per kind of entry — payment green, order blue, task
-// purple, deletion red (owner's picks, 2026-10-11) — so the feed reads at a
-// glance. The rest take the app's other tints, and the plumbing (logins, the
-// system) stays grey so it doesn't compete.
+// One icon per kind of entry, in BizH's own colours (owner, 2026-10-21: the
+// rainbow — green, blue, purple, orange, indigo — "not matching the palette of
+// the whole BizH system"). As on the dashboard, the icon says what it is and
+// colour is kept for what it means:
+// - everyday actions: BizH's light sky with its blue icon;
+// - done (delivered, a task completed): the same blue, filled — like the
+//   dashboard's "סופק" / "נגבה" buttons;
+// - money in: green, as paid is everywhere; a deletion: red, kept light so a
+//   run of them isn't a wall of red;
+// - the plumbing (logins, the system's own updates): an outline only.
+const EVERYDAY = "bg-accentSky-10 text-accentSky-4";
+const DONE = "bg-secondary text-secondary-foreground";
+const QUIET = "bg-card text-muted-foreground ring-1 ring-inset ring-border";
 const VISUALS: Record<ActivityKind, { icon: IconComponent; className: string; label: string }> = {
-  payment: { icon: PaymentIcon, className: "bg-palette-green-9 text-palette-green-4", label: "תשלום" },
-  order: { icon: OrderIcon, className: "bg-palette-blue-9 text-palette-blue-4", label: "הזמנה" },
-  delivery: { icon: DeliveryIcon, className: "bg-palette-blue-9 text-palette-blue-4", label: "משלוח" },
-  task: { icon: TaskIcon, className: "bg-palette-purple-9 text-palette-purple-4", label: "משימה" },
-  taskDone: { icon: SuccessIcon, className: "bg-palette-purple-9 text-palette-purple-4", label: "משימה שבוצעה" },
-  customer: { icon: UserIcon, className: "bg-accentSky-10 text-accentSky-4", label: "לקוח" },
-  project: { icon: ProjectIcon, className: "bg-brand-10/50 text-brand-4", label: "פרויקט" },
-  expense: { icon: ReceiptIcon, className: "bg-palette-orange-9 text-palette-orange-4", label: "הוצאה" },
-  document: { icon: DocumentIcon, className: "bg-muted text-foreground/70", label: "מסמך" },
-  attendance: { icon: TimerIcon, className: "bg-accentSky-10 text-accentSky-6", label: "שעות עבודה" },
-  payroll: { icon: WalletIcon, className: "bg-brand-10/50 text-brand-6", label: "שכר" },
-  login: { icon: LoginIcon, className: "bg-muted text-muted-foreground", label: "כניסה" },
-  logout: { icon: LogoutIcon, className: "bg-muted text-muted-foreground", label: "יציאה" },
-  system: { icon: RefreshIcon, className: "bg-muted text-muted-foreground", label: "מערכת" },
-  delete: { icon: DeleteIcon, className: "bg-palette-red-9 text-palette-red-4", label: "מחיקה" },
-  other: { icon: ActivityIcon, className: "bg-muted text-foreground/70", label: "פעולה" },
+  payment: { icon: PaymentIcon, className: "bg-success-soft text-success-soft-foreground", label: "תשלום" },
+  order: { icon: OrderIcon, className: EVERYDAY, label: "הזמנה" },
+  delivery: { icon: DeliveryIcon, className: DONE, label: "משלוח" },
+  task: { icon: TaskIcon, className: EVERYDAY, label: "משימה" },
+  taskDone: { icon: SuccessIcon, className: DONE, label: "משימה שבוצעה" },
+  customer: { icon: UserIcon, className: EVERYDAY, label: "לקוח" },
+  project: { icon: ProjectIcon, className: EVERYDAY, label: "פרויקט" },
+  expense: { icon: ReceiptIcon, className: EVERYDAY, label: "הוצאה" },
+  document: { icon: DocumentIcon, className: EVERYDAY, label: "מסמך" },
+  attendance: { icon: TimerIcon, className: EVERYDAY, label: "שעות עבודה" },
+  payroll: { icon: WalletIcon, className: EVERYDAY, label: "שכר" },
+  login: { icon: LoginIcon, className: QUIET, label: "כניסה" },
+  logout: { icon: LogoutIcon, className: QUIET, label: "יציאה" },
+  system: { icon: RefreshIcon, className: QUIET, label: "מערכת" },
+  delete: { icon: DeleteIcon, className: "bg-palette-red-10 text-destructive", label: "מחיקה" },
+  other: { icon: ActivityIcon, className: EVERYDAY, label: "פעולה" },
 };
 
 export function KindIcon({ kind, size = "md", className }: { kind: ActivityKind; size?: "sm" | "md"; className?: string }) {

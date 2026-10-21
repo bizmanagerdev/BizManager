@@ -12,7 +12,9 @@ import { cn } from "@/lib/utils";
 
 // "מי עובד עכשיו" — everyone who works in the system: a green dot on whoever
 // is connected right now, and how many actions each did today. Tapping a
-// person opens their day (their card, and only their actions below).
+// person opens their day (their card, and only their actions below). It
+// shares one compact card with "היום בעסק" (ActivityClient; owner,
+// 2026-10-21: "combine these two and make them take much less space").
 
 type PresenceMeta = { id?: string; name?: string; role?: string | null; online_at?: string };
 type LivePresence = { authId: string; onlineAt: string | null; name: string; role: string | null };
@@ -125,12 +127,14 @@ export default function PeopleStrip({
   people,
   selected,
   onSelect,
+  className,
 }: {
   /** Everyone, with who's connected now (usePresenceRows). */
   rows: PresenceRow[];
   people: PersonDay[];
   selected: string;
   onSelect: (userId: string) => void;
+  className?: string;
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -154,9 +158,9 @@ export default function PeopleStrip({
   const activeToday = people.filter((p) => p.actions > 0).length;
 
   return (
-    <section className="rounded-xl border border-border/60 bg-card p-3 shadow-sm sm:p-4" aria-label="מי עובד עכשיו">
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <h2 className="text-base font-semibold text-foreground">מי עובד עכשיו</h2>
+    <div className={cn("min-w-0", className)} role="group" aria-label="מי עובד עכשיו">
+      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <h2 className="text-sm font-semibold text-foreground">מי עובד עכשיו</h2>
         <span className="text-xs text-muted-foreground">
           {`${onlineCount === 1 ? "מחובר אחד" : `${onlineCount} מחוברים`} · ${activeToday === 1 ? "אחד פעיל היום" : `${activeToday} פעילים היום`}`}
         </span>
@@ -165,7 +169,7 @@ export default function PeopleStrip({
         <p className="text-xs text-muted-foreground">אין עדיין נתוני פעילות</p>
       ) : (
         // A row that scrolls sideways on a phone and wraps on a wide screen.
-        <ul className="-mx-1 flex snap-x gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] md:flex-wrap md:overflow-visible [&::-webkit-scrollbar]:hidden">
+        <ul className="-mx-1 flex snap-x gap-0.5 overflow-x-auto px-1 [scrollbar-width:none] md:flex-wrap md:overflow-visible [&::-webkit-scrollbar]:hidden">
           {sorted.map((r) => {
             const day = dayById.get(r.id);
             const count = day?.actions ?? 0;
@@ -179,18 +183,18 @@ export default function PeopleStrip({
                   aria-pressed={isSelected}
                   title={r.activeNow ? `${r.name} מחובר עכשיו` : `${r.name} · נראה לאחרונה ${status}`}
                   className={cn(
-                    "flex w-[4.75rem] flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-center transition-colors",
+                    "flex w-16 flex-col items-center gap-0.5 rounded-lg px-0.5 py-1 text-center transition-colors",
                     isSelected ? "bg-secondary/15 ring-2 ring-secondary" : "hover:bg-accent/50",
                     !r.activeNow && count === 0 && !isSelected && "opacity-60"
                   )}
                 >
                   <span className="relative">
-                    <InitialsAvatar name={r.name} color={r.avatarColor} colorKey={r.name} size="md" />
+                    <InitialsAvatar name={r.name} color={r.avatarColor} colorKey={r.name} size="sm" />
                     {r.activeNow ? (
-                      <span className="absolute -bottom-0.5 -end-0.5 h-3 w-3 rounded-full border-2 border-card bg-success-soft-foreground" />
+                      <span className="absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-success-soft-foreground" />
                     ) : null}
                     {count > 0 ? (
-                      <span className="absolute -top-1 -start-2 min-w-5 rounded-full bg-secondary px-1 text-[0.588rem] font-bold leading-5 text-secondary-foreground tabular-nums">
+                      <span className="absolute -top-1.5 -start-2.5 min-w-[1.125rem] rounded-full bg-secondary px-1 text-[0.53rem] font-bold leading-[1.125rem] text-secondary-foreground tabular-nums">
                         {count}
                       </span>
                     ) : null}
@@ -210,6 +214,6 @@ export default function PeopleStrip({
           })}
         </ul>
       )}
-    </section>
+    </div>
   );
 }

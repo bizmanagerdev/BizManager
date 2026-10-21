@@ -18,9 +18,9 @@ import WorkerDayCard from "./WorkerDayCard";
 
 // The activity page (owner, 2026-10-11: "make it more exciting … the admin
 // looks around and wants to see what's going on in the system … she's got a
-// full picture"): the day at a glance (היום בעסק), who's working now, and the
-// feed of what happened, in sentences, day by day, live. Tap a number to see
-// those actions, tap a person to see their day, or search for anything.
+// full picture"): the day's busy hours (היום בעסק), who's working now, and the
+// feed of what happened, in sentences, day by day, live. Tap a person to see
+// their day, or search for anything.
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "מנהל",
@@ -253,19 +253,27 @@ export default function ActivityClient({
         </div>
       </div>
 
-      <TodayPulse
-        today={today}
-        live={live}
-        activeTable={currentTable}
-        onPickTable={(table) => updateParams({ table })}
-      />
-
-      <PeopleStrip
-        rows={presenceRows}
-        people={today.people}
-        selected={currentWorker}
-        onSelect={(worker) => updateParams({ worker })}
-      />
+      {/* Who's working and the day's hours, in one compact card (owner,
+          2026-10-21: "combine these two and make them take much less
+          space"): the people on the right, the hours' bars on the left,
+          where there's room — measured in the text's own size, so a big
+          text size stacks them — the people above the bars on a phone. */}
+      <div className="@container">
+        <section
+          aria-label="מי עובד עכשיו והיום בעסק"
+          className="flex flex-col gap-2.5 rounded-xl border border-border/60 bg-card p-3 shadow-sm @min-[40rem]:flex-row @min-[40rem]:gap-4"
+        >
+          <PeopleStrip
+            rows={presenceRows}
+            people={today.people}
+            selected={currentWorker}
+            onSelect={(worker) => updateParams({ worker })}
+            className="@min-[40rem]:flex-1"
+          />
+          <div aria-hidden className="h-px bg-border/60 @min-[40rem]:h-auto @min-[40rem]:w-px" />
+          <TodayPulse today={today} live={live} className="@min-[40rem]:w-[30%] @min-[60rem]:w-[40%] @min-[40rem]:shrink-0" />
+        </section>
+      </div>
 
       {currentWorker ? (
         <WorkerDayCard

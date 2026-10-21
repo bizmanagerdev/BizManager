@@ -3,22 +3,11 @@ import { isChildAuditTable } from "@/lib/audit";
 import { israelDayStart, israelHourOf, shiftDayKey } from "@/lib/activity/days";
 import { CARD_REFUND_METHOD } from "@/lib/payments";
 
-// "היום בעסק" — the activity page's picture of the day: the money that came in,
-// the orders opened, the tasks done, the hours worked, how busy each hour was,
+// "היום בעסק" — the activity page's picture of the day: how busy each hour was,
 // and each person's day. All on the Israeli calendar, from Israel's midnight.
-
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  cash: "מזומן",
-  check: "צ׳ק",
-  cheque: "צ׳ק",
-  credit: "אשראי",
-  credit_card: "אשראי",
-  card: "אשראי",
-  bank_transfer: "העברה",
-  transfer: "העברה",
-  bit: "ביט",
-  paybox: "פייבוקס",
-};
+// (The four numbers that sat above the hours — money in, new orders, tasks
+// done, hours worked — were taken off, with the reads they needed: owner,
+// 2026-10-21, "not interesting, not needed".)
 
 /** One log row, as little of it as the day's numbers need. */
 export type DayLogRow = {
@@ -65,11 +54,6 @@ export type ActivityToday = {
   /** People's actions today (the same count the hours and the people add up to). */
   actions: number;
   hourly: number[];
-  money: { total: number; count: number; methods: { label: string; total: number }[] };
-  orders: { count: number; total: number };
-  /** Done today, of those plus the ones due today still open. */
-  tasks: { done: number; of: number };
-  hours: { minutes: number; workers: number; onShiftNow: number };
   people: PersonDay[];
 };
 
@@ -219,17 +203,9 @@ export async function loadActivityToday(
   const startIso = new Date(startMs).toISOString();
   const endIso = new Date(endMs).toISOString();
 
-  const [users, logRows, payments, orders, tasksDone, tasksDue, sessions] = await Promise.all([
+  const [users, logRows, sessions] = await Promise.all([
     supabase.from("users").select("id,auth_user_id").range(0, 999),
     loadDayLogRows(supabase, startIso),
-    // Recorded today — not dated today: a payment can be entered weeks ahead
-    // with a future date (an expected transfer, a post-dated check), and that
-    // isn't money that came in today. This is also what the feed shows.
-    // A card statement's refund is recorded as income in its domain, but no money came in.
-    supabase.from("payments").select("amount_total,payment_method").gte("created_at", startIso).lt("created_at", endIso).neq("payment_method", CARD_REFUND_METHOD).range(0, 999),
-    supabase.from("orders").select("total_amount").gte("created_at", startIso).lt("created_at", endIso).range(0, 999),
-    supabase.from("tasks").select("id").gte("completed_at", startIso).lt("completed_at", endIso).in("status", ["done"]).range(0, 999),
-    supabase.from("tasks").select("id").gte("due_date", startIso).lt("due_date", endIso).in("status", ["todo", "in_progress"]).range(0, 999),
     supabase.from("attendance_sessions").select("user_id,clock_in,clock_out").lt("clock_in", endIso).or(`clock_out.is.null,clock_out.gte."${startIso}"`).gte("clock_in", new Date(startMs - 24 * 3600_000).toISOString()).range(0, 999),
   ]);
 
@@ -241,41 +217,17 @@ export async function loadActivityToday(
   }
   const { actions, hourly, people } = summarizeDayRows(logRows, (value) => userIdByValue.get(value) ?? null);
 
-  // Money recorded today, by how it was paid.
-  const byMethod = new Map<string, number>();
-  let moneyTotal = 0;
-  const paymentRows = (payments.data ?? []) as { amount_total?: number | string | null; payment_method?: string | null }[];
-  for (const p of paymentRows) {
-    const amount = Number(p.amount_total);
-    if (!Number.isFinite(amount)) continue;
-    moneyTotal += amount;
-    const label = PAYMENT_METHOD_LABELS[p.payment_method ?? ""] ?? "אחר";
-    byMethod.set(label, (byMethod.get(label) ?? 0) + amount);
-  }
-
-  // Orders opened today. ("draft" is every open order's status until it's
-  // delivered — not an unfinished one — so it counts.)
-  const orderRows = (orders.data ?? []) as { total_amount?: number | string | null }[];
-  const ordersTotal = orderRows.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-
-  // Tasks: those done today, of those plus the ones still open that were due today.
-  const doneIds = new Set(((tasksDone.data ?? []) as { id: string }[]).map((t) => t.id));
-  const dueIds = new Set(((tasksDue.data ?? []) as { id: string }[]).map((t) => t.id));
-  const forToday = new Set([...doneIds, ...dueIds]);
-
-  // Hours on the clock today, and each person's shift.
+  // Each person's shift on the clock today.
   const sessionRows = (sessions.data ?? []) as SessionRow[];
   const byWorker = new Map<string, SessionRow[]>();
   for (const s of sessionRows) {
     if (!s.user_id) continue;
     byWorker.set(s.user_id, [...(byWorker.get(s.user_id) ?? []), s]);
   }
-  let onShiftNow = 0;
   for (const [userId, list] of byWorker) {
     const minutes = workedMinutesToday(list, startMs, endMs, nowMs);
     const clockIns = list.map((s) => s.clock_in).filter((v): v is string => Boolean(v)).sort();
     const open = list.some((s) => !s.clock_out && s.clock_in && nowMs - new Date(s.clock_in).getTime() < 16 * 3600_000);
-    if (open) onShiftNow += 1;
     const clockOuts = list.map((s) => s.clock_out).filter((v): v is string => Boolean(v)).sort();
     const person = people.get(userId) ?? emptyPerson(userId);
     person.shift = {
@@ -285,23 +237,11 @@ export async function loadActivityToday(
     };
     people.set(userId, person);
   }
-  const workedMinutes = Array.from(byWorker.values()).reduce(
-    (sum, list) => sum + workedMinutesToday(list, startMs, endMs, nowMs),
-    0
-  );
 
   return {
     dayKey,
     actions,
     hourly,
-    money: {
-      total: moneyTotal,
-      count: paymentRows.length,
-      methods: Array.from(byMethod, ([label, total]) => ({ label, total })).sort((a, b) => b.total - a.total),
-    },
-    orders: { count: orderRows.length, total: ordersTotal },
-    tasks: { done: doneIds.size, of: forToday.size },
-    hours: { minutes: workedMinutes, workers: byWorker.size, onShiftNow },
     people: Array.from(people.values()).sort((a, b) => b.actions - a.actions || a.userId.localeCompare(b.userId)),
   };
 }

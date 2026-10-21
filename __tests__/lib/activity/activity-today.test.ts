@@ -140,33 +140,20 @@ describe("loadActivityToday", () => {
     return { client: client as unknown as SupabaseClient, calls };
   }
 
-  it("money by method, the orders opened (a new order is a 'draft' until delivered), tasks done of those for today, and the hours", async () => {
+  it("the day's actions and each person's shift, from Israel's midnight — and nothing the page no longer shows", async () => {
     const { client, calls } = fakeClient({
       users: [{ id: "dani", auth_user_id: "auth-dani" }],
       audit_logs: [row({ table_name: "orders", action: "INSERT", created_at: "2026-10-11T06:00:00Z" })],
-      payments: [
-        { amount_total: 1000, payment_method: "check" },
-        { amount_total: 500, payment_method: "cash" },
-        { amount_total: 300, payment_method: "check" },
-      ],
-      orders: [
-        { total_amount: 2000, status: "delivered" },
-        { total_amount: 999, status: "draft" },
-      ],
-      tasks: [{ id: "t1" }],
       attendance_sessions: [{ user_id: "dani", clock_in: "2026-10-11T05:00:00Z", clock_out: "2026-10-11T07:00:00Z" }],
     });
     const today = await loadActivityToday(client, "2026-10-11", Date.parse("2026-10-11T09:00:00Z"));
-    expect(today.money).toEqual({ total: 1800, count: 3, methods: [{ label: "צ׳ק", total: 1300 }, { label: "מזומן", total: 500 }] });
-    expect(today.orders).toEqual({ count: 2, total: 2999 });
-    // the same fake answers both task questions with t1: done today, and nothing else open
-    expect(today.tasks).toEqual({ done: 1, of: 1 });
-    expect(today.hours).toEqual({ minutes: 120, workers: 1, onShiftNow: 0 });
     expect(today.people[0].shift).toEqual({ clockIn: "2026-10-11T05:00:00Z", clockOut: "2026-10-11T07:00:00Z", minutes: 120 });
     expect(today.actions).toBe(1);
     // the day starts at Israel's midnight
-    // the payments recorded today (not dated today), from Israel's midnight
-    expect(calls.find((c) => c.table === "payments" && c.method === "gte")?.args).toEqual(["created_at", "2026-10-10T21:00:00.000Z"]);
+    expect(calls.find((c) => c.table === "audit_logs" && c.method === "gte")?.args).toEqual(["created_at", "2026-10-10T21:00:00.000Z"]);
+    // The four numbers that were taken off (money in, new orders, tasks done,
+    // hours worked) no longer cost a read each time the page refreshes.
+    expect(calls.some((c) => ["payments", "orders", "tasks"].includes(c.table))).toBe(false);
   });
 });
 

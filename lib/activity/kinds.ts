@@ -1,9 +1,9 @@
 import type { AuditFeedItem } from "@/lib/audit";
 import { isDelete } from "@/lib/activity/sentence";
 
-// What kind of thing an entry is, for its icon and colour: a payment is green,
-// an order blue, a task purple, a deletion red — so the feed reads at a glance
-// before a word of it is read.
+// What kind of thing an entry is, for its icon and colour (app/(app)/activity/
+// activity-visuals.tsx) — so the feed reads at a glance before a word of it is
+// read.
 
 export type ActivityKind =
   | "payment"
