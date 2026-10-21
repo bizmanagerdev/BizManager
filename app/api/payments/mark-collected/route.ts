@@ -13,11 +13,15 @@ import { derivePaymentStatus, splitPaymentAmounts } from "@/lib/orders/paymentSt
 // recorded with the account it is MEANT to be deposited into, and the deposit
 // itself is where that can still change. Sent only when it differs, and never
 // on an undo.
+//
+// `bounced: true` marks a check that came back ('rejected' — it moved no
+// money; the rent roll, 2026-10-21). Its undo is `collected: false` (pending).
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { id?: string; collected?: boolean; account_id?: string | null };
+    const body = (await req.json()) as { id?: string; collected?: boolean; bounced?: boolean; account_id?: string | null };
     const paymentId = typeof body.id === "string" ? body.id.trim() : "";
-    const markCollected = body.collected !== false; // default true
+    const bounced = body.bounced === true;
+    const markCollected = !bounced && body.collected !== false; // default true
     if (!paymentId) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
@@ -39,7 +43,7 @@ export async function POST(req: Request) {
     if (existingError) return NextResponse.json({ error: toHebrewError(existingError.message) }, { status: 400 });
     if (!existing?.id) return NextResponse.json({ error: "Payment not found" }, { status: 404 });
 
-    const nextStatus = markCollected ? "cleared" : "pending";
+    const nextStatus = bounced ? "rejected" : markCollected ? "cleared" : "pending";
     // The account only ever moves WITH a collection, never on an undo.
     const movesAccount = markCollected && accountId !== null && accountId !== existing.account_id;
     const { error: updateError } = await supabase

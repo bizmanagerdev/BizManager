@@ -292,6 +292,14 @@ describe("service worker: the device pages' frames", () => {
     }
   });
 
+  it("saves the rent roll's frame (its device version, 2026-10-21)", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, "https://biz-h.com/rent");
+    expect(worker.frames().has("https://biz-h.com/rent")).toBe(true);
+    await open(worker, "https://biz-h.com/rent?data=server");
+    expect(worker.frames().has("https://biz-h.com/rent?data=server")).toBe(false);
+  });
+
   it("saves the properties list's frame (its device version, 2026-10-21)", async () => {
     const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
     await open(worker, "https://biz-h.com/properties");

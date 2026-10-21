@@ -21,6 +21,7 @@ const ROUTE_TITLES: Array<[string, string]> = [
   ["/customers", "לקוחות"],
   ["/projects", "פרויקטים"],
   ["/properties", "דירות"],
+  ["/rent", "שכירות"],
   ["/vehicles", "רכבים"],
   ["/communications", "תיעוד פניות"],
   ["/collections", "גבייה"],

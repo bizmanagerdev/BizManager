@@ -481,7 +481,7 @@ const OFFLINE_HTML = `<!doctype html>
 // a search, or the server version (?data=server). Cleared on every deploy
 // (versioned name), at logout and when someone else signs in
 // (lib/powersync/device-frames.ts).
-const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales", "/deliveries", "/customers", "/properties"]);
+const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales", "/deliveries", "/customers", "/properties", "/rent"]);
 // A project's page and an order's page are device pages too (LocalProjectPage,
 // LocalOrderPage): one frame per project and per order opened, so opening one
 // seen before doesn't wait for the server either (owner, 2026-10-11: the

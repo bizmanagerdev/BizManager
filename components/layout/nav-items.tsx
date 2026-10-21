@@ -33,7 +33,7 @@ function writeCachedRole(role: string) {
     // storage full or private mode
   }
 }
-import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, ChecklistIcon, ClockIcon, CoinsIcon, DashboardIcon, DeliveryIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
+import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, ChecklistIcon, ClockIcon, CoinsIcon, DashboardIcon, DeliveryIcon, FolderIcon, HomeIcon, KeyIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { fetchMyProfile } from "@/lib/profile/fetchMyProfile";
 
 export type SidebarNavItem = {
@@ -57,6 +57,8 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
     icon: BuildingIcon,
     children: [
       { title: "דירות", url: "/properties", icon: HomeIcon },
+      // The rent roll: every lease's rent for the month (owner, 2026-10-21).
+      { title: "שכירות", url: "/rent", icon: KeyIcon },
       { title: "רכבים", url: "/vehicles", icon: VehicleIcon },
     ],
   },

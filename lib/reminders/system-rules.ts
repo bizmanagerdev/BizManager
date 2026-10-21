@@ -526,7 +526,8 @@ const rentDueRule: SystemRule = {
         ]
           .filter(Boolean)
           .join(" · "),
-        url: `/properties/${propertyId}`,
+        // The rent roll, at this lease's row in that month (the rent roll card: "the rent alert opens this page").
+        url: `/rent#${id}@${period}`,
         severity: (late ? "danger" : "warning") as Severity,
         behavior: "ping_once" as Behavior,
         audienceRole: "admin" as AudienceRole,

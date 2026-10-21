@@ -83,7 +83,16 @@ export function rentThisPeriod(
 ): RentMonthStatus {
   if (!lease || lease.status !== "active") return NONE;
   const first = firstRentPeriod(lease);
-  const period = first && today < first ? first : rentPeriodOf(lease, today);
+  return rentPeriodStatus(lease, payments, first && today < first ? first : rentPeriodOf(lease, today), today);
+}
+
+/** Where a lease's rent stands for one period (its due date) — this one, or any other (the rent roll's months). */
+export function rentPeriodStatus(
+  lease: RentLease,
+  payments: RentPayment[],
+  period: string,
+  today: string = israelDateKey()
+): RentMonthStatus {
   let collected = 0;
   let pending = 0;
   for (const payment of payments) {

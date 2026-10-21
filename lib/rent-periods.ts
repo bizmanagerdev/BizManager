@@ -128,6 +128,16 @@ export function addRentPeriods(lease: RentPeriodLease, startIso: string, count: 
   return starts[Math.min(count, starts.length - 1)] ?? startIso;
 }
 
+/** `count` periods on from `startIso` — or back, for a negative count (the rent roll's earlier months). */
+export function shiftRentPeriod(lease: RentPeriodLease, startIso: string, count: number): string {
+  if (count >= 0) return addRentPeriods(lease, startIso, count);
+  const back = isoOf(new Date(noon(startIso).getTime() - (-count + 2) * (isYearly(lease) ? 400 : 32) * 86_400_000));
+  const starts = rentPeriodStarts(lease, back, startIso);
+  const at = starts.lastIndexOf(startIso.slice(0, 10));
+  const from = at >= 0 ? at : starts.length;
+  return starts[Math.max(0, from + count)] ?? startIso;
+}
+
 /** The next due date after `dateIso`. */
 export function nextRentPeriod(lease: RentPeriodLease, dateIso: string): string | null {
   const day = isoOf(new Date(noon(dateIso).getTime() + 86_400_000));

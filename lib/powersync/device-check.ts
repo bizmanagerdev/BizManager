@@ -45,7 +45,8 @@ export type DeviceCheckPage =
   | "customers"
   | "customerPage"
   | "properties"
-  | "propertyPage";
+  | "propertyPage"
+  | "rentRoll";
 
 /** The cookie a device sets once it has compared `page` today. */
 export function deviceCheckCookie(page: DeviceCheckPage): string {

@@ -20,9 +20,11 @@ import {
   getPropertiesSummary,
   loadProperties,
   loadPropertyPageCore,
+  loadRentRoll,
   type PropertiesSummary,
   type PropertyPageCore,
   type PropertyWithLease,
+  type RentRollData,
 } from "@/lib/properties";
 import { loadProjectsPage, type ProjectsFilters } from "@/app/(app)/projects/loadProjects";
 import { loadCustomersPage, type CustomersFilters } from "@/app/(app)/customers/loadCustomers";
@@ -85,6 +87,8 @@ export type LocalDashboardCards = {
    * device's copy (yet).
    */
   propertyPage: { filters: { id: string }; core: PropertyPageCore | null };
+  /** The rent roll (/rent): every property, lease and property income — the months are worked out from them. */
+  rentRoll: { data: RentRollData };
   /** /projects, first page, for the given filters. */
   projectsList: { filters: ProjectsFilters; rows: Record<string, unknown>[]; hasMore: boolean; totalCount: number };
   /** /customers, first page, for the given filters (searches stay on the server). */
@@ -159,6 +163,8 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
     "properties", "lease_agreements", "customers", "payments", "expenses", "attendance_sessions", "tasks", "accounts", "users",
     "recurring_expense_templates", "salary_agreements",
   ],
+  // Every lease, its tenant's name, its property's rent payments and the accounts' names.
+  rentRoll: ["properties", "lease_agreements", "customers", "payments", "accounts"],
   projectsList: [
     "projects", "customers", "users", "user_directory", "tasks", "payments", "expenses", "project_expenses", "attendance_sessions",
     "payslips", "payroll_periods", "salary_agreements", "worker_payments", "worker_payment_allocations",
@@ -320,6 +326,8 @@ export async function computeLocalCard<K extends LocalCardKind>(
       const { id } = need<{ id: string }>();
       return { filters: { id }, core: await loadPropertyPageCore(local, id) } as LocalDashboardCards[K];
     }
+    case "rentRoll":
+      return { data: await loadRentRoll(local) } as LocalDashboardCards[K];
     case "projectsList": {
       const projectFilters = need<ProjectsFilters>();
       const result = await loadProjectsPage(local, { page: 1, filters: projectFilters });

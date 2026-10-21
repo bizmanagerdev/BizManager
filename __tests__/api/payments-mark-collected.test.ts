@@ -69,4 +69,11 @@ describe("POST /api/payments/mark-collected", () => {
     expect((await post({ id: "p1", collected: true, account_id: "not-an-id" })).status).toBe(400);
     expect(bad.calls.update.payments).toBeUndefined();
   });
+
+  it("a check that came back: rejected, the account untouched (the rent roll, 2026-10-21)", async () => {
+    const supabase = sb();
+    grant(supabase);
+    expect((await post({ id: "p1", bounced: true, account_id: DEPOSITED })).status).toBe(200);
+    expect(supabase.calls.update.payments).toEqual([{ payment_status: "rejected" }]);
+  });
 });

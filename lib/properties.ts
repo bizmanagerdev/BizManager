@@ -531,11 +531,92 @@ export async function loadPropertyPhotos(supabase: SupabaseClient): Promise<Reco
 }
 
 /** The list's order: the owner's own (sort_order), then the rest by name. */
-export function compareProperties(a: Property, b: Property): number {
+export function compareProperties(
+  a: Pick<Property, "id" | "name" | "address" | "sortOrder">,
+  b: Pick<Property, "id" | "name" | "address" | "sortOrder">
+): number {
   if (a.sortOrder != null && b.sortOrder != null && a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
   if (a.sortOrder != null && b.sortOrder == null) return -1;
   if (a.sortOrder == null && b.sortOrder != null) return 1;
-  return propertyDisplayName(a).localeCompare(propertyDisplayName(b), "he");
+  // Two of the same name: by id, so the server and the device list them alike.
+  return propertyDisplayName(a).localeCompare(propertyDisplayName(b), "he") || a.id.localeCompare(b.id);
+}
+
+// ── The rent roll (/properties/rent) ────────────────────────────────────────
+
+export type RentRollProperty = Pick<Property, "id" | "name" | "address" | "propertyType" | "isActive" | "sortOrder">;
+export type RentRollPayment = PropertyPayment & { propertyId: string };
+/** Every property, lease and property income — the month's rows are worked out from them (lib/rent-roll.ts). */
+export type RentRollData = {
+  properties: RentRollProperty[];
+  leases: LeaseAgreement[];
+  payments: RentRollPayment[];
+  /** Every account's name, by its id — which account the rent came into. */
+  accountNames: Record<string, string>;
+};
+
+/**
+ * What the rent roll reads — the same on the server and the device copy
+ * (lib/powersync/dashboard-local.ts). Throws when a read fails: an empty roll
+ * would read as "nobody owes anything".
+ */
+export async function loadRentRoll(supabase: SupabaseClient): Promise<RentRollData> {
+  const [propertyRows, leaseRows, paymentRows, accountRes] = await Promise.all([
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase.from("properties").select("id,name,address,property_type,is_active,sort_order").order("id").range(lo, hi)
+    ),
+    fetchAllPaged<Row>((lo, hi) => supabase.from("lease_agreements").select(LEASE_SELECT).order("id").range(lo, hi)),
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase
+        .from("payments")
+        .select(`${PROPERTY_PAYMENT_SELECT},property_id`)
+        .not("property_id", "is", null)
+        .order("id")
+        .range(lo, hi)
+    ),
+    supabase.from("accounts").select("id,name"),
+  ]);
+  const properties: RentRollProperty[] = propertyRows
+    .map((row) => ({
+      id: str(row.id) ?? "",
+      name: str(row.name),
+      address: str(row.address) ?? "",
+      propertyType: str(row.property_type),
+      isActive: row.is_active !== false,
+      sortOrder: numOrNull(row.sort_order),
+    }))
+    .sort(compareProperties);
+  const leases = leaseRows.map(normalizeLease).sort((a, b) => a.id.localeCompare(b.id));
+  const payments: RentRollPayment[] = paymentRows
+    .map((row) => ({ ...normalizePropertyPayment(row), propertyId: str(row.property_id) ?? "" }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const accountNames: Record<string, string> = {};
+  for (const row of rowsOf(accountRes, "accounts")) {
+    const id = str(row.id);
+    const name = str(row.name)?.trim();
+    if (id && name) accountNames[id] = name;
+  }
+  return { properties, leases, payments, accountNames };
+}
+
+/**
+ * The files on these payments — a check's photo, a transfer's confirmation —
+ * with signed links (an hour), by payment id: the rent roll's check column.
+ * The server's only (the device copy has no files).
+ */
+export async function loadPaymentFiles(supabase: SupabaseClient, paymentIds: string[]): Promise<Record<string, FinancialAttachment[]>> {
+  const ids = [...new Set(paymentIds)].filter(Boolean);
+  if (ids.length === 0) return {};
+  const links = await linkedFiles(supabase, "payment", ids);
+  const keys = [...new Set(links.map((link) => str(linkDocument(link)?.storage_key)).filter((key): key is string => Boolean(key)))];
+  const urlByKey = new Map<string, string>();
+  if (keys.length > 0) {
+    const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(keys, 60 * 60);
+    for (const s of signed ?? []) {
+      if (s.path && s.signedUrl) urlByKey.set(s.path, s.signedUrl);
+    }
+  }
+  return filesByEntity(links, urlByKey);
 }
 
 // ── Per-property activity (the detail page) ─────────────────────────────────
@@ -803,6 +884,28 @@ const PROPERTY_SESSION_SELECT =
 const SALARY_AGREEMENT_SELECT =
   "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id";
 
+function normalizePropertyPayment(r: Row): PropertyPayment {
+  return {
+    id: str(r.id) ?? "",
+    date: str(r.payment_date),
+    amount: num(r.amount_total),
+    method: str(r.payment_method),
+    dueDate: str(r.due_date),
+    checkNumber: str(r.check_number),
+    paymentStatus: str(r.payment_status),
+    accountId: str(r.account_id),
+    notes: str(r.notes),
+    referenceNumber: str(r.reference_number),
+    requiresSplit: r.requires_split === true,
+    createdAt: str(r.created_at),
+    leaseId: str(r.lease_id),
+    rentPeriodStart: str(r.rent_period_start),
+    rentPeriods: numOrNull(r.rent_periods) ?? 1,
+    countsAsRent: r.counts_as_rent !== false,
+    attachments: [],
+  };
+}
+
 /** A read's rows, or the error that stopped it — the device shows the server version then. */
 function rowsOf(result: { data: unknown; error: { message?: string } | null }, what: string): Row[] {
   if (result.error) throw new Error(`${what}: ${result.error.message ?? "read failed"}`);
@@ -899,25 +1002,7 @@ export async function loadPropertyPageCore(supabase: SupabaseClient, propertyId:
     recurringTemplateId: str(r.recurring_expense_template_id),
     attachments: [],
   }));
-  const payments: PropertyPayment[] = paymentRows.map((r) => ({
-    id: str(r.id) ?? "",
-    date: str(r.payment_date),
-    amount: num(r.amount_total),
-    method: str(r.payment_method),
-    dueDate: str(r.due_date),
-    checkNumber: str(r.check_number),
-    paymentStatus: str(r.payment_status),
-    accountId: str(r.account_id),
-    notes: str(r.notes),
-    referenceNumber: str(r.reference_number),
-    requiresSplit: r.requires_split === true,
-    createdAt: str(r.created_at),
-    leaseId: str(r.lease_id),
-    rentPeriodStart: str(r.rent_period_start),
-    rentPeriods: numOrNull(r.rent_periods) ?? 1,
-    countsAsRent: r.counts_as_rent !== false,
-    attachments: [],
-  }));
+  const payments: PropertyPayment[] = paymentRows.map(normalizePropertyPayment);
   const tasks: PropertyTask[] = rowsOf(tkRes, "tasks").map((r) => ({
     id: str(r.id) ?? "",
     subject: str(r.subject),

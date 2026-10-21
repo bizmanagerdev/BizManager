@@ -82,6 +82,8 @@ export const LOCAL_DATA_PAGES = {
   // A property's page (/properties/<id>) — the same, from 2026-10-21. Its
   // documents, files and recurring bills follow from the server after the page.
   propertyPage: false,
+  // The rent roll (/rent) — the same, from 2026-10-21 (owner's devices first).
+  rentRoll: false,
 } as const;
 
 /**
@@ -141,4 +143,5 @@ export const LOCAL_DATA_SHADOW = {
   customerPage: true,
   properties: true,
   propertyPage: true,
+  rentRoll: true,
 } as const;

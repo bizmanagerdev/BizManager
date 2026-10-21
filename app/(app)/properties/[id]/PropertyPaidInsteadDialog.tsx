@@ -39,6 +39,7 @@ export default function PropertyPaidInsteadDialog({
   propertyId,
   title,
   onClose,
+  onRecorded,
 }: {
   /** The check; null keeps the dialog closed. */
   check: PropertyPayment | null;
@@ -50,6 +51,12 @@ export default function PropertyPaidInsteadDialog({
   /** What it's for ("שכירות כסלו תשפ״ז"). */
   title: string;
   onClose: () => void;
+  /**
+   * The month's payment as it will be recorded (id "instead:<check id>") — the
+   * rent roll shows the month paid at once, while the check's move can still
+   * be undone.
+   */
+  onRecorded?: (payment: PropertyPayment) => void;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -92,6 +99,24 @@ export default function PropertyPaidInsteadDialog({
     const { start, periods, next } = months;
     const nextLabel = rentPeriodLabel(lease, next);
     onClose();
+    onRecorded?.({
+      ...check,
+      id: `instead:${check.id}`,
+      date: saved.date,
+      method: saved.method,
+      dueDate: null,
+      checkNumber: null,
+      paymentStatus: "cleared",
+      accountId: saved.accountId || null,
+      notes: null,
+      referenceNumber: saved.reference.trim() || null,
+      createdAt: new Date().toISOString(),
+      leaseId: lease.id,
+      rentPeriodStart: start,
+      rentPeriods: periods,
+      countsAsRent: true,
+      attachments: [],
+    });
     scheduleDeferredEdit({
       scope: "property-payment",
       id: check.id,

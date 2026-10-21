@@ -47,6 +47,9 @@ export function usualPageViews(viewer: LocalCardViewer): ResultSpec[] {
   if (localDataPageOn("properties", person)) {
     add("propertiesList");
   }
+  if (localDataPageOn("rentRoll", person)) {
+    add("rentRoll");
+  }
   if (localDataPageOn("sales", person)) {
     add("salesOrders", { tab: "orders", customerId: null, q: "", paymentStatus: "", invoice: "" });
     add("salesCounts", { customerId: null, paymentStatus: "" });

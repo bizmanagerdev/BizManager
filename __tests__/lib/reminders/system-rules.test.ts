@@ -505,7 +505,7 @@ describe("rent_due — rent coming due, by the lease's own calendar", () => {
       ctx(today)
     );
 
-  it("comes two days before א׳ כסלו — not three — for the admins, opening the property", async () => {
+  it("comes two days before א׳ כסלו — not three — for the admins, opening the rent roll at its row", async () => {
     expect(await evaluate("2026-11-08")).toHaveLength(0);
     const items = await evaluate("2026-11-09");
     expect(items).toHaveLength(1);
@@ -513,7 +513,7 @@ describe("rent_due — rent coming due, by the lease's own calendar", () => {
       key: "lease-d4:2026-11-11",
       title: "שכירות כסלו תשפ״ז — הר יונה D4",
       content: `כהן · ${ils(4000)} · לתשלום ב-א׳ כסלו`,
-      url: "/properties/prop-d4",
+      url: "/rent#lease-d4@2026-11-11",
       severity: "warning",
       audienceRole: "admin",
     });

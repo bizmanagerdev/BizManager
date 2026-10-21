@@ -19,7 +19,7 @@ import { uploadTogether } from "@/lib/upload-together";
 import { queueFinancialAttachmentsAfter } from "@/lib/payments/uploadCheckPhotos";
 import { toHebrewError } from "@/lib/error-messages";
 import { israelDateKey } from "@/lib/timezone";
-import { nextUncoveredPeriod, rentThisPeriod } from "@/lib/property-rent";
+import { nextUncoveredPeriod, rentPeriodStatus, rentThisPeriod } from "@/lib/property-rent";
 import { rentPeriodChoices, rentPeriodLabel } from "@/lib/rent-periods";
 import type { LeaseAgreement, PropertyPayment } from "@/lib/properties";
 import { uploadFinancialAttachment } from "@/app/(app)/dashboard/DashboardActions.helpers";
@@ -45,13 +45,23 @@ type Form = {
   accountId: string;
 };
 
-function startingForm(lease: LeaseAgreement, payments: PropertyPayment[]): Form {
+/**
+ * Where a new rent payment starts: a given month (the rent roll's row), or
+ * this period while it isn't paid and the next one that isn't once it is;
+ * paid the lease's usual way when that's known.
+ */
+export type RentPaymentPrefill = { periodStart?: string | null; method?: string | null; accountId?: string | null };
+
+function startingForm(lease: LeaseAgreement, payments: PropertyPayment[], prefill: RentPaymentPrefill = {}): Form {
   const today = israelDateKey();
   const rent = payments.map(toRentPayment);
-  const status = rentThisPeriod(lease, rent, today);
+  const status = prefill.periodStart
+    ? rentPeriodStatus(lease, rent, prefill.periodStart, today)
+    : rentThisPeriod(lease, rent, today);
   // This period while it isn't paid; once it is, the next one that isn't.
   const periodStart =
-    status.state === "paid" || !status.periodStart ? nextUncoveredPeriod(lease, rent, today) : status.periodStart;
+    prefill.periodStart ??
+    (status.state === "paid" || !status.periodStart ? nextUncoveredPeriod(lease, rent, today) : status.periodStart);
   // A period paid in part: what's left of it.
   const owed = status.periodStart === periodStart ? lease.monthlyRentAmount - status.collected : lease.monthlyRentAmount;
   return {
@@ -59,7 +69,7 @@ function startingForm(lease: LeaseAgreement, payments: PropertyPayment[]): Form 
     periods: "1",
     amount: String(owed > 0 ? owed : lease.monthlyRentAmount),
     amountTouched: false,
-    paymentMethod: "bank_transfer",
+    paymentMethod: prefill.method || "bank_transfer",
     paymentDate: today,
     dueDate: "",
     checkNumber: "",
@@ -75,6 +85,9 @@ export default function PropertyRentPaymentDialog({
   propertyId,
   lease,
   payments,
+  prefill,
+  onRecorded,
+  onUndone,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -82,6 +95,12 @@ export default function PropertyRentPaymentDialog({
   lease: LeaseAgreement | null;
   /** The property's incomes: where this lease's rent stands. */
   payments: PropertyPayment[];
+  /** The month it's for and the usual way it's paid (the rent roll's row). */
+  prefill?: RentPaymentPrefill;
+  /** The payment as recorded — the rent roll shows its row paid at once, before the page reads it again. */
+  onRecorded?: (payment: PropertyPayment) => void;
+  /** It was undone (its "בטל"): gone again. */
+  onUndone?: (paymentId: string) => void;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -94,7 +113,8 @@ export default function PropertyRentPaymentDialog({
   if (open !== openFor) {
     setOpenFor(open);
     if (open && lease) {
-      setForm({ ...startingForm(lease, payments), accountId: defaultAccountForMethod(accounts, "bank_transfer") });
+      const start = startingForm(lease, payments, prefill);
+      setForm({ ...start, accountId: prefill?.accountId || defaultAccountForMethod(accounts, start.paymentMethod) });
       setPhotos([]);
     }
   }
@@ -174,9 +194,30 @@ export default function PropertyRentPaymentDialog({
         "תשלום שכירות",
         { idempotent: true }
       );
+      // As it went up — for a page to show at once (an id only once the server has it).
+      const recorded = (id: string): PropertyPayment => ({
+        id,
+        date: form.paymentDate,
+        amount: Number(form.amount),
+        method: form.paymentMethod,
+        dueDate: isCheck ? form.dueDate : null,
+        checkNumber: isCheck ? form.checkNumber.trim() || null : null,
+        paymentStatus: isCheck ? "pending" : "cleared",
+        accountId: form.accountId || null,
+        notes: form.notes.trim() || null,
+        referenceNumber: form.referenceNumber.trim() || null,
+        requiresSplit: false,
+        createdAt: new Date().toISOString(),
+        leaseId: lease.id,
+        rentPeriodStart: form.periodStart,
+        rentPeriods: count,
+        countsAsRent: true,
+        attachments: [],
+      });
       if (result.queued) {
         // Kept on the device: the check's photos go up once it reaches the server.
         if (isCheck) await queueFinancialAttachmentsAfter(result.key, "payment.id", "payment", photos);
+        onRecorded?.(recorded(`queued:${result.key ?? crypto.randomUUID()}`));
         onOpenChange(false);
         return;
       }
@@ -185,6 +226,7 @@ export default function PropertyRentPaymentDialog({
         return;
       }
       const paymentId = (result.data as { payment?: { id?: string } })?.payment?.id ?? null;
+      onRecorded?.(recorded(paymentId ?? `saved:${crypto.randomUUID()}`));
       if (paymentId && isCheck && photos.length > 0) {
         await uploadTogether(photos, (file) => uploadFinancialAttachment("payment", paymentId, file));
       }
@@ -207,6 +249,7 @@ export default function PropertyRentPaymentDialog({
           });
           const json = await res.json().catch(() => ({}));
           if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+          onUndone?.(paymentId);
           startTransition(() => router.refresh());
           return { ok: true };
         },

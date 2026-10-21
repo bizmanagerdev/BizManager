@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+import { rentRollMonth } from "@/lib/rent-roll";
 import { coerceRow, createLocalSupabase, normalizeTimestamp, type LocalReader } from "@/lib/powersync/local-supabase";
 import { getPropertiesSummary } from "@/lib/properties";
 import { getMyTasks } from "@/lib/dashboard/tasks-overview";
@@ -1627,3 +1628,47 @@ describe("a property's page on the device", () => {
     expect(await order([...rows].reverse())).toEqual(["c", "a", "b"]);
   });
 });
+
+describe("the rent roll on the device", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("every lease, its rent payments and the accounts' names — the server's loader; the month worked out alike", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T10:00:00.000Z"));
+    const db = createLocalSupabase(
+      fakeReader({
+        properties: [
+          property({ id: "p1", name: "D4 הר יונה", address: "האדמו״ר מבעלזא 24", property_type: "apartment", sort_order: 2 }),
+          property({ id: "p2", name: "יהודה הנשיא 15", address: "יהודה הנשיא 15", property_type: "apartment", sort_order: 1 }),
+        ],
+        lease_agreements: [
+          lease({ id: "l1", property_id: "p1", start_date: "2026-03-19", end_date: "2027-06-06", monthly_rent_amount: "4000", rent_calendar: "hebrew", rent_hebrew_day: 1 }),
+          lease({ id: "l2", property_id: "p2", customer_id: "c2", start_date: "2026-06-01", end_date: "2026-12-31", monthly_rent_amount: "8500", rent_day_of_month: null }),
+        ],
+        customers: [
+          { id: "c1", name: "רוזנפלד", phone: null },
+          { id: "c2", name: "ווגשל", phone: null },
+        ],
+        payments: [
+          fullRow(`${PAYMENT_COLS},property_id`, { id: "pay1", property_id: "p1", payment_date: "2026-10-12T00:00:00.000000", due_date: "2026-10-12", amount_total: "4000", payment_method: "check", check_number: "261", payment_status: "pending", account_id: "a1", requires_split: 0, lease_id: "l1", rent_period_start: "2026-10-12", rent_periods: 1, counts_as_rent: 1 }),
+          fullRow(`${PAYMENT_COLS},property_id`, { id: "pay2", property_id: "p2", payment_date: "2026-08-27T00:00:00.000000", amount_total: "17000", payment_method: "bank_transfer", payment_status: "cleared", account_id: "a1", requires_split: 0, lease_id: "l2", rent_period_start: "2026-09-01", rent_periods: 2, counts_as_rent: 1 }),
+        ],
+        accounts: [{ id: "a1", name: "מזרחי בית" }],
+      })
+    );
+    const { data } = await computeLocalCard(db, "rentRoll", { userId: "u1", role: "admin", locale: "he" });
+    expect(data.properties.map((p) => p.id)).toEqual(["p2", "p1"]);
+    expect(data.accountNames).toEqual({ a1: "מזרחי בית" });
+    expect(data.payments.map((p) => [p.id, p.propertyId, p.checkNumber, p.rentPeriods])).toEqual([
+      ["pay1", "p1", "261", 1],
+      ["pay2", "p2", null, 2],
+    ]);
+    const month = rentRollMonth(data, 0, "2026-10-21");
+    expect(month.rows.map((r) => [r.key, r.lease.customerName, r.period, r.status.state])).toEqual([
+      ["l2", "ווגשל", "2026-10-01", "paid"],
+      ["l1", "רוזנפלד", "2026-10-12", "check"],
+    ]);
+    expect(month.totals).toMatchObject({ expected: 12500, collected: 8500, collectedByCheck: 0, checks: 4000, owed: 0 });
+  });
+});
+
