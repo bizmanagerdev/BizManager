@@ -7,25 +7,25 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { DataTableShell } from "@/components/ui/data-table-shell";
 import { EmptyState } from "@/components/ui/empty-state";
-import { FilterChip } from "@/components/ui/filter-chip";
+import { TOGGLE_ON, TOGGLE_ON_HOVER, TOOLBAR_CONTROL } from "@/components/ui/filter-chip";
+import { CountBadge } from "@/components/ui/count-badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { DocumentLink } from "@/components/ui/document-tile";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
-import { SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewDialog } from "@/components/ui/view-dialog";
+import { MonthStepper } from "@/components/ui/month-calendar";
 import {
   AttachIcon,
   CalendarIcon,
   ChatIcon,
   ChecklistIcon,
   ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
+  CloseIcon,
   DownloadIcon,
+  FilterIcon,
   PrintIcon,
 } from "@/components/ui/icons";
 import { PageStack } from "@/components/layout/page-layout";
@@ -39,7 +39,13 @@ import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { whatsappHref } from "@/lib/whatsapp";
 import { STATUS_PILL_CLASSES } from "@/lib/ui/status-color-classes";
 import type { FinancialAttachment } from "@/lib/payments";
-import { propertyDisplayName, type PropertyPayment, type RentRollData, type RentRollPayment, type RentRollProperty } from "@/lib/properties";
+import {
+  propertyDisplayName,
+  type PropertyPayment,
+  type RentRollData,
+  type RentRollPayment,
+  type RentRollProperty,
+} from "@/lib/properties";
 import { RENT_STATE, type RentMonthState } from "@/lib/property-rent";
 import {
   daysBetween,
@@ -79,16 +85,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Checks running out this soon: in colour. */
 const SOON_DAYS = 60;
 
-/**
- * "מה לעשות" starts folded (owner, 2026-10-22: "should start off closed") and
- * opens with a tap ("able to close", the day before); someone who opened it
- * finds it open — a cookie the server reads, so the page draws it right from
- * the start and nothing moves once it's on screen.
- */
-export const RENT_TODO_COOKIE = "bizh-rent-todo";
-
 /** The checks page, showing every property's rent checks (or one property's). */
-const rentChecksHref = (propertyId?: string) => `/checks?property=${propertyId ?? "rent"}`;
+const rentChecksHref = (propertyId?: string, filter?: "week") =>
+  `/checks?property=${propertyId ?? "rent"}${filter ? `&filter=${filter}` : ""}`;
 
 /** The table's cells — the customers list's sizes. */
 const HEAD_CELL = "whitespace-nowrap px-2 py-2 font-medium";
@@ -117,7 +116,7 @@ function placeName(row: Place): string {
 
 /** The day the money comes in: a check's deposit date, any other payment's own. */
 function moneyDate(payment: RentRollPayment): string {
-  return formatShortDate(payment.method === "check" ? payment.dueDate ?? payment.date : payment.date, "—");
+  return formatShortDate(payment.method === "check" ? (payment.dueDate ?? payment.date) : payment.date, "—");
 }
 
 function methodWord(payment: RentRollPayment): string {
@@ -185,7 +184,7 @@ const AHEAD_CHECK = "border border-dashed border-info bg-transparent text-info-s
 /** The property column stays in view while a wide table scrolls sideways. */
 const STICKY = "sticky start-0 z-[1] bg-card";
 
-export default function RentRollClient({ data, todoClosed = true }: { data: RentRollData; todoClosed?: boolean }) {
+export default function RentRollClient({ data }: { data: RentRollData }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   // One day for the whole visit: the months don't move under the owner's hand at midnight.
@@ -205,11 +204,18 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
   const [arrival, setArrival] = useState<{ payment: PropertyPayment; title: string } | null>(null);
   const [instead, setInstead] = useState<{ row: RentRollRow; payment: PropertyPayment; title: string } | null>(null);
   const [cell, setCell] = useState<RentRollRow | null>(null);
-  function rememberTodo(isOpen: boolean) {
-    document.cookie = isOpen
-      ? `${RENT_TODO_COOKIE}=open; path=/; max-age=31536000; samesite=lax`
-      : `${RENT_TODO_COOKIE}=; path=/; max-age=0; samesite=lax`;
-  }
+  // What needs handling: a small button in the row under the tabs, starting closed (owner, 2026-10-22: "should
+  // start off closed … it just doesn't need to take up so much space"), its list opening OVER the page ("to open on
+  // top of the page … overlay, not push down the page") — the collections filter panel's way.
+  const [todoOpen, setTodoOpen] = useState(false);
+  useEffect(() => {
+    if (!todoOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setTodoOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [todoOpen]);
 
   // Checks marked cleared, moved on, bounced or edited here show so at once (their patches).
   const overlaid = useUndoOverlay(data.payments, paymentKey, "property-payment");
@@ -284,13 +290,13 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
 
   // The lease's usual way to pay: as its last payment came.
   const usual = paying
-    ? [...payments]
+    ? ([...payments]
         .filter((p) => p.leaseId === paying.row.lease.id && p.paymentStatus !== "rejected")
-        .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || b.id.localeCompare(a.id))[0] ?? null
+        .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || b.id.localeCompare(a.id))[0] ?? null)
     : null;
   const payingPayments = paying ? payments.filter((p) => p.propertyId === paying.row.property.id) : [];
   const insteadPayments = instead ? payments.filter((p) => p.propertyId === instead.row.property.id) : [];
-  const accountName = (id: string | null) => (id ? data.accountNames[id] ?? "—" : "—");
+  const accountName = (id: string | null) => (id ? (data.accountNames[id] ?? "—") : "—");
 
   function openPayment(row: RentRollRow, period: string = row.period) {
     setPaying({ row, period });
@@ -323,7 +329,12 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
     const pending = row.payments.find((p) => p.method === "check" && p.paymentStatus === "pending") ?? null;
     if (pending && (pending.dueDate ?? pending.date ?? "") <= today) {
       return (
-        <Button type="button" size="sm" className={ROW_BUTTON} onClick={() => setArrival({ payment: pending, title: `שכירות ${row.periodLabel}` })}>
+        <Button
+          type="button"
+          size="sm"
+          className={ROW_BUTTON}
+          onClick={() => setArrival({ payment: pending, title: `שכירות ${row.periodLabel}` })}
+        >
           נפרע
         </Button>
       );
@@ -343,7 +354,13 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
     }
     if (row.debt.amount > 0.5 && row.debt.oldest) {
       return (
-        <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => openPayment(row, row.debt.oldest as string)}>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={ROW_BUTTON}
+          onClick={() => openPayment(row, row.debt.oldest as string)}
+        >
           רישום תשלום
         </Button>
       );
@@ -360,10 +377,22 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
       <div className="flex flex-wrap items-center gap-1.5">
         {pending ? (
           <>
-            <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => setArrival({ payment: pending, title })}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={ROW_BUTTON}
+              onClick={() => setArrival({ payment: pending, title })}
+            >
               נפרע
             </Button>
-            <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => setInstead({ row, payment: pending, title })}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={ROW_BUTTON}
+              onClick={() => setInstead({ row, payment: pending, title })}
+            >
               שולם אחרת החודש
             </Button>
           </>
@@ -381,7 +410,14 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
           </Button>
         ))}
         {row.returned.map((check) => (
-          <Button key={`back-${check.id}`} type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => setBounced(check, false)}>
+          <Button
+            key={`back-${check.id}`}
+            type="button"
+            size="sm"
+            variant="outline"
+            className={ROW_BUTTON}
+            onClick={() => setBounced(check, false)}
+          >
             ביטול: {checkName(check)} לא חזר
           </Button>
         ))}
@@ -415,7 +451,8 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
   const stateChip = (row: RentRollRow) => {
     const late = lateThisMonth(row, today) > 0.5;
     const state = RENT_STATE[row.status.state];
-    const label = row.returned.length > 0 && row.owed > 0.5 ? "צ׳ק חזר" : late && row.status.state !== "partial" ? "באיחור" : state.label;
+    const label =
+      row.returned.length > 0 && row.owed > 0.5 ? "צ׳ק חזר" : late && row.status.state !== "partial" ? "באיחור" : state.label;
     return <Badge variant={late || row.returned.length > 0 ? "destructive" : state.badge}>{label}</Badge>;
   };
 
@@ -424,7 +461,10 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
     if (hand.count === 0) return <span className="text-muted-foreground">—</span>;
     const soon = hand.lastPeriod !== null && daysBetween(today, hand.lastPeriod) <= SOON_DAYS;
     return (
-      <span className={soon ? "font-medium text-warning-strong" : undefined} title={`${hand.count} צ׳קים · ${formatCurrency(hand.amount)}`}>
+      <span
+        className={soon ? "font-medium text-warning-strong" : undefined}
+        title={`${hand.count} צ׳קים · ${formatCurrency(hand.amount)}`}
+      >
         {hand.count} · עד {hand.lastLabel?.replace(/ (תש\S*|\d{4})$/, "")}
       </span>
     );
@@ -454,7 +494,9 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
         <div key={p.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span
             className="tabular-nums"
-            title={p.rentPeriods > 1 && p.rentPeriodStart ? rentPeriodLabel(row.lease, p.rentPeriodStart, p.rentPeriods) : undefined}
+            title={
+              p.rentPeriods > 1 && p.rentPeriodStart ? rentPeriodLabel(row.lease, p.rentPeriodStart, p.rentPeriods) : undefined
+            }
           >
             {formatCurrency(p.amount)}
             {p.rentPeriods > 1 ? ` (${p.rentPeriods} חודשים)` : ""}
@@ -500,42 +542,110 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
 
   const sheet = () => (tab === "year" && year ? yearSheet(year) : monthSheet(month, data.accountNames));
 
+  // The filter toggle's look (blue when on, × to clear), sized for a table header.
+  // The debt column's header is the filter itself (owner, 2026-10-22: "make the column header clickable to
+  // filter"): a tap shows only who owes, the header blue with its × while it's on; a tap again shows everyone.
+  const owingHeader = (
+    <button
+      type="button"
+      aria-pressed={owingOnly}
+      title={owingOnly ? "הצגת כולם" : "רק מי שחייב"}
+      onClick={() => setOwingOnly((v) => !v)}
+      className={cn(
+        "-mx-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors",
+        owingOnly ? cn(TOGGLE_ON, TOGGLE_ON_HOVER) : "hover:bg-accent/60 hover:text-foreground"
+      )}
+    >
+      <FilterIcon className="h-3.5 w-3.5" />
+      חוב ישן
+      {owingOnly ? (
+        <span aria-hidden className="text-xs leading-none opacity-80">
+          ×
+        </span>
+      ) : null}
+    </button>
+  );
+  // A phone has no column headers: the same toggle, in words, heads its list.
+  const owingChip = (
+    <button
+      type="button"
+      aria-pressed={owingOnly}
+      onClick={() => setOwingOnly((v) => !v)}
+      className={cn(
+        "inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-semibold transition-colors",
+        owingOnly
+          ? cn("border-secondary", TOGGLE_ON, TOGGLE_ON_HOVER)
+          : "border-input bg-background text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+      )}
+    >
+      <FilterIcon className="h-3.5 w-3.5" />
+      {owing.length > 0 ? `רק מי שחייב (${owing.length})` : "רק מי שחייב"}
+      {owingOnly ? (
+        <span aria-hidden className="text-xs leading-none opacity-80">
+          ×
+        </span>
+      ) : null}
+    </button>
+  );
+
   return (
     <PageStack>
-      {/* The app's underline tabs — a fixed-height bar that never moves. */}
-      {/* One bar (owner, 2026-10-22: "there's wasted space here"): the app's
-          underline tabs, the month shown (the year: which twelve months) — back,
-          on, and back to this one — and out to Excel / paper, on the tabs' line. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60">
-        <Tabs value={tab} onValueChange={(value) => setTab(value === "year" ? "year" : "month")}>
-          <TabsList variant="underline" className="w-auto border-b-0">
-            <TabsTrigger value="month" count={todo.length > 0 ? todo.length : undefined}>
-              <ChecklistIcon className="h-4 w-4" />
-              חודש
-            </TabsTrigger>
-            <TabsTrigger value="year">
-              <CalendarIcon className="h-4 w-4" />
-              לוח שנתי
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="flex items-center gap-1.5 pb-1">
-          <Button type="button" variant="outline" size="icon-sm" aria-label="החודש הקודם" onClick={() => setOffset((n) => n - 1)}>
-            <ChevronRightIcon className="h-4 w-4" />
-          </Button>
-          <h2 className="whitespace-nowrap text-sm font-semibold">
-            {tab === "year" && year ? `${year.headers[0]} – ${year.headers[year.headers.length - 1]}` : month.label}
-          </h2>
-          <Button type="button" variant="outline" size="icon-sm" aria-label="החודש הבא" onClick={() => setOffset((n) => n + 1)}>
-            <ChevronLeftIcon className="h-4 w-4" />
-          </Button>
-          {offset !== 0 ? (
-            <Button type="button" variant="ghost" size="sm" className="text-secondary" onClick={() => setOffset(0)}>
-              לחודש הזה
-            </Button>
-          ) : null}
-        </div>
-        <div className="ms-auto flex items-center gap-1.5 pb-1">
+      {/* The app's underline tabs, close under the top bar (owner, 2026-10-22: "move the tabs higher … too much
+          white space on top"); the tab row only switches tabs ("the row of the tab is to switch to a different tab"). */}
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value === "year" ? "year" : "month")}
+        className="-mt-2 md:-mt-4 lg:-mt-6"
+      >
+        <TabsList variant="underline">
+          <TabsTrigger value="month">
+            <ChecklistIcon className="h-4 w-4" />
+            חודש
+          </TabsTrigger>
+          <TabsTrigger value="year">
+            <CalendarIcon className="h-4 w-4" />
+            לוח שנתי
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Inside the tab, one row: the month (the year: its twelve) with the app's month stepper (צפי תזרים's
+          ‹ › היום) around each lease's own month; on the month, who owes and what needs handling; and out to
+          Excel / paper. */}
+      <div className="relative flex flex-wrap items-center gap-2">
+        <MonthStepper
+          label={
+            <h2 className="whitespace-nowrap">
+              {tab === "year" && year ? `${year.headers[0]} – ${year.headers[year.headers.length - 1]}` : month.label}
+            </h2>
+          }
+          onStep={(delta) => setOffset((n) => n + delta)}
+          onToday={() => setOffset(0)}
+          onCurrent={offset === 0}
+        />
+        {tab === "month" && offset === 0 && todo.length > 0 ? (
+          <ToDoToggle count={todo.length} open={todoOpen} onToggle={() => setTodoOpen((v) => !v)} />
+        ) : null}
+        {tab === "month" && offset === 0 && todoOpen && todo.length > 0 ? (
+          <>
+            <button
+              type="button"
+              aria-label="סגירה"
+              className="fixed inset-0 z-30 bg-black/30"
+              onClick={() => setTodoOpen(false)}
+            />
+            <ToDoList
+              todo={todo}
+              today={today}
+              onClose={() => setTodoOpen(false)}
+              onPay={(row, period) => {
+                setTodoOpen(false);
+                openPayment(row, period);
+              }}
+            />
+          </>
+        ) : null}
+        <div className="ms-auto flex items-center gap-1.5">
           <IconButton
             icon={DownloadIcon}
             label="ייצוא לאקסל"
@@ -566,21 +676,20 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
         />
       ) : (
         <>
-          {/* What to do is about now — shown on this month only. */}
-          {offset === 0 ? (
-            <ToDoSection todo={todo} today={today} onPay={openPayment} defaultOpen={!todoClosed} onOpenChange={rememberTodo} />
-          ) : null}
-
           {/* Four plain figures — the month shown's collected and late, and today's checks — the checks ones open the checks page, filtered to rent. */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Tile
               label={offset === 0 ? "נגבה החודש" : "נגבה בחודש הזה"}
               value={formatCurrency(tiles.collected.amount)}
-              tone={tiles.collected.expected > 0 && tiles.collected.amount >= tiles.collected.expected - 0.5 ? "success" : undefined}
+              tone={
+                tiles.collected.expected > 0 && tiles.collected.amount >= tiles.collected.expected - 0.5 ? "success" : undefined
+              }
               progress={tiles.collected.expected > 0 ? tiles.collected.amount / tiles.collected.expected : null}
               lines={[
                 `מתוך ${formatCurrency(tiles.collected.expected)} · ${tiles.collected.paid} מתוך ${tiles.collected.tenants} שילמו`,
-                tiles.collected.waitingChecks > 0.5 ? `ועוד ${formatCurrency(tiles.collected.waitingChecks)} בצ׳קים לחודש הזה` : null,
+                tiles.collected.waitingChecks > 0.5
+                  ? `ועוד ${formatCurrency(tiles.collected.waitingChecks)} בצ׳קים לחודש הזה`
+                  : null,
               ]}
             />
             <Tile
@@ -604,14 +713,19 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
             />
             <Tile
               label="צ׳קים להפקדה"
-              value={tiles.deposit.count === 0 ? "אין השבוע" : tiles.deposit.count === 1 ? "צ׳ק אחד" : `${tiles.deposit.count} צ׳קים`}
+              value={
+                tiles.deposit.count === 0 ? "אין השבוע" : tiles.deposit.count === 1 ? "צ׳ק אחד" : `${tiles.deposit.count} צ׳קים`
+              }
               tone={tiles.deposit.overdue > 0 ? "warning" : undefined}
               lines={
                 tiles.deposit.count === 0
                   ? [tiles.deposit.next ? `הבא ב-${formatShortDate(tiles.deposit.next)}` : "אין צ׳קים ממתינים"]
-                  : [formatCurrency(tiles.deposit.amount), tiles.deposit.overdue > 0 ? `${tiles.deposit.overdue} הגיע זמנם להפקדה` : "השבוע"]
+                  : [
+                      formatCurrency(tiles.deposit.amount),
+                      tiles.deposit.overdue > 0 ? `${tiles.deposit.overdue} הגיע זמנם להפקדה` : "השבוע",
+                    ]
               }
-              href={rentChecksHref()}
+              href={rentChecksHref(undefined, "week")}
             />
             <Tile
               label="צ׳קים ביד"
@@ -626,18 +740,10 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <FilterChip
-              active={owingOnly}
-              label={owing.length > 0 ? `רק מי שחייב (${owing.length})` : "רק מי שחייב"}
-              onClick={() => setOwingOnly((v) => !v)}
-            />
-          </div>
-
-          {rows.length === 0 ? (
+          {month.rows.length === 0 ? (
             <Card>
               <CardContent className="p-4">
-                <EmptyState dense>{month.rows.length === 0 ? "אין שכירות לחודש הזה." : "אף אחד לא חייב."}</EmptyState>
+                <EmptyState dense>אין שכירות לחודש הזה.</EmptyState>
               </CardContent>
             </Card>
           ) : (
@@ -650,10 +756,18 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
                   tableClassName="text-[0.8125rem]"
                   header={["נכס", "שוכר", "שכירות", "החודש", "חוב ישן", "צ׳קים ביד", "חוזה עד", ""].map((head, i) => (
                     <th key={i} scope="col" className={cn(HEAD_CELL, i === 0 && cn(STICKY, "bg-muted"))}>
-                      {head || <span className="sr-only">פעולות</span>}
+                      {i === 4 ? owingHeader : head || <span className="sr-only">פעולות</span>}
                     </th>
                   ))}
                 >
+                  {/* Filtered to nobody: said inside the table, its header (and the filter's toggle) staying. */}
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-4">
+                        <EmptyState dense>אף אחד לא חייב.</EmptyState>
+                      </td>
+                    </tr>
+                  ) : null}
                   {rows.map((row) => {
                     const isOpen = open === row.key;
                     const note = stateNote(row);
@@ -661,13 +775,19 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
                       <Fragment key={row.key}>
                         <tr
                           id={`lease-${row.key}`}
-                          className={cn("scroll-mt-24 cursor-pointer border-b border-border/50 align-middle hover:bg-muted/20", isOpen && "bg-muted/20")}
+                          className={cn(
+                            "scroll-mt-24 cursor-pointer border-b border-border/50 align-middle hover:bg-muted/20",
+                            isOpen && "bg-muted/20",
+                          )}
                           onClick={() => setOpen(isOpen ? null : row.key)}
                         >
                           <td className={cn(CELL, STICKY, "whitespace-nowrap")}>
                             <span className="flex items-center gap-1">
                               <ChevronDownIcon
-                                className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180")}
+                                className={cn(
+                                  "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                                  isOpen && "rotate-180",
+                                )}
                               />
                               <Link
                                 href={`/properties/${row.property.id}#rent`}
@@ -707,6 +827,13 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
               }
               mobile={
                 <Card>
+                  {/* A phone has no column header: "who owes" heads the list. */}
+                  <div className="flex items-center justify-end border-b border-border/60 px-3 py-1.5">{owingChip}</div>
+                  {rows.length === 0 ? (
+                    <div className="p-4">
+                      <EmptyState dense>אף אחד לא חייב.</EmptyState>
+                    </div>
+                  ) : null}
                   <ul className="divide-y">
                     {rows.map((row) => {
                       const isOpen = open === row.key;
@@ -714,18 +841,26 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
                       const action = mainAction(row);
                       return (
                         <li key={row.key} id={`lease-m-${row.key}`} className="scroll-mt-24 px-3 py-2">
-                          <button type="button" className="block w-full text-start" onClick={() => setOpen(isOpen ? null : row.key)}>
+                          <button
+                            type="button"
+                            className="block w-full text-start"
+                            onClick={() => setOpen(isOpen ? null : row.key)}
+                          >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 text-sm">
                                 <span className="font-medium">{placeName(row)}</span>
                                 <span className="text-muted-foreground"> · {row.lease.customerName ?? "שוכר"}</span>
                               </div>
-                              <span className="shrink-0 text-sm font-semibold tabular-nums">{formatCurrency(row.status.rent)}</span>
+                              <span className="shrink-0 text-sm font-semibold tabular-nums">
+                                {formatCurrency(row.status.rent)}
+                              </span>
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                               {stateChip(row)}
                               {note ? <span>{note}</span> : null}
-                              {row.debt.amount > 0.5 ? <span className="text-destructive">חוב ישן {formatCurrency(row.debt.amount)}</span> : null}
+                              {row.debt.amount > 0.5 ? (
+                                <span className="text-destructive">חוב ישן {formatCurrency(row.debt.amount)}</span>
+                              ) : null}
                               {row.checksInHand.count > 0 ? <span>צ׳קים ביד {checksInHand(row)}</span> : null}
                             </div>
                           </button>
@@ -747,7 +882,11 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
         open={cell !== null}
         onOpenChange={(next) => (next ? undefined : setCell(null))}
         title={cell ? `${placeName(cell)} · ${cell.periodLabel}` : ""}
-        description={cell ? `${cell.lease.customerName ?? ""} · ${formatCurrency(cell.status.rent)} · ${RENT_STATE[cell.status.state].label}` : undefined}
+        description={
+          cell
+            ? `${cell.lease.customerName ?? ""} · ${formatCurrency(cell.status.rent)} · ${RENT_STATE[cell.status.state].label}`
+            : undefined
+        }
         size="formMd"
       >
         {cell ? (
@@ -768,7 +907,11 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
         onRecorded={paying ? remember(paying.row.property.id) : undefined}
         onUndone={(id) => setRecorded((prev) => prev.filter((p) => p.id !== id))}
       />
-      <PropertyCheckArrivedDialog payment={arrival?.payment ?? null} title={arrival?.title ?? ""} onClose={() => setArrival(null)} />
+      <PropertyCheckArrivedDialog
+        payment={arrival?.payment ?? null}
+        title={arrival?.title ?? ""}
+        onClose={() => setArrival(null)}
+      />
       <PropertyPaidInsteadDialog
         check={instead?.payment ?? null}
         lease={instead?.row.lease ?? null}
@@ -783,18 +926,46 @@ export default function RentRollClient({ data, todoClosed = true }: { data: Rent
 }
 
 /** "מה לעשות" — what needs doing now, each line with its one button; it folds to its title (the owner: "able to close"). */
-function ToDoSection({
+/** The name of what needs handling (owner, 2026-10-22: "לטיפול"). */
+export const TODO_TITLE = "לטיפול";
+
+/** Its button in the row under the tabs, the filter chip's size: the name, how many, open or not. */
+function ToDoToggle({ count, open, onToggle }: { count: number; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 px-3 text-xs font-semibold transition-colors",
+        TOOLBAR_CONTROL,
+        open
+          ? cn("border-secondary", TOGGLE_ON, TOGGLE_ON_HOVER)
+          : "border-input bg-background text-foreground hover:bg-accent/60",
+      )}
+    >
+      <ChecklistIcon className="h-3.5 w-3.5" />
+      {TODO_TITLE}
+      <CountBadge
+        count={count}
+        className={open ? "bg-secondary-foreground/20 text-secondary-foreground" : "bg-destructive text-destructive-foreground"}
+      />
+      <ChevronDownIcon className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+    </button>
+  );
+}
+
+/** What needs handling now, each line with its one button — a panel over the page, under its button's row. */
+function ToDoList({
   todo,
   today,
   onPay,
-  defaultOpen,
-  onOpenChange,
+  onClose,
 }: {
   todo: RentToDo[];
   today: string;
   onPay: (row: RentRollRow, period?: string) => void;
-  defaultOpen: boolean;
-  onOpenChange: (open: boolean) => void;
+  onClose: () => void;
 }) {
   const line = (key: string, tone: "danger" | "warning" | "muted", label: string, text: ReactNode, action: ReactNode) => (
     <li key={key} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
@@ -804,7 +975,7 @@ function ToDoSection({
             "font-medium",
             tone === "danger" && "text-destructive",
             tone === "warning" && "text-warning-strong",
-            tone === "muted" && "text-muted-foreground"
+            tone === "muted" && "text-muted-foreground",
           )}
         >
           {label}
@@ -817,114 +988,128 @@ function ToDoSection({
   );
   const who = (row: RentRollRow) => `${placeName(row)} · ${row.lease.customerName ?? "שוכר"}`;
   const pay = (row: RentRollRow, period?: string, main = false) => (
-    <Button type="button" size="sm" variant={main ? "default" : "outline"} className={ROW_BUTTON} onClick={() => onPay(row, period)}>
+    <Button
+      type="button"
+      size="sm"
+      variant={main ? "default" : "outline"}
+      className={ROW_BUTTON}
+      onClick={() => onPay(row, period)}
+    >
       רישום תשלום
     </Button>
   );
 
   return (
-    <CollapsibleSection
-      title="מה לעשות"
-      icon={<ChecklistIcon className={SECTION_ICON_CLASS} />}
-      summary={todo.length > 0 ? <SectionCount count={todo.length} /> : null}
-      defaultOpen={defaultOpen}
-      onOpenChange={onOpenChange}
+    <div
+      role="dialog"
+      aria-label={TODO_TITLE}
+      className="absolute inset-x-0 top-full z-40 mt-2 max-h-[70vh] overflow-y-auto rounded-xl border border-border/60 bg-card p-3 shadow-lg lg:max-w-3xl"
     >
-      {todo.length === 0 ? (
-        <EmptyState dense>הכול בסדר — אין כרגע מה לטפל בו.</EmptyState>
-      ) : (
-        <ul className="divide-y">
-          {todo.map((item, i) => {
-            switch (item.kind) {
-              case "bounced":
-                return line(
-                  `b${i}`,
-                  "danger",
-                  "צ׳ק חזר",
-                  `${who(item.row)} · ${checkName(item.check)} · ${formatCurrency(item.check.amount)} — לבקש צ׳ק אחר או תשלום`,
-                  pay(item.row, undefined, true)
-                );
-              case "late":
-                return line(
-                  `l${i}`,
-                  "danger",
-                  "באיחור",
-                  `${who(item.row)} · ${formatCurrency(lateThisMonth(item.row, today))} · ${item.days} ימים (${item.row.periodLabel})`,
-                  pay(item.row, undefined, true)
-                );
-              case "deposit": {
-                const dueSum = item.due.reduce((s, p) => s + p.amount, 0);
-                const weekSum = item.week.reduce((s, p) => s + p.amount, 0);
-                return line(
-                  `d${i}`,
-                  item.due.length > 0 ? "warning" : "muted",
-                  "צ׳קים להפקדה",
-                  [
-                    item.due.length > 0 ? `${item.due.length} הגיע זמנם · ${formatCurrency(dueSum)}` : null,
-                    item.week.length > 0 ? `השבוע ${item.week.length} · ${formatCurrency(weekSum)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · "),
-                  <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
-                    <Link href={rentChecksHref()}>לצ׳קים</Link>
-                  </Button>
-                );
-              }
-              case "debt":
-                return line(
-                  `o${i}`,
-                  "danger",
-                  "חוב ישן",
-                  `${who(item.row)} · ${formatCurrency(item.row.debt.amount)} · ${debtWords(item.row.debt)}`,
-                  item.row.debt.oldest ? pay(item.row, item.row.debt.oldest) : null
-                );
-              case "checksLow": {
-                const hand = item.row.checksInHand;
-                const text = hand.count === 0 ? "אין צ׳קים ביד" : `נשארו ${hand.count}, עד ${hand.lastLabel}`;
-                const href = whatsappHref(
-                  item.row.lease.customerPhone,
-                  `שלום ${item.row.lease.customerName ?? ""}, הצ׳קים לשכירות ב${placeName(item.row)} ${hand.count === 0 ? "נגמרו" : `נגמרים ב${hand.lastLabel}`}. אפשר להעביר את הצ׳קים הבאים?`
-                );
-                return line(
-                  `c${i}`,
-                  "warning",
-                  "צ׳קים נגמרים",
-                  `${who(item.row)} · ${text} — לבקש צ׳קים חדשים`,
-                  href ? (
-                    <Button asChild size="sm" variant="outline" className={cn(ROW_BUTTON, "gap-1")}>
-                      <a href={href} target="_blank" rel="noreferrer">
-                        <ChatIcon className="h-3.5 w-3.5" />
-                        וואטסאפ
-                      </a>
-                    </Button>
-                  ) : null
-                );
-              }
-              case "leaseEnd":
-                return line(
-                  `e${i}`,
-                  "warning",
-                  "חוזה מסתיים",
-                  `${who(item.row)} · ${formatShortDate(item.row.lease.endDate)} (עוד ${item.days} ימים) — לחדש או להודיע`,
-                  <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
-                    <Link href={`/properties/${item.row.property.id}#tenant`}>לחוזה</Link>
-                  </Button>
-                );
-              case "vacant":
-                return line(
-                  `v${i}`,
-                  "muted",
-                  "בלי שוכר",
-                  item.properties.map((p) => propertyDisplayName(p)).join(" · "),
-                  <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
-                    <Link href="/properties">לנכסים</Link>
-                  </Button>
-                );
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <ChecklistIcon className="h-4 w-4 text-muted-foreground" />
+          {TODO_TITLE}
+        </span>
+        <button
+          type="button"
+          aria-label="סגירה"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
+          onClick={onClose}
+        >
+          <CloseIcon className="h-4 w-4" />
+        </button>
+      </div>
+      <ul className="divide-y">
+        {todo.map((item, i) => {
+          switch (item.kind) {
+            case "bounced":
+              return line(
+                `b${i}`,
+                "danger",
+                "צ׳ק חזר",
+                `${who(item.row)} · ${checkName(item.check)} · ${formatCurrency(item.check.amount)} — לבקש צ׳ק אחר או תשלום`,
+                pay(item.row, undefined, true),
+              );
+            case "late":
+              return line(
+                `l${i}`,
+                "danger",
+                "באיחור",
+                `${who(item.row)} · ${formatCurrency(lateThisMonth(item.row, today))} · ${item.days} ימים (${item.row.periodLabel})`,
+                pay(item.row, undefined, true),
+              );
+            case "deposit": {
+              const dueSum = item.due.reduce((s, p) => s + p.amount, 0);
+              const weekSum = item.week.reduce((s, p) => s + p.amount, 0);
+              return line(
+                `d${i}`,
+                item.due.length > 0 ? "warning" : "muted",
+                "צ׳קים להפקדה",
+                [
+                  item.due.length > 0 ? `${item.due.length} הגיע זמנם · ${formatCurrency(dueSum)}` : null,
+                  item.week.length > 0 ? `השבוע ${item.week.length} · ${formatCurrency(weekSum)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
+                  <Link href={rentChecksHref(undefined, "week")}>לצ׳קים</Link>
+                </Button>,
+              );
             }
-          })}
-        </ul>
-      )}
-    </CollapsibleSection>
+            case "debt":
+              return line(
+                `o${i}`,
+                "danger",
+                "חוב ישן",
+                `${who(item.row)} · ${formatCurrency(item.row.debt.amount)} · ${debtWords(item.row.debt)}`,
+                item.row.debt.oldest ? pay(item.row, item.row.debt.oldest) : null,
+              );
+            case "checksLow": {
+              const hand = item.row.checksInHand;
+              const text = hand.count === 0 ? "אין צ׳קים ביד" : `נשארו ${hand.count}, עד ${hand.lastLabel}`;
+              const href = whatsappHref(
+                item.row.lease.customerPhone,
+                `שלום ${item.row.lease.customerName ?? ""}, הצ׳קים לשכירות ב${placeName(item.row)} ${hand.count === 0 ? "נגמרו" : `נגמרים ב${hand.lastLabel}`}. אפשר להעביר את הצ׳קים הבאים?`,
+              );
+              return line(
+                `c${i}`,
+                "warning",
+                "צ׳קים נגמרים",
+                `${who(item.row)} · ${text} — לבקש צ׳קים חדשים`,
+                href ? (
+                  <Button asChild size="sm" variant="outline" className={cn(ROW_BUTTON, "gap-1")}>
+                    <a href={href} target="_blank" rel="noreferrer">
+                      <ChatIcon className="h-3.5 w-3.5" />
+                      וואטסאפ
+                    </a>
+                  </Button>
+                ) : null,
+              );
+            }
+            case "leaseEnd":
+              return line(
+                `e${i}`,
+                "warning",
+                "חוזה מסתיים",
+                `${who(item.row)} · ${formatShortDate(item.row.lease.endDate)} (עוד ${item.days} ימים) — לחדש או להודיע`,
+                <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
+                  <Link href={`/properties/${item.row.property.id}#tenant`}>לחוזה</Link>
+                </Button>,
+              );
+            case "vacant":
+              return line(
+                `v${i}`,
+                "muted",
+                "בלי שוכר",
+                item.properties.map((p) => propertyDisplayName(p)).join(" · "),
+                <Button asChild size="sm" variant="outline" className={ROW_BUTTON}>
+                  <Link href="/properties">לנכסים</Link>
+                </Button>,
+              );
+          }
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -952,14 +1137,17 @@ function Tile({
           "mt-0.5 text-lg font-semibold tabular-nums",
           tone === "success" && "text-success",
           tone === "danger" && "text-destructive",
-          tone === "warning" && "text-warning-strong"
+          tone === "warning" && "text-warning-strong",
         )}
       >
         {value}
       </div>
       {progress != null ? (
         <div className="my-1 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-success" style={{ width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%` }} />
+          <div
+            className="h-full rounded-full bg-success"
+            style={{ width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%` }}
+          />
         </div>
       ) : null}
       {lines
@@ -1077,7 +1265,7 @@ function YearTable({
                       className={cn(
                         "inline-flex h-7 min-w-9 items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors hover:ring-2 hover:ring-ring/30",
                         ahead ? AHEAD_CHECK : look.className,
-                        cell.returned.length > 0 && "ring-2 ring-destructive/60"
+                        cell.returned.length > 0 && "ring-2 ring-destructive/60",
                       )}
                     >
                       {look.mark}
@@ -1086,7 +1274,11 @@ function YearTable({
                 );
               })}
               <td className={cn(CELL, "whitespace-nowrap tabular-nums")}>
-                {owed > 0.5 ? <span className="font-medium text-destructive">{formatCurrency(owed)}</span> : <span className="text-muted-foreground">—</span>}
+                {owed > 0.5 ? (
+                  <span className="font-medium text-destructive">{formatCurrency(owed)}</span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
               </td>
             </tr>
           );
@@ -1096,14 +1288,23 @@ function YearTable({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {(["paid", "check", "partial", "late", "upcoming"] as const).map((state) => (
           <span key={state} className="inline-flex items-center gap-1">
-            <span className={cn("inline-flex h-5 min-w-6 items-center justify-center rounded-full px-1.5 font-semibold", CELL_LOOK[state].className)}>
+            <span
+              className={cn(
+                "inline-flex h-5 min-w-6 items-center justify-center rounded-full px-1.5 font-semibold",
+                CELL_LOOK[state].className,
+              )}
+            >
               {CELL_LOOK[state].mark}
             </span>
             {state === "check" ? "צ׳ק ממתין לפירעון" : RENT_STATE[state].label}
           </span>
         ))}
         <span className="inline-flex items-center gap-1">
-          <span className={cn("inline-flex h-5 min-w-6 items-center justify-center rounded-full px-1.5 font-semibold", AHEAD_CHECK)}>צ׳</span>
+          <span
+            className={cn("inline-flex h-5 min-w-6 items-center justify-center rounded-full px-1.5 font-semibold", AHEAD_CHECK)}
+          >
+            צ׳
+          </span>
           צ׳ק ביד לחודש הבא
         </span>
         <span className="inline-flex items-center gap-1">

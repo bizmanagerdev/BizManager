@@ -175,29 +175,40 @@ afterEach(() => {
 
 const table = () => screen.getByRole("table");
 const rowOf = (name: string) => within(table()).getByText(name).closest("tr") as HTMLElement;
-/** "מה לעשות" — the folding section's card. */
-const todo = () => screen.getByRole("button", { name: /מה לעשות/ }).closest(".scroll-mt-24") as HTMLElement;
+/** What needs handling: its button in the row under the tabs, and its list — a panel over the page. */
+const todoButton = () => screen.getByRole("button", { name: /לטיפול/ });
+const todo = () => screen.getByRole("dialog", { name: "לטיפול" });
+const owingHeader = () => within(table()).getByRole("button", { name: "חוב ישן" });
 
-async function show(props: { todoClosed?: boolean } = {}) {
+async function show() {
   await act(async () => {
-    render(<RentRollClient data={DATA} {...props} />);
+    render(<RentRollClient data={DATA} />);
   });
 }
 
 describe("the rent page", () => {
-  it("what to do: the late rent and the lease ending, each with its button", async () => {
-    await show({ todoClosed: false });
+  it("what needs handling starts closed — a small button with how many; it opens over the page, and closes", async () => {
+    await show();
+    expect(todoButton()).toHaveAttribute("aria-expanded", "false");
+    expect(todoButton()).toHaveTextContent("2");
+    expect(screen.queryByRole("dialog", { name: "לטיפול" })).not.toBeInTheDocument();
+    fireEvent.click(todoButton());
     const lines = within(todo()).getAllByRole("listitem").map((li) => li.textContent);
     expect(lines[0]).toContain("באיחור");
     expect(lines[0]).toContain("יהודה הנשיא 15 · ווגשל · ₪8,500 · 20 ימים");
     expect(lines.some((l) => l?.includes("חוזה מסתיים") && l.includes("15/12/26 (עוד 55 ימים)"))).toBe(true);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "לטיפול" })).not.toBeInTheDocument();
+    fireEvent.click(todoButton());
+    fireEvent.click(within(todo()).getByRole("button", { name: "סגירה" }));
+    expect(screen.queryByRole("dialog", { name: "לטיפול" })).not.toBeInTheDocument();
   });
 
   it("four plain figures: collected of the month, late, checks to deposit, checks in hand — the checks ones open the checks page", async () => {
     await show();
     expect(screen.getByText("מתוך ₪12,500 · 1 מתוך 2 שילמו")).toBeInTheDocument();
     expect(screen.getByText("שוכר אחד").parentElement).toHaveTextContent("באיחור₪8,500");
-    expect(screen.getByRole("link", { name: /צ׳קים להפקדה/ })).toHaveAttribute("href", "/checks?property=rent");
+    expect(screen.getByRole("link", { name: /צ׳קים להפקדה/ })).toHaveAttribute("href", "/checks?property=rent&filter=week");
     const inHand = screen.getByRole("link", { name: /צ׳קים ביד/ });
     expect(inHand).toHaveTextContent("2 צ׳קים");
     expect(inHand).toHaveTextContent("₪8,000 שעוד לא הופקדו");
@@ -222,35 +233,52 @@ describe("the rent page", () => {
     expect(within(details).getByRole("link", { name: "הצ׳קים של הנכס" })).toHaveAttribute("href", "/checks?property=p-d4");
   });
 
-  it("'רישום תשלום' opens on the row's month, paid the lease's usual way — the row and its line show paid at once", async () => {
+  it("'רישום תשלום' opens on the row's month, paid the lease's usual way — the row shows paid at once, and it's off the list", async () => {
     await show();
     fireEvent.click(within(rowOf("יהודה הנשיא 15")).getByRole("button", { name: "רישום תשלום" }));
     expect(dialog.props?.prefill).toEqual({ periodStart: "2026-10-01", method: "bank_transfer", accountId: "a2" });
     fireEvent.click(screen.getByRole("button", { name: "שמירה (מדומה)" }));
     expect(within(rowOf("יהודה הנשיא 15")).getByText("שולם")).toBeInTheDocument();
+    fireEvent.click(todoButton());
     expect(within(todo()).queryByText("באיחור")).not.toBeInTheDocument();
   });
 
-  it("'רק מי שחייב' shows only who owes", async () => {
+  it("from the list: its line's 'רישום תשלום' closes the list and opens the payment", async () => {
     await show();
-    fireEvent.click(screen.getByRole("button", { name: "רק מי שחייב (1)" }));
-    expect(within(table()).queryByText("D4 הר יונה")).not.toBeInTheDocument();
-    expect(within(table()).getByText("יהודה הנשיא 15")).toBeInTheDocument();
+    fireEvent.click(todoButton());
+    fireEvent.click(within(todo()).getAllByRole("button", { name: "רישום תשלום" })[0]);
+    expect(screen.queryByRole("dialog", { name: "לטיפול" })).not.toBeInTheDocument();
+    expect(dialog.props?.open).toBe(true);
   });
 
-  it("another month: back and on by each lease's own months, and back to this one; what to do stays with today", async () => {
+  it("the debt column's header filters: only who owes — and back, the header still there", async () => {
     await show();
-    fireEvent.click(screen.getByRole("button", { name: "החודש הקודם" }));
+    fireEvent.click(owingHeader());
+    expect(owingHeader()).toHaveAttribute("aria-pressed", "true");
+    expect(within(table()).queryByText("D4 הר יונה")).not.toBeInTheDocument();
+    expect(within(table()).getByText("יהודה הנשיא 15")).toBeInTheDocument();
+    fireEvent.click(owingHeader());
+    expect(within(table()).getByText("D4 הר יונה")).toBeInTheDocument();
+  });
+
+  it("another month: back and on by each lease's own months, and back to this one; what needs handling stays with today", async () => {
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "חודש קודם" }));
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("ספטמבר 2026");
     expect(within(rowOf("יהודה הנשיא 15")).getByText("שולם")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /מה לעשות/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /לטיפול/ })).not.toBeInTheDocument();
     expect(screen.getByText("נגבה בחודש הזה")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "החודש הבא" }));
-    fireEvent.click(screen.getByRole("button", { name: "החודש הבא" }));
+    fireEvent.click(screen.getByRole("button", { name: "חודש הבא" }));
+    fireEvent.click(screen.getByRole("button", { name: "חודש הבא" }));
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("נובמבר 2026 · כסלו תשפ״ז");
     expect(within(rowOf("D4 הר יונה")).getByText("צ׳ק ממתין לפירעון")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "לחודש הזה" }));
+    fireEvent.click(screen.getByRole("button", { name: "היום" }));
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("אוקטובר 2026 · חשון תשפ״ז");
+  });
+
+  it("the tab row only switches tabs — no count on it", async () => {
+    await show();
+    expect(screen.getByRole("tab", { name: /חודש/ }).textContent).toBe("חודש");
   });
 
   it("the year at a glance: a cell a month, the months ahead with a check in hand outlined, each month's share collected", async () => {
@@ -265,24 +293,6 @@ describe("the rent page", () => {
     expect(within(table()).getByText("32%")).toBeInTheDocument();
   });
 
-  it("'מה לעשות' starts folded, with how many are waiting; it opens, and remembers it", async () => {
-    await show();
-    const head = () => screen.getByRole("button", { name: /מה לעשות/ });
-    expect(head()).toHaveAttribute("aria-expanded", "false");
-    expect(head()).toHaveTextContent("2");
-    fireEvent.click(head());
-    expect(head()).toHaveAttribute("aria-expanded", "true");
-    expect(document.cookie).toContain("bizh-rent-todo=open");
-    fireEvent.click(head());
-    expect(head()).toHaveAttribute("aria-expanded", "false");
-    expect(document.cookie).not.toContain("bizh-rent-todo=open");
-  });
-
-  it("open from the start for a viewer who opened it before", async () => {
-    await show({ todoClosed: false });
-    expect(screen.getByRole("button", { name: /מה לעשות/ })).toHaveAttribute("aria-expanded", "true");
-  });
-
   // Last: the bounce leaves its patch in the undo engine (module state).
   it("a check that came back: the month back to owing, the check shown as returned, at once", async () => {
     await show();
@@ -290,6 +300,7 @@ describe("the rent page", () => {
     const details = rowOf("D4 הר יונה").nextElementSibling as HTMLElement;
     fireEvent.click(within(details).getByRole("button", { name: "צ׳ק #261 חזר" }));
     expect(within(rowOf("D4 הר יונה")).getByText("צ׳ק חזר")).toBeInTheDocument();
+    fireEvent.click(todoButton());
     expect(within(todo()).getByText("צ׳ק חזר")).toBeInTheDocument();
   });
 });

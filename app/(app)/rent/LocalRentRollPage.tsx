@@ -15,7 +15,7 @@ import RentRollClient from "@/app/(app)/rent/RentRollClient";
 // tenant or payment changes. If the device's copy can't serve it, the page
 // reloads as the server version (?data=server).
 
-export default function LocalRentRollPage({ viewer, todoClosed }: { viewer: LocalCardViewer; todoClosed: boolean }) {
+export default function LocalRentRollPage({ viewer }: { viewer: LocalCardViewer }) {
   const roll = useLocalCard({
     kind: "rentRoll",
     viewer,
@@ -31,6 +31,6 @@ export default function LocalRentRollPage({ viewer, todoClosed }: { viewer: Loca
     if (contentOnScreen) emitNavigationContentShown();
   }, [contentOnScreen]);
 
-  if (!roll) return <RentRollSkeleton todoClosed={todoClosed} />;
-  return <RentRollClient data={roll.data.data} todoClosed={todoClosed} />;
+  if (!roll) return <RentRollSkeleton />;
+  return <RentRollClient data={roll.data.data} />;
 }

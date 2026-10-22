@@ -59,6 +59,12 @@ function checkSearchRecord(c: CheckRow): SearchRecord {
 }
 
 type FilterKey = "open" | "all" | "today" | "week" | "overdue" | "upcoming" | "cleared";
+const FILTER_KEYS: readonly FilterKey[] = ["open", "all", "today", "week", "overdue", "upcoming", "cleared"];
+
+/** The tab a link opens on — ?filter=week from the rent page's checks to deposit; else טרם נפרעו. */
+function filterFromLink(value: string | null): FilterKey {
+  return FILTER_KEYS.find((key) => key === value) ?? "open";
+}
 
 /**
  * Whose checks: everyone's (""), every property's rent ("rent"), or one
@@ -124,7 +130,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
     return [...names].sort((a, b) => a[1].localeCompare(b[1], "he"));
   }, [allChecks]);
   const checks = useMemo(() => allChecks.filter((c) => inPropertyFilter(c, propertyFilter)), [allChecks, propertyFilter]);
-  const [filter, setFilter] = useState<FilterKey>("open");
+  const [filter, setFilter] = useState<FilterKey>(() => filterFromLink(searchParams.get("filter")));
   const [sort, setSort] = useState<SortKey>("due");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);

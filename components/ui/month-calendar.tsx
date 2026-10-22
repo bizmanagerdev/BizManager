@@ -42,21 +42,51 @@ export function MonthNav({
   labelClassName?: string;
 }) {
   const onCurrent = month.getFullYear() === todayDate.getFullYear() && month.getMonth() === todayDate.getMonth();
-  const step = (delta: number) => onChange(new Date(month.getFullYear(), month.getMonth() + delta, 1));
+  return (
+    <MonthStepper
+      label={fmtMonthYear(month)}
+      labelClassName={labelClassName}
+      onStep={(delta) => onChange(new Date(month.getFullYear(), month.getMonth() + delta, 1))}
+      onToday={() => onChange(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))}
+      onCurrent={onCurrent}
+    />
+  );
+}
+
+/**
+ * MonthNav's buttons around any month's name — for months that aren't a
+ * calendar month (the rent page's: each lease's own, "אוקטובר 2026 · חשון
+ * תשפ״ז"), so every page steps through months with the same ‹ › and היום.
+ */
+export function MonthStepper({
+  label,
+  onStep,
+  onToday,
+  onCurrent,
+  labelClassName = "text-sm font-semibold",
+}: {
+  label: ReactNode;
+  /** -1 the month before, +1 the month after. */
+  onStep: (delta: number) => void;
+  onToday: () => void;
+  /** Showing this month: היום has nothing to do. */
+  onCurrent: boolean;
+  labelClassName?: string;
+}) {
   return (
     <div className="flex items-center gap-1.5">
       <button
         type="button"
-        onClick={() => step(-1)}
+        onClick={() => onStep(-1)}
         aria-label="חודש קודם"
         className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
       >
         ‹
       </button>
-      <span className={`min-w-[7rem] text-center ${labelClassName}`}>{fmtMonthYear(month)}</span>
+      <span className={`min-w-[7rem] text-center ${labelClassName}`}>{label}</span>
       <button
         type="button"
-        onClick={() => step(1)}
+        onClick={() => onStep(1)}
         aria-label="חודש הבא"
         className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
       >
@@ -64,7 +94,7 @@ export function MonthNav({
       </button>
       <button
         type="button"
-        onClick={() => onChange(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))}
+        onClick={onToday}
         disabled={onCurrent}
         className="h-[34px] rounded-lg border bg-background px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/10 disabled:opacity-40"
       >

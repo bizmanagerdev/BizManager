@@ -14,50 +14,35 @@ import { CalendarIcon, ChecklistIcon } from "@/components/ui/icons";
 
 const COLUMNS = ["w-28", "w-24", "w-14", "w-28", "w-14", "w-20", "w-16", "w-24"];
 
-export default function RentRollSkeleton({ rows = 5, todoClosed = true }: { rows?: number; todoClosed?: boolean }) {
+export default function RentRollSkeleton({ rows = 5 }: { rows?: number }) {
   return (
     <PageStack aria-busy="true">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60">
-        <Tabs value="today" dir="rtl">
-          <TabsList variant="underline" className="w-auto border-b-0">
-            <TabsTrigger value="today">
-              <ChecklistIcon className="h-4 w-4" />
-              חודש
-            </TabsTrigger>
-            <TabsTrigger value="year">
-              <CalendarIcon className="h-4 w-4" />
-              לוח שנתי
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="flex items-center gap-1.5 pb-1">
-          <Skeleton className="h-9 w-9 rounded-lg" />
-          <TextLineSkeleton className="text-sm font-semibold" barClassName="w-44" />
-          <Skeleton className="h-9 w-9 rounded-lg" />
+      <Tabs value="today" dir="rtl" className="-mt-2 md:-mt-4 lg:-mt-6">
+        <TabsList variant="underline">
+          <TabsTrigger value="today">
+            <ChecklistIcon className="h-4 w-4" />
+            חודש
+          </TabsTrigger>
+          <TabsTrigger value="year">
+            <CalendarIcon className="h-4 w-4" />
+            לוח שנתי
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <Skeleton className="h-[34px] w-[34px] rounded-lg" />
+          <TextLineSkeleton className="min-w-[7rem] text-sm font-semibold" barClassName="w-44" />
+          <Skeleton className="h-[34px] w-[34px] rounded-lg" />
+          <Skeleton className="h-[34px] w-12 rounded-lg" />
         </div>
-        <div className="ms-auto flex items-center gap-1.5 pb-1">
+        <Skeleton className="h-[34px] w-28 rounded-lg" />
+        <div className="ms-auto flex items-center gap-1.5">
           <Skeleton className="h-9 w-9 rounded-lg" />
           <Skeleton className="h-9 w-9 rounded-lg" />
         </div>
       </div>
-
-      <Card>
-        <div className="flex min-h-[3.75rem] items-center gap-2 px-4 py-2.5 lg:px-6">
-          <TextLineSkeleton className="text-base font-semibold" barClassName="w-24" />
-        </div>
-        {todoClosed ? null : (
-          <CardContent className="px-4 pb-4 pt-0 lg:px-6 lg:pb-6">
-            <ul className="divide-y">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <li key={i} className="flex items-center justify-between gap-3 py-1.5">
-                  <TextLineSkeleton className="text-sm" barClassName="w-72 max-w-full" />
-                  <Skeleton className="h-7 w-24 shrink-0 rounded-lg" />
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        )}
-      </Card>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -69,10 +54,6 @@ export default function RentRollSkeleton({ rows = 5, todoClosed = true }: { rows
             </CardContent>
           </Card>
         ))}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-[34px] w-32 rounded-lg" />
       </div>
 
       <div>

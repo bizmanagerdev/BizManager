@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { cookies } from "next/headers";
 import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { loadRentRoll } from "@/lib/properties";
@@ -11,7 +10,7 @@ import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/
 import { israelDateKey } from "@/lib/timezone";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import RentRollClient, { RENT_TODO_COOKIE } from "./RentRollClient";
+import RentRollClient from "./RentRollClient";
 import LocalRentRollPage from "./LocalRentRollPage";
 import RentRollServerCheck from "./RentRollServerCheck";
 
@@ -20,10 +19,8 @@ export const revalidate = 30;
 // The rent roll (owner, 2026-10-21): every lease's rent for the month on one
 // page, marked from its row (RentRollClient).
 export default async function RentRollPage({ searchParams }: { searchParams?: Promise<{ data?: string }> }) {
-  const [{ profile, supabase }, query, jar] = await Promise.all([requireStaffPage(), searchParams, cookies()]);
+  const [{ profile, supabase }, query] = await Promise.all([requireStaffPage(), searchParams]);
   const serverVersion = query?.data === "server";
-  // "מה לעשות" starts folded, unless this viewer opened it: drawn so from the start.
-  const todoClosed = jar.get(RENT_TODO_COOKIE)?.value !== "open";
 
   // With the device version on for everyone (LOCAL_DATA_PAGES.rentRoll) the
   // read waits for the check instead, and goes out only for people without a
@@ -46,7 +43,7 @@ export default async function RentRollPage({ searchParams }: { searchParams?: Pr
     return (
       <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
         <DeviceFrameMark page="rentRoll" renderedAt={serverRenderedAt()} />
-        <LocalRentRollPage viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }} todoClosed={todoClosed} />
+        <LocalRentRollPage viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }} />
         {checkDue ? (
           <Suspense fallback={null}>
             <RentRollServerCheck supabase={supabase} userId={profile.id} role={profile.role ?? ""} locale={profile.locale} />
@@ -75,7 +72,7 @@ export default async function RentRollPage({ searchParams }: { searchParams?: Pr
         />
       ) : null}
       {data ? (
-        <RentRollClient data={data} todoClosed={todoClosed} />
+        <RentRollClient data={data} />
       ) : (
         // A read that failed isn't "nobody owes anything".
         <Card>

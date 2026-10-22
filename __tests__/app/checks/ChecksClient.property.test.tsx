@@ -69,4 +69,12 @@ describe("the checks page by property", () => {
     fireEvent.change(screen.getByLabelText("נכס"), { target: { value: "" } });
     expect(shown()).toHaveLength(3);
   });
+
+  it("?filter=week: opens on this week's checks to deposit", () => {
+    params.value = "property=rent&filter=week";
+    render(<ChecksClient checks={CHECKS} />);
+    // The tab shown is the filled one; the default (טרם נפרעו) isn't.
+    expect(screen.getByRole("button", { name: "השבוע" }).className).toContain("bg-secondary text-secondary-foreground");
+    expect(screen.getByRole("button", { name: "טרם נפרעו" }).className).not.toContain("bg-secondary text-secondary-foreground");
+  });
 });
