@@ -1341,7 +1341,7 @@ export default function StatementDetailClient({
           onChange={(e) => setLineSearch(e.target.value)}
           placeholder="חיפוש שורה — בית עסק, סכום, תאריך, קטגוריה..."
           aria-label="חיפוש שורה בפירוט"
-          className="h-10"
+          className="h-10 md:w-96"
         />
         {foundLines ? (
           <div className="text-sm text-muted-foreground">

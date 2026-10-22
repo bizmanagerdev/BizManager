@@ -27,6 +27,15 @@ type Props = {
   iconOnly?: boolean;
 };
 
+/** Ctrl+K (⌘K) or "/" with the computer's box out of sight: the dialog opens instead. */
+const OPEN_SEARCH_EVENT = "bizh:open-global-search";
+
+/** Typing somewhere already — "/" is a character there, not the shortcut. */
+function typingIn(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
 // What the box can find, said once before anything is typed.
 const SEARCH_HINT =
   "כל דבר במערכת: שם, מילה מהערה או מתגובה, סכום (1000), תאריך (15/10), טלפון, סניף, מסמך, רכב, הוצאה, הכנסה…";
@@ -83,6 +92,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
   // Only the offline fallback below reads it, so it loads once the page is idle.
   const { search: searchCustomers } = useCustomerSearchIndex({ deferUntilIdle: true });
   const desktopRef = useRef<HTMLDivElement | null>(null);
+  const desktopInputRef = useRef<HTMLInputElement | null>(null);
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -107,11 +117,43 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
   }, [mobileOpen]);
 
   // The phone app's "חיפוש" shortcut (/dashboard?quick=search): open with the
-  // box ready to type in. A one-time read of the address on mount.
+  // box ready to type in. A one-time read of the address on mount — by the
+  // copy that has the dialog (the computer's box is another copy, desktopOnly).
   useEffect(() => {
+    if (desktopOnly) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (takeQuickParam(["search"] as const)) setMobileOpen(true);
-  }, []);
+  }, [desktopOnly]);
+
+  // Ctrl+K / ⌘K, or "/" when not typing (owner, 2026-10-22 — the way Shopify,
+  // GitHub and Slack open theirs): into the computer's box when it's on screen,
+  // else the dialog. By the key's place, not its letter — on a Hebrew layout K
+  // is "ל" and "/" is ".".
+  useEffect(() => {
+    if (mobileOnly) return;
+    function onKey(event: KeyboardEvent) {
+      const combo = (event.ctrlKey || event.metaKey) && !event.altKey && event.code === "KeyK";
+      const slash = event.code === "Slash" && !event.ctrlKey && !event.metaKey && !event.altKey && !typingIn(event.target);
+      if (!combo && !slash) return;
+      event.preventDefault();
+      const input = desktopInputRef.current;
+      if (input && input.offsetParent !== null) {
+        input.focus();
+        input.select();
+        setOpen(true);
+      } else {
+        window.dispatchEvent(new Event(OPEN_SEARCH_EVENT));
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileOnly]);
+  useEffect(() => {
+    if (desktopOnly) return;
+    const onOpen = () => setMobileOpen(true);
+    window.addEventListener(OPEN_SEARCH_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_SEARCH_EVENT, onOpen);
+  }, [desktopOnly]);
 
   useEffect(() => {
     const normalized = deferredQuery.trim();
@@ -207,10 +249,11 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
   return (
     <>
       {!mobileOnly ? (
-        <div ref={desktopRef} className={cn("relative hidden flex-1 lg:flex", className)}>
+        <div ref={desktopRef} className={cn("relative hidden lg:flex", className)}>
           <div className="relative w-full">
-            <SearchIcon className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={desktopInputRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onFocus={() => setOpen(true)}
@@ -221,17 +264,25 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
                 }
                 if (event.key === "Escape") {
                   setOpen(false);
+                  event.currentTarget.blur();
                 }
               }}
-              placeholder="חיפוש בכל המערכת..."
-              // Recessed into the dark top bar rather than a bright white box:
-              // search is a tool you reach for, not the first thing that should
-              // grab the eye. Lifts slightly on hover/focus.
-              className="h-10 rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none transition-colors placeholder:text-sidebar-foreground/60 hover:bg-white/[0.1] focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+              placeholder="חיפוש בכל המערכת"
+              aria-label="חיפוש בכל המערכת"
+              aria-keyshortcuts="Control+K /"
+              // An open box in the middle of the bar, not a lone glyph — on a
+              // computer a magnifier alone is easy to miss (NN/g); the page's
+              // own colours, a step darker than the bar, a white field once in it.
+              className="h-10 rounded-xl border-border/60 bg-muted/50 pe-16 ps-9 shadow-none transition-colors placeholder:text-muted-foreground hover:bg-muted/70 focus-visible:bg-background"
             />
+            {query ? null : (
+              <kbd className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 rounded-md border border-border/70 bg-background px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground">
+                Ctrl K
+              </kbd>
+            )}
           </div>
           {open ? (
-            <div className="absolute inset-x-0 top-[calc(100%+0.6rem)] z-50 overflow-hidden rounded-[1.4rem] border border-border/60 bg-background/95 shadow-elevated">
+            <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-xl border border-border/60 bg-background shadow-elevated">
               <SearchResults
                 results={results}
                 query={query}

@@ -55,7 +55,6 @@ import { dueUrgencyChipClass, formatDateWithTime, formatShortDate, getDueUrgency
 import type { TaskOption, UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
-import { useSetHeaderToolbar } from "@/components/layout/page-title-context";
 import { PAGE_HEADER_TOOLBAR_ID, PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 import type { Locale } from "@/lib/i18n/types";
@@ -1613,11 +1612,12 @@ export default function TasksPageClient(props: Props) {
   const activeFilterCount =
     (urlPriority ? 1 : 0) + (urlDomain ? 1 : 0) + (urlLinkedId ? 1 : 0) + (urlScope === "all" ? 1 : 0);
 
-  // Tablet/desktop: the board's search/filters/recurring controls live IN THE
-  // TOP BAR ITSELF (via useSetHeaderToolbar) rather than a row below it (user,
+  // Tablet/desktop: the board's search/filters/recurring controls in the strip
+  // under the top bar, as on a phone — they were IN the bar itself (user,
   // 2026-08-27: "move the search and the buttons to the top bar so the cards
-  // can take the full height"). On a phone the bar keeps its title and these
-  // controls sit in the toolbar strip under it (see PageHeaderToolbar below).
+  // can take the full height") until the search for everything took the bar's
+  // middle (owner, 2026-10-22: "its search moves out of the top bar into its
+  // own row"), so two searches never sit side by side up there.
   // The search field and buttons are the app's ordinary ones — the same search
   // box as projects/orders, the same filled buttons — just sitting on the dark
   // bar (user, 2026-10-04). The search is explicitly white with the normal
@@ -1643,7 +1643,12 @@ export default function TasksPageClient(props: Props) {
             type="button"
             className="shrink-0 gap-1.5"
             aria-expanded={filtersOpen}
-            onClick={() => setFiltersOpen((x) => !x)}
+            onClick={() => {
+              // The card hangs from the strip's bottom edge, as on a phone.
+              const strip = document.getElementById(PAGE_HEADER_TOOLBAR_ID);
+              if (strip) setPhoneFiltersTop(strip.getBoundingClientRect().bottom);
+              setFiltersOpen((x) => !x);
+            }}
           >
             <FilterIcon className="h-4 w-4" />
             {t(tasksDict, props.locale, "filtersLabel")}
@@ -1669,7 +1674,6 @@ export default function TasksPageClient(props: Props) {
     ),
     [qInput, handleQChange, filtersOpen, canSeeAll, activeFilterCount, props.locale]
   );
-  useSetHeaderToolbar(headerToolbarNode);
 
   return (
     // Cancel the shell's padding around the board at every size: the board is a
@@ -1689,8 +1693,9 @@ export default function TasksPageClient(props: Props) {
           (dark like the bar — .dark-topbar-page covers the strip too). They used
           to be crammed into the bar itself beside its own icons, which left the
           search field a 57px stub. */}
-      <PageHeaderToolbar>
-        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
+      <PageHeaderToolbar desktop>
+        <div className="hidden w-full md:flex">{headerToolbarNode}</div>
+        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2 md:hidden">
           <div className="relative w-full min-w-0">
             <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--primary-5))]" />
             <Input
@@ -1768,7 +1773,7 @@ export default function TasksPageClient(props: Props) {
       ) : null}
 
       {/* Desktop filters: a card floating OVER the board, hung under the מסננים
-          button in the top bar (fixed, so the board's overflow-clip can't cut
+          button in the strip (fixed, so the board's overflow-clip can't cut
           it off). Inline it pushed the board down every time it opened. */}
       {filtersOpen ? (
         <div className="hidden md:block">
@@ -1778,7 +1783,10 @@ export default function TasksPageClient(props: Props) {
             className="fixed inset-0 z-40 bg-black/20"
             onClick={() => setFiltersOpen(false)}
           />
-          <div className="fixed left-6 top-[60px] z-50 w-[28rem] max-w-[calc(100vw-3rem)] rounded-xl border bg-card p-3 shadow-xl lg:left-8">
+          <div
+            className="fixed left-6 z-50 w-[28rem] max-w-[calc(100vw-3rem)] rounded-xl border bg-card p-3 shadow-xl lg:left-8"
+            style={{ top: phoneFiltersTop }}
+          >
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-medium">{t(tasksDict, props.locale, "filtersLabel")}</span>
               <button
@@ -1829,13 +1837,13 @@ export default function TasksPageClient(props: Props) {
           }}
           // The h-[…] classes are the board's height from the server HTML on,
           // until the loop above finds something to correct: the screen minus
-          // the 60px top bar (and, on a phone, the 3.25rem toolbar strip, the
+          // the 60px top bar and the 3.25rem toolbar strip (and, on a phone, the
           // 59px bottom nav and its safe-area inset), plus the 48px
           // BOARD_BLEED. The loop still has the last word — this just means it
           // starts within a few px of the answer, instead of the board loading
           // at its content height and the lists' bottom rows jumping down once
           // the page's JS ran (Speed Insights: layout shift on /tasks).
-          className="relative -mx-3 flex h-[calc(100dvh-119px-3.25rem-env(safe-area-inset-bottom)+48px)] min-h-[20rem] flex-col overflow-hidden bg-primary md:-mx-6 md:h-[calc(100dvh-60px+48px)] lg:-mx-8"
+          className="relative -mx-3 flex h-[calc(100dvh-119px-3.25rem-env(safe-area-inset-bottom)+48px)] min-h-[20rem] flex-col overflow-hidden bg-primary md:-mx-6 md:h-[calc(100dvh-60px-3.25rem+48px)] lg:-mx-8"
         >
           <SortableContext items={columnOrder.map(columnSortableId)} strategy={horizontalListSortingStrategy}>
             {/* snap-mandatory + snap-center on each list: one swipe steps to the

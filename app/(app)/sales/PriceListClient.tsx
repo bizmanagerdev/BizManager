@@ -841,7 +841,8 @@ export default function PriceListClient({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="חיפוש..."
+              placeholder="חיפוש במחירון…"
+              aria-label="חיפוש במחירון"
               className="h-10 w-full rounded-xl ps-9"
             />
           </div>

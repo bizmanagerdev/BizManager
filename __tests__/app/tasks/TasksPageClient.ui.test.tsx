@@ -171,7 +171,7 @@ vi.mock("@dnd-kit/core", async (importOriginal) => {
 import { push, refresh, replace } from "@/__tests__/mocks/next-navigation";
 import TasksPageClient from "@/app/(app)/tasks/TasksPageClient";
 import type { TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
-import { PageTitleProvider, useHeaderToolbar } from "@/components/layout/page-title-context";
+import { PageTitleProvider } from "@/components/layout/page-title-context";
 import { PAGE_HEADER_TOOLBAR_ID } from "@/components/layout/PageHeaderToolbar";
 import { formatShortDate } from "@/lib/date";
 import { israelDateKey } from "@/lib/timezone";
@@ -225,17 +225,21 @@ function boardTasks(): TaskBoardItem[] {
   ];
 }
 
-// The app's top bar shows whatever the page registered with
-// useSetHeaderToolbar — on a computer, the board's search, מסננים and
-// משימות קבועות live there, not in the page.
-function TopBar() {
-  return <header>{useHeaderToolbar()}</header>;
+// The strip under the app's top bar (AppShell's #page-header-toolbar): the
+// board's search, מסננים and משימות קבועות live there at every size — the
+// computer's row first, the phone's after it (owner, 2026-10-22: the search
+// for everything took the bar's middle, so the board's own moved under it).
+function strip(): HTMLElement {
+  return document.getElementById(PAGE_HEADER_TOOLBAR_ID) as HTMLElement;
+}
+/** The computer's row in the strip. */
+function bar() {
+  return within(strip().firstElementChild as HTMLElement);
 }
 
 function Board(props: Partial<Props>) {
   return (
     <PageTitleProvider>
-      <TopBar />
       <TasksPageClient
         tasks={boardTasks()}
         projects={[]}
@@ -310,7 +314,7 @@ function scroller() {
 }
 
 function filtersButton() {
-  return screen.getByRole("button", { name: /^מסננים/ });
+  return bar().getByRole("button", { name: /^מסננים/ });
 }
 
 /** A filter field in the open panel, by its label (the panel is drawn twice: phone and computer). */
@@ -342,6 +346,9 @@ function rect(left: number, width: number): DOMRect {
 }
 
 beforeEach(() => {
+  const host = document.createElement("div");
+  host.id = PAGE_HEADER_TOOLBAR_ID;
+  document.body.appendChild(host);
   net.offlineFetch.mockReset();
   net.offlineFetch.mockResolvedValue(ok);
   device.saves = null;
@@ -1348,7 +1355,7 @@ describe("search", () => {
   it("narrows the board at once, and asks the server for the search after a pause in typing", () => {
     vi.useFakeTimers();
     renderBoard();
-    const search = screen.getByPlaceholderText("חיפוש...");
+    const search = bar().getByPlaceholderText("חיפוש...");
     fireEvent.change(search, { target: { value: "ס" } });
     fireEvent.change(search, { target: { value: "ספ" } });
     fireEvent.change(search, { target: { value: "ספק" } });
@@ -1370,7 +1377,7 @@ describe("search", () => {
   it("the server's results replace the board when they arrive — a far-off task it found shows like any other", () => {
     vi.useFakeTimers();
     const view = renderBoard();
-    fireEvent.change(screen.getByPlaceholderText("חיפוש..."), { target: { value: "ביטוח" } });
+    fireEvent.change(bar().getByPlaceholderText("חיפוש..."), { target: { value: "ביטוח" } });
     act(() => vi.advanceTimersByTime(400));
     // Nothing loaded matches yet.
     expect(screen.queryByText(/ביטוח/)).toBeNull();
@@ -1378,13 +1385,13 @@ describe("search", () => {
     // off the board because the server leaves it out, and its search keeps it in.
     view.arrive("q=ביטוח", [task({ id: "far", subject: "לחדש ביטוח רכב", due_date: inDays(60) })]);
     expect(list("todo").getByText(painted("לחדש ביטוח רכב"))).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("חיפוש...")).toHaveValue("ביטוח");
+    expect(bar().getByPlaceholderText("חיפוש...")).toHaveValue("ביטוח");
   });
 
   it("matches the Hebrew translation of an Arabic-authored task too", () => {
     vi.useFakeTimers();
     renderBoard({ tasks: [task({ id: "a", subject: "اتصل بالمورد", subject_he: "להתקשר לספק" }), task({ id: "b", subject: "אחר" })] });
-    fireEvent.change(screen.getByPlaceholderText("חיפוש..."), { target: { value: "לספק" } });
+    fireEvent.change(bar().getByPlaceholderText("חיפוש..."), { target: { value: "לספק" } });
     act(() => vi.advanceTimersByTime(400));
     expect(screen.getByText(painted("להתקשר לספק"))).toBeInTheDocument();
     expect(screen.queryByText("אחר")).toBeNull();
@@ -1392,7 +1399,7 @@ describe("search", () => {
 
   it("starts from the search in the URL", () => {
     renderBoard({}, "q=ברז");
-    expect(screen.getByPlaceholderText("חיפוש...")).toHaveValue("ברז");
+    expect(bar().getByPlaceholderText("חיפוש...")).toHaveValue("ברז");
   });
 });
 
@@ -1545,9 +1552,9 @@ describe("filters", () => {
     expect(push).toHaveBeenCalledWith("/tasks?priority=high");
   });
 
-  it("the office has a משימות קבועות button in the bar", () => {
+  it("the office has a משימות קבועות button in the board's row", () => {
     renderBoard({ canSeeAll: true });
-    expect(screen.getByRole("link", { name: "משימות קבועות" })).toHaveAttribute("href", "/tasks/recurring");
+    expect(bar().getByRole("link", { name: "משימות קבועות" })).toHaveAttribute("href", "/tasks/recurring");
   });
 
   it("the count on מסננים covers every live filter in the URL", () => {
@@ -1558,11 +1565,8 @@ describe("filters", () => {
 
 describe("on a phone", () => {
   it("the search, a filters button and משימות קבועות sit in the strip under the bar", () => {
-    const strip = document.createElement("div");
-    strip.id = PAGE_HEADER_TOOLBAR_ID;
-    document.body.appendChild(strip);
     renderBoard({ canSeeAll: true });
-    const phone = within(strip);
+    const phone = within(strip().lastElementChild as HTMLElement);
     expect(phone.getByPlaceholderText("חיפוש...")).toBeInTheDocument();
     expect(phone.getByRole("link", { name: "משימות קבועות" })).toHaveAttribute("href", "/tasks/recurring");
     fireEvent.click(phone.getByRole("button", { name: "הצגת מסננים" }));

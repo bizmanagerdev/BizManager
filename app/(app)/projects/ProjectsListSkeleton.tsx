@@ -79,7 +79,7 @@ export default function ProjectsListSkeleton() {
         className="hidden min-w-0 md:flex md:flex-col md:gap-4 xl:flex-row xl:items-end xl:justify-between xl:gap-6"
       >
         <AdaptiveGrid variant="projectsToolbarControls" className="min-w-0 lg:grid-cols-4 xl:flex-1">
-          <FieldSkeleton label="חיפוש" flexLabel className="lg:col-span-2" />
+          <FieldSkeleton label="חיפוש בפרויקטים" flexLabel />
           <FieldSkeleton label="סטטוס" />
           <FieldSkeleton label="מיון לפי" />
         </AdaptiveGrid>

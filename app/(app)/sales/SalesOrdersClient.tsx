@@ -34,6 +34,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { LIST_CARD_BADGE, LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
 import { Input } from "@/components/ui/input";
+import { ListSearch, SearchEverywhereLink } from "@/components/ui/list-search";
 import { cn } from "@/lib/utils";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
@@ -853,7 +854,8 @@ export default function SalesOrdersClient({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="חיפוש..."
+              placeholder="חיפוש בהזמנות…"
+              aria-label="חיפוש בהזמנות"
               className="h-10 w-full rounded-xl ps-9"
             />
           </div>
@@ -866,16 +868,7 @@ export default function SalesOrdersClient({
             <StaleDataBadge savedAt={savedAt} />
           </div>
         ) : null}
-        <div className="relative">
-          {/* On the start side, logical, as every search (owner, 2026-10-11). */}
-          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="חיפוש..."
-            className="h-11 ps-9"
-          />
-        </div>
+        <ListSearch value={query} onChange={setQuery} placeholder="חיפוש בהזמנות…" inputClassName="h-11" />
       </div>
 
       {/* The header subtitle carries this count on mobile. */}
@@ -918,7 +911,10 @@ export default function SalesOrdersClient({
             &quot;.
           </EmptyState>
         ) : (
-          <EmptyState>לא נמצאו הזמנות לפי החיפוש.</EmptyState>
+          <EmptyState>
+            <div>לא נמצאו הזמנות לפי החיפוש.</div>
+            <SearchEverywhereLink query={query} className="mt-1 inline-block" />
+          </EmptyState>
         )
       ) : (
         <div className="relative">

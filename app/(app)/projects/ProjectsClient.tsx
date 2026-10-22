@@ -67,6 +67,7 @@ import {
   useSwipeToDismiss,
 } from "@/components/ui/dialog-chrome";
 import { Input } from "@/components/ui/input";
+import { SearchEverywhereLink } from "@/components/ui/list-search";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -1116,7 +1117,8 @@ export default function ProjectsClient({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="חיפוש..."
+              placeholder="חיפוש בפרויקטים…"
+              aria-label="חיפוש בפרויקטים"
               className="h-10 w-full rounded-xl ps-9"
             />
           </div>
@@ -1232,9 +1234,10 @@ export default function ProjectsClient({
         {/* xl:flex-1 — with the create button gone this grid is the row's only
             child, so it takes the width the button used to sit beside. */}
         <AdaptiveGrid variant="projectsToolbarControls" className="min-w-0 lg:grid-cols-4 xl:flex-1">
-          <div className="min-w-0 lg:col-span-2">
+          {/* One column of the four, not two: about the width of what's typed in it (owner, 2026-10-22). */}
+          <div className="min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-sm text-muted-foreground">חיפוש</label>
+              <label className="text-sm text-muted-foreground">חיפוש בפרויקטים</label>
               {offline ? <StaleDataBadge savedAt={savedAt} /> : null}
             </div>
             <div className="relative mt-1">
@@ -1332,13 +1335,18 @@ export default function ProjectsClient({
             ) : undefined
           }
         >
-          {hasActiveToolbarFilters
-            ? `לא נמצאו ${activeTab === "quotes" ? "הצעות מחיר" : "פרויקטים"} לפי החיפוש.`
-            : activeTab === "quotes"
-              ? "אין הצעות מחיר."
-              : activeTab === "closed"
-                ? "אין פרויקטים סגורים."
-                : "אין פרויקטים."}
+          {hasActiveToolbarFilters ? (
+            <>
+              <div>{`לא נמצאו ${activeTab === "quotes" ? "הצעות מחיר" : "פרויקטים"} לפי החיפוש.`}</div>
+              <SearchEverywhereLink query={query} className="mt-1 inline-block" />
+            </>
+          ) : activeTab === "quotes" ? (
+            "אין הצעות מחיר."
+          ) : activeTab === "closed" ? (
+            "אין פרויקטים סגורים."
+          ) : (
+            "אין פרויקטים."
+          )}
         </EmptyState>
       ) : (
       <ResponsiveDataView

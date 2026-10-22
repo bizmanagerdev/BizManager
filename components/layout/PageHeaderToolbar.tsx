@@ -9,7 +9,8 @@
 // shell on every keystroke in the search box.
 //
 // Mobile only — on desktop the sidebar says where you are and the page has room
-// for its own toolbar.
+// for its own toolbar — unless the page asks for it there too (`desktop`: the
+// tasks board, whose own row this is at every size).
 
 import { useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -33,7 +34,7 @@ export function PageHeaderToolbarSpace() {
   return <span hidden data-page-header-toolbar="" />;
 }
 
-export function PageHeaderToolbar({ children }: { children: ReactNode }) {
+export function PageHeaderToolbar({ children, desktop = false }: { children: ReactNode; desktop?: boolean }) {
   const mounted = useSyncExternalStore(
     noopSubscribe,
     () => true,
@@ -49,7 +50,7 @@ export function PageHeaderToolbar({ children }: { children: ReactNode }) {
   // down when it does (see the [data-page-header-toolbar] rule in globals.css).
   return (
     <>
-      <span hidden data-page-header-toolbar="" />
+      <span hidden data-page-header-toolbar="" {...(desktop ? { "data-page-header-toolbar-desktop": "" } : {})} />
       {host ? createPortal(children, host) : null}
     </>
   );

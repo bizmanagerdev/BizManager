@@ -35,5 +35,9 @@ export const CUSTOMERS_HINT_ROW = "flex min-h-6 items-center justify-between gap
 /** The count line from md up — the same reserved height, for the same pill. */
 export const CUSTOMERS_COUNT_ROW = "hidden min-h-6 items-center justify-between gap-2 text-sm text-muted-foreground md:flex";
 
-/** The md+ toolbar: the search, then the filter toggle and the export, bottoms aligned. */
-export const CUSTOMERS_TOOLBAR = "hidden gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-end";
+/**
+ * The md+ toolbar: the search, then the filter toggle and the export, bottoms aligned — the search 20rem at most,
+ * not the page's width (owner, 2026-10-22; PAGE_SEARCH_WIDTH), the row at the start.
+ */
+export const CUSTOMERS_TOOLBAR =
+  "hidden gap-3 md:grid md:grid-cols-[minmax(0,24rem)_auto_auto] md:items-end md:justify-start";

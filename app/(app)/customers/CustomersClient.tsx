@@ -64,6 +64,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { SearchEverywhereLink } from "@/components/ui/list-search";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LIST_CARD_BADGE, LIST_CARD_BODY, LIST_CARD_META, LIST_CARD_NAME } from "@/components/ui/list-card";
@@ -732,7 +733,8 @@ export default function CustomersClient({
           </Button>
         }
       >
-        {filterOn ? "לא נמצאו לקוחות לפי החיפוש והסינון." : "לא נמצאו לקוחות לפי החיפוש."}
+        <div>{filterOn ? "לא נמצאו לקוחות לפי החיפוש והסינון." : "לא נמצאו לקוחות לפי החיפוש."}</div>
+        <SearchEverywhereLink query={query} className="mt-1 inline-block" />
       </EmptyState>
     ) : filterOn ? (
       <EmptyState
@@ -763,8 +765,8 @@ export default function CustomersClient({
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               onFocus={loadIndex}
-              placeholder="חיפוש..."
-              aria-label="חיפוש לקוחות"
+              placeholder="חיפוש בלקוחות…"
+              aria-label="חיפוש בלקוחות"
               className="h-10 w-full ps-9"
             />
           </div>

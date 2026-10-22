@@ -1592,7 +1592,7 @@ export default function FinancialPageClient({
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[12rem] flex-1">
+            <div className="relative w-full md:w-96">
               <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={historySearch}
@@ -1973,7 +1973,7 @@ export default function FinancialPageClient({
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[12rem] flex-1">
+            <div className="relative w-full md:w-96">
               <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={ledgerSearch}

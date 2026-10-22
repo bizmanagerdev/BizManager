@@ -36,7 +36,7 @@ export default function BankSkeleton({ routeLoading = false }: { routeLoading?: 
     <div className="space-y-4 text-right" dir="rtl" data-route-loading={routeLoading ? "true" : undefined} aria-busy="true">
       {/* The search box as it will stand — read-only until the page is in. */}
       <div className="space-y-1 md:-mt-3 lg:-mt-4">
-        <div className="relative">
+        <div className="relative md:w-96">
           <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             readOnly

@@ -317,7 +317,7 @@ export function TopBar({
             headerToolbar
               ? "items-center text-center md:hidden"
               : pageTitle?.showOnDesktop
-                ? "items-center text-center lg:items-start lg:text-start"
+                ? cn("items-center text-center lg:items-start lg:text-start", showGlobalSearch && "lg:flex-none")
                 : "items-center text-center lg:hidden"
           )}
         >
@@ -354,8 +354,21 @@ export function TopBar({
           a phone too: the icons sat beside the back arrow, then jumped to the
           far edge when the greeting arrived. */}
       {headerToolbar || (headerTitle && pageTitle?.showOnDesktop) ? null : (
-        <div className={cn("flex-1", headerTitle ? "hidden lg:block" : null)} />
+        <div className={cn("flex-1", headerTitle ? "hidden lg:block" : null, showGlobalSearch && "lg:hidden")} />
       )}
+
+      {/* The search for everything, IN THE MIDDLE of the bar on a computer
+          (owner, 2026-10-22: "I really want it to move into the top bar and be
+          in the middle" — where Atlassian, Salesforce and Microsoft 365 put
+          theirs): an open box, 520px at most, the free space shared out on both
+          sides of it. On a phone it stays the magnifier with the icons. */}
+      {showGlobalSearch && !headerToolbar ? (
+        <>
+          <div className="hidden min-w-0 flex-1 lg:block" />
+          <GlobalSearch desktopOnly className="min-w-[12rem] flex-[0_1_520px]" />
+          <div className="hidden min-w-0 flex-1 lg:block" />
+        </>
+      ) : null}
 
       {/* A page-declared control grouped with the search/notification/avatar
           cluster at the far edge, rather than beside the back arrow (see
@@ -370,10 +383,9 @@ export function TopBar({
           cut). PX, not rem: this row is bar chrome (see topbar-icon.ts) — a rem
           gap would widen at a big text scale and eat into the title's space. */}
       <div className="ms-[4px] flex items-center gap-[2px] md:ms-[12px] md:gap-[4px]">
-        {/* Search is a GLYPH at every width now — the 20rem desktop box is gone and
-            the middle slot belongs to the title. The magnifier opens the same
-            full-screen search dialog on a phone and on a desktop. */}
-        {showGlobalSearch ? <GlobalSearch mobileOnly iconOnly /> : null}
+        {/* On a phone (and a tablet) the search is this glyph, opening the full
+            screen search; from `lg` the box in the middle of the bar is it. */}
+        {showGlobalSearch ? <GlobalSearch mobileOnly iconOnly className={headerToolbar ? undefined : "lg:hidden"} /> : null}
 
 
         <HoverPanel open={inboxPanel.open} onOpenChange={inboxPanel.setOpen}>
