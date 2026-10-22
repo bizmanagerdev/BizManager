@@ -411,12 +411,19 @@ export default function PropertyDetailClient({
 
   /** A rent check: נפרע, or back to waiting. */
   function toggleCleared(payment: PropertyPayment) {
-    const collected = payment.paymentStatus !== "cleared";
+    // A waiting check clears; a cleared, bounced or torn one waits again (a torn one no longer torn).
+    const collected = payment.paymentStatus === "pending";
     scheduleDeferredEdit({
       scope: "property-payment",
       id: payment.id,
-      message: collected ? "התשלום סומן כנפרע." : "הסימון בוטל.",
-      patch: { paymentStatus: collected ? "cleared" : "pending" },
+      message: payment.tornAt
+        ? "הצ׳ק שוחזר."
+        : payment.paymentStatus === "rejected"
+          ? "הצ׳ק חזר לממתין."
+          : collected
+            ? "התשלום סומן כנפרע."
+            : "הסימון בוטל.",
+      patch: collected ? { paymentStatus: "cleared" } : { paymentStatus: "pending", tornAt: null },
       onCommit: async () => {
         const res = await fetch("/api/payments/mark-collected", {
           method: "POST",
@@ -1100,7 +1107,6 @@ export default function PropertyDetailClient({
       <PropertyPaidInsteadDialog
         check={paidInstead?.payment ?? null}
         lease={leases.find((l) => l.id === paidInstead?.payment.leaseId) ?? currentLease}
-        payments={activityPayments}
         propertyId={propertyId}
         title={paidInstead?.title ?? ""}
         onClose={() => setPaidInstead(null)}

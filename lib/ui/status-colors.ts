@@ -9,6 +9,7 @@ export type PaymentStatus =
   | "pending"
   | "cleared"
   | "rejected"
+  | "torn"
   | "paid"
   | "partial"
   | "unpaid"
@@ -75,6 +76,8 @@ export function getPaymentStatusColor(status: string): StatusColor {
     case "overpaid":
     case "rejected":
       return "danger";
+    case "torn":
+      return "neutral";
     case "pending":
       return "warning";
     default:
@@ -179,6 +182,8 @@ export function getPaymentStatusLabel(status: string, locale: Locale = "he") {
         return "تم الاستلام";
       case "rejected":
         return "مرفوض";
+      case "torn":
+        return "ممزق";
       default:
         return status || "-";
     }
@@ -204,6 +209,8 @@ export function getPaymentStatusLabel(status: string, locale: Locale = "he") {
       return "התקבל";
     case "rejected":
       return "נדחה";
+    case "torn":
+      return "נקרע";
     default:
       return status || "-";
   }

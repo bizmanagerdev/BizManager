@@ -28,6 +28,7 @@ vi.mock("@/app/(app)/properties/[id]/PropertyRentPaymentDialog", () => ({
             dueDate: null,
             checkNumber: null,
             paymentStatus: "cleared",
+            tornAt: null,
             accountId: "a1",
             notes: null,
             referenceNumber: null,
@@ -69,6 +70,7 @@ vi.mock("@/components/ui/dropdown-menu", async () => {
         {children}
       </div>
     ),
+    DropdownMenuSeparator: () => <hr />,
   };
 });
 vi.mock("@/app/(app)/properties/[id]/PropertyPaidInsteadDialog", () => ({ default: () => null }));
@@ -119,6 +121,7 @@ function payment(extra: Partial<RentRollPayment>): RentRollPayment {
     dueDate: null,
     checkNumber: null,
     paymentStatus: "cleared",
+    tornAt: null,
     accountId: null,
     notes: null,
     referenceNumber: null,
@@ -227,10 +230,15 @@ describe("the rent page", () => {
     const details = rowOf("D4 הר יונה").nextElementSibling as HTMLElement;
     expect(details).toHaveTextContent("צ׳ק #261");
     expect(details).toHaveTextContent("מזרחי בית");
-    expect(details).toHaveTextContent("פיקדון: צ'ק ביטחון ₪8,000");
+    expect(details).toHaveTextContent("פיקדוןצ'ק ביטחון ₪8,000");
+    // What the row already says isn't said again, and nothing in red while the check simply waits.
+    expect(details).not.toHaveTextContent("לפירעון");
+    expect(details.querySelector(".text-destructive")).toBeNull();
     expect(fetchMock.mock.calls[0][0]).toContain(`/api/rent/files?ids=${CHECK_ID}`);
     expect(within(details).getByTitle("צילום הצ׳ק")).toHaveAttribute("href", "https://files/check.jpg");
+    fireEvent.click(within(details).getByRole("button", { name: "עוד פעולות" }));
     expect(within(details).getByRole("link", { name: "הצ׳קים של הנכס" })).toHaveAttribute("href", "/checks?property=p-d4");
+    expect(within(details).getByRole("link", { name: "לדף הנכס" })).toHaveAttribute("href", "/properties/p-d4#rent");
   });
 
   it("'רישום תשלום' opens on the row's month, paid the lease's usual way — the row shows paid at once, and it's off the list", async () => {
@@ -298,7 +306,8 @@ describe("the rent page", () => {
     await show();
     fireEvent.click(within(rowOf("D4 הר יונה")).getByText("רוזנפלד"));
     const details = rowOf("D4 הר יונה").nextElementSibling as HTMLElement;
-    fireEvent.click(within(details).getByRole("button", { name: "צ׳ק #261 חזר" }));
+    fireEvent.click(within(details).getByRole("button", { name: "עוד פעולות" }));
+    fireEvent.click(within(details).getByRole("menuitem", { name: "סימון צ׳ק #261 כחוזר" }));
     expect(within(rowOf("D4 הר יונה")).getByText("צ׳ק חזר")).toBeInTheDocument();
     fireEvent.click(todoButton());
     expect(within(todo()).getByText("צ׳ק חזר")).toBeInTheDocument();

@@ -166,7 +166,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
         acc.clearedSum += c.amount;
         continue;
       }
-      if (c.status === "bounced") continue;
+      if (c.status === "bounced" || c.status === "torn") continue;
       acc.openCount += 1;
       acc.openSum += c.amount;
       const due = c.due_date ?? null;
@@ -548,6 +548,11 @@ function ActionCell({
         </Button>
       ) : c.status === "bounced" ? (
         <span className="text-xs text-destructive">חזר</span>
+      ) : c.status === "torn" ? (
+        // Torn because its month was paid another way: brought back, it waits again.
+        <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" disabled={busy} onClick={() => onSetCleared(c.payment_id, false)}>
+          {busy ? "..." : "שחזור הצ׳ק"}
+        </Button>
       ) : (
         <Button type="button" size="sm" variant="outline" className="h-8 text-xs" disabled={busy} onClick={() => onSetCleared(c.payment_id, true)}>
           {busy ? "מסמן..." : "סמן כנפרע"}

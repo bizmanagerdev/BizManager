@@ -9,7 +9,8 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 const BUCKET = STORAGE_BUCKET;
 
-export type CheckStatus = "pending" | "cleared" | "bounced";
+/** "torn": its month was paid another way — kept, counting nowhere, and it can be brought back. */
+export type CheckStatus = "pending" | "cleared" | "bounced" | "torn";
 
 export type CheckRow = {
   payment_id: string;
@@ -71,6 +72,8 @@ export function checkStatusLabel(status: CheckStatus): string {
       return "נפרע";
     case "bounced":
       return "חזר";
+    case "torn":
+      return "נקרע";
     default:
       return "לפירעון";
   }
@@ -78,6 +81,8 @@ export function checkStatusLabel(status: CheckStatus): string {
 
 export function checkStatusClasses(status: CheckStatus): string {
   switch (status) {
+    case "torn":
+      return getStatusColorClasses("neutral");
     case "cleared":
       return getStatusColorClasses("success");
     case "bounced":
@@ -95,7 +100,7 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       supabase
         .from("payments")
         .select(
-          "id,amount_total,due_date,payment_date,payment_status,cleared_at,check_number,order_id,project_id,property_id,lease_id,notes,account_id,reference_number,requires_split"
+          "id,amount_total,due_date,payment_date,payment_status,check_torn_at,cleared_at,check_number,order_id,project_id,property_id,lease_id,notes,account_id,reference_number,requires_split"
         )
         .eq("payment_method", "check")
         .order("id")
@@ -295,7 +300,7 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       due_date: str(row, "due_date"),
       payment_date: str(row, "payment_date"),
       cleared_at: str(row, "cleared_at"),
-      status: normalizeCheckStatus(str(row, "payment_status")),
+      status: str(row, "check_torn_at") ? "torn" : normalizeCheckStatus(str(row, "payment_status")),
       customer_id: customerId,
       customer_name: cust?.name ?? "לקוח",
       customer_phone: cust?.phone ?? null,

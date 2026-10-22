@@ -360,6 +360,8 @@ const payments = new Table(
     rent_period_start: text,
     rent_periods: int,
     counts_as_rent: int,
+    // A check torn up — the month paid another way (payments.check_torn_at, 2026-10-22).
+    check_torn_at: text,
     // Local only (never synced): a payment added or marked collected on the
     // phone first — the request it goes up with (lib/powersync/local-writes.ts).
     // An order's own payments, written with the order, have none.

@@ -203,6 +203,7 @@ export default function PropertyRentPaymentDialog({
         dueDate: isCheck ? form.dueDate : null,
         checkNumber: isCheck ? form.checkNumber.trim() || null : null,
         paymentStatus: isCheck ? "pending" : "cleared",
+        tornAt: null,
         accountId: form.accountId || null,
         notes: form.notes.trim() || null,
         referenceNumber: form.referenceNumber.trim() || null,

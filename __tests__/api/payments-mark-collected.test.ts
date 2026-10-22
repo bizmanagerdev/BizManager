@@ -76,4 +76,21 @@ describe("POST /api/payments/mark-collected", () => {
     expect((await post({ id: "p1", bounced: true, account_id: DEPOSITED })).status).toBe(200);
     expect(supabase.calls.update.payments).toEqual([{ payment_status: "rejected" }]);
   });
+
+  it("a check torn up — its month paid another way: rejected, and when it was torn (owner, 2026-10-22)", async () => {
+    const supabase = sb({ check_torn_at: null });
+    grant(supabase);
+    expect((await post({ id: "p1", torn: true })).status).toBe(200);
+    const [update] = supabase.calls.update.payments as Array<Record<string, unknown>>;
+    expect(update.payment_status).toBe("rejected");
+    expect(typeof update.check_torn_at).toBe("string");
+    expect(Number.isNaN(Date.parse(update.check_torn_at as string))).toBe(false);
+  });
+
+  it("a torn check brought back: waiting again, and no longer torn", async () => {
+    const supabase = sb({ payment_status: "rejected", check_torn_at: "2026-10-22T09:00:00.000Z" });
+    grant(supabase);
+    expect((await post({ id: "p1", collected: false })).status).toBe(200);
+    expect(supabase.calls.update.payments).toEqual([{ payment_status: "pending", check_torn_at: null }]);
+  });
 });

@@ -651,6 +651,8 @@ export type PropertyPayment = {
   dueDate: string | null;
   checkNumber: string | null;
   paymentStatus: string | null;
+  /** When the check was torn up — its month paid another way (its status rejected too); null otherwise. */
+  tornAt: string | null;
   accountId: string | null;
   /** What it was for, as written ("שכירות חודש אב") — the row's title. */
   notes: string | null;
@@ -878,7 +880,7 @@ const EMPTY_SERVER_PARTS: PropertyServerParts = {
 const PROPERTY_EXPENSE_SELECT =
   "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id,recurring_expense_template_id";
 const PROPERTY_PAYMENT_SELECT =
-  "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,counts_as_rent";
+  "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,check_torn_at,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,counts_as_rent";
 const PROPERTY_SESSION_SELECT =
   "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id";
 const SALARY_AGREEMENT_SELECT =
@@ -893,6 +895,7 @@ function normalizePropertyPayment(r: Row): PropertyPayment {
     dueDate: str(r.due_date),
     checkNumber: str(r.check_number),
     paymentStatus: str(r.payment_status),
+    tornAt: str(r.check_torn_at),
     accountId: str(r.account_id),
     notes: str(r.notes),
     referenceNumber: str(r.reference_number),

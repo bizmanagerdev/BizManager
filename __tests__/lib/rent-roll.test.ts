@@ -53,6 +53,7 @@ function payment(id: string, propertyId: string, extra: Partial<RentRollPayment>
     dueDate: null,
     checkNumber: null,
     paymentStatus: "cleared",
+    tornAt: null,
     accountId: null,
     notes: null,
     referenceNumber: null,
@@ -228,6 +229,18 @@ describe("who paid", () => {
     expect(row.status.state).toBe("late");
     expect(row.payments).toEqual([]);
     expect(row.returned.map((p) => p.checkNumber)).toEqual(["262"]);
+    expect(row.torn).toEqual([]);
+  });
+
+  it("a check torn up because a transfer paid its month: the month paid, the check torn — not returned", () => {
+    const torn = payment("t1", "d4", { method: "check", checkNumber: "262", paymentStatus: "rejected", tornAt: "2026-10-22T09:00:00.000Z", leaseId: "heb", rentPeriodStart: "2026-10-12" });
+    const transfer = payment("x1", "d4", { method: "bank_transfer", amount: 4000, leaseId: "heb", rentPeriodStart: "2026-10-12" });
+    const row = rentRollMonth(data({ payments: [torn, transfer] }), 0, TODAY).rows[0];
+    expect(row.status.state).toBe("paid");
+    expect(row.payments.map((p) => p.id)).toEqual(["x1"]);
+    expect(row.returned).toEqual([]);
+    expect(row.torn.map((p) => p.checkNumber)).toEqual(["262"]);
+    expect(rentRollToday(data({ payments: [torn, transfer] }), TODAY).todo.some((t) => t.kind === "bounced")).toBe(false);
   });
 
   it("an active property with no lease that month: no tenant", () => {

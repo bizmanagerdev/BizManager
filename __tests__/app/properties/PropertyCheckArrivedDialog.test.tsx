@@ -36,6 +36,7 @@ const check = {
   dueDate: "2026-11-11",
   checkNumber: "262",
   paymentStatus: "pending",
+  tornAt: null,
   accountId: "acc-bank",
   notes: null,
   referenceNumber: null,

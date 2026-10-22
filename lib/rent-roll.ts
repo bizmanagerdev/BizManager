@@ -60,6 +60,8 @@ export type RentRollRow = {
   payments: RentRollPayment[];
   /** Its checks that came back (bounced) — they pay nothing. */
   returned: RentRollPayment[];
+  /** Its checks torn up — the month paid another way (owner, 2026-10-22); kept, paying nothing, and they can come back. */
+  torn: RentRollPayment[];
   /** The months before this one still owing — past their due day, not paid or only in part. */
   debt: RentDebt;
   /** The lease's post-dated checks still in hand (not cleared), and the last month they reach. */
@@ -221,7 +223,8 @@ function rowFor(
       .filter((p) => p.method === "check" && p.paymentStatus !== "pending")
       .reduce((sum, p) => sum + paidTowards(lease, toRollRent(p), period), 0),
     payments: paying,
-    returned: forPeriod.filter((p) => p.paymentStatus === "rejected"),
+    returned: forPeriod.filter((p) => p.paymentStatus === "rejected" && !p.tornAt),
+    torn: forPeriod.filter((p) => p.paymentStatus === "rejected" && Boolean(p.tornAt)),
     debt,
     checksInHand: {
       count: inHand.length,

@@ -15,12 +15,16 @@ import { derivePaymentStatus, splitPaymentAmounts } from "@/lib/orders/paymentSt
 // on an undo.
 //
 // `bounced: true` marks a check that came back ('rejected' — it moved no
-// money; the rent roll, 2026-10-21). Its undo is `collected: false` (pending).
+// money; the rent roll, 2026-10-21). `torn: true` marks one torn up because
+// its month was paid another way ('rejected' too, and check_torn_at — the
+// owner, 2026-10-22: "mark it as ripped … so we could bring it back"). Either
+// one's undo is `collected: false` (pending, not torn).
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { id?: string; collected?: boolean; bounced?: boolean; account_id?: string | null };
+    const body = (await req.json()) as { id?: string; collected?: boolean; bounced?: boolean; torn?: boolean; account_id?: string | null };
     const paymentId = typeof body.id === "string" ? body.id.trim() : "";
-    const bounced = body.bounced === true;
+    const torn = body.torn === true;
+    const bounced = torn || body.bounced === true;
     const markCollected = !bounced && body.collected !== false; // default true
     if (!paymentId) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
@@ -36,7 +40,7 @@ export async function POST(req: Request) {
 
     const { data: existing, error: existingError } = await supabase
       .from("payments")
-      .select("id,order_id,project_id,payment_status,account_id")
+      .select("id,order_id,project_id,payment_status,account_id,check_torn_at")
       .eq("id", paymentId)
       .maybeSingle();
 
@@ -46,9 +50,16 @@ export async function POST(req: Request) {
     const nextStatus = bounced ? "rejected" : markCollected ? "cleared" : "pending";
     // The account only ever moves WITH a collection, never on an undo.
     const movesAccount = markCollected && accountId !== null && accountId !== existing.account_id;
+    // Torn now, or no longer (a check brought back, or marked otherwise) — written only when it changes.
+    const tornAt = torn ? new Date().toISOString() : null;
+    const tornChanges = torn || existing.check_torn_at != null;
     const { error: updateError } = await supabase
       .from("payments")
-      .update(movesAccount ? { payment_status: nextStatus, account_id: accountId } : { payment_status: nextStatus })
+      .update({
+        payment_status: nextStatus,
+        ...(movesAccount ? { account_id: accountId } : {}),
+        ...(tornChanges ? { check_torn_at: tornAt } : {}),
+      })
       .eq("id", paymentId);
 
     if (updateError) return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
@@ -60,10 +71,16 @@ export async function POST(req: Request) {
       action: "update",
       changedBy: profile.id,
       userRole: profile.role,
-      oldData: movesAccount
-        ? { payment_status: existing.payment_status, account_id: existing.account_id }
-        : { payment_status: existing.payment_status },
-      newData: movesAccount ? { payment_status: nextStatus, account_id: accountId } : { payment_status: nextStatus },
+      oldData: {
+        payment_status: existing.payment_status,
+        ...(movesAccount ? { account_id: existing.account_id } : {}),
+        ...(tornChanges ? { check_torn_at: existing.check_torn_at ?? null } : {}),
+      },
+      newData: {
+        payment_status: nextStatus,
+        ...(movesAccount ? { account_id: accountId } : {}),
+        ...(tornChanges ? { check_torn_at: tornAt } : {}),
+      },
     });
 
     // Keep the stored order status consistent with collected money.

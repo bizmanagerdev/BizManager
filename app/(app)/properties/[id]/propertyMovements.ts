@@ -144,7 +144,8 @@ export function buildPropertyMovements(input: PropertyMovementInput): { done: Mo
       date: (isCheck ? payment.dueDate : null) ?? dayKey(payment.date),
       category: null,
       name: title,
-      status: payment.paymentStatus,
+      // A torn check (its month paid another way) reads so, not as a bounced one.
+      status: payment.tornAt ? "torn" : payment.paymentStatus,
       dueDate: payment.dueDate,
       billed: false,
       billedAmount: null,
@@ -160,7 +161,14 @@ export function buildPropertyMovements(input: PropertyMovementInput): { done: Mo
               { key: "cleared", label: "נפרע", onSelect: () => input.onCheckArrived(payment, title) },
               { key: "instead", label: "שולם אחרת החודש (העברה / מזומן)", onSelect: () => input.onPaidInstead(payment, title) },
             ]
-          : [{ key: "cleared", label: "ביטול הסימון", onSelect: () => input.onToggleCleared(payment) }]
+          : [
+              {
+                key: "cleared",
+                // A torn check comes back; a bounced one waits again; a cleared one, un-marked.
+                label: payment.tornAt ? "שחזור הצ׳ק" : payment.paymentStatus === "rejected" ? "ביטול: הצ׳ק לא חזר" : "ביטול הסימון",
+                onSelect: () => input.onToggleCleared(payment),
+              },
+            ]
         : undefined,
       onEdit: () => input.onEditPayment(payment),
       onDelete: () => input.onDeletePayment(payment),

@@ -16,6 +16,13 @@ import { DocumentLink } from "@/components/ui/document-tile";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewDialog } from "@/components/ui/view-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { MonthStepper } from "@/components/ui/month-calendar";
 import {
   AttachIcon,
@@ -26,6 +33,7 @@ import {
   CloseIcon,
   DownloadIcon,
   FilterIcon,
+  MoreIcon,
   PrintIcon,
 } from "@/components/ui/icons";
 import { PageStack } from "@/components/layout/page-layout";
@@ -108,6 +116,12 @@ function sameRent(a: PropertyPayment, b: PropertyPayment): boolean {
   );
 }
 
+/** The check a payment recorded here came instead of ("instead:<check id>#<n>" — the month paid another way); null for any other. */
+function insteadOf(id: string): string | null {
+  const match = /^instead:(.+)#\d+$/.exec(id);
+  return match ? match[1] : null;
+}
+
 function placeName(row: Place): string {
   const unit = row.lease.unitLabel?.trim();
   const name = propertyDisplayName(row.property);
@@ -143,6 +157,16 @@ function debtAge(debt: RentDebt): { label: string; title: string } {
     debt.over60 > 0.5 ? `מעל 60 יום ${formatCurrency(debt.over60)}` : null,
   ].filter(Boolean);
   return { label, title: `${debt.periods === 1 ? "חודש אחד" : `${debt.periods} חודשים`} · ${parts.join(" · ")}` };
+}
+
+/** One fact in a row's details: its name small and grey above, its value — or a line per payment — under it. */
+function DetailFact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0 text-sm">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      {children}
+    </div>
+  );
 }
 
 /** A payment's files — a check's photo ("צילום"), a transfer's confirmation ("אישור") — each opening it. */
@@ -221,9 +245,10 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
   const overlaid = useUndoOverlay(data.payments, paymentKey, "property-payment");
   const payments = useMemo(() => {
     const shown = recorded.filter((r) => {
-      if (overlaid.some((p) => p.id === r.id || (p.id !== r.id.replace(/^instead:/, "") && sameRent(p, r)))) return false;
-      // A month paid another way: only while its check's move stands (not undone).
-      return r.id.startsWith("instead:") ? Boolean(getUndoPatch("property-payment", r.id.slice("instead:".length))) : true;
+      const check = insteadOf(r.id);
+      if (overlaid.some((p) => p.id === r.id || (p.id !== check && sameRent(p, r)))) return false;
+      // A month paid another way: only while its check's tearing stands (not undone).
+      return check ? Boolean(getUndoPatch("property-payment", check)) : true;
     });
     return shown.length > 0 ? [...overlaid, ...shown] : overlaid;
   }, [overlaid, recorded]);
@@ -295,7 +320,6 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
         .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || b.id.localeCompare(a.id))[0] ?? null)
     : null;
   const payingPayments = paying ? payments.filter((p) => p.propertyId === paying.row.property.id) : [];
-  const insteadPayments = instead ? payments.filter((p) => p.propertyId === instead.row.property.id) : [];
   const accountName = (id: string | null) => (id ? (data.accountNames[id] ?? "—") : "—");
 
   function openPayment(row: RentRollRow, period: string = row.period) {
@@ -308,8 +332,12 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
     scheduleDeferredEdit({
       scope: "property-payment",
       id: payment.id,
-      message: bounced ? `${checkName(payment)} סומן כחוזר.` : `${checkName(payment)} חזר לממתין.`,
-      patch: { paymentStatus: bounced ? "rejected" : "pending" },
+      message: bounced
+        ? `${checkName(payment)} סומן כחוזר.`
+        : payment.tornAt
+          ? `${checkName(payment)} שוחזר.`
+          : `${checkName(payment)} חזר לממתין.`,
+      patch: bounced ? { paymentStatus: "rejected" } : { paymentStatus: "pending", tornAt: null },
       onCommit: async () => {
         const res = await fetch("/api/payments/mark-collected", {
           method: "POST",
@@ -335,7 +363,7 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
           className={ROW_BUTTON}
           onClick={() => setArrival({ payment: pending, title: `שכירות ${row.periodLabel}` })}
         >
-          נפרע
+          סימון כנפרע
         </Button>
       );
     }
@@ -368,47 +396,46 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
     return null;
   }
 
-  /** Everything else for a row's month: the check's ways, in its details. */
+  /**
+   * The month's ways, at the end of its details: its check cleared, or the month paid another way — as plain
+   * buttons — and in a quiet ⋮ the rest: "it came back" (owner, 2026-10-22: "why is that button red — it
+   * looks like the check was already חזר even though it didn't"), the property's page and its checks. A check
+   * that came back or was torn: its way back. What the row's own button already does isn't repeated here.
+   */
   function otherActions(row: RentRollRow): ReactNode {
     const pending = row.payments.find((p) => p.method === "check" && p.paymentStatus === "pending") ?? null;
-    const cleared = row.payments.filter((p) => p.method === "check" && p.paymentStatus !== "pending");
+    const due = pending !== null && (pending.dueDate ?? pending.date ?? "") <= today;
+    const canBounce = row.payments.filter((p) => p.method === "check");
     const title = `שכירות ${row.periodLabel}`;
     return (
       <div className="flex flex-wrap items-center gap-1.5">
-        {pending ? (
-          <>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className={ROW_BUTTON}
-              onClick={() => setArrival({ payment: pending, title })}
-            >
-              נפרע
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className={ROW_BUTTON}
-              onClick={() => setInstead({ row, payment: pending, title })}
-            >
-              שולם אחרת החודש
-            </Button>
-          </>
-        ) : null}
-        {[...(pending ? [pending] : []), ...cleared].map((check) => (
+        {pending && !due ? (
           <Button
-            key={`bounce-${check.id}`}
             type="button"
             size="sm"
-            variant="destructive-outline"
+            variant="outline"
             className={ROW_BUTTON}
-            onClick={() => setBounced(check, true)}
+            onClick={() => setArrival({ payment: pending, title })}
           >
-            {checkName(check)} חזר
+            סימון כנפרע
           </Button>
-        ))}
+        ) : null}
+        {pending ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={ROW_BUTTON}
+            onClick={() => setInstead({ row, payment: pending, title })}
+          >
+            שולם אחרת החודש
+          </Button>
+        ) : null}
+        {pending && row.owed > 0.5 ? (
+          <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => openPayment(row)}>
+            רישום תשלום
+          </Button>
+        ) : null}
         {row.returned.map((check) => (
           <Button
             key={`back-${check.id}`}
@@ -421,11 +448,45 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
             ביטול: {checkName(check)} לא חזר
           </Button>
         ))}
-        {row.owed > 0.5 && pending ? (
-          <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => openPayment(row)}>
-            רישום תשלום
+        {row.torn.map((check) => (
+          <Button
+            key={`untear-${check.id}`}
+            type="button"
+            size="sm"
+            variant="outline"
+            className={ROW_BUTTON}
+            onClick={() => setBounced(check, false)}
+          >
+            שחזור {checkName(check)}
           </Button>
-        ) : null}
+        ))}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              aria-label="עוד פעולות"
+            >
+              <MoreIcon className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            {canBounce.map((check) => (
+              <DropdownMenuItem key={check.id} onClick={() => setBounced(check, true)}>
+                סימון {checkName(check)} כחוזר
+              </DropdownMenuItem>
+            ))}
+            {canBounce.length > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem asChild>
+              <Link href={`/properties/${row.property.id}#rent`}>לדף הנכס</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={rentChecksHref(row.property.id)}>הצ׳קים של הנכס</Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     );
   }
@@ -484,61 +545,66 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
     );
   };
 
-  /** A row's details, opened under it: the month's payments, its due day and deposit, links, the rest of its actions. */
-  const details = (row: RentRollRow) => (
-    <div className="space-y-2 text-xs">
-      {row.payments.length === 0 && row.returned.length === 0 ? (
-        <div className="text-muted-foreground">לא נרשם תשלום ל{row.periodLabel}.</div>
-      ) : null}
-      {row.payments.map((p) => (
-        <div key={p.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span
-            className="tabular-nums"
-            title={
-              p.rentPeriods > 1 && p.rentPeriodStart ? rentPeriodLabel(row.lease, p.rentPeriodStart, p.rentPeriods) : undefined
-            }
-          >
-            {formatCurrency(p.amount)}
-            {p.rentPeriods > 1 ? ` (${p.rentPeriods} חודשים)` : ""}
-          </span>
-          <span className="text-muted-foreground">·</span>
-          <span>{moneyDate(p)}</span>
-          <span className="text-muted-foreground">·</span>
-          <span>
-            {methodWord(p)}
-            {p.method === "check" && p.paymentStatus === "pending" ? " (ממתין)" : ""}
-          </span>
-          <span className="text-muted-foreground">·</span>
-          <span>{accountName(p.accountId)}</span>
-          <PaymentFiles payment={p} files={files[p.id]} />
+  /**
+   * A row's details, opened under it — only what the row doesn't already say (owner, 2026-10-22: "it's just
+   * a mush of words and rows"): a few labelled facts — the month's payment (the check's number and photo),
+   * the account it goes into, the deposit — side by side, and the month's ways at the end of the same line.
+   * Several payments: one line each, the payment's line and its account's level. A check that came back: red;
+   * one torn: struck through, grey.
+   */
+  const details = (row: RentRollRow) => {
+    const lines = [...row.payments, ...row.returned, ...row.torn];
+    const several = lines.length > 1;
+    const gone = (p: RentRollPayment) => p.paymentStatus === "rejected";
+    return (
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+        <div className="flex flex-wrap gap-x-8 gap-y-2">
+          <DetailFact label={several ? "תשלומים" : "תשלום"}>
+            {lines.length === 0 ? <span className="text-muted-foreground">לא נרשם</span> : null}
+            {lines.map((p) => (
+              <div
+                key={p.id}
+                className={cn(
+                  "flex min-h-6 flex-wrap items-center gap-x-1.5",
+                  p.tornAt ? "text-muted-foreground" : gone(p) ? "text-destructive" : undefined,
+                )}
+              >
+                <span className={cn("font-medium", p.tornAt && "line-through")}>{methodWord(p)}</span>
+                {several || p.rentPeriods > 1 ? (
+                  <span
+                    className={cn("tabular-nums", p.tornAt && "line-through")}
+                    title={
+                      p.rentPeriods > 1 && p.rentPeriodStart
+                        ? rentPeriodLabel(row.lease, p.rentPeriodStart, p.rentPeriods)
+                        : undefined
+                    }
+                  >
+                    {formatCurrency(p.amount)}
+                    {p.rentPeriods > 1 ? ` · ${p.rentPeriods} חודשים` : ""}
+                  </span>
+                ) : null}
+                {p.tornAt ? <span>· נקרע {formatShortDate(p.tornAt)}</span> : gone(p) ? <span>· חזר</span> : null}
+                <PaymentFiles payment={p} files={files[p.id]} />
+              </div>
+            ))}
+          </DetailFact>
+          {lines.length > 0 ? (
+            <DetailFact label="חשבון">
+              {lines.map((p) => (
+                <div key={p.id} className={cn("flex min-h-6 items-center", gone(p) && "text-muted-foreground")}>
+                  {accountName(p.accountId)}
+                </div>
+              ))}
+            </DetailFact>
+          ) : null}
+          <DetailFact label="פיקדון">
+            <div className="flex min-h-6 items-center">{deposit(row) || "—"}</div>
+          </DetailFact>
         </div>
-      ))}
-      {row.returned.map((p) => (
-        <div key={p.id} className="flex flex-wrap items-center gap-x-2 text-destructive">
-          <span>
-            {checkName(p)} חזר · {formatCurrency(p.amount)}
-          </span>
-          <PaymentFiles payment={p} files={files[p.id]} />
-        </div>
-      ))}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-        <span>מועד: {row.dueLabel}</span>
-        {row.debt.amount > 0.5 ? (
-          <span className="text-destructive" title={debtAge(row.debt).title}>
-            חוב ישן: {formatCurrency(row.debt.amount)} · {debtWords(row.debt)}
-          </span>
-        ) : null}
-        <span>פיקדון: {deposit(row) || "—"}</span>
-        <Link href={`/properties/${row.property.id}#rent`} className="text-secondary hover:underline">
-          לדף הנכס
-        </Link>
-        <Link href={rentChecksHref(row.property.id)} className="text-secondary hover:underline">
-          הצ׳קים של הנכס
-        </Link>
+        {otherActions(row)}
       </div>
-      {otherActions(row)}
-    </div>
-  );
+    );
+  };
 
   const sheet = () => (tab === "year" && year ? yearSheet(year) : monthSheet(month, data.accountNames));
 
@@ -553,7 +619,7 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
       onClick={() => setOwingOnly((v) => !v)}
       className={cn(
         "-mx-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors",
-        owingOnly ? cn(TOGGLE_ON, TOGGLE_ON_HOVER) : "hover:bg-accent/60 hover:text-foreground"
+        owingOnly ? cn(TOGGLE_ON, TOGGLE_ON_HOVER) : "hover:bg-accent/60 hover:text-foreground",
       )}
     >
       <FilterIcon className="h-3.5 w-3.5" />
@@ -575,7 +641,7 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
         "inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-semibold transition-colors",
         owingOnly
           ? cn("border-secondary", TOGGLE_ON, TOGGLE_ON_HOVER)
-          : "border-input bg-background text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+          : "border-input bg-background text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
     >
       <FilterIcon className="h-3.5 w-3.5" />
@@ -915,7 +981,6 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
       <PropertyPaidInsteadDialog
         check={instead?.payment ?? null}
         lease={instead?.row.lease ?? null}
-        payments={insteadPayments}
         propertyId={instead?.row.property.id ?? ""}
         title={instead?.title ?? ""}
         onClose={() => setInstead(null)}
