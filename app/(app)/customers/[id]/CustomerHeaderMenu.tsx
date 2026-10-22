@@ -133,9 +133,9 @@ export default function CustomerHeaderMenu({
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground"
+              className="h-9 w-9"
               title="פעולות נוספות"
               aria-label="פעולות נוספות"
             >

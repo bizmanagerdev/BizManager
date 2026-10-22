@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/icons";
 import { SECTION_ICON_CLASS } from "@/components/ui/section-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TopBarHeading } from "@/components/layout/TopBarHeading";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 
 // A project page before its data: the page's own frame (ProjectPageView +
@@ -61,28 +62,25 @@ export function ProjectMobileHeaderSkeleton() {
   );
 }
 
-/** The desktop heading line (ProjectPageHeading): the breadcrumb, the name, the actions. */
+/** The desktop heading (ProjectPageHeading) — in the top bar: the name and kind, the edit and ⋮. */
 function ProjectHeadingSkeleton() {
   return (
-    <div className="hidden flex-col gap-2 lg:flex">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex h-4 items-center gap-1.5">
-            <Line className="w-14" />
-            <Line className="w-28" />
-          </div>
-          <div className="flex h-[1.75rem] items-center gap-2">
-            <Skeleton className="h-5 w-44" />
-            <Skeleton className="h-5 w-12 rounded-full" />
-          </div>
+    <TopBarHeading
+      section="פרויקטים"
+      href="/projects"
+      title={
+        <>
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-5 w-12 rounded-full" />
+        </>
+      }
+      actions={
+        <div className="flex items-center gap-2" aria-hidden>
+          <Skeleton className="h-9 w-9" />
+          <Skeleton className="h-9 w-9" />
         </div>
-        <div className="flex items-center gap-2">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-9 w-20" />
-          ))}
-        </div>
-      </div>
-    </div>
+      }
+    />
   );
 }
 

@@ -5,6 +5,7 @@ import { SECTION_ICON_CLASS } from "@/components/ui/section-card";
 import { BuildingIcon, ChartIcon, DocumentIcon, InfoIcon, PaymentIcon, RecurringIcon, TaskIcon, UserIcon } from "@/components/ui/icons";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TopBarHeading } from "@/components/layout/TopBarHeading";
 
 // A property's page before its data, in the page's own shape (owner,
 // 2026-10-20: one details page like a project's): the heading, the head row
@@ -34,18 +35,25 @@ function rows(labels: string[]) {
 }
 
 function Heading() {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      {/* One line: נכסים › its name (PropertyPageHeading). */}
-      <div className="flex h-[1.75rem] min-w-0 items-center gap-1.5">
-        <Line className="w-10" />
-        <Skeleton className="h-5 w-44" />
-      </div>
-      <div className="flex items-center gap-1.5">
-        <Skeleton className="h-9 w-9 rounded-xl" />
-        <Skeleton className="h-9 w-9 rounded-xl" />
-      </div>
+  const buttons = (
+    <div className="flex items-center gap-1.5" aria-hidden>
+      <Skeleton className="h-9 w-9 rounded-xl" />
+      <Skeleton className="h-9 w-9 rounded-xl" />
     </div>
+  );
+  return (
+    <>
+      {/* On a computer, in the top bar (PropertyPageHeading). */}
+      <TopBarHeading section="נכסים" href="/properties" title={<Skeleton className="h-5 w-44" />} actions={buttons} />
+      {/* On the phone, one line: נכסים › its name. */}
+      <div className="flex items-center justify-between gap-3 lg:hidden">
+        <div className="flex h-[1.75rem] min-w-0 items-center gap-1.5">
+          <Line className="w-10" />
+          <Skeleton className="h-5 w-44" />
+        </div>
+        {buttons}
+      </div>
+    </>
   );
 }
 

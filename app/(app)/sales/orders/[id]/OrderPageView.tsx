@@ -313,7 +313,7 @@ export default function OrderPageView({
           the heading (owner, 2026-10-11: the project page's row); on the phone
           the same actions become the ⋮ beside the back arrow, and the order's
           number + customer go into the top bar — OrderHeaderMenu registers it
-          from here, though the heading itself only shows from lg. */}
+          from here; on a computer the heading and its buttons are in the top bar (TopBarHeading). */}
       <OrderPageHeading
         customerId={customerId}
         customerName={customerName}

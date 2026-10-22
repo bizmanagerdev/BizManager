@@ -54,9 +54,6 @@ export default function ProjectPagePreview({
             endDateText={preview.endDate ? formatShortDate(preview.endDate, "—") : null}
           />
           <ProjectPageHeading
-            customerId={preview.customerId}
-            customerDisplayName={preview.customerName ?? ""}
-            customerPhone={preview.customerPhone}
             projectName={preview.name}
             projectType={preview.projectType}
             actions={<ActionsSkeleton />}

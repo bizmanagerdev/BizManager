@@ -3,6 +3,7 @@ import { DeliveryIcon, DocumentIcon, OrderIcon, PaymentIcon, UserIcon } from "@/
 import { SECTION_ICON_CLASS, SectionCard } from "@/components/ui/section-card";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TopBarHeading } from "@/components/layout/TopBarHeading";
 
 // An order page before its data: the page's own frame (OrderPageView) — the
 // desktop heading line, the status / payment / invoice cards (on a phone the
@@ -53,19 +54,19 @@ export default function OrderPageSkeleton({
 }) {
   return (
     <div className="space-y-3" data-route-loading={routeLoading ? "true" : undefined} aria-busy="true">
+      {/* The desktop heading — in the top bar (OrderPageHeading): the order's when known, a placeholder otherwise. */}
       {heading ?? (
-        <div className="hidden lg:flex lg:items-start lg:justify-between lg:gap-2">
-          <div className="flex h-[1.875rem] items-center gap-1.5">
-            <Line className="w-10" />
-            <Skeleton className="h-5 w-32" />
-          </div>
-          {/* The edit pencil and the ⋮ (OrderHeaderMenu). */}
-          <div className="flex items-center gap-2">
-            {[0, 1].map((i) => (
-              <Skeleton key={i} className="h-9 w-9" />
-            ))}
-          </div>
-        </div>
+        <TopBarHeading
+          section="מכירות"
+          href="/sales"
+          title={<Skeleton className="h-5 w-32" />}
+          actions={
+            <div className="flex items-center gap-2" aria-hidden>
+              <Skeleton className="h-9 w-9" />
+              <Skeleton className="h-9 w-9" />
+            </div>
+          }
+        />
       )}
       <section className="space-y-3" aria-hidden>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">

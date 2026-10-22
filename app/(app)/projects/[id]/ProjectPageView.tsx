@@ -522,12 +522,9 @@ export default function ProjectPageView({
         endDateText={endDate ? formatDate(endDate) : null}
       />
 
-      {/* Desktop heading, same shape as an order: where you are, what this
-          is, and the handful of things you can do to it. */}
+      {/* The desktop heading — in the top bar (owner, 2026-10-22): where you are, the project's name and
+          kind, and the handful of things you can do to it. */}
       <ProjectPageHeading
-        customerId={overviewCustomerId}
-        customerDisplayName={customerDisplayName}
-        customerPhone={customerPhone}
         projectName={projectName}
         projectType={projectType}
         actions={

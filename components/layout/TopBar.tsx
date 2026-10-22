@@ -7,6 +7,7 @@ import { ClockIcon, LogoutIcon, NotificationIcon, UserIcon, WalletIcon } from "@
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
 import { BackButton } from "@/components/layout/BackButton";
+import { TOP_BAR_ACTIONS_ID, TOP_BAR_HEADING_ID } from "@/components/layout/TopBarHeading";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
@@ -353,6 +354,10 @@ export function TopBar({
           No title at all (the dashboard before its greeting comes) needs it on
           a phone too: the icons sat beside the back arrow, then jumped to the
           far edge when the greeting arrived. */}
+      {/* A detail page's "section › name", from `lg` (TopBarHeading portals it in) — the page has no heading
+          row of its own there (owner, 2026-10-22). Nothing in it: no room taken. */}
+      <div id={TOP_BAR_HEADING_ID} className="hidden min-w-0 max-w-[40%] items-center lg:flex lg:empty:hidden" />
+
       {headerToolbar || (headerTitle && pageTitle?.showOnDesktop) ? null : (
         <div className={cn("flex-1", headerTitle ? "hidden lg:block" : null, showGlobalSearch && "lg:hidden")} />
       )}
@@ -374,6 +379,10 @@ export function TopBar({
           cluster at the far edge, rather than beside the back arrow (see
           headerAction above) — e.g. חשבונות' "ניהול חשבונות" button. */}
       {trailingAction ? <div className="shrink-0">{trailingAction}</div> : null}
+
+      {/* That page's edit and ⋮, by the bar's icons, from `lg` (TopBarHeading). Mounted on a phone too —
+          hidden — since their dialogs and the phone's ⋮ live with them. */}
+      <div id={TOP_BAR_ACTIONS_ID} className="hidden shrink-0 items-center gap-2 lg:flex lg:empty:hidden" />
 
       {/* ms (RTL → space on the RIGHT, i.e. toward the title): the search glyph
           leads this cluster on a phone and sat flush against the page title,

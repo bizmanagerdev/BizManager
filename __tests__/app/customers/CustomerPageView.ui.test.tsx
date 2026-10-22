@@ -135,6 +135,7 @@ vi.mock("@/components/ui/dropdown-menu", async () => {
 });
 
 import { push } from "@/__tests__/mocks/next-navigation";
+import { mountTopBarSlots } from "@/__tests__/mocks/top-bar-slots";
 import CustomerPageView from "@/app/(app)/customers/[id]/CustomerPageView";
 import {
   NO_DOCUMENTS,
@@ -188,7 +189,10 @@ async function openPhoneMenu() {
   return within(utils.container).getByRole("menu");
 }
 
+// The heading and its buttons go into the app's top bar (TopBarHeading).
+let unmountSlots = () => {};
 beforeEach(() => {
+  unmountSlots = mountTopBarSlots();
   h.offlineFetch.mockClear();
   h.fetchChecklistForEntity.mockReset().mockResolvedValue([]);
   push.mockClear();
@@ -199,6 +203,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  unmountSlots();
 });
 
 describe("the top bar and the heading", () => {
