@@ -92,16 +92,24 @@ export const EXPENSE_CATEGORY_OPTIONS_WITH_WAGE = [
   EXPENSE_WORKER_WAGE_CATEGORY,
   ...EXPENSE_CATEGORY_OPTIONS,
 ] as const;
-// Property-management-specific expense categories, shown IN ADDITION TO the
-// base list only when the expense's domain is property_management. Rent
-// income is NOT here — it's income (a payment), never an expense category;
-// "שכירות" here is rent the business pays (a warehouse it rents). Owner's
-// card, 2026-10-20: "קטגוריות: משכנתא, שכירות, שיפוץ, ריהוט".
+// A property's expense categories — the ONLY ones a property's expense can
+// have (owner, 2026-10-22: "We don't allow any other categories. That way our
+// pizza will always be normal"), with שכר עובד where a shift can be entered:
+// the mortgage paid each month, renovating (improving the apartment) apart
+// from repairs (fixing what broke — "the guy's washing machine broke"),
+// furnishing, rent, insurance, the broker, water, electricity, gas, ארנונה,
+// ועד בית, buying the apartment ("רכישת הנכס" — "so we see what it costed
+// us to buy the apartment"; the general "רכישה" is any purchase), and taxes.
+// No "אחר". Rent income is NOT here — it's income (a payment); "שכירות" is
+// rent the business pays. An expense saved before with another category keeps
+// it until it's changed.
+export const EXPENSE_PROPERTY_PURCHASE_CATEGORY = "רכישת הנכס";
 export const EXPENSE_PROPERTY_CATEGORIES = [
   "משכנתא",
-  "הוצאות לשיפוץ",
+  // "הוצאות לשיפוץ" until 2026-10-22 (owner: "update הוצאות לשיפוץ to be שיפוצים"); the rows were renamed with it.
+  "שיפוצים",
+  "תיקונים",
   "ריהוט",
-  "רכישת ציוד",
   "שכירות",
   "ביטוח",
   "תיווך",
@@ -110,7 +118,15 @@ export const EXPENSE_PROPERTY_CATEGORIES = [
   "גז",
   "ארנונה",
   "ועד בית",
+  EXPENSE_PROPERTY_PURCHASE_CATEGORY,
+  EXPENSE_TAX_CATEGORY,
 ] as const;
+
+/** Whether a category is one of a property's (or שכר עובד). */
+export function isPropertyExpenseCategory(category: string | null | undefined): boolean {
+  const value = category?.trim() ?? "";
+  return value === EXPENSE_WORKER_WAGE_CATEGORY || (EXPENSE_PROPERTY_CATEGORIES as readonly string[]).includes(value);
+}
 
 // Vehicle (car page) expense categories — REPLACE the base list rather than add
 // to it: a car's own page already establishes "this is a car cost", so generic

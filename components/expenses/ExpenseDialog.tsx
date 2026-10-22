@@ -418,6 +418,9 @@ export function ExpenseDialog({
   // "תאריך תשלום בפועל" — only meaningful while status is paid.
   const [paidDate, setPaidDate] = useState("");
   const [accountId, setAccountId] = useState("");
+  // The category an expense (or a recurring one) came with — a property's, saved before its categories were
+  // fixed (owner, 2026-10-22), keeps it as a choice until it's changed.
+  const [loadedCategory, setLoadedCategory] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [category, setCategory] = useState(defaultCategory ?? "");
   const [categoryOther, setCategoryOther] = useState("");
@@ -554,17 +557,24 @@ export function ExpenseDialog({
     [recurringProperties, sourceSearch]
   );
 
-  // A property's page passes its workers too (a shift on the property), and
-  // the property's own categories were lost behind the wage list.
-  const categoryOptions = workerSupport
-    ? effectiveDomain === "property_management"
-      ? [WORKER_WAGE_CATEGORY, ...PROPERTY_EXPENSE_CATEGORIES, ...BASE_EXPENSE_CATEGORIES]
-      : [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]
-    : isVehicleContext
-      ? [...VEHICLE_EXPENSE_CATEGORIES, OTHER_CATEGORY]
-      : effectiveDomain === "property_management"
-        ? [...PROPERTY_EXPENSE_CATEGORIES, ...BASE_EXPENSE_CATEGORIES]
+  // A property's expense: its own categories and nothing else — no "אחר" (owner, 2026-10-22: "I want to not
+  // allow to have other category"); one saved before with another keeps it as a choice until it's changed. A
+  // property's page passes its workers too (a shift on the property).
+  const isPropertyExpense = effectiveDomain === "property_management";
+  const propertyCategories = [...(workerSupport ? [WORKER_WAGE_CATEGORY] : []), ...PROPERTY_EXPENSE_CATEGORIES];
+  const oldPropertyCategory =
+    isPropertyExpense && loadedCategory && !propertyCategories.includes(loadedCategory) ? loadedCategory : null;
+  const categoryOptions = isPropertyExpense
+    ? [...propertyCategories, ...(oldPropertyCategory ? [oldPropertyCategory] : [])]
+    : workerSupport
+      ? [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]
+      : isVehicleContext
+        ? [...VEHICLE_EXPENSE_CATEGORIES, OTHER_CATEGORY]
         : BASE_EXPENSE_CATEGORIES;
+  // Paid by card: the card's monthly charge from the bank is the money leaving — the expense itself goes in no
+  // account, or that account would lose it twice (owner, 2026-10-22: "it says that I need to choose an account
+  // but then it will be reduced again from the account no?").
+  const paidByCard = paymentMethod === "credit_card";
   const showBillingOptions = Boolean(effectiveProjectId);
 
   // Worker-session computed values.
@@ -634,7 +644,12 @@ export function ExpenseDialog({
       setPaidDate("");
       setAccountId(typeof t.account_id === "string" ? t.account_id : "");
       const cat = t.category ?? "";
-      if (cat && KNOWN_CATEGORIES.has(cat)) {
+      setLoadedCategory(cat);
+      if (cat && (t.business_domain === "property_management" || t.property_id || lockedPropertyId)) {
+        // A property's: as it is — its list has no "אחר".
+        setCategory(cat);
+        setCategoryOther("");
+      } else if (cat && KNOWN_CATEGORIES.has(cat)) {
         setCategory(cat);
         setCategoryOther("");
       } else {
@@ -671,7 +686,15 @@ export function ExpenseDialog({
       setPaidDate(typeof editingExpense.paid_date === "string" ? editingExpense.paid_date.slice(0, 10) : "");
       setAccountId(typeof editingExpense.account_id === "string" ? editingExpense.account_id : "");
       const cat = editingExpense.category ?? "";
-      if (cat && KNOWN_CATEGORIES.has(cat)) {
+      setLoadedCategory(cat);
+      if (
+        cat &&
+        (editingExpense.business_domain === "property_management" || editingExpense.property_id || lockedPropertyId)
+      ) {
+        // A property's: as it is — its list has no "אחר".
+        setCategory(cat);
+        setCategoryOther("");
+      } else if (cat && KNOWN_CATEGORIES.has(cat)) {
         setCategory(cat);
         setCategoryOther("");
       } else {
@@ -1071,7 +1094,7 @@ export function ExpenseDialog({
     // Any installment marked "already paid" is a real outflow now → it must land in
     // an account, same as any other payment (when accounts are configured).
     const anyPaidInstallment = installmentRows.some((r) => r.paid);
-    if (anyPaidInstallment && accountsList.length > 0 && !accountId) {
+    if (anyPaidInstallment && accountsList.length > 0 && !accountId && !paidByCard) {
       setErrorMessage("יש לבחור חשבון עבור התשלומים ששולמו.");
       toast.error("יש לבחור חשבון");
       return;
@@ -1239,6 +1262,12 @@ export function ExpenseDialog({
       toast.error("יש להזין קטגוריה");
       return;
     }
+    // A property's expense: one of its categories (or the one it already had).
+    if (isPropertyExpense && !categoryOptions.includes(finalCategory)) {
+      setErrorMessage("יש לבחור קטגוריה מהרשימה.");
+      toast.error("יש לבחור קטגוריה מהרשימה");
+      return;
+    }
     // When options are offered for a project/property domain, one must be chosen.
     // Project stays !isEditing-gated (matches its picker being hidden in edit
     // mode, above) — property does NOT, since its picker is genuinely editable
@@ -1270,7 +1299,7 @@ export function ExpenseDialog({
       return;
     }
 
-    if ((paymentStatus === "paid" || paymentStatus === "partial") && accountsList.length > 0 && !accountId) {
+    if ((paymentStatus === "paid" || paymentStatus === "partial") && accountsList.length > 0 && !accountId && !paidByCard) {
       setErrorMessage("יש לבחור חשבון לתנועה.");
       toast.error("יש לבחור חשבון");
       return;
@@ -1517,11 +1546,12 @@ export function ExpenseDialog({
       if (installmentsMode) {
         s.push("instcount");
         // If some installments were marked already-paid, collect where they were paid.
-        if (installmentRows.some((r) => r.paid)) s.push("method", "account");
+        if (installmentRows.some((r) => r.paid)) s.push("method", ...(paymentMethod === "credit_card" ? [] : ["account"]));
       } else {
         s.push("status");
         if (paymentStatus === "partial") s.push("paidamt");
-        if (paymentStatus === "paid" || paymentStatus === "partial") s.push("method", "account");
+        // Paid by card: no account to ask for (the card's bank charge is the money leaving).
+        if (paymentStatus === "paid" || paymentStatus === "partial") s.push("method", ...(paymentMethod === "credit_card" ? [] : ["account"]));
         if (showBillingOptions) s.push("billing");
       }
     }
@@ -1533,7 +1563,7 @@ export function ExpenseDialog({
     return s;
   }, [
     lockedDomain, isVehicleQuickAdd, needsSourcePicker, effectiveDomain, category, isWorkerPayment,
-    finalCategory, presetTagLabel, paymentStatus, isEditing, installmentsMode,
+    finalCategory, presetTagLabel, paymentStatus, paymentMethod, isEditing, installmentsMode,
     showBillingOptions, showAttachments, canManageWorkerSessions,
     showSessionTimingFields, showSessionPriceField, selectedWorkerType,
     workerPaymentChoice, installmentRows, canRecur, isRecurring, recurFrequency,
@@ -2732,9 +2762,14 @@ export function ExpenseDialog({
             >
               <option value=""></option>
               {categoryOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
+                <option key={option} value={option}>
+                  {option === oldPropertyCategory ? `${option} (לא מהרשימה)` : option}
+                </option>
               ))}
             </NativeSelect>
+            {oldPropertyCategory && category === oldPropertyCategory ? (
+              <div className="text-xs text-warning-strong">הקטגוריה הזו לא מהרשימה של נכס — כדאי לבחור אחת מהרשימה.</div>
+            ) : null}
           </div>
 
           {category === OTHER_CATEGORY ? (
@@ -3275,7 +3310,7 @@ export function ExpenseDialog({
                     </NativeSelect>
                   </div>
                   <AccountSelect
-                    required
+                    required={!paidByCard}
                     value={accountId}
                     onChange={setAccountId}
                     onLoaded={(list) => {
@@ -3283,6 +3318,11 @@ export function ExpenseDialog({
                       setAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
                     }}
                   />
+                  {paidByCard && !accountId ? (
+                    <div className="text-xs text-muted-foreground">
+                      שולם בכרטיס אשראי — אין צורך בחשבון: החיוב החודשי של הכרטיס הוא מה שיורד מהבנק.
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -3343,7 +3383,7 @@ export function ExpenseDialog({
                     </NativeSelect>
                   </div>
                   <AccountSelect
-                    required
+                    required={!paidByCard}
                     value={accountId}
                     onChange={setAccountId}
                     onLoaded={(list) => {
@@ -3351,6 +3391,11 @@ export function ExpenseDialog({
                       setAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
                     }}
                   />
+                  {paidByCard && !accountId ? (
+                    <div className="text-xs text-muted-foreground">
+                      שולם בכרטיס אשראי — אין צורך בחשבון: החיוב החודשי של הכרטיס הוא מה שיורד מהבנק.
+                    </div>
+                  ) : null}
                   {paymentStatus === "paid" && (
                     <div className="space-y-1">
                       <div className="text-sm font-medium">תאריך תשלום בפועל</div>

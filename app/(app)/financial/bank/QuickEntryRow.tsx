@@ -39,7 +39,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
 import { toHebrewError } from "@/lib/error-messages";
-import { DEFAULT_EXPENSE_CATEGORY, EXPENSE_CATEGORY_OPTIONS } from "@/lib/expenses";
+import {
+  DEFAULT_EXPENSE_CATEGORY,
+  EXPENSE_CATEGORY_OPTIONS,
+  EXPENSE_PROPERTY_CATEGORIES,
+  isPropertyExpenseCategory,
+} from "@/lib/expenses";
 import { norm, type MerchantMemory } from "@/lib/financial/cardImport";
 import { useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
 import { cn } from "@/lib/utils";
@@ -194,6 +199,11 @@ export default function QuickEntryRow({
     }
     if (businessDomain === "property_management" && !propertyId) {
       toast.error("יש לבחור נכס לתחום ניהול נכסים.");
+      return;
+    }
+    // A property's expense: one of a property's categories (owner, 2026-10-22: no "אחר").
+    if (kind === "expense" && businessDomain === "property_management" && !isPropertyExpenseCategory(category)) {
+      toast.error("יש לבחור קטגוריה של נכס.");
       return;
     }
 
@@ -424,13 +434,18 @@ export default function QuickEntryRow({
                   // property_id together, which the create APIs reject.
                   if (value !== "logistics_projects") setProjectId("");
                   if (value !== "property_management") setPropertyId("");
+                  // A property's line: its own categories — the general one picked doesn't carry over.
+                  if (value === "property_management" && !isPropertyExpenseCategory(category)) setCategory("");
                 }}
                 placeholder="תחום *"
                 ariaLabel="תחום"
               />
               <SearchableSelect
                 className="h-9 w-40"
-                options={EXPENSE_CATEGORY_OPTIONS.map((option) => ({ value: option, label: option }))}
+                // A property's own categories for a property's line; the general ones otherwise.
+                options={(businessDomain === "property_management" ? EXPENSE_PROPERTY_CATEGORIES : EXPENSE_CATEGORY_OPTIONS).map(
+                  (option) => ({ value: option, label: option })
+                )}
                 value={category}
                 onChange={setCategory}
                 placeholder="קטגוריה"

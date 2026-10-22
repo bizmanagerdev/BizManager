@@ -115,6 +115,27 @@ describe("POST /api/expenses/statement-rows/create-expenses", () => {
     ]);
   });
 
+  it("a property's line needs a property's category — the card's name isn't one (owner, 2026-10-22)", async () => {
+    const supabase = makeSupabase({
+      card_statement_rows: {
+        data: [
+          line({ id: "r1", business_domain: "property_management", property_id: "prop-1", description: "ACE" }),
+          line({ id: "r2", business_domain: "property_management", property_id: "prop-1", category: "תיקונים", description: "מכונת כביסה" }),
+        ],
+        error: null,
+      },
+      expenses: { read: { data: null, error: null }, write: { data: [{ id: "e2" }], error: null } },
+    });
+    grant(supabase);
+    const res = await post();
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({ created: 1 });
+    expect(json.errors).toEqual([{ id: "r1", message: "חסרה קטגוריה של נכס (ACE)" }]);
+    const [created] = supabase.calls.insert.expenses as Array<Array<Record<string, unknown>>>;
+    expect(created.map((e) => e.category)).toEqual(["תיקונים"]);
+  });
+
   it("skips a refund that already has its income", async () => {
     const supabase = makeSupabase({
       card_statement_rows: { data: [line({ id: "r2", amount: -8.4, income_payment_id: "p-old" })], error: null },

@@ -16,7 +16,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
-import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
+import {
+  EXPENSE_PROPERTY_CATEGORIES,
+  getBusinessDomainLabel,
+  isExpenseBusinessDomain,
+  isPropertyExpenseCategory,
+} from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
 import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
@@ -221,6 +226,9 @@ export default function StatementDetailClient({
   );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<StatementRowView | null>(null);
+  // The line as it was when its editor opened — a property's line keeps a category from before the fixed list
+  // until it's changed.
+  const [draftFrom, setDraftFrom] = useState<StatementRowView | null>(null);
   // Set while the line is being split across domains (null = a single domain).
   const [split, setSplit] = useState<SplitPartDraft[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -995,7 +1003,11 @@ export default function StatementDetailClient({
       const parts = [`נוצרו ${data.created ?? 0} הוצאות`];
       if (data.refunds) parts.push(`${data.refunds} זיכויים נרשמו כהכנסה`);
       if (data.skipped) parts.push(`${data.skipped} דולגו`);
-      if (data.errors && data.errors.length) parts.push(`${data.errors.length} שגיאות`);
+      if (data.errors && data.errors.length) {
+        // What stopped each — a property's line without its category among them — the first few by name.
+        const names = data.errors.slice(0, 3).map((e) => e.message);
+        parts.push(`${data.errors.length} לא נוצרו: ${names.join("; ")}${data.errors.length > 3 ? "…" : ""}`);
+      }
       setCreateNotice(parts.join(" · "));
       setChosenStep(null);
       startTransition(() => {
@@ -1013,6 +1025,7 @@ export default function StatementDetailClient({
     setError(null);
     setEditingId(row.id);
     setDraft({ ...row });
+    setDraftFrom(row);
     setSplit(null);
   }
 
@@ -1043,6 +1056,17 @@ export default function StatementDetailClient({
       return;
     }
     const isRefund = draft.amount < 0;
+    // A property's line: one of a property's categories — not the card's name (owner, 2026-10-22: "all the
+    // expenses that came from the cc show the credit card name as the category"); one from before keeps its
+    // own while neither it nor the domain changes.
+    const unchanged =
+      draftFrom?.id === draft.id &&
+      draftFrom.category === draft.category &&
+      draftFrom.businessDomain === draft.businessDomain;
+    if (draft.businessDomain === "property_management" && !isRefund && !isPropertyExpenseCategory(draft.category) && !unchanged) {
+      setError("לשורה של נכס יש לבחור קטגוריה מהרשימה.");
+      return;
+    }
     const onProject = draft.businessDomain === "logistics_projects" && !isRefund;
     const billToCustomer = onProject && Boolean(draft.projectId) && draft.billToCustomer;
     setSaving(true);
@@ -1693,7 +1717,21 @@ export default function StatementDetailClient({
                 />
               </Field>
               <Field size="xs" label="קטגוריה">
-                <Input value={draft.category} onChange={(e) => patchDraft({ category: e.target.value })} className="h-9" />
+                {draft.businessDomain === "property_management" && draft.amount >= 0 ? (
+                  // A property's: its categories only, and the one it had if it isn't one of them.
+                  <NativeSelect dense value={draft.category} onChange={(e) => patchDraft({ category: e.target.value })}>
+                    {isPropertyExpenseCategory(draft.category) ? null : (
+                      <option value={draft.category}>{draft.category ? `${draft.category} (לא מהרשימה)` : "בחירת קטגוריה"}</option>
+                    )}
+                    {EXPENSE_PROPERTY_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                ) : (
+                  <Input value={draft.category} onChange={(e) => patchDraft({ category: e.target.value })} className="h-9" />
+                )}
               </Field>
               <Field size="xs" label="כרטיס" hint="לאיזה כרטיס פיזי השורה שייכת — שינוי הקטגוריה לא משפיע על זה.">
                 <NativeSelect dense value={draft.cardLabel} onChange={(e) => patchDraft({ cardLabel: e.target.value })}>

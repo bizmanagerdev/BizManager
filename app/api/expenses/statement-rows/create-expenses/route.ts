@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { isExpenseBusinessDomain, isPropertyExpenseCategory } from "@/lib/expenses";
 import { norm } from "@/lib/financial/cardImport";
 import { roundShekels } from "@/lib/financial/cardStatementMath";
 import { buildPaymentInsert, CARD_REFUND_METHOD } from "@/lib/payments";
@@ -128,6 +128,12 @@ export async function POST(req: Request) {
       }
       if (!expenseDate) {
         errors.push({ id: row.id, message: `חסר תאריך (${row.description ?? PLACEHOLDER})` });
+        continue;
+      }
+      // A property's expense: one of a property's categories — never the card's name, which is what a line's
+      // category starts as (owner, 2026-10-22). Left for its category to be chosen.
+      if (businessDomain === "property_management" && !isPropertyExpenseCategory(row.category)) {
+        errors.push({ id: row.id, message: `חסרה קטגוריה של נכס (${row.description ?? PLACEHOLDER})` });
         continue;
       }
       const projectId = businessDomain === "logistics_projects" && row.project_id ? row.project_id : null;
