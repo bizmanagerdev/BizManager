@@ -47,6 +47,14 @@ describe("a property's photo on its page", () => {
     expect(screen.getByRole("button", { name: "החלפת תמונה" })).toHaveClass("h-7", "w-7");
   });
 
+  it("a photo can be taken off: its × asks the page to delete it, and the list will ask again", () => {
+    const onDelete = vi.fn();
+    render(<PropertyPhotoBanner propertyId="p1" name="יהודה הנשיא 15" url="https://x/p1.jpg" onChanged={vi.fn()} onDelete={onDelete} />);
+    fireEvent.click(screen.getByRole("button", { name: "מחיקת התמונה" }));
+    expect(onDelete).toHaveBeenCalled();
+    expect(forgetPropertyPhotos).toHaveBeenCalled();
+  });
+
   it("its files not in yet: a quiet block, nothing to press", () => {
     render(<PropertyPhotoBanner propertyId="p1" name="יהודה הנשיא 15" url={null} ready={false} onChanged={vi.fn()} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();

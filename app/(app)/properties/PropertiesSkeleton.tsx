@@ -34,11 +34,6 @@ export default function PropertiesSkeleton() {
                 <Skeleton className="h-14 rounded-xl" />
               </div>
 
-              <div className="mt-auto flex items-center gap-3">
-                <TextLineSkeleton className="text-xs" barClassName="w-20" />
-                <TextLineSkeleton className="text-xs" barClassName="w-16" />
-                <TextLineSkeleton className="text-xs" barClassName="w-16" />
-              </div>
             </CardContent>
           </Card>
         ))}

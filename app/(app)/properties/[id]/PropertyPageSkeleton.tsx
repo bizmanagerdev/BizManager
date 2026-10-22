@@ -35,16 +35,11 @@ function rows(labels: string[]) {
 
 function Heading() {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="min-w-0 space-y-1">
-        <div className="flex h-4 items-center gap-1.5">
-          <Line className="w-10" />
-          <Line className="w-12" />
-        </div>
-        <div className="flex h-[1.75rem] items-center gap-2">
-          <Skeleton className="h-5 w-44" />
-          <Skeleton className="h-5 w-14 rounded-full" />
-        </div>
+    <div className="flex items-center justify-between gap-3">
+      {/* One line: נכסים › its name (PropertyPageHeading). */}
+      <div className="flex h-[1.75rem] min-w-0 items-center gap-1.5">
+        <Line className="w-10" />
+        <Skeleton className="h-5 w-44" />
       </div>
       <div className="flex items-center gap-1.5">
         <Skeleton className="h-9 w-9 rounded-xl" />
@@ -83,7 +78,7 @@ export function PropertyDetailBodySkeleton() {
               <Line />
               <Line />
             </div>
-            <Skeleton className="h-20 w-28 shrink-0 rounded-xl" />
+            <Skeleton className="min-h-20 w-24 shrink-0 self-stretch rounded-xl" />
           </div>
         </StatActionCard>
         <StatActionCard

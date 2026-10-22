@@ -44,7 +44,6 @@ import { formatDateWithTime, formatShortDateTime } from "@/lib/date";
 import {
   pickCurrentLease,
   propertyDisplayName,
-  propertyTypeLabel,
   recurringFrequencyLabel,
   taskStatusLabel,
   type LeaseAgreement,
@@ -425,6 +424,17 @@ export default function PropertyDetailClient({
   const visibleExpected = filterByText(movements.expected, movementTexts, search).filter(inCategory);
   function chooseCategory(slice: DonutSlice | null) {
     setCategoryFilter(slice ? { label: slice.label, members: slice.members } : null);
+    // Its rows only in the other tab (an expense still to pay): that tab (owner, 2026-10-22: "if the movement is
+    // in the other tab I need indication to that").
+    if (slice) {
+      const count = (list: typeof movements.done) =>
+        filterByText(list, movementTexts, search).filter(
+          (m) => m.direction === "out" && slice.members.includes(expenseCategoryLabel(m.category))
+        ).length;
+      const here = count(moneyTab === "done" ? movements.done : movements.expected);
+      const there = count(moneyTab === "done" ? movements.expected : movements.done);
+      if (here === 0 && there > 0) setMoneyTab(moneyTab === "done" ? "expected" : "done");
+    }
     // Chosen below the table (a phone, the side column under it): up to the table, to see what it did.
     const table = movementsRef.current;
     if (slice && table && table.getBoundingClientRect().top < 0) table.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -754,9 +764,6 @@ export default function PropertyDetailClient({
     <div className="space-y-3 @container md:space-y-5">
       <PropertyPageHeading
         name={address}
-        typeLabel={property.propertyType ? propertyTypeLabel(property.propertyType) : null}
-        rented={currentLease?.status === "active"}
-        inactive={!property.isActive}
         actions={
           <div className="flex items-center gap-1.5">
             <EditButton onClick={() => setDetailsEditOpen(true)} label="עריכת פרטי הנכס" />
@@ -793,6 +800,7 @@ export default function PropertyDetailClient({
           photoUrl={coverPhoto?.url ?? null}
           photoReady={serverPartsReady}
           onPhotoChanged={() => startTransition(() => router.refresh())}
+          onPhotoDelete={coverPhoto ? () => setDel({ kind: "document", id: coverPhoto.id, label: "התמונה" }) : undefined}
           editOpen={detailsEditOpen}
           onEditOpenChange={setDetailsEditOpen}
         />
@@ -879,6 +887,21 @@ export default function PropertyDetailClient({
                     className="ps-9"
                   />
                 </div>
+                {/* Nothing here for the search or the category, but some in the other tab: say so, and go there. */}
+                {(moneyTab === "done" ? visibleDone : visibleExpected).length === 0 &&
+                (moneyTab === "done" ? visibleExpected : visibleDone).length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setMoneyTab(moneyTab === "done" ? "expected" : "done")}
+                    className="mb-2 me-2 text-sm font-medium text-secondary hover:underline"
+                  >
+                    {(() => {
+                      const n = (moneyTab === "done" ? visibleExpected : visibleDone).length;
+                      const where = moneyTab === "done" ? "בצפויים" : "בשבוצעו";
+                      return `${n === 1 ? "יש תנועה אחת" : `יש ${n} תנועות`} ${where} — להצגה`;
+                    })()}
+                  </button>
+                ) : null}
                 {categoryFilter ? (
                   // The category chosen on the donut, as the rent page's "who owes" toggle: blue, its × lets it go.
                   <button
@@ -932,10 +955,47 @@ export default function PropertyDetailClient({
               </Tabs>
             </CollapsibleSection>
           </div>
+
+          {/* What's to do on it, under its movements (owner, 2026-10-22: "move the tasks section to under the movements table"). */}
+          <CollapsibleSection
+            defaultOpen={activityTasks.length > 0}
+            title="משימות"
+            icon={<TaskIcon className={SECTION_ICON_CLASS} />}
+            summary={activityTasks.length > 0 ? <SectionCount count={activityTasks.length} /> : null}
+            action={
+              <Button type="button" size="sm" variant="outline" onClick={openAddTask}>
+                <AddIcon className="h-4 w-4" />
+                משימה
+              </Button>
+            }
+          >
+            {activityTasks.length === 0 ? (
+              <EmptyState dense>אין משימות לנכס הזה.</EmptyState>
+            ) : (
+              <ul className="divide-y">
+                {activityTasks.map((t: PropertyTask) => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 py-2">
+                    <button type="button" onClick={() => openEditTask(t.id)} className="min-w-0 text-start text-sm">
+                      <div className="font-medium">{t.subject || "משימה"}</div>
+                      <div className="text-xs text-muted-foreground">{formatDateWithTime(t.dueDate, t.dueTime, "—")}</div>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
+                      <RowMenu
+                        label="פעולות למשימה"
+                        onEdit={() => openEditTask(t.id)}
+                        onDelete={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CollapsibleSection>
         </div>
 
-        {/* The side column: the money in one card, then what repeats, what's to
-            do, its files, and the rest of what's known about it. */}
+        {/* The side column: the money in one card, then what repeats, its files,
+            and the rest of what's known about it. */}
         <div className="min-w-0 space-y-3">
           <PropertyMoneyCard
             payments={activityPayments}
@@ -984,41 +1044,7 @@ export default function PropertyDetailClient({
             )}
           </CollapsibleSection>
 
-          <CollapsibleSection
-            defaultOpen={activityTasks.length > 0}
-            title="משימות"
-            icon={<TaskIcon className={SECTION_ICON_CLASS} />}
-            summary={activityTasks.length > 0 ? <SectionCount count={activityTasks.length} /> : null}
-            action={
-              <Button type="button" size="sm" variant="outline" onClick={openAddTask}>
-                <AddIcon className="h-4 w-4" />
-                משימה
-              </Button>
-            }
-          >
-            {activityTasks.length === 0 ? (
-              <EmptyState dense>אין משימות לנכס הזה.</EmptyState>
-            ) : (
-              <ul className="divide-y">
-                {activityTasks.map((t: PropertyTask) => (
-                  <li key={t.id} className="flex items-center justify-between gap-2 py-2">
-                    <button type="button" onClick={() => openEditTask(t.id)} className="min-w-0 text-start text-sm">
-                      <div className="font-medium">{t.subject || "משימה"}</div>
-                      <div className="text-xs text-muted-foreground">{formatDateWithTime(t.dueDate, t.dueTime, "—")}</div>
-                    </button>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
-                      <RowMenu
-                        label="פעולות למשימה"
-                        onEdit={() => openEditTask(t.id)}
-                        onDelete={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CollapsibleSection>
+
 
 
           {/* Its documents and photos as one place (owner, 2026-10-21): the

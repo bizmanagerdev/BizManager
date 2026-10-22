@@ -12,11 +12,13 @@
 // too; only a צילום is ever its photo, never a receipt or a contract that
 // happens to be an image. On the page it's a small picture BESIDE the card's
 // details, not under them (owner, 2026-10-22: "toooo tall" — a wide one under
-// them made the whole head row taller), the same size with a photo or without.
+// them made the whole head row taller), as tall as the details beside it, the
+// same size with a photo or without; one there can be taken off ("I need to be
+// able to delete the image") — through the page's own delete, with its undo.
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { BuildingIcon, CameraIcon, SpinnerIcon } from "@/components/ui/icons";
+import { BuildingIcon, CameraIcon, CloseIcon, SpinnerIcon } from "@/components/ui/icons";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
@@ -35,8 +37,8 @@ export function PropertyPhotoThumb({ url, name }: { url: string | null; name: st
   );
 }
 
-/** The page's photo box: beside the details, the same size with or without a photo. */
-const PAGE_PHOTO = "h-20 w-28 shrink-0 rounded-xl";
+/** The page's photo box: beside the details, as tall as they are, the same size with or without a photo. */
+const PAGE_PHOTO = "min-h-20 w-24 shrink-0 self-stretch rounded-xl";
 
 /** The property page's photo, with its add / replace. `ready` false: its files aren't in yet — a quiet block. */
 export function PropertyPhotoBanner({
@@ -45,6 +47,7 @@ export function PropertyPhotoBanner({
   url,
   ready = true,
   onChanged,
+  onDelete,
 }: {
   propertyId: string;
   name: string;
@@ -52,6 +55,8 @@ export function PropertyPhotoBanner({
   ready?: boolean;
   /** Added, or its adding undone: the page reads its photos again. */
   onChanged: () => void;
+  /** Its ×: the page asks, then deletes the photo (with its undo). */
+  onDelete?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -142,11 +147,11 @@ export function PropertyPhotoBanner({
           aria-label="הוספת תמונה של הנכס"
           className={cn(
             PAGE_PHOTO,
-            "flex flex-col items-center justify-center gap-1 border border-dashed border-border/70 bg-muted/30 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-default"
+            "flex flex-col items-center justify-center gap-1 border border-dashed border-secondary/40 bg-secondary/5 text-xs font-medium text-secondary transition-colors hover:bg-secondary/10 disabled:cursor-default"
           )}
         >
           {busy ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <CameraIcon className="h-4 w-4" />}
-          הוספת תמונה
+          תמונה
         </button>
       </>
     );
@@ -168,6 +173,21 @@ export function PropertyPhotoBanner({
       >
         {busy ? <SpinnerIcon className="h-3.5 w-3.5 animate-spin" /> : <CameraIcon className="h-3.5 w-3.5" />}
       </button>
+      {onDelete && !local ? (
+        <button
+          type="button"
+          aria-label="מחיקת התמונה"
+          title="מחיקת התמונה"
+          disabled={busy}
+          onClick={() => {
+            forgetPropertyPhotos();
+            onDelete();
+          }}
+          className="absolute end-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-destructive disabled:cursor-default"
+        >
+          <CloseIcon className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
     </div>
   );
 }

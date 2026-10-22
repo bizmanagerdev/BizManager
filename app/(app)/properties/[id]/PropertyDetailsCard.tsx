@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { AddressLink } from "@/components/ui/address-link";
-import { BuildingIcon, WazeIcon } from "@/components/ui/icons";
+import { BuildingIcon, CheckIcon, WazeIcon } from "@/components/ui/icons";
 import { structuredPoint } from "@/lib/address/columns";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { updateProperty } from "../actions";
@@ -15,6 +15,7 @@ import { PropertyBasicFields, propertyToForm, type PropertyInput } from "../Prop
 import { propertyDisplayName, propertyHasRoomLayout, propertyTypeLabel, type Property } from "@/lib/properties";
 import { PropertyPhotoBanner } from "../PropertyPhotoTile";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
+import { cn } from "@/lib/utils";
 
 const BASIC_KEYS = [
   "name",
@@ -89,12 +90,20 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
  * copy of the other cards' fields. That's what keeps the page's independent
  * editors from clobbering each other's already-saved edits.
  */
+/** The details two to a row — the last one alone with an empty cell beside it. */
+function pairsOf<T>(items: T[]): Array<[T, T | null]> {
+  const rows: Array<[T, T | null]> = [];
+  for (let i = 0; i < items.length; i += 2) rows.push([items[i], items[i + 1] ?? null]);
+  return rows;
+}
+
 export default function PropertyDetailsCard({
   propertyId,
   property,
   photoUrl,
   photoReady,
   onPhotoChanged,
+  onPhotoDelete,
   editOpen,
   onEditOpenChange,
 }: {
@@ -105,6 +114,8 @@ export default function PropertyDetailsCard({
   /** Its files are in (the photo's link comes with them). */
   photoReady: boolean;
   onPhotoChanged: () => void;
+  /** Its photo's ×: the page's delete, with its undo. */
+  onPhotoDelete?: () => void;
   editOpen: boolean;
   onEditOpenChange: (open: boolean) => void;
 }) {
@@ -193,14 +204,23 @@ export default function PropertyDetailsCard({
         }
         subtitles={[p.assetDescription]}
       >
-        {/* The details and its photo side by side — the photo never adds height of its own (owner, 2026-10-22:
-            "toooo tall"). The rows as StatActionCard's own. */}
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1 space-y-1">
-            {details.map((row) => (
-              <div key={row.label} className="flex items-center justify-between gap-2 text-xs">
-                <span className="shrink-0 text-muted-foreground">{row.label}</span>
-                <span className="min-w-0 text-end font-medium">{row.value}</span>
+        {/* Its details as a ruled grid, two to a row, its photo beside them as tall as they are — the photo never
+            adds height of its own (owner, 2026-10-22: "toooo tall"; "maybe we can design it better, more like
+            this"). Then what it has, each a chip with its tick. */}
+        <div className="flex items-stretch gap-3">
+          <div className="min-w-0 flex-1 divide-y divide-border/50 text-sm">
+            {pairsOf(details).map((row) => (
+              <div key={row[0].label} className="grid grid-cols-2 divide-x divide-border/50">
+                {row.map((d, i) =>
+                  d ? (
+                    <div key={d.label} className={cn("flex items-center justify-between gap-2 py-2", i === 0 ? "pe-3" : "ps-3")}>
+                      <span className="text-xs text-muted-foreground">{d.label}</span>
+                      <span className="font-semibold tabular-nums">{d.value}</span>
+                    </div>
+                  ) : (
+                    <div key="empty" />
+                  )
+                )}
               </div>
             ))}
           </div>
@@ -210,15 +230,26 @@ export default function PropertyDetailsCard({
             url={photoUrl}
             ready={photoReady}
             onChanged={onPhotoChanged}
+            onDelete={onPhotoDelete}
           />
         </div>
         {amenities.length > 0 ? (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {amenities.map((label) => (
-              <Badge key={label} variant={label === "לא פעיל" ? "neutral" : "outline"}>
-                {label}
-              </Badge>
-            ))}
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {amenities.map((label) =>
+              label === "לא פעיל" ? (
+                <Badge key={label} variant="neutral">
+                  {label}
+                </Badge>
+              ) : (
+                <span
+                  key={label}
+                  className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
+                >
+                  <CheckIcon className="h-3 w-3 text-secondary" />
+                  {label}
+                </span>
+              )
+            )}
           </div>
         ) : null}
       </StatActionCard>

@@ -126,22 +126,15 @@ describe("the properties list", () => {
     // The rent page says whether it's in (owner, 2026-10-22).
     expect(c.queryByRole("link", { name: /שכירות/ })).not.toBeInTheDocument();
     expect(c.queryByText("לא שולם")).not.toBeInTheDocument();
-    // Its tasks, documents and money, like a car's; no income/expense figures or buttons.
-    expect(c.getByText("1/3 משימות")).toBeInTheDocument();
-    expect(c.getByText("5 מסמכים")).toBeInTheDocument();
-    expect(c.getByText(/נטו/)).toHaveTextContent("₪16,000");
+    // Its net, tasks and documents are its page's to say (owner, 2026-10-22); no figures or buttons here.
+    expect(c.queryByText(/משימות/)).not.toBeInTheDocument();
+    expect(c.queryByText(/מסמכים/)).not.toBeInTheDocument();
+    expect(c.queryByText(/נטו/)).not.toBeInTheDocument();
     expect(c.queryByRole("button", { name: "הכנסה" })).not.toBeInTheDocument();
     // The rooms and the amenities live on the property's own page.
     expect(c.queryByText(/4 חדרים/)).not.toBeInTheDocument();
     // Its photo, once asked for.
     expect(await c.findByRole("img", { name: "יהודה הנשיא 15" })).toHaveAttribute("src", "https://x/p1.jpg");
-  });
-
-  it("no tasks at all: the card leaves the tasks count out", () => {
-    render(<PropertiesClient properties={[property({ counts: { tasks: 0, openTasks: 0, documents: 2 } })]} />);
-    const c = within(card("יהודה הנשיא 15"));
-    expect(c.queryByText(/משימות/)).not.toBeInTheDocument();
-    expect(c.getByText("2 מסמכים")).toBeInTheDocument();
   });
 
   it("the whole card opens the property", () => {

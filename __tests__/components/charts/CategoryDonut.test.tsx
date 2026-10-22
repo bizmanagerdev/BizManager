@@ -55,12 +55,23 @@ describe("a category chosen (the property page filters its table to it, owner 20
     expect(onSelect).toHaveBeenLastCalledWith(null);
   });
 
-  it("אחר stands for every category in it", () => {
+  it("every category its own row — no אחר — the smaller ones grey; one of them chosen is just it (owner, 2026-10-22)", () => {
     const onSelect = vi.fn();
     const many = ["א", "ב", "ג", "ד", "ה", "ו", "ז"].map((label, i) => ({ label, value: 700 - i * 100 }));
     render(<CategoryDonut data={many} onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole("button", { name: /אחר/ }));
-    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ label: "אחר", members: ["ו", "ז"] }));
+    const rows = screen.getAllByRole("button");
+    expect(rows.map((r) => r.textContent?.match(/^[א-ת]/)?.[0])).toEqual(["א", "ב", "ג", "ד", "ה", "ו", "ז"]);
+    expect(screen.queryByText("אחר")).not.toBeInTheDocument();
+    const dot = (label: string) =>
+      (screen.getByRole("button", { name: new RegExp(`^${label}`) }).querySelector("span") as HTMLElement).style.background;
+    expect(dot("ו")).toBe(dot("ז"));
+    expect(dot("א")).not.toBe(dot("ו"));
+    fireEvent.click(screen.getByRole("button", { name: /^ו/ }));
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ label: "ו", members: ["ו"] }));
+    // Pointed at, it says itself in the middle — not the grey slice's total.
+    fireEvent.mouseEnter(screen.getByRole("button", { name: /^ז/ }));
+    const amounts = [...document.querySelectorAll("span")].filter((el) => el.textContent === ILS(100));
+    expect(amounts).toHaveLength(2); // its row, and the middle
   });
 
   it("without onSelect the rows only read out — nothing to press", () => {

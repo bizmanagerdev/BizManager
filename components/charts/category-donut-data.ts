@@ -13,6 +13,31 @@ export const SLICE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba
 export const OTHER_COLOR = "#a8a7a0";
 const OTHER_LABEL = "אחר";
 
+/**
+ * Every category, one row each, for the list beside the circle (owner, 2026-10-22: "I don't like the other —
+ * why can't I see the whole list"): the five biggest in their slices' colours, the rest in the grey of the one
+ * slice that holds them all. `slice`: the circle's slice the row is part of.
+ */
+export type DonutRow = { label: string; value: number; color: string; share: number; slice: string };
+
+export function donutRows(data: CategoryDonutDatum[], maxSlices = SLICE_COLORS.length): DonutRow[] {
+  const slices = donutSlices(data, maxSlices);
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  if (total <= 0) return [];
+  const rest = slices.find((s) => s.label === OTHER_LABEL && s.members.length > 0 && !s.members.includes(OTHER_LABEL)) ?? null;
+  const sorted = [...data.filter((d) => d.value > 0)].sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "he"));
+  return sorted.map((d) => {
+    const own = slices.find((s) => s !== rest && s.label === d.label);
+    return {
+      label: d.label,
+      value: d.value,
+      color: own?.color ?? OTHER_COLOR,
+      share: d.value / total,
+      slice: own?.label ?? OTHER_LABEL,
+    };
+  });
+}
+
 export function donutSlices(data: CategoryDonutDatum[], maxSlices = SLICE_COLORS.length): DonutSlice[] {
   const positive = data.filter((d) => d.value > 0);
   const total = positive.reduce((sum, d) => sum + d.value, 0);

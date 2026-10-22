@@ -10,12 +10,9 @@ import { Painted } from "@/components/search/Painted";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   DeleteIcon,
-  DocumentIcon,
   EditIcon,
   MoreIcon,
   NotificationIcon,
-  PaymentIcon,
-  TaskIcon,
   UserIcon,
   type IconComponent,
 } from "@/components/ui/icons";
@@ -31,13 +28,14 @@ import { PropertyPhotoThumb } from "./PropertyPhotoTile";
 const ENDING_DAYS = 90;
 
 // A property on the list (owner, 2026-10-21: "like the cars cards"): its
-// photo (added on its page), name and address; one row for who
-// rents it, what they pay and until when, opening that part of the property's
-// page; and under it its tasks, documents and money. The whole card opens the
-// property. Whether this month's rent is in isn't here (owner, 2026-10-22:
-// "the user could just go to the rent tab and see all information about the
-// rent"), and an empty one says so once ("I don't need one row to say that
-// it's empty and the next row to say that there's no renter").
+// photo (added on its page), name and address, and one row for who rents it,
+// what they pay and until when, opening that part of the property's page. The
+// whole card opens the property. Whether this month's rent is in isn't here
+// (owner, 2026-10-22: "the user could just go to the rent tab and see all
+// information about the rent"), an empty one says so once ("I don't need one
+// row to say that it's empty and the next row to say that there's no
+// renter"), and its net, tasks and documents count are its page's to say
+// ("should we remove the whole bottom row — does it do anything for the user?").
 
 /**
  * One "bar", like a car's טסט / ביטוח / רישוי: the label and its icon at one end, the value at the other — and
@@ -104,7 +102,6 @@ export default function PropertyListCard({
   const name = propertyDisplayName(p);
   const lease = p.currentLease?.status === "active" ? p.currentLease : null;
   const renters = p.renters && p.renters.count > 0 ? p.renters : null;
-  const net = Math.round(p.rollup.totalIncomeAmount - p.rollup.paidExpenseAmount);
 
   return (
     <Card className="relative flex flex-1 cursor-pointer flex-col transition-colors hover:bg-muted/20" {...rowNavigateProps(router, href)}>
@@ -192,27 +189,6 @@ export default function PropertyListCard({
           {!p.isActive ? <Badge variant="neutral">לא פעיל</Badge> : null}
         </div>
 
-        <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span
-            // Below zero isn't an alarm on a property (its purchase, its works): plain, not red (owner, 2026-10-22).
-            className={cn("flex items-center gap-1 font-semibold tabular-nums", net >= 0 ? "text-success" : "text-foreground")}
-            title="נטו: הכנסות פחות הוצאות"
-          >
-            <PaymentIcon className="h-3.5 w-3.5" />
-            נטו {formatCurrency(net)}
-          </span>
-          {/* No tasks at all: nothing to say (owner, 2026-10-22: "if there are no tasks then leave this out"). */}
-          {p.counts.tasks > 0 ? (
-            <span className="flex items-center gap-1">
-              <TaskIcon className="h-3.5 w-3.5" />
-              {p.counts.openTasks}/{p.counts.tasks} משימות
-            </span>
-          ) : null}
-          <span className="flex items-center gap-1">
-            <DocumentIcon className="h-3.5 w-3.5" />
-            {p.counts.documents} מסמכים
-          </span>
-        </div>
       </CardContent>
     </Card>
   );

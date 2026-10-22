@@ -241,7 +241,8 @@ export function PropertyRentCard({
         // (owner, 2026-10-22: "the blue buttons should be the same height").
         <div className="space-y-1.5">
           {lease ? (
-            <Button type="button" size="sm" variant="ghost" className="w-full text-xs" onClick={onSchedule}>
+            // Outlined, a button that looks like one (owner, 2026-10-22: "this button needs an outline").
+            <Button type="button" size="sm" variant="outline" className="w-full" onClick={onSchedule}>
               קביעת תשלומים מראש
             </Button>
           ) : null}
