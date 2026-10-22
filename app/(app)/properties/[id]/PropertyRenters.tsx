@@ -96,6 +96,7 @@ export function PropertyRentersSection({
   onEdit,
   onDelete,
   onNew,
+  onShowPayments,
 }: {
   renters: Renter[];
   /** Leases no longer running — folded at the bottom. */
@@ -105,6 +106,8 @@ export function PropertyRentersSection({
   onEdit: (lease: LeaseAgreement) => void;
   onDelete: (lease: LeaseAgreement) => void;
   onNew: () => void;
+  /** Their payments in the page's table — to see, edit or delete each one. */
+  onShowPayments: (lease: LeaseAgreement) => void;
 }) {
   return (
     <CollapsibleSection
@@ -140,10 +143,18 @@ export function PropertyRentersSection({
                       {name}
                     </Link>
                     {status.state !== "none" ? (
-                      <Badge variant={state.badge}>
-                        {status.periodLabel ? `${status.periodLabel}: ` : ""}
-                        {state.label}
-                      </Badge>
+                      // Its payments, a tap away (owner, 2026-10-22: "how can I delete a payment here or edit it or view it").
+                      <button
+                        type="button"
+                        onClick={() => onShowPayments(lease)}
+                        title="התשלומים של השוכר"
+                        className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <Badge variant={state.badge} className="cursor-pointer">
+                          {status.periodLabel ? `${status.periodLabel}: ` : ""}
+                          {state.label}
+                        </Badge>
+                      </button>
                     ) : null}
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -159,12 +170,15 @@ export function PropertyRentersSection({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                  <Button type="button" size="sm" variant="outline" onClick={() => onShowPayments(lease)}>
+                    תשלומים
+                  </Button>
                   <Button type="button" size="sm" variant="outline" onClick={() => onRecord(lease)}>
                     רישום תשלום
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button type="button" size="sm" variant="ghost" className="h-9 w-9 p-0" aria-label={`פעולות ל${name}`}>
+                      <Button type="button" size="sm" variant="outline" className="h-9 w-9 p-0" aria-label={`פעולות ל${name}`}>
                         <MoreIcon className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>

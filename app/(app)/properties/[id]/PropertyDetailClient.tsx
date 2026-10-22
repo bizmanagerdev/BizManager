@@ -293,6 +293,9 @@ export default function PropertyDetailClient({
   // A category chosen on the money card's donut: the table shows its expenses only (owner, 2026-10-22: "when i
   // click a section here it should filter the movements table to those") — "אחר" stands for every one in it.
   const [categoryFilter, setCategoryFilter] = useState<{ label: string; members: string[] } | null>(null);
+  // A renter's payments only (owner, 2026-10-22: "how can I delete a payment here or edit it or view it" — a
+  // storage renter's row): the table's rows are where each one is seen, edited and deleted.
+  const [renterFilter, setRenterFilter] = useState<{ label: string; keys: string[] } | null>(null);
   const movementsRef = useRef<HTMLDivElement | null>(null);
   // recurring template
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -420,8 +423,26 @@ export default function PropertyDetailClient({
   ];
   const inCategory = (m: (typeof movements.done)[number]) =>
     !categoryFilter || (m.direction === "out" && categoryFilter.members.includes(expenseCategoryLabel(m.category)));
-  const visibleDone = filterByText(movements.done, movementTexts, search).filter(inCategory);
-  const visibleExpected = filterByText(movements.expected, movementTexts, search).filter(inCategory);
+  const inRenter = (m: (typeof movements.done)[number]) => !renterFilter || renterFilter.keys.includes(m.key);
+  const visibleDone = filterByText(movements.done, movementTexts, search).filter(inCategory).filter(inRenter);
+  const visibleExpected = filterByText(movements.expected, movementTexts, search).filter(inCategory).filter(inRenter);
+  /** Up to the table — chosen from below it (a phone, the side column) or above it (a renter's row). */
+  function showTable() {
+    const table = movementsRef.current;
+    if (!table) return;
+    const top = table.getBoundingClientRect().top;
+    if (top < 0 || top > window.innerHeight * 0.6) table.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  /** A renter's payments in the table — in the tab that has them. */
+  function showRenterPayments(lease: LeaseAgreement) {
+    const keys = renterPayments(lease.id, activityPayments, running.length === 1).map((p) => `payment:${p.id}`);
+    setRenterFilter({ label: [lease.unitLabel, lease.customerName ?? "שוכר"].filter(Boolean).join(" · "), keys });
+    const count = (list: typeof movements.done) => list.filter((m) => keys.includes(m.key)).length;
+    const here = count(moneyTab === "done" ? movements.done : movements.expected);
+    const there = count(moneyTab === "done" ? movements.expected : movements.done);
+    if (here === 0 && there > 0) setMoneyTab(moneyTab === "done" ? "expected" : "done");
+    showTable();
+  }
   function chooseCategory(slice: DonutSlice | null) {
     setCategoryFilter(slice ? { label: slice.label, members: slice.members } : null);
     // Its rows only in the other tab (an expense still to pay): that tab (owner, 2026-10-22: "if the movement is
@@ -436,8 +457,7 @@ export default function PropertyDetailClient({
       if (here === 0 && there > 0) setMoneyTab(moneyTab === "done" ? "expected" : "done");
     }
     // Chosen below the table (a phone, the side column under it): up to the table, to see what it did.
-    const table = movementsRef.current;
-    if (slice && table && table.getBoundingClientRect().top < 0) table.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (slice) showTable();
   }
 
   /** A rent check: נפרע, or back to waiting. */
@@ -843,6 +863,7 @@ export default function PropertyDetailClient({
               onEdit={openEditLease}
               onDelete={(lease) => setDel({ kind: "lease", id: lease.id, label: "חוזה שכירות" })}
               onNew={openAddLease}
+              onShowPayments={showRenterPayments}
             />
           ) : null}
           {/* The money as one card (owner, 2026-10-21: "tons of info for one page"):
@@ -902,6 +923,22 @@ export default function PropertyDetailClient({
                     })()}
                   </button>
                 ) : null}
+                {renterFilter ? (
+                  // A renter's payments (their row's "תשלומים"): blue, its × lets it go.
+                  <button
+                    type="button"
+                    onClick={() => setRenterFilter(null)}
+                    aria-label={`ביטול הסינון: ${renterFilter.label}`}
+                    className={cn(
+                      "mb-2 me-2 inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium",
+                      TOGGLE_ON,
+                      TOGGLE_ON_HOVER
+                    )}
+                  >
+                    שוכר: {renterFilter.label}
+                    <CloseIcon className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
                 {categoryFilter ? (
                   // The category chosen on the donut, as the rent page's "who owes" toggle: blue, its × lets it go.
                   <button
@@ -927,11 +964,13 @@ export default function PropertyDetailClient({
                     sortDirection="desc"
                     showBilled={false}
                     emptyText={
-                      categoryFilter
-                        ? "אין כאן הוצאות בקטגוריה הזו."
-                        : search.trim()
-                          ? "לא נמצאו תנועות לחיפוש הזה."
-                          : "אין עדיין הכנסות או הוצאות לנכס הזה."
+                      renterFilter
+                        ? "אין עדיין תשלומים מהשוכר הזה."
+                        : categoryFilter
+                          ? "אין כאן הוצאות בקטגוריה הזו."
+                          : search.trim()
+                            ? "לא נמצאו תנועות לחיפוש הזה."
+                            : "אין עדיין הכנסות או הוצאות לנכס הזה."
                     }
                   />
                 </TabsContent>
@@ -944,11 +983,13 @@ export default function PropertyDetailClient({
                     sortDirection="asc"
                     showBilled={false}
                     emptyText={
-                      categoryFilter
-                        ? "אין הוצאות צפויות בקטגוריה הזו."
-                        : search.trim()
-                          ? "לא נמצאו תנועות לחיפוש הזה."
-                          : "אין צ׳קים או הוצאות שעוד צפויים."
+                      renterFilter
+                        ? "אין צ׳קים צפויים מהשוכר הזה."
+                        : categoryFilter
+                          ? "אין הוצאות צפויות בקטגוריה הזו."
+                          : search.trim()
+                            ? "לא נמצאו תנועות לחיפוש הזה."
+                            : "אין צ׳קים או הוצאות שעוד צפויים."
                     }
                   />
                 </TabsContent>
