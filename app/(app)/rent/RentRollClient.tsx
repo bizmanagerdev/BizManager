@@ -80,9 +80,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SOON_DAYS = 60;
 
 /**
- * "מה לעשות" folded (owner, 2026-10-21: "I want this bar to be able to
- * close"): kept in a cookie the server reads, so the page draws it folded
- * from the start — nothing moves once it's on screen.
+ * "מה לעשות" starts folded (owner, 2026-10-22: "should start off closed") and
+ * opens with a tap ("able to close", the day before); someone who opened it
+ * finds it open — a cookie the server reads, so the page draws it right from
+ * the start and nothing moves once it's on screen.
  */
 export const RENT_TODO_COOKIE = "bizh-rent-todo";
 
@@ -184,7 +185,7 @@ const AHEAD_CHECK = "border border-dashed border-info bg-transparent text-info-s
 /** The property column stays in view while a wide table scrolls sideways. */
 const STICKY = "sticky start-0 z-[1] bg-card";
 
-export default function RentRollClient({ data, todoClosed = false }: { data: RentRollData; todoClosed?: boolean }) {
+export default function RentRollClient({ data, todoClosed = true }: { data: RentRollData; todoClosed?: boolean }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   // One day for the whole visit: the months don't move under the owner's hand at midnight.
@@ -206,8 +207,8 @@ export default function RentRollClient({ data, todoClosed = false }: { data: Ren
   const [cell, setCell] = useState<RentRollRow | null>(null);
   function rememberTodo(isOpen: boolean) {
     document.cookie = isOpen
-      ? `${RENT_TODO_COOKIE}=; path=/; max-age=0; samesite=lax`
-      : `${RENT_TODO_COOKIE}=closed; path=/; max-age=31536000; samesite=lax`;
+      ? `${RENT_TODO_COOKIE}=open; path=/; max-age=31536000; samesite=lax`
+      : `${RENT_TODO_COOKIE}=; path=/; max-age=0; samesite=lax`;
   }
 
   // Checks marked cleared, moved on, bounced or edited here show so at once (their patches).

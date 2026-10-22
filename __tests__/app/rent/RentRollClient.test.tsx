@@ -186,7 +186,7 @@ async function show(props: { todoClosed?: boolean } = {}) {
 
 describe("the rent page", () => {
   it("what to do: the late rent and the lease ending, each with its button", async () => {
-    await show();
+    await show({ todoClosed: false });
     const lines = within(todo()).getAllByRole("listitem").map((li) => li.textContent);
     expect(lines[0]).toContain("באיחור");
     expect(lines[0]).toContain("יהודה הנשיא 15 · ווגשל · ₪8,500 · 20 ימים");
@@ -265,19 +265,22 @@ describe("the rent page", () => {
     expect(within(table()).getByText("32%")).toBeInTheDocument();
   });
 
-  it("'מה לעשות' folds to its title with how many are waiting, and remembers it", async () => {
+  it("'מה לעשות' starts folded, with how many are waiting; it opens, and remembers it", async () => {
     await show();
-    fireEvent.click(screen.getByRole("button", { name: /מה לעשות/ }));
-    expect(screen.getByRole("button", { name: /מה לעשות/ })).toHaveAttribute("aria-expanded", "false");
-    expect(document.cookie).toContain("bizh-rent-todo=closed");
-    fireEvent.click(screen.getByRole("button", { name: /מה לעשות/ }));
-    expect(screen.getByRole("button", { name: /מה לעשות/ })).toHaveAttribute("aria-expanded", "true");
-    expect(document.cookie).not.toContain("bizh-rent-todo=closed");
+    const head = () => screen.getByRole("button", { name: /מה לעשות/ });
+    expect(head()).toHaveAttribute("aria-expanded", "false");
+    expect(head()).toHaveTextContent("2");
+    fireEvent.click(head());
+    expect(head()).toHaveAttribute("aria-expanded", "true");
+    expect(document.cookie).toContain("bizh-rent-todo=open");
+    fireEvent.click(head());
+    expect(head()).toHaveAttribute("aria-expanded", "false");
+    expect(document.cookie).not.toContain("bizh-rent-todo=open");
   });
 
-  it("folded from the start when the viewer folded it before", async () => {
-    await show({ todoClosed: true });
-    expect(screen.getByRole("button", { name: /מה לעשות/ })).toHaveAttribute("aria-expanded", "false");
+  it("open from the start for a viewer who opened it before", async () => {
+    await show({ todoClosed: false });
+    expect(screen.getByRole("button", { name: /מה לעשות/ })).toHaveAttribute("aria-expanded", "true");
   });
 
   // Last: the bounce leaves its patch in the undo engine (module state).

@@ -14,7 +14,7 @@ import { CalendarIcon, ChecklistIcon } from "@/components/ui/icons";
 
 const COLUMNS = ["w-28", "w-24", "w-14", "w-28", "w-14", "w-20", "w-16", "w-24"];
 
-export default function RentRollSkeleton({ rows = 5, todoClosed = false }: { rows?: number; todoClosed?: boolean }) {
+export default function RentRollSkeleton({ rows = 5, todoClosed = true }: { rows?: number; todoClosed?: boolean }) {
   return (
     <PageStack aria-busy="true">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60">

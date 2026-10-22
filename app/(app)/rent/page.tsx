@@ -22,8 +22,8 @@ export const revalidate = 30;
 export default async function RentRollPage({ searchParams }: { searchParams?: Promise<{ data?: string }> }) {
   const [{ profile, supabase }, query, jar] = await Promise.all([requireStaffPage(), searchParams, cookies()]);
   const serverVersion = query?.data === "server";
-  // "מה לעשות" folded by this viewer: drawn so from the start.
-  const todoClosed = jar.get(RENT_TODO_COOKIE)?.value === "closed";
+  // "מה לעשות" starts folded, unless this viewer opened it: drawn so from the start.
+  const todoClosed = jar.get(RENT_TODO_COOKIE)?.value !== "open";
 
   // With the device version on for everyone (LOCAL_DATA_PAGES.rentRoll) the
   // read waits for the check instead, and goes out only for people without a
