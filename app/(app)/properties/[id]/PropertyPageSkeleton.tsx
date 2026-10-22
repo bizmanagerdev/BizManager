@@ -76,7 +76,16 @@ export function PropertyDetailBodySkeleton() {
     <div className="space-y-3 @container md:space-y-5" aria-hidden>
       <Heading />
       <div className="grid grid-cols-1 gap-3 lg:@[31rem]:grid-cols-3">
-        <StatActionCard icon={<BuildingIcon className="h-5 w-5" />} label="נכס" value={VALUE} details={rows(["חדרים", "קומה"])} />
+        <StatActionCard icon={<BuildingIcon className="h-5 w-5" />} label="נכס" value={VALUE}>
+          {/* Its details, and its photo beside them (PropertyPhotoBanner's size). */}
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1 space-y-1">
+              <Line />
+              <Line />
+            </div>
+            <Skeleton className="h-20 w-28 shrink-0 rounded-xl" />
+          </div>
+        </StatActionCard>
         <StatActionCard
           icon={<UserIcon className="h-5 w-5" />}
           label="שוכר"
@@ -89,7 +98,13 @@ export function PropertyDetailBodySkeleton() {
           label="שכירות החודש"
           value={VALUE}
           details={rows(["נגבה השנה", "תשלום אחרון"])}
-          action={ACTION}
+          // "קביעת תשלומים מראש" above its רישום תשלום.
+          action={
+            <div className="space-y-1.5">
+              {ACTION}
+              {ACTION}
+            </div>
+          }
         />
       </div>
       <div className="flex flex-col gap-3 lg:@[31rem]:grid lg:@[31rem]:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:@[31rem]:items-start">

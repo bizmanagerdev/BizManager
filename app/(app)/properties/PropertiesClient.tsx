@@ -15,8 +15,7 @@ import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordi
 import { CSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { DragIcon, SearchIcon } from "@/components/ui/icons";
-import { Input } from "@/components/ui/input";
+import { DragIcon } from "@/components/ui/icons";
 import { SearchTermsProvider } from "@/components/search/Painted";
 import { searchList, type SearchRecord } from "@/lib/search/listSearch";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,26 +35,9 @@ import { EMPTY_PROPERTY_FORM, propertyToForm, PropertyFormFields, type PropertyI
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
+import { ListSearch, SearchEverywhereLink } from "@/components/ui/list-search";
 import PropertyListCard from "./PropertyListCard";
-
-/**
- * The properties' photos for the cards (/api/properties/photos — signed, so the
- * server's), asked for once the list is on screen and kept for the visit, so
- * coming back to the list doesn't ask again. No signal: the building icon.
- */
-let photosCache: Record<string, string> | null = null;
-let photosRequest: Promise<Record<string, string>> | null = null;
-function loadPhotos(): Promise<Record<string, string>> {
-  if (photosCache) return Promise.resolve(photosCache);
-  photosRequest ??= fetch("/api/properties/photos")
-    .then((res) => (res.ok ? (res.json() as Promise<{ photos?: Record<string, string> }>) : { photos: {} }))
-    .then((json) => (photosCache = json.photos ?? {}))
-    .catch(() => {
-      photosRequest = null;
-      return {};
-    });
-  return photosRequest;
-}
+import { cachedPropertyPhotos, loadPropertyPhotos } from "./propertyPhotos";
 
 function numOrNullFromForm(value: string) {
   const trimmed = value.trim();
@@ -194,10 +176,10 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
   const [deleteTarget, setDeleteTarget] = useState<PropertyWithLease | null>(null);
   // A reminder from a card's ⋮.
   const [reminderTarget, setReminderTarget] = useState<PropertyWithLease | null>(null);
-  const [photos, setPhotos] = useState<Record<string, string>>(() => photosCache ?? {});
+  const [photos, setPhotos] = useState<Record<string, string>>(() => cachedPropertyPhotos() ?? {});
   useEffect(() => {
     let live = true;
-    void loadPhotos().then((loaded) => {
+    void loadPropertyPhotos().then((loaded) => {
       if (live) setPhotos(loaded);
     });
     return () => {
@@ -339,21 +321,15 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
   return (
     <PageStack>
       {properties.length > 0 ? (
-        <div className="relative">
-          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="חיפוש נכס — כתובת, שוכר, סכום..."
-            aria-label="חיפוש נכס"
-            className="h-10 ps-9"
-          />
-        </div>
+        <ListSearch value={search} onChange={setSearch} placeholder="חיפוש בנכסים — כתובת, שוכר, סכום…" label="חיפוש בנכסים" />
       ) : null}
 
       {found && shown.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">לא נמצאו נכסים לחיפוש הזה.</CardContent>
+          <CardContent className="space-y-2 py-10 text-center text-muted-foreground">
+            <div>לא נמצאו נכסים לחיפוש הזה.</div>
+            <SearchEverywhereLink query={search} />
+          </CardContent>
         </Card>
       ) : properties.length === 0 ? (
         <Card>

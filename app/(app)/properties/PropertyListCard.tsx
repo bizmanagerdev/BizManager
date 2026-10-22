@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,7 +9,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Painted } from "@/components/search/Painted";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
-  BuildingIcon,
   DeleteIcon,
   DocumentIcon,
   EditIcon,
@@ -23,22 +20,36 @@ import {
   type IconComponent,
 } from "@/components/ui/icons";
 import { formatCurrency } from "@/lib/payroll";
+import { formatShortDate } from "@/lib/date";
 import { propertyDisplayName, type PropertyWithLease } from "@/lib/properties";
-import { RENT_STATE } from "@/lib/property-rent";
+import { israelDateKey } from "@/lib/timezone";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { cn } from "@/lib/utils";
+import { PropertyPhotoThumb } from "./PropertyPhotoTile";
+
+/** A lease this close to its end is shown so (the rent page's own threshold). */
+const ENDING_DAYS = 90;
 
 // A property on the list (owner, 2026-10-21: "like the cars cards"): its
-// photo, name and address; a row for who rents it and one for this period's
-// rent — each opening that part of the property's page; and under them its
-// tasks, documents and money. The whole card opens the property.
+// photo (added on its page), name and address; one row for who
+// rents it, what they pay and until when, opening that part of the property's
+// page; and under it its tasks, documents and money. The whole card opens the
+// property. Whether this month's rent is in isn't here (owner, 2026-10-22:
+// "the user could just go to the rent tab and see all information about the
+// rent"), and an empty one says so once ("I don't need one row to say that
+// it's empty and the next row to say that there's no renter").
 
-/** One "bar", like a car's טסט / ביטוח / רישוי: the label and its icon at one end, the value at the other. */
+/**
+ * One "bar", like a car's טסט / ביטוח / רישוי: the label and its icon at one end, the value at the other — and
+ * under the value, a smaller line. Always two lines' room, so every card's bar is the same height with or
+ * without it.
+ */
 function CardRow({
   href,
   icon: Icon,
   label,
   empty = false,
+  sub,
   children,
 }: {
   href: string;
@@ -46,13 +57,15 @@ function CardRow({
   label: string;
   /** Nothing there (no tenant): the dashed, muted look of a car's unset date. */
   empty?: boolean;
+  /** The line under the value. */
+  sub?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <Link
       href={href}
       className={cn(
-        "flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 transition-colors",
+        "flex min-h-14 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 transition-colors",
         empty
           ? "border border-dashed border-border/70 bg-muted/30 text-muted-foreground hover:bg-muted/50"
           : "bg-muted/40 hover:bg-muted/70"
@@ -62,19 +75,11 @@ function CardRow({
         <span>{label}</span>
         <Icon className={cn("h-4 w-4 shrink-0", empty ? "text-muted-foreground/50" : "text-muted-foreground")} />
       </span>
-      <span className="flex min-w-0 items-center justify-end gap-2 text-sm">{children}</span>
+      <span className="min-w-0 text-end">
+        <span className="flex min-w-0 items-center justify-end gap-2 text-sm">{children}</span>
+        {sub ? <span className="block truncate text-xs tabular-nums text-muted-foreground">{sub}</span> : null}
+      </span>
     </Link>
-  );
-}
-
-/** Its photo, or the building in a dashed tile — the same size either way, so a photo arriving never moves anything. */
-function PropertyPhoto({ url, name }: { url: string | null; name: string }) {
-  return url ? (
-    <img src={url} alt={name} className="h-14 w-14 shrink-0 rounded-xl border border-border/70 object-cover" />
-  ) : (
-    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/30 text-muted-foreground">
-      <BuildingIcon className="h-5 w-5" />
-    </div>
   );
 }
 
@@ -98,7 +103,6 @@ export default function PropertyListCard({
   const href = `/properties/${p.id}`;
   const name = propertyDisplayName(p);
   const lease = p.currentLease?.status === "active" ? p.currentLease : null;
-  const rent = RENT_STATE[p.rentThisMonth.state];
   const renters = p.renters && p.renters.count > 0 ? p.renters : null;
   const net = Math.round(p.rollup.totalIncomeAmount - p.rollup.paidExpenseAmount);
 
@@ -107,7 +111,7 @@ export default function PropertyListCard({
       {handle ? <div className="absolute start-0.5 top-0.5 z-10">{handle}</div> : null}
       <CardContent className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-start gap-3 ps-3">
-          <PropertyPhoto url={photoUrl} name={name} />
+          <PropertyPhotoThumb url={photoUrl} name={name} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-lg font-semibold">
               <Painted text={name} />
@@ -147,62 +151,63 @@ export default function PropertyListCard({
           </DropdownMenu>
         </div>
 
-        {/* Who rents it, and this period's rent (note 17) — each opens that part of its page. */}
+        {/* Who rents it, what they pay and until when — it opens that part of its page. */}
         <div className="space-y-2">
           {renters ? (
-            <>
-              <CardRow href={`${href}#renters`} icon={UserIcon} label="שוכרים">
-                <span className="truncate font-medium">{renters.count === 1 ? "שוכר אחד" : `${renters.count} שוכרים`}</span>
-                {renters.monthly > 0 ? (
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatCurrency(renters.monthly)}/חודש</span>
-                ) : null}
-              </CardRow>
-              <CardRow href={`${href}#renters`} icon={PaymentIcon} label="שכירות">
-                <Badge variant={renters.paid >= renters.count ? "success" : "warning"}>
-                  {renters.paid >= renters.count ? "כולם שילמו" : `${renters.paid} מתוך ${renters.count} שילמו`}
-                </Badge>
-              </CardRow>
-            </>
+            <CardRow
+              href={`${href}#renters`}
+              icon={UserIcon}
+              label="שוכרים"
+              sub={[
+                renters.monthly > 0 ? `${formatCurrency(renters.monthly)}/חודש` : null,
+                renters.yearly > 0 ? `${formatCurrency(renters.yearly)}/שנה` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            >
+              <span className="truncate font-medium">{renters.count === 1 ? "שוכר אחד" : `${renters.count} שוכרים`}</span>
+            </CardRow>
           ) : lease ? (
-            <>
-              <CardRow href={`${href}#tenant`} icon={UserIcon} label="שוכר">
-                <span className="truncate font-medium">
-                  <Painted text={lease.customerName ?? "שוכר"} />
-                </span>
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            <CardRow
+              href={`${href}#tenant`}
+              icon={UserIcon}
+              label="שוכר"
+              sub={
+                <>
                   <Painted text={formatCurrency(lease.monthlyRentAmount)} />
                   {lease.periodMonths === 12 ? "/שנה" : "/חודש"}
-                </span>
-              </CardRow>
-              <CardRow href={`${href}#rent`} icon={PaymentIcon} label={`שכירות ${p.rentThisMonth.periodLabel ?? "החודש"}`}>
-                <Badge variant={rent.badge}>{rent.label}</Badge>
-              </CardRow>
-            </>
+                  {lease.endDate ? <LeaseEnd end={lease.endDate} /> : null}
+                </>
+              }
+            >
+              <span className="truncate font-medium">
+                <Painted text={lease.customerName ?? "שוכר"} />
+              </span>
+            </CardRow>
           ) : (
-            <>
-              <CardRow href={`${href}#tenant`} icon={UserIcon} label="שוכר" empty>
-                <span className="font-medium">פנוי</span>
-              </CardRow>
-              <CardRow href={`${href}#rent`} icon={PaymentIcon} label="שכירות" empty>
-                <span>אין שוכר</span>
-              </CardRow>
-            </>
+            <CardRow href={`${href}#tenant`} icon={UserIcon} label="שוכר" empty>
+              <span className="font-medium">פנוי</span>
+            </CardRow>
           )}
           {!p.isActive ? <Badge variant="neutral">לא פעיל</Badge> : null}
         </div>
 
         <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span
-            className={cn("flex items-center gap-1 font-semibold tabular-nums", net >= 0 ? "text-success" : "text-destructive")}
+            // Below zero isn't an alarm on a property (its purchase, its works): plain, not red (owner, 2026-10-22).
+            className={cn("flex items-center gap-1 font-semibold tabular-nums", net >= 0 ? "text-success" : "text-foreground")}
             title="נטו: הכנסות פחות הוצאות"
           >
             <PaymentIcon className="h-3.5 w-3.5" />
             נטו {formatCurrency(net)}
           </span>
-          <span className="flex items-center gap-1">
-            <TaskIcon className="h-3.5 w-3.5" />
-            {p.counts.openTasks}/{p.counts.tasks} משימות
-          </span>
+          {/* No tasks at all: nothing to say (owner, 2026-10-22: "if there are no tasks then leave this out"). */}
+          {p.counts.tasks > 0 ? (
+            <span className="flex items-center gap-1">
+              <TaskIcon className="h-3.5 w-3.5" />
+              {p.counts.openTasks}/{p.counts.tasks} משימות
+            </span>
+          ) : null}
           <span className="flex items-center gap-1">
             <DocumentIcon className="h-3.5 w-3.5" />
             {p.counts.documents} מסמכים
@@ -210,5 +215,14 @@ export default function PropertyListCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** " · עד 06/06/27" — in the warning colour once it's close (or past). */
+function LeaseEnd({ end }: { end: string }) {
+  const day = end.slice(0, 10);
+  const days = Math.round((Date.parse(day) - Date.parse(israelDateKey())) / 86_400_000);
+  return (
+    <span className={days <= ENDING_DAYS ? "font-medium text-warning-strong" : undefined}> · עד {formatShortDate(day)}</span>
   );
 }

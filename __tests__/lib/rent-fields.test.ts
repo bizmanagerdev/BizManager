@@ -33,6 +33,8 @@ describe("the rent fields a payment route takes", () => {
       lease_id: "d4",
       rent_period_start: "2026-10-12",
       rent_periods: 2,
+      // Months set this way: split evenly again (lib/payments/rent-fields.ts).
+      rent_allocation: null,
     });
   });
 
@@ -42,6 +44,7 @@ describe("the rent fields a payment route takes", () => {
       lease_id: null,
       rent_period_start: null,
       rent_periods: 1,
+      rent_allocation: null,
     });
   });
 

@@ -5,16 +5,17 @@ import type { SalaryAgreementRow, WorkSessionRow } from "@/lib/payroll";
 import { israelDateKey } from "@/lib/timezone";
 import {
   hasRenters,
+  rentAllocationOf,
   renterPayments,
   rentThisPeriod,
   runningLeases,
   type RentMonthStatus,
   type RentPayment,
+  type RentShare,
 } from "@/lib/property-rent";
 import { addressFromColumns, addressNotFound } from "@/lib/address/columns";
 import type { StructuredAddress } from "@/lib/address/structured";
 import type { FinancialAttachment } from "@/lib/payments";
-import { isImageDocument } from "@/lib/documents";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Properties (נכסים) — a real estate asset with a lease history and its own
@@ -367,7 +368,7 @@ export async function loadProperties(supabase: SupabaseClient): Promise<Property
     fetchAllPaged<Row>((lo, hi) =>
       supabase
         .from("payments")
-        .select("property_id,amount_total,payment_status,payment_date,lease_id,rent_period_start,rent_periods,counts_as_rent")
+        .select("property_id,amount_total,payment_status,payment_date,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent")
         .in("property_id", ids)
         .range(lo, hi)
     ),
@@ -422,6 +423,7 @@ export async function loadProperties(supabase: SupabaseClient): Promise<Property
       periodStart: str(row.rent_period_start),
       periods: numOrNull(row.rent_periods),
       countsAsRent: row.counts_as_rent !== false,
+      allocation: rentAllocationOf(row.rent_allocation),
     });
     rentPaymentsByProperty.set(propertyId, list);
     if (!isCollectedPaymentStatus(str(row.payment_status))) continue;
@@ -491,10 +493,12 @@ export async function loadProperties(supabase: SupabaseClient): Promise<Property
 }
 
 /**
- * Each property's photo for the list's cards — its newest picture (a
- * document filed as צילום, or an image with nothing more specific said about
- * it, as the property's page tells its photos apart), by property id, with a
- * signed link. The server's only (the device copy has no documents).
+ * Each property's photo for the list's cards — its newest picture filed as
+ * צילום (added from its card, or its page's photos), by property id, with a
+ * signed link. Only a צילום: an image filed as anything else, or as nothing,
+ * is never the property's picture (owner, 2026-10-22: "I don't want to end up
+ * with, like, a receipt over there"). The server's only (the device copy has
+ * no documents).
  */
 export async function loadPropertyPhotos(supabase: SupabaseClient): Promise<Record<string, string>> {
   const links = await fetchAllPaged<Row>((lo, hi) =>
@@ -510,9 +514,7 @@ export async function loadPropertyPhotos(supabase: SupabaseClient): Promise<Reco
     const doc = linkDocument(link);
     const key = str(doc?.storage_key);
     if (!propertyId || !key) continue;
-    const type = str(doc?.document_type);
-    const photo = type === "צילום" || (!type && isImageDocument({ file_name: str(doc?.file_name), document_type: null }));
-    if (!photo) continue;
+    if (str(doc?.document_type) !== "צילום") continue;
     const at = str(doc?.uploaded_at) ?? "";
     const kept = newest.get(propertyId);
     if (!kept || at > kept.at) newest.set(propertyId, { key, at });
@@ -663,6 +665,8 @@ export type PropertyPayment = {
   leaseId: string | null;
   rentPeriodStart: string | null;
   rentPeriods: number;
+  /** The months it was recorded for, ticked one by one, and how much went to each (payments.rent_allocation); null: evenly over its run. */
+  rentAllocation: RentShare[] | null;
   /** False for income that isn't rent (a refund). */
   countsAsRent: boolean;
   /** The files attached to it (a check's photo, a transfer confirmation). */
@@ -880,7 +884,7 @@ const EMPTY_SERVER_PARTS: PropertyServerParts = {
 const PROPERTY_EXPENSE_SELECT =
   "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id,recurring_expense_template_id";
 const PROPERTY_PAYMENT_SELECT =
-  "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,check_torn_at,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,counts_as_rent";
+  "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,check_torn_at,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent";
 const PROPERTY_SESSION_SELECT =
   "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id";
 const SALARY_AGREEMENT_SELECT =
@@ -904,6 +908,7 @@ function normalizePropertyPayment(r: Row): PropertyPayment {
     leaseId: str(r.lease_id),
     rentPeriodStart: str(r.rent_period_start),
     rentPeriods: numOrNull(r.rent_periods) ?? 1,
+    rentAllocation: rentAllocationOf(r.rent_allocation),
     countsAsRent: r.counts_as_rent !== false,
     attachments: [],
   };

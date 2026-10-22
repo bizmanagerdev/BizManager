@@ -19,6 +19,7 @@ import { scheduleDeferredEdit } from "@/lib/undo-engine";
 import { leaseForPayment, rentCoverage } from "@/lib/property-rent";
 import { rentPeriodChoices, rentPeriodLabel } from "@/lib/rent-periods";
 import { formatShortDate } from "@/lib/date";
+import { formatCurrency } from "@/lib/payroll";
 import { dayKey, toRentPayment } from "./propertyMovements";
 
 // Editing one of a property's incomes — any of them, whatever it was paid
@@ -120,16 +121,28 @@ export default function PropertyIncomeEditDialog({
     // Rent: its lease and month(s); not rent: neither (the route clears them).
     const rentLease = saved.countsAsRent ? leases.find((l) => l.id === saved.leaseId) ?? null : null;
     const rentPeriods = Math.max(1, Number(saved.periods) || 1);
+    // Months ticked one by one, left as they were: kept (a new amount is shared out over them by the route).
+    const before = toForm(payment, leases, currentLease);
+    const keepsTicked =
+      Boolean(payment.rentAllocation) &&
+      saved.countsAsRent &&
+      saved.leaseId === before.leaseId &&
+      saved.periodStart === before.periodStart &&
+      saved.periods === before.periods;
     const rent: Record<string, unknown> = !saved.countsAsRent
       ? { counts_as_rent: false }
-      : rentLease && saved.periodStart
-        ? { counts_as_rent: true, lease_id: rentLease.id, rent_period_start: saved.periodStart, rent_periods: rentPeriods }
-        : { counts_as_rent: true };
+      : keepsTicked
+        ? { counts_as_rent: true }
+        : rentLease && saved.periodStart
+          ? { counts_as_rent: true, lease_id: rentLease.id, rent_period_start: saved.periodStart, rent_periods: rentPeriods }
+          : { counts_as_rent: true };
     const rentPatch = !saved.countsAsRent
-      ? { countsAsRent: false, leaseId: null, rentPeriodStart: null, rentPeriods: 1 }
-      : rentLease && saved.periodStart
-        ? { countsAsRent: true, leaseId: rentLease.id, rentPeriodStart: saved.periodStart, rentPeriods }
-        : { countsAsRent: true };
+      ? { countsAsRent: false, leaseId: null, rentPeriodStart: null, rentPeriods: 1, rentAllocation: null }
+      : keepsTicked
+        ? { countsAsRent: true }
+        : rentLease && saved.periodStart
+          ? { countsAsRent: true, leaseId: rentLease.id, rentPeriodStart: saved.periodStart, rentPeriods, rentAllocation: null }
+          : { countsAsRent: true };
     onClose();
     scheduleDeferredEdit({
       scope: "property-payment",
@@ -245,6 +258,13 @@ export default function PropertyIncomeEditDialog({
                       ))}
                     </NativeSelect>
                   </Field>
+                  {payment?.rentAllocation ? (
+                    // Recorded for months ticked one by one: what each got, and what changing them here does.
+                    <p className="text-xs text-muted-foreground sm:col-span-2">
+                      נרשם על {payment.rentAllocation.map((s) => `${rentPeriodLabel(lease, s.period).replace(/ (תש\S*|\d{4})$/, "")} ${formatCurrency(s.amount)}`).join(" · ")}.
+                      {" "}שינוי החודשים כאן יחלק את הסכום שווה בשווה.
+                    </p>
+                  ) : null}
                 </>
               ) : null}
             </div>

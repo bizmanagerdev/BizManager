@@ -19,7 +19,7 @@ import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
 import { israelDateKey } from "@/lib/timezone";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { summarizeStatement, type StatementMathCharge, type StatementMathRow } from "@/lib/financial/cardStatementMath";
-import { paidTowards, type RentLease, type RentPayment } from "@/lib/property-rent";
+import { paidTowards, rentAllocationOf, type RentLease, type RentPayment } from "@/lib/property-rent";
 import { firstRentPeriod, rentDueDateLabel, rentPeriodLabel, rentPeriodOf } from "@/lib/rent-periods";
 
 // ---------------------------------------------------------------------------
@@ -452,7 +452,7 @@ const rentDueRule: SystemRule = {
     const payments = await fetchAllPagedResult<Row>((from, to) =>
       supabase
         .from("payments")
-        .select("property_id,payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,counts_as_rent")
+        .select("property_id,payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent")
         .in("property_id", propertyIds)
         .range(from, to)
     );
@@ -470,6 +470,7 @@ const rentDueRule: SystemRule = {
         periodStart: getString(row, "rent_period_start"),
         periods: getNumber(row, "rent_periods"),
         countsAsRent: getBoolean(row, "counts_as_rent"),
+        allocation: rentAllocationOf(row.rent_allocation),
       });
       paymentsByProperty.set(propertyId, list);
     }

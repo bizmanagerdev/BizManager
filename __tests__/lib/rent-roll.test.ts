@@ -54,6 +54,7 @@ function payment(id: string, propertyId: string, extra: Partial<RentRollPayment>
     checkNumber: null,
     paymentStatus: "cleared",
     tornAt: null,
+    rentAllocation: null,
     accountId: null,
     notes: null,
     referenceNumber: null,

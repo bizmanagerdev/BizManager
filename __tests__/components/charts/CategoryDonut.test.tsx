@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import CategoryDonut from "@/components/charts/CategoryDonut";
 
@@ -37,5 +37,34 @@ describe("the expenses donut's middle", () => {
     expect(screen.queryByText("סה״כ")).not.toBeInTheDocument();
     fireEvent.blur(row);
     expect(screen.getByText("סה״כ")).toBeInTheDocument();
+  });
+});
+
+describe("a category chosen (the property page filters its table to it, owner 2026-10-22)", () => {
+  it("a click on its row chooses it — with the categories it stands for — and again lets it go", () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(<CategoryDonut data={data} onSelect={onSelect} />);
+    const row = screen.getByRole("button", { name: /נכסים משכנתא/ });
+    fireEvent.click(row);
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ label: "נכסים משכנתא", members: ["נכסים משכנתא"] }));
+    // Chosen: it stays in the middle, and its row says so.
+    rerender(<CategoryDonut data={data} onSelect={onSelect} selected="נכסים משכנתא" />);
+    expect(screen.queryByText("סה״כ")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /נכסים משכנתא/ })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(screen.getByRole("button", { name: /נכסים משכנתא/ }), { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith(null);
+  });
+
+  it("אחר stands for every category in it", () => {
+    const onSelect = vi.fn();
+    const many = ["א", "ב", "ג", "ד", "ה", "ו", "ז"].map((label, i) => ({ label, value: 700 - i * 100 }));
+    render(<CategoryDonut data={many} onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: /אחר/ }));
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ label: "אחר", members: ["ו", "ז"] }));
+  });
+
+  it("without onSelect the rows only read out — nothing to press", () => {
+    render(<CategoryDonut data={data} />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });

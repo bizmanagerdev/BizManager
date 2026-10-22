@@ -6,8 +6,8 @@ import { formatShortDate } from "@/lib/date";
 import { formatCurrency } from "@/lib/payroll";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { depositTypeLabel, propertyDisplayName, type RentRollPayment } from "@/lib/properties";
-import { RENT_STATE } from "@/lib/property-rent";
-import type { RentRollMonth, RentRollRow, RentRollYear } from "@/lib/rent-roll";
+import { paidTowards, RENT_STATE } from "@/lib/property-rent";
+import { toRollRent, type RentRollMonth, type RentRollRow, type RentRollYear } from "@/lib/rent-roll";
 
 /** `total`: its last row is the totals line (bold on paper). */
 export type Sheet = { title: string; rows: string[][]; total?: boolean };
@@ -48,7 +48,8 @@ export function monthSheet(month: RentRollMonth, accountNames: Record<string, st
     row.dueLabel,
     formatCurrency(row.status.rent),
     RENT_STATE[row.status.state].label + (row.returned.length > 0 ? " (צ׳ק חזר)" : ""),
-    lines(row, (p) => formatCurrency(p.amount)),
+    // What each payment gave this month (one for several months: its share).
+    lines(row, (p) => formatCurrency(paidTowards(row.lease, toRollRent(p), row.period))),
     lines(row, money),
     lines(row, method),
     lines(row, (p) => (p.accountId ? accountNames[p.accountId] ?? "" : "")),

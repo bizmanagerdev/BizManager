@@ -13,11 +13,14 @@ export default function CategoryDonutChart({
   slices,
   active,
   onActive,
+  onPick,
 }: {
   slices: DonutSlice[];
   /** The slice being read (its label), or null. */
   active: string | null;
   onActive: (label: string | null) => void;
+  /** A slice clicked — when the slices choose something (the property page's table), not just read out. */
+  onPick?: (label: string) => void;
 }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -36,10 +39,11 @@ export default function CategoryDonutChart({
           isAnimationActive={false}
           onMouseEnter={(_, index) => onActive(slices[index]?.label ?? null)}
           onMouseLeave={() => onActive(null)}
-          // A tap on a phone: that slice, or back to the total.
+          // A tap on a phone: that slice, or back to the total — or, when the slices choose, that one chosen.
           onClick={(_, index) => {
             const label = slices[index]?.label ?? null;
-            onActive(label === active ? null : label);
+            if (onPick && label) onPick(label);
+            else onActive(label === active ? null : label);
           }}
         >
           {slices.map((slice) => (

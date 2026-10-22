@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
 import { buildPaymentInsert, PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
-import { paidTowards, type RentLease } from "@/lib/property-rent";
+import { paidTowards, rentAllocationOf, type RentLease } from "@/lib/property-rent";
 import type { PropertyInput } from "./property-types";
 import { addressColumnsKeepingMark, parseStructuredAddress } from "@/lib/address/columns";
 import { addressLine } from "@/lib/address/structured";
@@ -406,7 +406,7 @@ export async function scheduleRentPayments(
       // A period this lease's payments already cover (by the month they say, or their date).
       const { data: existingRows, error: existingError } = await ctx.supabase
         .from("payments")
-        .select("payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,counts_as_rent")
+        .select("payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent")
         .eq("property_id", propertyId)
         .eq("business_domain", "property_management");
       if (existingError) return { ok: false, error: toHebrewError(existingError, "שגיאה בקביעת התשלומים.") };
@@ -420,6 +420,7 @@ export async function scheduleRentPayments(
         periodStart: row.rent_period_start as string | null,
         periods: row.rent_periods as number | null,
         countsAsRent: row.counts_as_rent as boolean | null,
+        allocation: rentAllocationOf(row.rent_allocation),
       }));
       newRows = rows.filter((row) => {
         const period = row.periodStart ?? row.paymentDate;

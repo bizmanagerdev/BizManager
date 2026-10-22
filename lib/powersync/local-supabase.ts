@@ -81,6 +81,8 @@ const JSON_COLUMNS: Record<string, readonly string[]> = {
   users: ["notification_prefs"],
   projects: ["items_to_move"],
   properties: ["furniture_items"],
+  // The rent months a payment was ticked for (payments.rent_allocation, 2026-10-22).
+  payments: ["rent_allocation"],
 };
 
 /** Tables synced to the device (lib/powersync/schema.ts). */

@@ -11,7 +11,7 @@ import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { paymentFieldsFrom, paymentRowFrom, type PaymentBody } from "@/lib/payments/payment-input";
 import { clientRowId } from "@/lib/client-row-id";
-import { rentColumnsFrom, type RentFieldsBody } from "@/lib/payments/rent-fields";
+import { allocationMismatch, rentColumnsFrom, type RentFieldsBody } from "@/lib/payments/rent-fields";
 
 export async function POST(req: Request) {
   try {
@@ -28,6 +28,9 @@ export async function POST(req: Request) {
     // A property's rent: the lease and the month(s) it pays (lib/payments/rent-fields.ts).
     const rent = rentColumnsFrom(body);
     if ("error" in rent) return NextResponse.json({ error: rent.error }, { status: 400 });
+    // Months ticked one by one add up to the payment.
+    const mismatch = allocationMismatch(rent, Number(fields.amount));
+    if (mismatch) return NextResponse.json({ error: mismatch }, { status: 400 });
     // A payment saved on the phone first comes with the app's own id (lib/powersync/local-writes.ts).
     const clientId = clientRowId(body.id);
 

@@ -13,7 +13,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function PropertiesSkeleton() {
   return (
     <PageStack aria-busy="true">
-      <Skeleton className="h-10 rounded-xl" />
+      {/* The page's search: 24rem from md, as ListSearch. */}
+      <Skeleton className="h-10 w-full rounded-xl md:w-96" />
 
       <AdaptiveGrid variant="entityCards">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -28,9 +29,9 @@ export default function PropertiesSkeleton() {
                 <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
               </div>
 
+              {/* The one row: who rents it, what they pay, until when. */}
               <div className="space-y-2">
-                <Skeleton className="h-11 rounded-xl" />
-                <Skeleton className="h-11 rounded-xl" />
+                <Skeleton className="h-14 rounded-xl" />
               </div>
 
               <div className="mt-auto flex items-center gap-3">

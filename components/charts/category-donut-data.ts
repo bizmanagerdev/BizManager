@@ -6,7 +6,8 @@
 // the chart so the list can draw before the chart's code arrives.
 
 export type CategoryDonutDatum = { label: string; value: number };
-export type DonutSlice = { label: string; value: number; color: string; share: number };
+/** `members`: the categories it stands for — itself, or every one in "אחר". */
+export type DonutSlice = { label: string; value: number; color: string; share: number; members: string[] };
 
 export const SLICE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"] as const;
 export const OTHER_COLOR = "#a8a7a0";
@@ -25,10 +26,11 @@ export function donutSlices(data: CategoryDonutDatum[], maxSlices = SLICE_COLORS
     value: d.value,
     color: SLICE_COLORS[i],
     share: d.value / total,
+    members: [d.label],
   }));
   if (rest.length > 0) {
     const value = rest.reduce((sum, d) => sum + d.value, 0);
-    slices.push({ label: OTHER_LABEL, value, color: OTHER_COLOR, share: value / total });
+    slices.push({ label: OTHER_LABEL, value, color: OTHER_COLOR, share: value / total, members: rest.map((d) => d.label) });
   }
   return slices;
 }

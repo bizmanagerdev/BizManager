@@ -12,7 +12,8 @@ import { structuredPoint } from "@/lib/address/columns";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { updateProperty } from "../actions";
 import { PropertyBasicFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
-import { propertyHasRoomLayout, propertyTypeLabel, type Property } from "@/lib/properties";
+import { propertyDisplayName, propertyHasRoomLayout, propertyTypeLabel, type Property } from "@/lib/properties";
+import { PropertyPhotoBanner } from "../PropertyPhotoTile";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 const BASIC_KEYS = [
@@ -91,11 +92,19 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
 export default function PropertyDetailsCard({
   propertyId,
   property,
+  photoUrl,
+  photoReady,
+  onPhotoChanged,
   editOpen,
   onEditOpenChange,
 }: {
   propertyId: string;
   property: Property;
+  /** Its newest צילום — at the card's foot, with the way to add one (owner, 2026-10-22). */
+  photoUrl: string | null;
+  /** Its files are in (the photo's link comes with them). */
+  photoReady: boolean;
+  onPhotoChanged: () => void;
   editOpen: boolean;
   onEditOpenChange: (open: boolean) => void;
 }) {
@@ -183,10 +192,28 @@ export default function PropertyDetailsCard({
           </AddressLink>
         }
         subtitles={[p.assetDescription]}
-        details={details}
       >
+        {/* The details and its photo side by side — the photo never adds height of its own (owner, 2026-10-22:
+            "toooo tall"). The rows as StatActionCard's own. */}
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            {details.map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-2 text-xs">
+                <span className="shrink-0 text-muted-foreground">{row.label}</span>
+                <span className="min-w-0 text-end font-medium">{row.value}</span>
+              </div>
+            ))}
+          </div>
+          <PropertyPhotoBanner
+            propertyId={propertyId}
+            name={propertyDisplayName(p)}
+            url={photoUrl}
+            ready={photoReady}
+            onChanged={onPhotoChanged}
+          />
+        </div>
         {amenities.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {amenities.map((label) => (
               <Badge key={label} variant={label === "לא פעיל" ? "neutral" : "outline"}>
                 {label}

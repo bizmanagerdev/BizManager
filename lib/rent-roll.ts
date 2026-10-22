@@ -108,6 +108,7 @@ export function toRollRent(payment: RentRollPayment): RentPayment {
     periodStart: payment.rentPeriodStart,
     periods: payment.rentPeriods,
     countsAsRent: payment.countsAsRent,
+    allocation: payment.rentAllocation,
   };
 }
 

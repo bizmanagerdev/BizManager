@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import CategoryDonut from "@/components/charts/CategoryDonut";
+import CategoryDonut, { type DonutSlice } from "@/components/charts/CategoryDonut";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { SECTION_ICON_CLASS } from "@/components/ui/section-card";
 import { ChartIcon } from "@/components/ui/icons";
@@ -14,7 +14,13 @@ import { isExpectedExpense, isExpectedPayment } from "./propertyMovements";
 // סיכום כספי — the property's money in one card, beside its table (as on the
 // project page): what came in, what went out, what's still to come, and where
 // the money went by category (owner's card: "a pie of the expenses by
-// category/type"). Every figure ties to the rows of the table beside it.
+// category/type"). Every figure ties to the rows of the table beside it, and a
+// category clicked filters that table to it (owner, 2026-10-22).
+
+/** An expense's category as the donut counts it — the table filters by the same word. */
+export function expenseCategoryLabel(category: string | null | undefined): string {
+  return category?.trim() || "ללא קטגוריה";
+}
 
 function Row({ label, value, tone, strong }: { label: string; value: number; tone?: "in" | "out"; strong?: boolean }) {
   return (
@@ -34,10 +40,15 @@ export default function PropertyMoneyCard({
   payments,
   expenses,
   sessions,
+  selectedCategory = null,
+  onSelectCategory,
 }: {
   payments: PropertyPayment[];
   expenses: PropertyExpense[];
   sessions: PropertySession[];
+  /** The category the table is filtered to (its donut slice's label), or null. */
+  selectedCategory?: string | null;
+  onSelectCategory?: (slice: DonutSlice | null) => void;
 }) {
   const figures = useMemo(() => {
     let incomeIn = 0;
@@ -54,7 +65,7 @@ export default function PropertyMoneyCard({
       const paid = e.paymentStatus === "paid" ? e.amount : Math.max(0, e.paidAmount ?? 0);
       paidOut += paid;
       if (isExpectedExpense(e)) expectedOut += Math.max(0, e.amount - paid);
-      const label = e.category?.trim() || "ללא קטגוריה";
+      const label = expenseCategoryLabel(e.category);
       byCategory.set(label, (byCategory.get(label) ?? 0) + e.amount);
     }
     // A worker's shift on the property is a cost the moment it happens.
@@ -91,7 +102,12 @@ export default function PropertyMoneyCard({
       </div>
       <div className="border-t pt-3">
         <div className="mb-2 font-medium">הוצאות לפי קטגוריה</div>
-        <CategoryDonut data={figures.categories} emptyText="אין הוצאות לנכס הזה." />
+        <CategoryDonut
+          data={figures.categories}
+          emptyText="אין הוצאות לנכס הזה."
+          selected={selectedCategory}
+          onSelect={onSelectCategory}
+        />
       </div>
     </CollapsibleSection>
   );

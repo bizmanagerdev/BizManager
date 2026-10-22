@@ -146,6 +146,26 @@ describe("POST /api/payments/create — a property's rent", () => {
     expect(inserted[0]).not.toHaveProperty("rent_period_start");
   });
 
+  it("months ticked one by one: saved with the payment, the first and how many from them (owner, 2026-10-22)", async () => {
+    const inserted: unknown[] = [];
+    grant(makeSupabase({ properties: { data: { id: "prop-1" }, error: null }, payments: { data: { id: "pay-1" }, error: null } }, [], inserted));
+    const shares = [
+      { period: "2026-09-01", amount: 200 },
+      { period: "2026-11-01", amount: 800 },
+    ];
+    const res = await post({ ...VALID, business_domain: "property_management", property_id: "prop-1", lease_id: "lease-1", rent_allocation: shares });
+    expect(res.status).toBe(200);
+    expect(inserted[0]).toMatchObject({ rent_allocation: shares, rent_period_start: "2026-09-01", rent_periods: 2 });
+  });
+
+  it("ticked months that don't add up to the payment are refused", async () => {
+    const calls: string[] = [];
+    grant(makeSupabase({ properties: { data: { id: "prop-1" }, error: null } }, calls));
+    const res = await post({ ...VALID, property_id: "prop-1", rent_allocation: [{ period: "2026-11-01", amount: 900 }] });
+    expect(res.status).toBe(400);
+    expect(calls).not.toContain("payments.insert");
+  });
+
   it("a month that isn't a date is refused before anything is saved", async () => {
     const calls: string[] = [];
     grant(makeSupabase({}, calls));

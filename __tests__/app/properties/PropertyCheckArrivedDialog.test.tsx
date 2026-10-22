@@ -37,6 +37,7 @@ const check = {
   checkNumber: "262",
   paymentStatus: "pending",
   tornAt: null,
+  rentAllocation: null,
   accountId: "acc-bank",
   notes: null,
   referenceNumber: null,

@@ -362,6 +362,8 @@ const payments = new Table(
     counts_as_rent: int,
     // A check torn up — the month paid another way (payments.check_torn_at, 2026-10-22).
     check_torn_at: text,
+    // The rent months a payment was ticked for and each one's amount — JSON (payments.rent_allocation, 2026-10-22).
+    rent_allocation: text,
     // Local only (never synced): a payment added or marked collected on the
     // phone first — the request it goes up with (lib/powersync/local-writes.ts).
     // An order's own payments, written with the order, have none.

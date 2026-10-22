@@ -23,6 +23,7 @@ function payment(fields: Partial<PropertyPayment>): PropertyPayment {
     checkNumber: null,
     paymentStatus: "cleared",
     tornAt: null,
+    rentAllocation: null,
     accountId: "acc-1",
     notes: null,
     referenceNumber: null,

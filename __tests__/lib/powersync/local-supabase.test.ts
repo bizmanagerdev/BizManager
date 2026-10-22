@@ -1483,7 +1483,7 @@ const lease = (row: Row) => ({
   period_months: 1, area_sqm: null, unit_label: null, created_at: null, status: "active", ...row,
 });
 const payment = (row: Row) => ({
-  payment_status: "cleared", lease_id: null, rent_period_start: null, rent_periods: 1, counts_as_rent: 1, ...row,
+  payment_status: "cleared", lease_id: null, rent_period_start: null, rent_periods: 1, rent_allocation: null, counts_as_rent: 1, ...row,
 });
 
 describe("the properties list on the device", () => {
@@ -1547,7 +1547,7 @@ const fullRow = (columns: string, row: Row) => ({ ...Object.fromEntries(columns.
 const EXPENSE_COLS =
   "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id,recurring_expense_template_id";
 const PAYMENT_COLS =
-  "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,counts_as_rent";
+  "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,check_torn_at,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent";
 const SESSION_COLS =
   "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id";
 const SALARY_COLS =

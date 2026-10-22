@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, DocumentIcon, InfoIcon, MoreIcon, RecurringIcon, SearchIcon, TaskIcon } from "@/components/ui/icons";
+import { AddIcon, CloseIcon, DocumentIcon, InfoIcon, MoreIcon, RecurringIcon, SearchIcon, TaskIcon } from "@/components/ui/icons";
+import { TOGGLE_ON, TOGGLE_ON_HOVER } from "@/components/ui/filter-chip";
+import { cn } from "@/lib/utils";
+import type { DonutSlice } from "@/components/charts/CategoryDonut";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MetaRow } from "@/components/ui/meta-row";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -59,7 +62,6 @@ import { createLease, updateLease, deleteLease, deleteProperty, setLeaseDocument
 import { EditButton } from "@/components/ui/icon-button";
 import { DocumentLink, DocumentRow, DocumentTile } from "@/components/ui/document-tile";
 import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
-import { isImageDocument } from "@/lib/documents";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
@@ -68,16 +70,15 @@ import AddReminderButton from "@/components/reminders/AddReminderButton";
 import RentScheduleDialog from "./RentScheduleSection";
 import PropertyDetailsCard from "./PropertyDetailsCard";
 import PropertyPageHeading from "./PropertyPageHeading";
-import PropertyMoneyCard from "./PropertyMoneyCard";
+import PropertyMoneyCard, { expenseCategoryLabel } from "./PropertyMoneyCard";
 import PropertyIncomeEditDialog from "./PropertyIncomeEditDialog";
-import PropertyRentPaymentDialog from "./PropertyRentPaymentDialog";
+import PropertyRentPaymentDialog, { type RentPaymentPrefill } from "./PropertyRentPaymentDialog";
 import PropertyCheckArrivedDialog from "./PropertyCheckArrivedDialog";
-import PropertyPaidInsteadDialog from "./PropertyPaidInsteadDialog";
 import { PropertyRentersCard, PropertyRentersRentCard, PropertyRentersSection, renterStatuses } from "./PropertyRenters";
-import { hasRenters, renterPayments, runningLeases } from "@/lib/property-rent";
+import { hasRenters, rentCoverage, renterPayments, runningLeases } from "@/lib/property-rent";
 import { israelDateKey } from "@/lib/timezone";
 import { PropertyRentCard, PropertyTenantCard } from "./PropertyLeaseCards";
-import { buildPropertyMovements } from "./propertyMovements";
+import { buildPropertyMovements, toRentPayment } from "./propertyMovements";
 import type { PropertyStaffUser } from "@/lib/properties";
 import { hebrewDayName } from "@/lib/rent-periods";
 
@@ -290,6 +291,10 @@ export default function PropertyDetailClient({
   // the money table's search (owner's card: "חיפוש בחלק של הוצאות")
   const [search, setSearch] = useState("");
   const [moneyTab, setMoneyTab] = useState<"done" | "expected">("done");
+  // A category chosen on the money card's donut: the table shows its expenses only (owner, 2026-10-22: "when i
+  // click a section here it should filter the movements table to those") — "אחר" stands for every one in it.
+  const [categoryFilter, setCategoryFilter] = useState<{ label: string; members: string[] } | null>(null);
+  const movementsRef = useRef<HTMLDivElement | null>(null);
   // recurring template
   const [templateOpen, setTemplateOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EditingRecurringTemplateData | null>(null);
@@ -298,10 +303,11 @@ export default function PropertyDetailClient({
   // a lease's rent, with the month(s) it pays
   const [rentPaymentOpen, setRentPaymentOpen] = useState(false);
   const [rentPaymentLeaseId, setRentPaymentLeaseId] = useState<string | null>(null);
+  // The month a payment opens on (a check's, when its month was paid another way) — none: where the rent stands.
+  const [rentPaymentPrefill, setRentPaymentPrefill] = useState<RentPaymentPrefill | undefined>(undefined);
   // A due rent check that cleared — into which account.
   const [arrival, setArrival] = useState<{ payment: PropertyPayment; title: string } | null>(null);
   // A month paid another way than its check: the check moves on to the next month nothing pays.
-  const [paidInstead, setPaidInstead] = useState<{ payment: PropertyPayment; title: string } | null>(null);
   // lease
   const [leaseOpen, setLeaseOpen] = useState(false);
   const [editLeaseId, setEditLeaseId] = useState<string | null>(null);
@@ -349,21 +355,28 @@ export default function PropertyDetailClient({
     setScheduleLeaseId(lease?.id ?? null);
     setScheduleOpen(true);
   };
-  const openRentPayment = (lease: LeaseAgreement) => {
+  const openRentPayment = (lease: LeaseAgreement, prefill?: RentPaymentPrefill) => {
     setRentPaymentLeaseId(lease.id);
+    setRentPaymentPrefill(prefill);
     setRentPaymentOpen(true);
+  };
+  // A check's month paid another way: the payment that came, on the check's month — the check torn with it.
+  const paidInstead = (check: PropertyPayment) => {
+    const lease = leases.find((l) => l.id === check.leaseId) ?? currentLease;
+    if (!lease) return;
+    const cover = rentCoverage(lease, toRentPayment(check));
+    openRentPayment(lease, { periodStart: cover?.start ?? null, method: "bank_transfer" });
   };
   const otherLeases = leases.filter((l) => l.id !== currentLease?.id);
   const purchaseDocuments = activityDocuments.filter((d) => PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? ""));
-  // A picture of the property is an image with nothing more specific said about
-  // it. Matching the file kind as well as the "צילום" category picks up images
-  // that arrived from elsewhere uncategorised — but a document that IS filed as
-  // something (a photographed חשבונית) stays in the documents list rather than
-  // landing in the gallery.
-  const isPropertyPhoto = (d: (typeof activityDocuments)[number]) =>
-    d.documentType === "צילום" ||
-    (!d.documentType && isImageDocument({ file_name: d.fileName, document_type: d.documentType }));
+  // A picture of the property is one filed as צילום — added here or from its
+  // card on the list. Anything else, an image or not, stays in the documents
+  // list (owner, 2026-10-22: "I don't want to end up with, like, a receipt
+  // over there. Just only if it's like a picture of the apartment").
+  const isPropertyPhoto = (d: (typeof activityDocuments)[number]) => d.documentType === "צילום";
   const photos = activityDocuments.filter(isPropertyPhoto);
+  // The newest of them is its picture, at the foot of its card — as on the list's.
+  const coverPhoto = [...photos].sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? ""))[0] ?? null;
   const otherDocuments = activityDocuments.filter(
     (d) => !PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? "") && !isPropertyPhoto(d)
   );
@@ -387,7 +400,7 @@ export default function PropertyDetailClient({
         onDeletePayment: (payment) => setDel({ kind: "payment", id: payment.id, label: "הכנסה" }),
         onToggleCleared: toggleCleared,
         onCheckArrived: (payment, title) => setArrival({ payment, title }),
-        onPaidInstead: (payment, title) => setPaidInstead({ payment, title }),
+        onPaidInstead: (payment) => paidInstead(payment),
         onEditExpense: openEditExpense,
         onDeleteExpense: (expense) => setDel({ kind: "expense", id: expense.id, label: expenseLabel(expense) }),
         onEditSession: openEditSession,
@@ -406,8 +419,16 @@ export default function PropertyDetailClient({
     m.amount != null ? String(m.amount) : null,
     ...m.extras.map((x) => x.value),
   ];
-  const visibleDone = filterByText(movements.done, movementTexts, search);
-  const visibleExpected = filterByText(movements.expected, movementTexts, search);
+  const inCategory = (m: (typeof movements.done)[number]) =>
+    !categoryFilter || (m.direction === "out" && categoryFilter.members.includes(expenseCategoryLabel(m.category)));
+  const visibleDone = filterByText(movements.done, movementTexts, search).filter(inCategory);
+  const visibleExpected = filterByText(movements.expected, movementTexts, search).filter(inCategory);
+  function chooseCategory(slice: DonutSlice | null) {
+    setCategoryFilter(slice ? { label: slice.label, members: slice.members } : null);
+    // Chosen below the table (a phone, the side column under it): up to the table, to see what it did.
+    const table = movementsRef.current;
+    if (slice && table && table.getBoundingClientRect().top < 0) table.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   /** A rent check: נפרע, or back to waiting. */
   function toggleCleared(payment: PropertyPayment) {
@@ -769,6 +790,9 @@ export default function PropertyDetailClient({
         <PropertyDetailsCard
           propertyId={propertyId}
           property={property}
+          photoUrl={coverPhoto?.url ?? null}
+          photoReady={serverPartsReady}
+          onPhotoChanged={() => startTransition(() => router.refresh())}
           editOpen={detailsEditOpen}
           onEditOpenChange={setDetailsEditOpen}
         />
@@ -817,73 +841,109 @@ export default function PropertyDetailClient({
               what happened and what's still to come as its two tabs — the
               expected still a list of its own (the card's note 3), one table on
               screen. The search looks through both. */}
-          <CollapsibleSection
-            collapsible={false}
-            title="תנועות"
-            contentClassName="@container flex flex-col text-sm"
-            action={
-              <div className="flex items-center gap-1.5">
-                <Button type="button" size="sm" variant="outline" onClick={() => setIncomeOpen(true)}>
-                  <AddIcon className="h-4 w-4" />
-                  הכנסה
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={openAddExpense}>
-                  <AddIcon className="h-4 w-4" />
-                  הוצאה
-                </Button>
-              </div>
-            }
-          >
-            <Tabs value={moneyTab} onValueChange={(value) => setMoneyTab(value === "expected" ? "expected" : "done")} dir="rtl">
-              {/* Both tabs always, so the card's shape doesn't depend on there being any. */}
-              <TabsList variant="underline" className="mb-3">
-                <TabsTrigger value="done" count={visibleDone.length}>
-                  שבוצעו
-                </TabsTrigger>
-                <TabsTrigger value="expected" count={visibleExpected.length > 0 ? visibleExpected.length : undefined}>
-                  צפויים
-                </TabsTrigger>
-              </TabsList>
-              <div className="relative mb-2">
-                <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="חיפוש בתנועות — שם, קטגוריה, סכום…"
-                  aria-label="חיפוש בתנועות"
-                  className="ps-9"
-                />
-              </div>
-              <TabsContent value="done" className="mt-0">
-                <ProjectMovements
-                  movements={visibleDone}
-                  groupBy="none"
-                  sortBy="date"
-                  // Newest first (owner, 2026-10-21); what's to come stays soonest first.
-                  sortDirection="desc"
-                  showBilled={false}
-                  emptyText={search.trim() ? "לא נמצאו תנועות לחיפוש הזה." : "אין עדיין הכנסות או הוצאות לנכס הזה."}
-                />
-              </TabsContent>
-              <TabsContent value="expected" className="mt-0">
-                <p className="mb-2 text-xs text-muted-foreground">צ׳קים שעוד לא נפרעו, והוצאות שעוד לא שולמו.</p>
-                <ProjectMovements
-                  movements={visibleExpected}
-                  groupBy="none"
-                  sortBy="date"
-                  sortDirection="asc"
-                  showBilled={false}
-                  emptyText={search.trim() ? "לא נמצאו תנועות לחיפוש הזה." : "אין צ׳קים או הוצאות שעוד צפויים."}
-                />
-              </TabsContent>
-            </Tabs>
-          </CollapsibleSection>
+          <div ref={movementsRef} className="scroll-mt-24">
+            <CollapsibleSection
+              collapsible={false}
+              title="תנועות"
+              contentClassName="@container flex flex-col text-sm"
+              action={
+                <div className="flex items-center gap-1.5">
+                  <Button type="button" size="sm" variant="outline" onClick={() => setIncomeOpen(true)}>
+                    <AddIcon className="h-4 w-4" />
+                    הכנסה
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={openAddExpense}>
+                    <AddIcon className="h-4 w-4" />
+                    הוצאה
+                  </Button>
+                </div>
+              }
+            >
+              <Tabs value={moneyTab} onValueChange={(value) => setMoneyTab(value === "expected" ? "expected" : "done")} dir="rtl">
+                {/* Both tabs always, so the card's shape doesn't depend on there being any. */}
+                <TabsList variant="underline" className="mb-3">
+                  <TabsTrigger value="done" count={visibleDone.length}>
+                    שבוצעו
+                  </TabsTrigger>
+                  <TabsTrigger value="expected" count={visibleExpected.length > 0 ? visibleExpected.length : undefined}>
+                    צפויים
+                  </TabsTrigger>
+                </TabsList>
+                <div className="relative mb-2">
+                  <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="חיפוש בתנועות — שם, קטגוריה, סכום…"
+                    aria-label="חיפוש בתנועות"
+                    className="ps-9"
+                  />
+                </div>
+                {categoryFilter ? (
+                  // The category chosen on the donut, as the rent page's "who owes" toggle: blue, its × lets it go.
+                  <button
+                    type="button"
+                    onClick={() => setCategoryFilter(null)}
+                    aria-label={`ביטול הסינון: ${categoryFilter.label}`}
+                    className={cn(
+                      "mb-2 inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium",
+                      TOGGLE_ON,
+                      TOGGLE_ON_HOVER
+                    )}
+                  >
+                    הוצאות: {categoryFilter.label}
+                    <CloseIcon className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+                <TabsContent value="done" className="mt-0">
+                  <ProjectMovements
+                    movements={visibleDone}
+                    groupBy="none"
+                    sortBy="date"
+                    // Newest first (owner, 2026-10-21); what's to come stays soonest first.
+                    sortDirection="desc"
+                    showBilled={false}
+                    emptyText={
+                      categoryFilter
+                        ? "אין כאן הוצאות בקטגוריה הזו."
+                        : search.trim()
+                          ? "לא נמצאו תנועות לחיפוש הזה."
+                          : "אין עדיין הכנסות או הוצאות לנכס הזה."
+                    }
+                  />
+                </TabsContent>
+                <TabsContent value="expected" className="mt-0">
+                  <p className="mb-2 text-xs text-muted-foreground">צ׳קים שעוד לא נפרעו, והוצאות שעוד לא שולמו.</p>
+                  <ProjectMovements
+                    movements={visibleExpected}
+                    groupBy="none"
+                    sortBy="date"
+                    sortDirection="asc"
+                    showBilled={false}
+                    emptyText={
+                      categoryFilter
+                        ? "אין הוצאות צפויות בקטגוריה הזו."
+                        : search.trim()
+                          ? "לא נמצאו תנועות לחיפוש הזה."
+                          : "אין צ׳קים או הוצאות שעוד צפויים."
+                    }
+                  />
+                </TabsContent>
+              </Tabs>
+            </CollapsibleSection>
+          </div>
         </div>
 
         {/* The side column: the money in one card, then what repeats, what's to
             do, its files, and the rest of what's known about it. */}
         <div className="min-w-0 space-y-3">
-          <PropertyMoneyCard payments={activityPayments} expenses={activityExpenses} sessions={activitySessions} />
+          <PropertyMoneyCard
+            payments={activityPayments}
+            expenses={activityExpenses}
+            sessions={activitySessions}
+            selectedCategory={categoryFilter?.label ?? null}
+            onSelectCategory={chooseCategory}
+          />
 
           <CollapsibleSection
             defaultOpen
@@ -1104,14 +1164,6 @@ export default function PropertyDetailClient({
         onClose={() => setArrival(null)}
       />
 
-      <PropertyPaidInsteadDialog
-        check={paidInstead?.payment ?? null}
-        lease={leases.find((l) => l.id === paidInstead?.payment.leaseId) ?? currentLease}
-        propertyId={propertyId}
-        title={paidInstead?.title ?? ""}
-        onClose={() => setPaidInstead(null)}
-      />
-
       <PropertyIncomeEditDialog
         payment={editingPayment}
         onClose={() => setEditingPayment(null)}
@@ -1136,6 +1188,8 @@ export default function PropertyDetailClient({
         payments={
           withRenters && rentPaymentLease ? renterPayments(rentPaymentLease.id, activityPayments, running.length === 1) : activityPayments
         }
+        prefill={rentPaymentPrefill}
+        onCheckCleared={(check) => setArrival({ payment: check, title: "שכירות" })}
       />
 
       <AddReminderButton

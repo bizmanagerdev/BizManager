@@ -212,3 +212,33 @@ describe("POST /api/payments/update — Hebrew error mapping", () => {
     expect((await res.json()).error).toBe("הערך כבר קיים במערכת.");
   });
 });
+
+describe("POST /api/payments/update — rent months ticked one by one", () => {
+  const TICKED = [
+    { period: "2026-09-01", amount: 1000 },
+    { period: "2026-11-01", amount: 4000 },
+    { period: "2026-12-01", amount: 2000 },
+  ];
+  const RENT_ROW = { ...EXISTING, property_id: "prop-1", business_domain: "property_management", rent_allocation: TICKED };
+
+  it("a new amount from a page that knows nothing of the months: the same months, each its share", async () => {
+    const supabase = makeSupabase({ payments: { read: { data: RENT_ROW, error: null }, write: { data: { id: "pay-1" }, error: null } } });
+    grant(supabase);
+    const res = await post({ ...VALID, amount_total: 3500 });
+    expect(res.status).toBe(200);
+    expect(supabase.updateCalls.payments[0]).toMatchObject({
+      rent_allocation: [
+        { period: "2026-09-01", amount: 500 },
+        { period: "2026-11-01", amount: 2000 },
+        { period: "2026-12-01", amount: 1000 },
+      ],
+    });
+  });
+
+  it("the amount unchanged: the months aren't written at all", async () => {
+    const supabase = makeSupabase({ payments: { read: { data: RENT_ROW, error: null }, write: { data: { id: "pay-1" }, error: null } } });
+    grant(supabase);
+    await post({ ...VALID, amount_total: 7000 });
+    expect(supabase.updateCalls.payments[0]).not.toHaveProperty("rent_allocation");
+  });
+});

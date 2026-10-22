@@ -25,7 +25,7 @@ import {
   settlementAccountFor,
 } from "@/lib/card-settlements";
 import { rentDayOf } from "@/lib/inflow-sources";
-import type { RentPayment } from "@/lib/property-rent";
+import { rentAllocationOf, type RentPayment } from "@/lib/property-rent";
 
 type Row = Record<string, unknown>;
 function str(row: Row, key: string): string | null {
@@ -202,7 +202,7 @@ export async function loadLeasesAndBookedMonths(
     // Also a payment from before the window that says it pays a month inside it.
     supabase
       .from("payments")
-      .select("property_id,payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,counts_as_rent")
+      .select("property_id,payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent")
       .in("property_id", propertyIds)
       .or(`payment_date.gte.${fromIso},rent_period_start.gte.${fromIso.slice(0, 10)}`),
   ]);
@@ -232,6 +232,7 @@ export async function loadLeasesAndBookedMonths(
       periodStart: str(r, "rent_period_start"),
       periods: num(r, "rent_periods") || 1,
       countsAsRent: r.counts_as_rent !== false,
+      allocation: rentAllocationOf(r.rent_allocation),
     });
     rentPayments.set(propertyId, list);
   }

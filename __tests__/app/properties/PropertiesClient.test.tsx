@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 // The properties list (owner, 2026-10-21 — "like the cars cards"): each card
-// its photo, name and address, a row for who rents it and one for this
-// period's rent — each opening that part of the property's page — and its
-// tasks, documents and money; the whole card opens the property.
+// its photo (added on its page), name and address, one row for who
+// rents it, what they pay and until when — opening that part of the
+// property's page — and its tasks, documents and money; the whole card opens
+// the property. This month's rent isn't on it (owner, 2026-10-22: "the user
+// could just go to the rent tab").
 
 vi.mock("next/navigation", () => import("@/__tests__/mocks/next-navigation"));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
@@ -115,14 +117,15 @@ function property(fields: Partial<PropertyWithLease>): PropertyWithLease {
 const card = (name: string) => screen.getByText(name).closest("[class*='rounded']") as HTMLElement;
 
 describe("the properties list", () => {
-  it("a rented property: the renter with the rent, and this period's rent — each opening that part of its page", async () => {
+  it("a rented property: the renter, what they pay and until when — opening that part of its page; not this month's rent", async () => {
     render(<PropertiesClient properties={[property({})]} />);
     const c = within(card("יהודה הנשיא 15"));
     const renter = c.getByRole("link", { name: /שוכר.*וואגשל/ });
     expect(renter).toHaveAttribute("href", "/properties/p1#tenant");
-    expect(renter).toHaveTextContent("₪8,500/חודש");
-    const rent = c.getByRole("link", { name: /שכירות אוקטובר.*לא שולם/ });
-    expect(rent).toHaveAttribute("href", "/properties/p1#rent");
+    expect(renter).toHaveTextContent("₪8,500/חודש · עד 31/12/26");
+    // The rent page says whether it's in (owner, 2026-10-22).
+    expect(c.queryByRole("link", { name: /שכירות/ })).not.toBeInTheDocument();
+    expect(c.queryByText("לא שולם")).not.toBeInTheDocument();
     // Its tasks, documents and money, like a car's; no income/expense figures or buttons.
     expect(c.getByText("1/3 משימות")).toBeInTheDocument();
     expect(c.getByText("5 מסמכים")).toBeInTheDocument();
@@ -134,28 +137,45 @@ describe("the properties list", () => {
     expect(await c.findByRole("img", { name: "יהודה הנשיא 15" })).toHaveAttribute("src", "https://x/p1.jpg");
   });
 
+  it("no tasks at all: the card leaves the tasks count out", () => {
+    render(<PropertiesClient properties={[property({ counts: { tasks: 0, openTasks: 0, documents: 2 } })]} />);
+    const c = within(card("יהודה הנשיא 15"));
+    expect(c.queryByText(/משימות/)).not.toBeInTheDocument();
+    expect(c.getByText("2 מסמכים")).toBeInTheDocument();
+  });
+
   it("the whole card opens the property", () => {
     render(<PropertiesClient properties={[property({})]} />);
     fireEvent.click(screen.getByText("שדרות רבי יהודה הנשיא 15, בית שמש"));
     expect(push).toHaveBeenCalledWith("/properties/p1");
   });
 
-  it("an empty one says פנוי, and there's no rent", () => {
+  it("an empty one says פנוי — once, not again as 'no renter'", () => {
     render(<PropertiesClient properties={[property({ currentLease: null, rentThisMonth: { state: "none", collected: 0, pending: 0, rent: 0, periodStart: null, periodLabel: null } })]} />);
     const c = within(card("יהודה הנשיא 15"));
     expect(c.getByRole("link", { name: /שוכר.*פנוי/ })).toHaveAttribute("href", "/properties/p1#tenant");
-    expect(c.getByText("אין שוכר")).toBeInTheDocument();
+    expect(c.queryByText("אין שוכר")).not.toBeInTheDocument();
+    expect(c.getAllByRole("link")).toHaveLength(1);
   });
 
-  it("a storage property with renters: how many, what they pay together, and how many have paid", () => {
+  it("a storage property with renters: how many, and what they pay together", () => {
     render(
       <PropertiesClient
         properties={[property({ name: "הר יונה שונות", propertyType: "storage", renters: { count: 3, paid: 2, monthly: 900, yearly: 2400 } })]}
       />
     );
     const c = within(card("הר יונה שונות"));
-    expect(c.getByRole("link", { name: /שוכרים.*3 שוכרים/ })).toHaveAttribute("href", "/properties/p1#renters");
-    expect(c.getByText("2 מתוך 3 שילמו")).toBeInTheDocument();
+    const row = c.getByRole("link", { name: /שוכרים.*3 שוכרים/ });
+    expect(row).toHaveAttribute("href", "/properties/p1#renters");
+    expect(row).toHaveTextContent("₪900/חודש · ₪2,400/שנה");
+    expect(c.queryByText(/שילמו/)).not.toBeInTheDocument();
+  });
+
+  it("the card's photo is just the picture — it's added on the property's page", async () => {
+    render(<PropertiesClient properties={[property({})]} />);
+    const c = within(card("יהודה הנשיא 15"));
+    expect(await c.findByRole("img", { name: "יהודה הנשיא 15" })).toBeInTheDocument();
+    expect(c.queryByRole("button", { name: /תמונה/ })).not.toBeInTheDocument();
   });
 
   it("the + menu's נכס opens the new-property form (the page has no add button of its own)", async () => {
@@ -190,7 +210,7 @@ describe("the properties list", () => {
 
   it("the search still finds a property by its rooms or amenities", () => {
     render(<PropertiesClient properties={[property({}), property({ id: "p2", name: "ריבל 29", hasParking: false, rooms: 3 })]} />);
-    fireEvent.change(screen.getByRole("textbox", { name: "חיפוש נכס" }), { target: { value: "חניה" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "חיפוש בנכסים" }), { target: { value: "חניה" } });
     expect(screen.getByText("יהודה הנשיא 15")).toBeInTheDocument();
     expect(screen.queryByText("ריבל 29")).not.toBeInTheDocument();
   });

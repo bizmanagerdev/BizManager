@@ -237,15 +237,17 @@ export function PropertyRentCard({
       valueClassName={state.className}
       details={details}
       action={
+        // The quiet one above, so the blue button sits on the card's last line — level with the next card's
+        // (owner, 2026-10-22: "the blue buttons should be the same height").
         <div className="space-y-1.5">
-          <Button type="button" size="sm" className="w-full" onClick={onRecord}>
-            רישום תשלום
-          </Button>
           {lease ? (
             <Button type="button" size="sm" variant="ghost" className="w-full text-xs" onClick={onSchedule}>
               קביעת תשלומים מראש
             </Button>
           ) : null}
+          <Button type="button" size="sm" className="w-full" onClick={onRecord}>
+            רישום תשלום
+          </Button>
         </div>
       }
     />

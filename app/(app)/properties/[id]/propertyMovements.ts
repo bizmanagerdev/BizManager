@@ -43,7 +43,7 @@ export type PropertyMovementInput = {
   onToggleCleared: (payment: PropertyPayment) => void;
   /** A rent check that's due, and it cleared — into which account (PropertyCheckArrivedDialog). */
   onCheckArrived: (payment: PropertyPayment, title: string) => void;
-  /** That month they paid another way: a new income, the check moved on (PropertyPaidInsteadDialog). */
+  /** That month they paid another way: what came, recorded on its month — the check torn with it (PropertyRentPaymentDialog). */
   onPaidInstead: (payment: PropertyPayment, title: string) => void;
   onEditExpense: (expense: PropertyExpense) => void;
   onDeleteExpense: (expense: PropertyExpense) => void;
@@ -72,6 +72,7 @@ export function toRentPayment(payment: PropertyPayment): RentPayment {
     periodStart: payment.rentPeriodStart,
     periods: payment.rentPeriods,
     countsAsRent: payment.countsAsRent,
+    allocation: payment.rentAllocation,
   };
 }
 

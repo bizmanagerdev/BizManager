@@ -3,9 +3,9 @@
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { donutSlices, type CategoryDonutDatum } from "./category-donut-data";
+import { donutSlices, type CategoryDonutDatum, type DonutSlice } from "./category-donut-data";
 
-export { donutSlices, type CategoryDonutDatum } from "./category-donut-data";
+export { donutSlices, type CategoryDonutDatum, type DonutSlice } from "./category-donut-data";
 
 // Where the money went, by category (the property page's "a pie of the
 // expenses by category", owner's card). A donut of the five biggest and
@@ -16,7 +16,10 @@ export { donutSlices, type CategoryDonutDatum } from "./category-donut-data";
 // once; only the circle's code comes later, into a box of its own size.
 // Pointing at a slice — or its row, or focusing the row — shows that one in
 // the middle in place of the total, value first (owner, 2026-10-21: the
-// floating tooltip covered the total).
+// floating tooltip covered the total). Given `onSelect`, a click on a slice or
+// its row chooses it — the property page filters its table to it (owner,
+// 2026-10-22: "when i click a section here it should filter the movements
+// table to those") — and again lets it go; the chosen one stays in the middle.
 
 const CategoryDonutChart = dynamic(() => import("./CategoryDonutChart"), {
   ssr: false,
@@ -28,20 +31,33 @@ const ILS = new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS",
 export default function CategoryDonut({
   data,
   emptyText = "אין נתונים להצגה.",
+  selected = null,
+  onSelect,
 }: {
   data: CategoryDonutDatum[];
   emptyText?: string;
+  /** The slice chosen (its label), or null. */
+  selected?: string | null;
+  /** A slice chosen — or, chosen again, let go (null). */
+  onSelect?: (slice: DonutSlice | null) => void;
 }) {
   const slices = useMemo(() => donutSlices(data), [data]);
   const total = slices.reduce((sum, s) => sum + s.value, 0);
-  const [active, setActive] = useState<string | null>(null);
+  const [hovered, setActive] = useState<string | null>(null);
+  const active = hovered ?? selected;
   const shown = slices.find((s) => s.label === active) ?? null;
+  const pick = onSelect
+    ? (label: string) => {
+        const slice = slices.find((s) => s.label === label) ?? null;
+        onSelect(slice && slice.label !== selected ? slice : null);
+      }
+    : undefined;
   if (slices.length === 0) return <p className="text-sm text-muted-foreground">{emptyText}</p>;
 
   return (
     <div className="flex flex-col items-center gap-3 @[22em]:flex-row @[22em]:items-start">
       <div className="relative h-36 w-36 shrink-0" aria-hidden>
-        <CategoryDonutChart slices={slices} active={active} onActive={setActive} />
+        <CategoryDonutChart slices={slices} active={active} onActive={setActive} onPick={pick} />
         <div className="pointer-events-none absolute inset-[22%] flex flex-col items-center justify-center text-center">
           {shown ? (
             <>
@@ -66,14 +82,27 @@ export default function CategoryDonut({
           <li
             key={slice.label}
             tabIndex={0}
+            role={pick ? "button" : undefined}
+            aria-pressed={pick ? selected === slice.label : undefined}
             className={cn(
               "-mx-1.5 flex items-center gap-2 rounded-md px-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-              active === slice.label && "bg-muted/60"
+              pick && "cursor-pointer",
+              selected === slice.label ? "bg-secondary/10 font-medium" : active === slice.label && "bg-muted/60"
             )}
             onMouseEnter={() => setActive(slice.label)}
             onMouseLeave={() => setActive(null)}
             onFocus={() => setActive(slice.label)}
             onBlur={() => setActive(null)}
+            onClick={pick ? () => pick(slice.label) : undefined}
+            onKeyDown={
+              pick
+                ? (e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    pick(slice.label);
+                  }
+                : undefined
+            }
           >
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: slice.color }} aria-hidden />
             <span className="min-w-0 flex-1 truncate">{slice.label}</span>

@@ -39,7 +39,7 @@ import {
 import { PageStack } from "@/components/layout/page-layout";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { CONNECTION_EVENTS } from "@/lib/offline-queue";
-import { getUndoPatch, scheduleDeferredEdit } from "@/lib/undo-engine";
+import { scheduleDeferredEdit } from "@/lib/undo-engine";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { formatCurrency } from "@/lib/payroll";
@@ -54,7 +54,7 @@ import {
   type RentRollPayment,
   type RentRollProperty,
 } from "@/lib/properties";
-import { RENT_STATE, type RentMonthState } from "@/lib/property-rent";
+import { paidTowards, paymentPeriodLabel, RENT_STATE, type RentMonthState } from "@/lib/property-rent";
 import {
   daysBetween,
   lateThisMonth,
@@ -62,6 +62,7 @@ import {
   rentRollToday,
   rentRollYear,
   rentRowOwes,
+  toRollRent,
   type RentDebt,
   type RentRollRow,
   type RentRollYear,
@@ -72,7 +73,6 @@ import { israelDateKey } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import PropertyRentPaymentDialog from "@/app/(app)/properties/[id]/PropertyRentPaymentDialog";
 import PropertyCheckArrivedDialog from "@/app/(app)/properties/[id]/PropertyCheckArrivedDialog";
-import PropertyPaidInsteadDialog from "@/app/(app)/properties/[id]/PropertyPaidInsteadDialog";
 import { deposit, downloadExcel, monthSheet, printSheet, yearSheet } from "./rentRollExport";
 
 // The rent page (owner, 2026-10-21). Redone after looking at how property
@@ -112,14 +112,9 @@ function sameRent(a: PropertyPayment, b: PropertyPayment): boolean {
     a.leaseId === b.leaseId &&
     a.rentPeriodStart === b.rentPeriodStart &&
     a.method === b.method &&
+    a.accountId === b.accountId &&
     Math.abs(a.amount - b.amount) < 0.5
   );
-}
-
-/** The check a payment recorded here came instead of ("instead:<check id>#<n>" — the month paid another way); null for any other. */
-function insteadOf(id: string): string | null {
-  const match = /^instead:(.+)#\d+$/.exec(id);
-  return match ? match[1] : null;
 }
 
 function placeName(row: Place): string {
@@ -226,7 +221,6 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
   const [paying, setPaying] = useState<{ row: RentRollRow; period: string } | null>(null);
   const [payingOpen, setPayingOpen] = useState(false);
   const [arrival, setArrival] = useState<{ payment: PropertyPayment; title: string } | null>(null);
-  const [instead, setInstead] = useState<{ row: RentRollRow; payment: PropertyPayment; title: string } | null>(null);
   const [cell, setCell] = useState<RentRollRow | null>(null);
   // What needs handling: a small button in the row under the tabs, starting closed (owner, 2026-10-22: "should
   // start off closed … it just doesn't need to take up so much space"), its list opening OVER the page ("to open on
@@ -244,12 +238,7 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
   // Checks marked cleared, moved on, bounced or edited here show so at once (their patches).
   const overlaid = useUndoOverlay(data.payments, paymentKey, "property-payment");
   const payments = useMemo(() => {
-    const shown = recorded.filter((r) => {
-      const check = insteadOf(r.id);
-      if (overlaid.some((p) => p.id === r.id || (p.id !== check && sameRent(p, r)))) return false;
-      // A month paid another way: only while its check's tearing stands (not undone).
-      return check ? Boolean(getUndoPatch("property-payment", check)) : true;
-    });
+    const shown = recorded.filter((r) => !overlaid.some((p) => p.id === r.id || sameRent(p, r)));
     return shown.length > 0 ? [...overlaid, ...shown] : overlaid;
   }, [overlaid, recorded]);
   const rollData = useMemo(() => ({ ...data, payments }), [data, payments]);
@@ -323,6 +312,7 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
   const accountName = (id: string | null) => (id ? (data.accountNames[id] ?? "—") : "—");
 
   function openPayment(row: RentRollRow, period: string = row.period) {
+    setCell(null);
     setPaying({ row, period });
     setPayingOpen(true);
   }
@@ -420,18 +410,9 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
             סימון כנפרע
           </Button>
         ) : null}
-        {pending ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className={ROW_BUTTON}
-            onClick={() => setInstead({ row, payment: pending, title })}
-          >
-            שולם אחרת החודש
-          </Button>
-        ) : null}
-        {pending && row.owed > 0.5 ? (
+        {/* Any money that came — this month or more, ahead or back; a waiting check of a month it pays is torn. Not
+            when the row's own button is just that. */}
+        {pending || row.owed <= 0.5 ? (
           <Button type="button" size="sm" variant="outline" className={ROW_BUTTON} onClick={() => openPayment(row)}>
             רישום תשלום
           </Button>
@@ -573,14 +554,10 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
                 {several || p.rentPeriods > 1 ? (
                   <span
                     className={cn("tabular-nums", p.tornAt && "line-through")}
-                    title={
-                      p.rentPeriods > 1 && p.rentPeriodStart
-                        ? rentPeriodLabel(row.lease, p.rentPeriodStart, p.rentPeriods)
-                        : undefined
-                    }
+                    title={p.rentPeriods > 1 ? (paymentPeriodLabel(row.lease, toRollRent(p)) ?? undefined) : undefined}
                   >
-                    {formatCurrency(p.amount)}
-                    {p.rentPeriods > 1 ? ` · ${p.rentPeriods} חודשים` : ""}
+                    {formatCurrency(paidTowards(row.lease, toRollRent(p), row.period))}
+                    {p.rentPeriods > 1 ? ` מתוך ${formatCurrency(p.amount)}` : ""}
                   </span>
                 ) : null}
                 {p.tornAt ? <span>· נקרע {formatShortDate(p.tornAt)}</span> : gone(p) ? <span>· חזר</span> : null}
@@ -972,19 +949,17 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
         prefill={paying ? { periodStart: paying.period, method: usual?.method, accountId: usual?.accountId } : undefined}
         onRecorded={paying ? remember(paying.row.property.id) : undefined}
         onUndone={(id) => setRecorded((prev) => prev.filter((p) => p.id !== id))}
+        onCheckCleared={(check) =>
+          setArrival({
+            payment: check,
+            title: `שכירות ${paying && check.rentPeriodStart ? rentPeriodLabel(paying.row.lease, check.rentPeriodStart) : (paying?.row.periodLabel ?? "")}`,
+          })
+        }
       />
       <PropertyCheckArrivedDialog
         payment={arrival?.payment ?? null}
         title={arrival?.title ?? ""}
         onClose={() => setArrival(null)}
-      />
-      <PropertyPaidInsteadDialog
-        check={instead?.payment ?? null}
-        lease={instead?.row.lease ?? null}
-        propertyId={instead?.row.property.id ?? ""}
-        title={instead?.title ?? ""}
-        onClose={() => setInstead(null)}
-        onRecorded={instead ? remember(instead.row.property.id) : undefined}
       />
     </PageStack>
   );

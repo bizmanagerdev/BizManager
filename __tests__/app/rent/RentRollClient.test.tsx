@@ -29,6 +29,7 @@ vi.mock("@/app/(app)/properties/[id]/PropertyRentPaymentDialog", () => ({
             checkNumber: null,
             paymentStatus: "cleared",
             tornAt: null,
+            rentAllocation: null,
             accountId: "a1",
             notes: null,
             referenceNumber: null,
@@ -73,7 +74,6 @@ vi.mock("@/components/ui/dropdown-menu", async () => {
     DropdownMenuSeparator: () => <hr />,
   };
 });
-vi.mock("@/app/(app)/properties/[id]/PropertyPaidInsteadDialog", () => ({ default: () => null }));
 
 import RentRollClient from "@/app/(app)/rent/RentRollClient";
 import type { LeaseAgreement, RentRollData, RentRollPayment } from "@/lib/properties";
@@ -122,6 +122,7 @@ function payment(extra: Partial<RentRollPayment>): RentRollPayment {
     checkNumber: null,
     paymentStatus: "cleared",
     tornAt: null,
+    rentAllocation: null,
     accountId: null,
     notes: null,
     referenceNumber: null,
