@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 
-// The customer page's server part (page.tsx): it starts the reads at once —
-// before the "who's asking" check answers — shows when the customer and its
-// money are in, hands the rest on as they come, and gives the history to
-// admins only. A customer that isn't there is a 404.
+// The customer page's server part (page.tsx). A device with its copy gets the
+// device version (LocalCustomerPage, on for admins and office from
+// 2026-10-23): only what the server alone reads goes out, and the page's full
+// reads don't. Everyone else gets the server version — its reads go out after
+// the "who's asking" check, or at once for ?data=server (the device version's
+// way back) — shown when the customer and its money are in, the rest handed
+// on as it comes, the history to admins only. A customer that isn't there is a 404.
 
 const h = vi.hoisted(() => ({
   notFound: vi.fn(() => {
@@ -12,18 +15,31 @@ const h = vi.hoisted(() => ({
   }),
   requireStaffPage: vi.fn(),
   startCustomerPageReads: vi.fn(),
+  startCustomerServerReads: vi.fn(),
+  deviceOn: { current: false },
   order: [] as string[],
 }));
 vi.mock("next/navigation", () => ({ notFound: h.notFound }));
 vi.mock("@/lib/auth/roleAccess", () => ({ requireStaffPage: h.requireStaffPage }));
 vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: async () => ({ tag: "server-client" }) }));
 vi.mock("@/lib/timezone", () => ({ israelDateKey: () => "2026-10-13" }));
-vi.mock("@/app/(app)/customers/[id]/loadCustomerPage", () => ({ startCustomerPageReads: h.startCustomerPageReads }));
+vi.mock("@/lib/powersync/device-check", () => ({
+  devicePageOn: async () => h.deviceOn.current,
+  deviceCheckDue: async () => false,
+}));
+vi.mock("@/app/(app)/customers/[id]/loadCustomerPage", () => ({
+  startCustomerPageReads: h.startCustomerPageReads,
+  startCustomerServerReads: h.startCustomerServerReads,
+}));
 vi.mock("@/components/layout/AppShell", () => ({ default: ({ children }: { children: unknown }) => children }));
 vi.mock("@/app/(app)/customers/[id]/CustomerPageView", () => ({ default: () => null }));
+vi.mock("@/app/(app)/customers/[id]/LocalCustomerPage", () => ({ default: () => null }));
+vi.mock("@/app/(app)/customers/[id]/CustomerPageServerCheck", () => ({ default: () => null }));
+vi.mock("@/components/powersync/DeviceFrameMark", () => ({ default: () => null }));
 
 import CustomerDetailsPage from "@/app/(app)/customers/[id]/page";
 import CustomerPageView from "@/app/(app)/customers/[id]/CustomerPageView";
+import LocalCustomerPage from "@/app/(app)/customers/[id]/LocalCustomerPage";
 
 function reads(top: unknown) {
   return {
@@ -34,54 +50,96 @@ function reads(top: unknown) {
   };
 }
 
-/** The element the page renders inside its AppShell. */
-function viewOf(page: ReactElement) {
-  return (page.props as { children: ReactElement }).children;
+/** The elements the page renders inside its AppShell. */
+function viewOf(page: ReactElement, type: unknown): ReactElement {
+  const children = (page.props as { children: ReactElement | ReactElement[] }).children;
+  const found = (Array.isArray(children) ? children : [children]).find((child) => child?.type === type);
+  if (!found) throw new Error("not rendered");
+  return found;
 }
+
+const open = (id: string, data?: string) =>
+  CustomerDetailsPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve(data ? { data } : {}) });
 
 beforeEach(() => {
   h.notFound.mockClear();
   h.order.length = 0;
+  h.deviceOn.current = false;
   h.requireStaffPage.mockReset().mockImplementation(async () => {
     // The check answers after a round trip.
     await new Promise((resolve) => setTimeout(resolve, 0));
     h.order.push("profile");
-    return { profile: { id: "u1", role: "admin", full_name: "דנה", email: "d@x.co" } };
+    return { profile: { id: "u1", role: "admin", locale: "he", full_name: "דנה", email: "d@x.co" } };
   });
   h.startCustomerPageReads.mockReset().mockImplementation(() => {
     h.order.push("reads");
     return reads({ customer: { id: "c1" } });
   });
+  h.startCustomerServerReads.mockReset().mockImplementation(() => ({
+    server: Promise.resolve({ morningDocuments: [], activity: { logs: [], reminders: [] }, promises: [], payrollOwed: null }),
+    documents: Promise.resolve({ documents: [] }),
+    history: Promise.resolve({ items: [] }),
+  }));
 });
 
 describe("the customer page on the server", () => {
-  it("starts its reads before the role check has answered, and hands the view what came and what's coming", async () => {
-    const page = (await CustomerDetailsPage({ params: Promise.resolve({ id: "c1" }) })) as ReactElement;
-    expect(h.order).toEqual(["reads", "profile"]);
+  it("a device with its copy: the device version, with only what the server alone reads on its way", async () => {
+    h.deviceOn.current = true;
+    const page = (await open("c1")) as ReactElement;
+    expect(h.startCustomerPageReads).not.toHaveBeenCalled();
+    const [client, id] = h.startCustomerServerReads.mock.calls[0]!;
+    expect(client).toEqual({ tag: "server-client" });
+    expect(id).toBe("c1");
+    const props = viewOf(page, LocalCustomerPage).props as {
+      id: string;
+      viewer: unknown;
+      serverReads: { server: unknown; documents: unknown; history: unknown };
+    };
+    expect(props.id).toBe("c1");
+    expect(props.viewer).toEqual({ userId: "u1", role: "admin", locale: "he" });
+    expect(props.serverReads.server).toBeInstanceOf(Promise);
+    expect(props.serverReads.history).toBeInstanceOf(Promise);
+  });
+
+  it("the device version gives office staff no history either", async () => {
+    h.deviceOn.current = true;
+    h.requireStaffPage.mockResolvedValue({ profile: { id: "u2", role: "office", locale: "he", full_name: null, email: "o@x.co" } });
+    const page = (await open("c1")) as ReactElement;
+    expect((viewOf(page, LocalCustomerPage).props as { serverReads: { history: unknown } }).serverReads.history).toBeNull();
+  });
+
+  it("no copy on this device: the server version — its reads after the role check, the view handed what came and what's coming", async () => {
+    const page = (await open("c1")) as ReactElement;
+    expect(h.order).toEqual(["profile", "reads"]);
     const [client, id, viewer] = h.startCustomerPageReads.mock.calls[0]!;
     expect(client).toEqual({ tag: "server-client" });
     expect(id).toBe("c1");
     await expect(viewer.role).resolves.toBe("admin");
     await expect(viewer.viewerId).resolves.toBe("u1");
 
-    const view = viewOf(page);
-    expect(view.type).toBe(CustomerPageView);
-    const props = view.props as Record<string, unknown>;
+    const props = viewOf(page, CustomerPageView).props as Record<string, unknown>;
     expect(props.top).toEqual({ customer: { id: "c1" } });
     expect(props.history).toBeInstanceOf(Promise);
     expect(props.viewer).toEqual({ id: "u1", role: "admin" });
     expect(props.today).toBe("2026-10-13");
   });
 
+  it("?data=server — the way back from the device version: the server version, its reads at once", async () => {
+    h.deviceOn.current = true;
+    const page = (await open("c1", "server")) as ReactElement;
+    expect(h.order).toEqual(["reads", "profile"]);
+    expect(viewOf(page, CustomerPageView)).toBeTruthy();
+  });
+
   it("gives office staff no history", async () => {
-    h.requireStaffPage.mockResolvedValue({ profile: { id: "u2", role: "office", full_name: null, email: "o@x.co" } });
-    const page = (await CustomerDetailsPage({ params: Promise.resolve({ id: "c1" }) })) as ReactElement;
-    expect((viewOf(page).props as { history: unknown }).history).toBeNull();
+    h.requireStaffPage.mockResolvedValue({ profile: { id: "u2", role: "office", locale: "he", full_name: null, email: "o@x.co" } });
+    const page = (await open("c1")) as ReactElement;
+    expect((viewOf(page, CustomerPageView).props as { history: unknown }).history).toBeNull();
   });
 
   it("is a 404 for a customer that isn't there", async () => {
     h.startCustomerPageReads.mockReturnValue(reads(null));
-    await expect(CustomerDetailsPage({ params: Promise.resolve({ id: "missing" }) })).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(open("missing")).rejects.toThrow("NEXT_NOT_FOUND");
   });
 
   it("a caller who isn't staff is turned away before anything is shown — the reads' failures don't escape", async () => {
@@ -90,7 +148,8 @@ describe("the customer page on the server", () => {
     h.requireStaffPage.mockRejectedValue(new Error("NEXT_REDIRECT"));
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
-    await expect(CustomerDetailsPage({ params: Promise.resolve({ id: "c1" }) })).rejects.toThrow("NEXT_REDIRECT");
+    // ?data=server: the reads go out before the check, and must not leak when it refuses.
+    await expect(open("c1", "server")).rejects.toThrow("NEXT_REDIRECT");
     await new Promise((resolve) => setTimeout(resolve, 0));
     process.off("unhandledRejection", unhandled);
     expect(unhandled).not.toHaveBeenCalled();

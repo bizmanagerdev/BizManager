@@ -59,7 +59,7 @@ export default async function CustomersPage({
   // loadedAt).
   // With the device version on for everyone (LOCAL_DATA_PAGES.customers) the
   // read waits for the check instead, and goes out only for people without a
-  // device copy.
+  // device copy — at once again for ?data=server, the device version's way back.
   const startRead = () => {
     const read = withLoadedAt(loadCustomersPage(supabase, { page: 1, filters }));
     // Awaited right after the check; this only keeps a failure that lands
@@ -67,7 +67,7 @@ export default async function CustomersPage({
     read.catch(() => {});
     return read;
   };
-  const earlyRead = LOCAL_DATA_PAGES.customers ? null : startRead();
+  const earlyRead = LOCAL_DATA_PAGES.customers && params.data !== "server" ? null : startRead();
 
   const { profile } = await profilePromise;
 
