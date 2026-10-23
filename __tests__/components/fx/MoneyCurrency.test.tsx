@@ -20,13 +20,15 @@ function Harness({
   initial,
   known = true,
   accountCurrency = null,
+  preferred = null,
 }: {
   initial?: RowCurrency | null;
   known?: boolean;
   accountCurrency?: CurrencyCode | null;
+  preferred?: CurrencyCode | null;
 }) {
   const [amount, setAmount] = useState(typedAmountOf(initial, 3107));
-  const money = useMoneyCurrency({ open: true, initial, known, accountCurrency, date: "2026-10-24" });
+  const money = useMoneyCurrency({ open: true, initial, known, accountCurrency, preferred, date: "2026-10-24" });
   const body = money.body();
   useEffect(() => {
     sent.body = body;
@@ -93,6 +95,20 @@ describe("CurrencyAmountInput", () => {
     expect(screen.getByRole("textbox", { name: "סכום" })).toHaveValue("1,000");
     expect(screen.getByRole("textbox", { name: "שער" })).toHaveValue("3.05");
     expect(sent.body).toEqual({ currency: "USD", fx_rate: 3.05, fx_rate_manual: true });
+  });
+
+  it("a new row on a Canada building's page starts in C$; one being edited keeps its own", () => {
+    render(<Harness preferred="CAD" />);
+    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("CAD");
+    expect(sent.body).toEqual({ currency: "CAD", fx_rate_manual: false });
+  });
+
+  it("…an edit of a row in shekels stays in shekels, and an account kept in dollars still wins", () => {
+    const { unmount } = render(<Harness preferred="CAD" initial={{ currency: "ILS", foreign_amount: null, fx_rate: null, fx_rate_manual: false }} />);
+    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("ILS");
+    unmount();
+    render(<Harness preferred="CAD" accountCurrency="USD" />);
+    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("USD");
   });
 
   it("an edit whose page didn't carry the currency: no choice, and the save says nothing about it", () => {

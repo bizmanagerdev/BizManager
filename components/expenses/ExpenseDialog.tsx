@@ -83,7 +83,7 @@ import {
   typedAmountOf,
   useMoneyCurrency,
 } from "@/components/fx/MoneyCurrency";
-import { CURRENCY_NAME, isForeignCurrency } from "@/lib/fx/currencies";
+import { CURRENCY_NAME, isForeignCurrency, type CurrencyCode } from "@/lib/fx/currencies";
 import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
 
 type PaymentStatus = "paid" | "partial" | "not_paid";
@@ -270,6 +270,8 @@ type Props = {
   lockedProjectId?: string | null;
   lockedOrderId?: string | null;
   lockedPropertyId?: string | null;
+  /** What a NEW one-off expense starts in — a Canada building's page: C$ (2026-10-23). */
+  defaultCurrency?: CurrencyCode | null;
 
   // Selectors shown when the source is not locked
   recurringProjects?: Array<{ id: string; label: string }>;
@@ -391,6 +393,7 @@ export function ExpenseDialog({
   lockedProjectId,
   lockedOrderId,
   lockedPropertyId,
+  defaultCurrency = null,
   recurringProjects = [],
   recurringOrders = [],
   recurringProperties = [],
@@ -505,6 +508,7 @@ export function ExpenseDialog({
     initial: editingExpense,
     known: !editingExpense || knowsCurrency(editingExpense),
     accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    preferred: defaultCurrency,
     date: expenseDate,
   });
 

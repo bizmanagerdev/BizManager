@@ -68,6 +68,7 @@ function property(fields: Partial<PropertyWithLease>): PropertyWithLease {
     purchaseDate: null,
     purchasePrice: null,
     purchaseTax: null,
+    currency: "ILS",
     landBlock: null,
     landParcel: null,
     landSubParcel: null,

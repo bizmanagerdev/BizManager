@@ -106,6 +106,8 @@ const COLUMN_DEFAULTS: Record<string, Row> = {
   expenses: MONEY_CURRENCY_DEFAULTS,
   loans: MONEY_CURRENCY_DEFAULTS,
   loan_repayments: MONEY_CURRENCY_DEFAULTS,
+  // supabase/migrations/20261023170000_property_currency.sql
+  properties: { currency: "ILS" },
 };
 
 /** Tables synced to the device (lib/powersync/schema.ts). */

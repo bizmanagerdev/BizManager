@@ -14,6 +14,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Button } from "@/components/ui/button";
 import { CloseIcon } from "@/components/ui/icons";
 import { propertyHasRoomLayout, type Property } from "@/lib/properties";
+import { CURRENCY_SYMBOL, isForeignCurrency } from "@/lib/fx/currencies";
 import { appendDictatedText } from "@/lib/dictation";
 import type { PropertyInput } from "./property-types";
 import { AddressPicker } from "@/components/ui/address-picker";
@@ -65,6 +66,7 @@ export const EMPTY_PROPERTY_FORM: PropertyInput = {
   purchase_date: "",
   purchase_price: "",
   purchase_tax: "",
+  currency: "ILS",
   land_block: "",
   land_parcel: "",
   land_sub_parcel: "",
@@ -116,6 +118,7 @@ export function propertyToForm(p: Property): PropertyInput {
     purchase_date: p.purchaseDate ?? "",
     purchase_price: p.purchasePrice != null ? String(p.purchasePrice) : "",
     purchase_tax: p.purchaseTax != null ? String(p.purchaseTax) : "",
+    currency: p.currency,
     land_block: p.landBlock ?? "",
     land_parcel: p.landParcel ?? "",
     land_sub_parcel: p.landSubParcel ?? "",
@@ -331,6 +334,21 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
           <span className="font-medium">מחוז</span>
           <Input value={form.region} onChange={(e) => set("region", e.target.value)} />
         </label>
+        {/* The currency its money is usually in (owner, 2026-10-23, the Canada buildings). */}
+        <label className="block space-y-1 text-sm sm:col-span-2">
+          <span className="font-medium">מטבע</span>
+          <NativeSelect value={form.currency || "ILS"} onChange={(e) => set("currency", e.target.value)}>
+            <option value="ILS">₪ שקל</option>
+            <option value="USD">$ דולר</option>
+            <option value="CAD">C$ דולר קנדי</option>
+          </NativeSelect>
+          {isForeignCurrency(form.currency) ? (
+            <span className="block text-xs text-muted-foreground">
+              הוצאות והכנסות חדשות בנכס יתחילו ב{form.currency === "USD" ? "דולר" : "דולר קנדי"}, מחיר הרכישה ומס הרכישה בו,
+              והסיכום הכספי יוצג בשקלים, בדולרים ובדולרים קנדיים — כל תנועה לפי השער של יומה.
+            </span>
+          ) : null}
+        </label>
         <label className="block space-y-1 text-sm">
           <span className="font-medium">מספר חשבון מס</span>
           <Input dir="ltr" value={form.tax_account_number} onChange={(e) => set("tax_account_number", e.target.value)} />
@@ -532,6 +550,8 @@ export function PropertyUtilityFields({ form, set }: FieldsProps) {
 
 /** Seller/date/price/tax/land-registry — the "רכישת הנכס" card's fields. */
 export function PropertyPurchaseFields({ form, set }: FieldsProps) {
+  // In the property's currency.
+  const purchaseSymbol = isForeignCurrency(form.currency) ? CURRENCY_SYMBOL[form.currency] : undefined;
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -547,11 +567,11 @@ export function PropertyPurchaseFields({ form, set }: FieldsProps) {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block space-y-1 text-sm">
           <span className="font-medium">מחיר רכישה</span>
-          <CurrencyInput value={form.purchase_price} onChange={(e) => set("purchase_price", e.target.value)} />
+          <CurrencyInput symbol={purchaseSymbol} value={form.purchase_price} onChange={(e) => set("purchase_price", e.target.value)} />
         </label>
         <label className="block space-y-1 text-sm">
           <span className="font-medium">מס רכישה</span>
-          <CurrencyInput value={form.purchase_tax} onChange={(e) => set("purchase_tax", e.target.value)} />
+          <CurrencyInput symbol={purchaseSymbol} value={form.purchase_tax} onChange={(e) => set("purchase_tax", e.target.value)} />
         </label>
       </div>
       <div className="grid grid-cols-3 gap-3">

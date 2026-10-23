@@ -14,6 +14,11 @@ import { formatCurrency } from "@/lib/payroll";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { Property, PropertyDocument } from "@/lib/properties";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
+import { formatCurrencyAmount } from "@/lib/money";
+import { isForeignCurrency, type CurrencyCode } from "@/lib/fx/currencies";
+import { ALL_CURRENCIES, amountInEachCurrency } from "@/lib/fx/day-rates";
+import { useRateTable } from "@/components/fx/useRateTable";
+import { israelDateKey } from "@/lib/timezone";
 
 const PURCHASE_KEYS = [
   "purchased_from",
@@ -52,6 +57,32 @@ function buildPurchasePatch(input: PropertyInput): Partial<Property> {
     landRegistryUrl: input.land_registry_url.trim() || null,
     landTitleUrl: input.land_title_url.trim() || null,
   };
+}
+
+/**
+ * A price in a property kept in US$ or C$: in its currency, and under it the
+ * other two at the purchase day's rate (today's, with no purchase date) —
+ * owner, 2026-10-23: "I need to see all three … how much did I pay there".
+ */
+function PriceInCurrency({ amount, currency, day }: { amount: number; currency: CurrencyCode; day: string | null }) {
+  const foreign = isForeignCurrency(currency);
+  const at = day ?? israelDateKey();
+  const rates = useRateTable([at], foreign);
+  if (!foreign) return <>{formatCurrency(amount)}</>;
+  const each = amountInEachCurrency(amount, currency, at, rates);
+  const others = ALL_CURRENCIES.filter((c) => c !== currency && each[c] !== null).map((c) =>
+    formatCurrencyAmount(Math.round(each[c] ?? 0), c)
+  );
+  return (
+    <>
+      <span dir="ltr">{formatCurrencyAmount(amount, currency)}</span>
+      {others.length > 0 ? (
+        <span className="block text-xs text-muted-foreground">
+          <span dir="ltr">≈ {others.join(" · ")}</span> {day ? "בשער יום הרכישה" : "בשער היום"}
+        </span>
+      ) : null}
+    </>
+  );
 }
 
 // Israel's calendar, not the device's (a date-only value through `new Date()`
@@ -177,13 +208,21 @@ export default function PropertyPurchaseCard({
             {displayProperty.purchasePrice != null ? (
               <div>
                 <span className="text-muted-foreground">מחיר רכישה: </span>
-                {formatCurrency(displayProperty.purchasePrice)}
+                <PriceInCurrency
+                  amount={displayProperty.purchasePrice}
+                  currency={displayProperty.currency}
+                  day={displayProperty.purchaseDate}
+                />
               </div>
             ) : null}
             {displayProperty.purchaseTax != null ? (
               <div>
                 <span className="text-muted-foreground">מס רכישה: </span>
-                {formatCurrency(displayProperty.purchaseTax)}
+                <PriceInCurrency
+                  amount={displayProperty.purchaseTax}
+                  currency={displayProperty.currency}
+                  day={displayProperty.purchaseDate}
+                />
               </div>
             ) : null}
             {displayProperty.landBlock || displayProperty.landParcel || displayProperty.landSubParcel ? (

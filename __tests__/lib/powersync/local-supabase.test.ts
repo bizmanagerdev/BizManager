@@ -1696,6 +1696,11 @@ describe("a money row's currency on the device (2026-10-23)", () => {
     ).toMatchObject({ amount: 3107, currency: "USD", foreign_amount: 1000, fx_rate: 3.107, fx_rate_manual: true });
   });
 
+  it("a property synced before it had a currency reads as shekels; a Canada building keeps its C$", () => {
+    expect(coerceRow("properties", { id: "pr1" })).toEqual({ id: "pr1", currency: "ILS" });
+    expect(coerceRow("properties", { id: "pr2", currency: "CAD" })).toEqual({ id: "pr2", currency: "CAD" });
+  });
+
   it("other tables get nothing added", () => {
     expect(coerceRow("tasks", { id: "t1" })).toEqual({ id: "t1" });
   });

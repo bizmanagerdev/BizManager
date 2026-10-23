@@ -85,6 +85,7 @@ export function useMoneyCurrency({
   known = true,
   accountCurrency,
   fixed = null,
+  preferred = null,
   date,
 }: {
   /** The form is open — it starts over from `initial` each time it opens. */
@@ -96,11 +97,14 @@ export function useMoneyCurrency({
   accountCurrency?: CurrencyCode | null;
   /** A currency the row can't leave (a repayment: its loan's). */
   fixed?: CurrencyCode | null;
+  /** What a NEW row starts in (on a Canada building's page, C$); a row being edited keeps its own. */
+  preferred?: CurrencyCode | null;
   /** The row's day (the form's date field). */
   date: string | null | undefined;
 }): MoneyCurrency {
   const start = React.useMemo(() => (initial ? readForeignMoney(initial) : null), [initial]);
-  const [chosen, setChosen] = React.useState<CurrencyCode>(start?.currency ?? "ILS");
+  const startCurrency: CurrencyCode = start?.currency ?? (initial ? "ILS" : preferred ?? "ILS");
+  const [chosen, setChosen] = React.useState<CurrencyCode>(startCurrency);
   const [manual, setManual] = React.useState(Boolean(start?.rateManual));
   const [rateText, setRateTextState] = React.useState(start?.rateManual ? String(start.rate) : "");
   const [dayRate, setDayRate] = React.useState<DayRate | null>(null);
@@ -111,12 +115,12 @@ export function useMoneyCurrency({
   const wasOpen = React.useRef(false);
   React.useEffect(() => {
     if (open && !wasOpen.current) {
-      setChosen(start?.currency ?? "ILS");
+      setChosen(startCurrency);
       setManual(Boolean(start?.rateManual));
       setRateTextState(start?.rateManual ? String(start.rate) : "");
     }
     wasOpen.current = open;
-  }, [open, start]);
+  }, [open, start, startCurrency]);
 
   const lockedTo = isForeignCurrency(accountCurrency) ? accountCurrency : null;
   const currency: CurrencyCode = fixed ?? lockedTo ?? chosen;

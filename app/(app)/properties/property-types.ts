@@ -34,8 +34,11 @@ export type PropertyInput = {
   has_elevator: boolean;
   purchased_from: string;
   purchase_date: string;
+  /** In the property's currency. */
   purchase_price: string;
   purchase_tax: string;
+  /** 'ILS' | 'USD' | 'CAD' — its money's usual currency (owner, 2026-10-23, the Canada buildings). */
+  currency: string;
   land_block: string;
   land_parcel: string;
   land_sub_parcel: string;

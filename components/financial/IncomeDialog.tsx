@@ -54,7 +54,7 @@ import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { formatCurrency } from "@/lib/payroll";
 import { cn } from "@/lib/utils";
 import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
-import { CURRENCY_NAME, isForeignCurrency } from "@/lib/fx/currencies";
+import { CURRENCY_NAME, isForeignCurrency, type CurrencyCode } from "@/lib/fx/currencies";
 import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
 import { highlightText } from "@/components/search/highlightMatch";
 import { filterByText, prepareListSearch } from "@/lib/search/listSearch";
@@ -140,6 +140,7 @@ export function IncomeDialog({
   defaultAccountId,
   defaultDate,
   lockedPropertyId,
+  defaultCurrency = null,
   onSaved,
 }: {
   open: boolean;
@@ -154,6 +155,8 @@ export function IncomeDialog({
   /** Lock to a property (e.g. opened from a property's own page) — hides the
    *  domain + property pickers and forces business_domain=property_management. */
   lockedPropertyId?: string | null;
+  /** What a new income starts in — a Canada building's page: C$ (2026-10-23). */
+  defaultCurrency?: CurrencyCode | null;
   onSaved?: () => void;
 }) {
   const router = useRouter();
@@ -188,7 +191,7 @@ export function IncomeDialog({
   const [tagIds, setTagIds] = useState<string[]>([]);
   // In ₪, US$ or C$ — the account's own when it's kept in dollars (2026-10-23).
   const accountCurrency = accountsList.find((a) => a.id === accountId)?.currency ?? null;
-  const money = useMoneyCurrency({ open, accountCurrency, date });
+  const money = useMoneyCurrency({ open, accountCurrency, preferred: defaultCurrency, date });
   // Dollars with no rate to use: one has to be typed.
   const rateMissing = isForeignCurrency(money.currency) && money.rate === null && !money.loading;
 

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MONEY_CURRENCY_COLUMNS, readForeignMoney, type ForeignMoney } from "@/lib/fx/currencies";
+import { MONEY_CURRENCY_COLUMNS, isForeignCurrency, readForeignMoney, type CurrencyCode, type ForeignMoney } from "@/lib/fx/currencies";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { SalaryAgreementRow, WorkSessionRow } from "@/lib/payroll";
@@ -55,8 +55,13 @@ export type Property = {
   hasElevator: boolean;
   purchasedFrom: string | null;
   purchaseDate: string | null;
+  /** In its currency (`currency`). */
   purchasePrice: number | null;
   purchaseTax: number | null;
+  /** The currency its money is usually in (owner, 2026-10-23, the Canada buildings): a new expense or income on
+   *  its page starts in it, its purchase price and tax are in it, and in US$ or C$ its page sums its money in
+   *  ₪, $ and C$. Its rows keep their own currency. */
+  currency: CurrencyCode;
   landBlock: string | null;
   landParcel: string | null;
   landSubParcel: string | null;
@@ -224,6 +229,7 @@ function normalizeProperty(row: Row): Property {
     purchaseDate: str(row.purchase_date),
     purchasePrice: numOrNull(row.purchase_price),
     purchaseTax: numOrNull(row.purchase_tax),
+    currency: isForeignCurrency(row.currency) ? row.currency : "ILS",
     landBlock: str(row.land_block),
     landParcel: str(row.land_parcel),
     landSubParcel: str(row.land_sub_parcel),
@@ -358,7 +364,7 @@ export function pickCurrentLease(leases: LeaseAgreement[]): LeaseAgreement | nul
 }
 
 const PROPERTY_SELECT =
-  "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,rent_managed_by_company,management_company_name,management_portal_url,management_notes,owner_company_name,owner_company_number,owner_company_type,owner_company_url,owner_company_notes,zoning,region,tax_account_number,tax_account_url,land_registry_url,land_title_url,created_at,updated_at,sort_order";
+  "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,currency,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,rent_managed_by_company,management_company_name,management_portal_url,management_notes,owner_company_name,owner_company_number,owner_company_type,owner_company_url,owner_company_notes,zoning,region,tax_account_number,tax_account_url,land_registry_url,land_title_url,created_at,updated_at,sort_order";
 
 const LEASE_SELECT =
   "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months,area_sqm,unit_label,created_at,customer:customers(name,phone)";

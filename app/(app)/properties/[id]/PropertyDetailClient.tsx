@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { currencyFieldsFrom } from "@/lib/fx/currencies";
+import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
+import { useRateTable } from "@/components/fx/useRateTable";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -79,7 +80,7 @@ import { hasRenters, rentCoverage, renterPayments, runningLeases } from "@/lib/p
 import { israelDateKey } from "@/lib/timezone";
 import { PropertyRentCard, PropertyTenantCard } from "./PropertyLeaseCards";
 import { PropertyManagementCard, PropertyOwnerCompanyBlock, PropertyOwnerCompanyCard } from "./PropertyCompanyCards";
-import { buildPropertyMovements, toRentPayment } from "./propertyMovements";
+import { buildPropertyMovements, dayKey, toRentPayment } from "./propertyMovements";
 import type { PropertyStaffUser } from "@/lib/properties";
 import { hebrewDayName } from "@/lib/rent-periods";
 
@@ -237,6 +238,17 @@ export default function PropertyDetailClient({
   const activityExpenses = useUndoOverlay(activity.expenses, (e) => e.id, "property-expense");
   const activitySessions = useUndoOverlay(activity.sessions, (s) => s.id, "property-session");
   const activityPayments = useUndoOverlay(activity.payments, (p) => p.id, "property-payment");
+  // Kept in US$ or C$ (the Canada buildings): its money in ₪, $ and C$, each
+  // movement at its day's rate — the rates over its movements' days.
+  const movementDays = useMemo(
+    () => [
+      ...activityPayments.map((p) => dayKey(p.date)),
+      ...activityExpenses.map((e) => dayKey(e.date)),
+      ...activitySessions.map((s) => dayKey(s.clock_in)),
+    ],
+    [activityPayments, activityExpenses, activitySessions]
+  );
+  const rates = useRateTable(movementDays, isForeignCurrency(property.currency));
   const activityDocuments = useUndoOverlay(activity.documents, (d) => d.id, "property-document");
   const activityTasks = useUndoOverlay(activity.tasks, (t) => t.id, "property-task");
   const activityTemplates = useUndoOverlay(activity.recurringTemplates, (t) => t.id, "property-template");
@@ -1053,6 +1065,8 @@ export default function PropertyDetailClient({
             payments={activityPayments}
             expenses={activityExpenses}
             sessions={activitySessions}
+            currency={property.currency}
+            rates={rates}
             selectedCategory={categoryFilter?.label ?? null}
             onSelectCategory={chooseCategory}
           />
@@ -1207,6 +1221,7 @@ export default function PropertyDetailClient({
         editingExpense={editingExpense}
         editingSession={editingSession}
         lockedPropertyId={propertyId}
+        defaultCurrency={property.currency}
         editingSourceLabel={address}
         showAttachments
         users={workerOptions}
@@ -1301,6 +1316,7 @@ export default function PropertyDetailClient({
         orders={[]}
         properties={[]}
         lockedPropertyId={propertyId}
+        defaultCurrency={property.currency}
         onSaved={() => {
           setIncomeOpen(false);
           refresh();

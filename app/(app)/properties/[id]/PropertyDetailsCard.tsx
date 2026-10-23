@@ -18,6 +18,7 @@ import { PropertyPhotoBanner } from "../PropertyPhotoTile";
 import { PropertyDescription } from "./PropertyDescription";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { cn } from "@/lib/utils";
+import { CURRENCY_NAME, CURRENCY_SYMBOL, isForeignCurrency } from "@/lib/fx/currencies";
 
 const BASIC_KEYS = [
   "name",
@@ -47,6 +48,7 @@ const BASIC_KEYS = [
   "region",
   "tax_account_number",
   "tax_account_url",
+  "currency",
 ] as const satisfies readonly (keyof PropertyInput)[];
 
 function pick<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): Pick<T, K> {
@@ -92,6 +94,7 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
     region: input.region.trim() || null,
     taxAccountNumber: input.tax_account_number.trim() || null,
     taxAccountUrl: input.tax_account_url.trim() || null,
+    currency: isForeignCurrency(input.currency) ? input.currency : "ILS",
   };
 }
 
@@ -188,6 +191,7 @@ export default function PropertyDetailsCard({
     p.propertyType === "building" && p.apartmentsCount != null ? { label: "דירות", value: String(p.apartmentsCount) } : null,
     p.zoning ? { label: "ייעוד", value: p.zoning } : null,
     p.region ? { label: "מחוז", value: p.region } : null,
+    isForeignCurrency(p.currency) ? { label: "מטבע", value: `${CURRENCY_NAME[p.currency]} (${CURRENCY_SYMBOL[p.currency]})` } : null,
     p.taxAccountNumber
       ? {
           label: "חשבון מס",

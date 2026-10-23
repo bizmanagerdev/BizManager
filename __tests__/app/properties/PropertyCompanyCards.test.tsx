@@ -77,6 +77,7 @@ const PLOURDE: Property = {
   purchaseDate: null,
   purchasePrice: null,
   purchaseTax: null,
+  currency: "ILS",
   landBlock: null,
   landParcel: "1 949 340",
   landSubParcel: null,

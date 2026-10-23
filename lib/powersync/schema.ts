@@ -446,6 +446,8 @@ const properties = new Table({
   purchase_date: text,
   purchase_price: text,
   purchase_tax: text,
+  // Its money's usual currency (supabase/migrations/20261023170000_property_currency.sql).
+  currency: text,
   land_block: text,
   land_parcel: text,
   land_sub_parcel: text,

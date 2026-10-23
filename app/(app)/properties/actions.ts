@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
 import { buildPaymentInsert, PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
@@ -100,7 +101,15 @@ function propertyFields(input: PropertyInput) {
     ...companyFields(input),
     ...placeFields(input),
     ...linkFields(input),
+    ...currencyField(input),
   };
+}
+
+/** Its money's usual currency (owner, 2026-10-23, the Canada buildings) — left as it is when a form from before
+ *  it saves. */
+function currencyField(input: PropertyInput) {
+  if (typeof input.currency !== "string") return {};
+  return { currency: isForeignCurrency(input.currency) ? input.currency : "ILS" };
 }
 
 /** Its tax-account and land-registry links (owner, 2026-10-23) — left as they are when a form from before them saves. */

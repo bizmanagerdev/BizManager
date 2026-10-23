@@ -9,6 +9,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 vi.mock("next/navigation", () => import("@/__tests__/mocks/next-navigation"));
 vi.mock("@/lib/undo-engine", () => ({ scheduleDeferredAction: vi.fn() }));
 vi.mock("@/app/(app)/properties/actions", () => ({ updateProperty: vi.fn() }));
+// The Bank of Israel's rates on the purchase day (10/11/2025).
+const rateTableFor = vi.hoisted(() => vi.fn());
+vi.mock("@/components/fx/useRateTable", () => ({ useRateTable: (...args: unknown[]) => rateTableFor(...args) }));
 
 import PropertyPurchaseCard from "@/app/(app)/properties/[id]/PropertyPurchaseCard";
 import type { Property } from "@/lib/properties";
@@ -59,5 +62,23 @@ describe("a property's purchase block", () => {
   it("nothing at all: says so", () => {
     renderCard({ ...PIERRE, landRegistryUrl: null, landTitleUrl: null });
     expect(screen.getByText("לא הוזנו פרטי רכישה.")).toBeInTheDocument();
+  });
+
+  it("a building in C$: its price and tax in C$, with ₪ and $ at the purchase day's rate", () => {
+    rateTableFor.mockReturnValue({
+      USD: { days: ["2025-11-10"], rates: [3.3] },
+      CAD: { days: ["2025-11-10"], rates: [2.4] },
+    });
+    renderCard({ ...PIERRE, currency: "CAD", purchaseDate: "2025-11-10", purchasePrice: 1200000, purchaseTax: 15000 } as Property);
+    expect(rateTableFor).toHaveBeenCalledWith(["2025-11-10"], true);
+    const price = screen.getByText("מחיר רכישה:").parentElement as HTMLElement;
+    expect(price).toHaveTextContent("C$1,200,000");
+    expect(price).toHaveTextContent("≈ ₪2,880,000 · $872,727 בשער יום הרכישה");
+    expect(screen.getByText("מס רכישה:").parentElement).toHaveTextContent("C$15,000");
+  });
+
+  it("a property in shekels: its price in ₪, nothing else", () => {
+    renderCard({ ...PIERRE, currency: "ILS", purchasePrice: 1363700 } as Property);
+    expect(screen.getByText("מחיר רכישה:").parentElement).toHaveTextContent(/^מחיר רכישה: ₪1,363,700$/);
   });
 });

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, knowsCurrency, typedAmountOf, useMoneyCurrency, type RowCurrency } from "@/components/fx/MoneyCurrency";
 import { Field } from "@/components/ui/field";
 import { FormDialog } from "@/components/ui/form-dialog";
 import AccountSelect from "@/components/financial/AccountSelect";
@@ -20,6 +20,7 @@ import { leaseForPayment, rentCoverage } from "@/lib/property-rent";
 import { rentPeriodChoices, rentPeriodLabel } from "@/lib/rent-periods";
 import { formatShortDate } from "@/lib/date";
 import { formatCurrency } from "@/lib/payroll";
+import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
 import { dayKey, toRentPayment } from "./propertyMovements";
 
 // Editing one of a property's incomes — any of them, whatever it was paid
@@ -29,6 +30,8 @@ import { dayKey, toRentPayment } from "./propertyMovements";
 // update route clears a field it isn't sent, which is how editing a rent
 // check used to wipe its note. A rent payment also says which month(s) it pays
 // for, by its lease's calendar; one that isn't rent (a refund) says so.
+// Its amount is in its currency — ₪, US$ or C$ (2026-10-23) — with the day's
+// rate under it, as in the window it was added in.
 
 type Form = {
   title: string;
@@ -45,13 +48,18 @@ type Form = {
   periods: string;
 };
 
+/** Its currency as the amount field takes it; none when it wasn't read (an older copy). */
+function currencyRow(payment: PropertyPayment | null): RowCurrency | null {
+  return payment && payment.foreign !== undefined ? currencyFieldsFrom(payment.foreign) : null;
+}
+
 function toForm(payment: PropertyPayment, leases: LeaseAgreement[], currentLease: LeaseAgreement | null): Form {
   const lease = leaseForPayment(leases, toRentPayment(payment), currentLease) ?? currentLease;
   return {
     title: payment.notes ?? "",
     paymentDate: dayKey(payment.date) ?? "",
     dueDate: dayKey(payment.dueDate) ?? "",
-    amount: String(payment.amount ?? ""),
+    amount: typedAmountOf(currencyRow(payment), payment.amount),
     paymentMethod: PAYMENT_METHOD_OPTIONS.some((m) => m.value === payment.method) ? (payment.method as string) : "bank_transfer",
     checkNumber: payment.checkNumber ?? "",
     referenceNumber: payment.referenceNumber ?? "",
@@ -94,6 +102,14 @@ export default function PropertyIncomeEditDialog({
   }
   const lease = form ? leases.find((l) => l.id === form.leaseId) ?? null : null;
   const yearly = lease?.periodMonths === 12;
+  const row = currencyRow(payment);
+  const money = useMoneyCurrency({
+    open: Boolean(payment),
+    initial: row,
+    known: knowsCurrency(row),
+    accountCurrency: accounts.find((a) => a.id === form?.accountId)?.currency ?? null,
+    date: form?.paymentDate,
+  });
 
   const isCheck = form?.paymentMethod === "check";
   const set = (key: keyof Form, value: string) => setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -110,6 +126,10 @@ export default function PropertyIncomeEditDialog({
     }
     if (!(Number(form.amount) > 0)) {
       toast.error("יש להזין סכום תקין.");
+      return;
+    }
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      toast.error(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
       return;
     }
     if (accounts.length > 0 && !form.accountId) {
@@ -143,6 +163,20 @@ export default function PropertyIncomeEditDialog({
         : rentLease && saved.periodStart
           ? { countsAsRent: true, leaseId: rentLease.id, rentPeriodStart: saved.periodStart, rentPeriods, rentAllocation: null }
           : { countsAsRent: true };
+    // In US$ or C$: the amount as typed goes to the route, which works out the
+    // shekels at the rate; the row on screen shows them meanwhile.
+    const typed = Number(saved.amount);
+    const currencyBody = money.body();
+    const foreignCurrency = money.known && isForeignCurrency(money.currency) ? money.currency : null;
+    const shekels = foreignCurrency ? money.shekels(typed) ?? payment.amount : typed;
+    const foreignPatch = money.known
+      ? {
+          foreign:
+            foreignCurrency && money.rate
+              ? { currency: foreignCurrency, amount: typed, rate: money.rate, rateManual: money.manual }
+              : null,
+        }
+      : {};
     onClose();
     scheduleDeferredEdit({
       scope: "property-payment",
@@ -152,7 +186,8 @@ export default function PropertyIncomeEditDialog({
         notes: saved.title.trim() || null,
         date: saved.paymentDate,
         dueDate: saved.dueDate || null,
-        amount: Number(saved.amount),
+        amount: shekels,
+        ...foreignPatch,
         method: saved.paymentMethod,
         checkNumber: saved.paymentMethod === "check" ? saved.checkNumber || null : null,
         referenceNumber: saved.referenceNumber.trim() || null,
@@ -168,7 +203,8 @@ export default function PropertyIncomeEditDialog({
             business_domain: "property_management",
             payment_date: saved.paymentDate,
             due_date: saved.dueDate || null,
-            amount_total: Number(saved.amount),
+            amount_total: typed,
+            ...currencyBody,
             payment_method: saved.paymentMethod,
             check_number: saved.paymentMethod === "check" ? saved.checkNumber || null : null,
             reference_number: saved.referenceNumber.trim(),
@@ -271,7 +307,7 @@ export default function PropertyIncomeEditDialog({
           ) : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="סכום">
-              <CurrencyInput value={form.amount} onChange={(e) => set("amount", e.target.value)} />
+              <CurrencyAmountInput money={money} value={form.amount} onChange={(e) => set("amount", e.target.value)} />
             </Field>
             <Field label="אמצעי תשלום">
               <NativeSelect
