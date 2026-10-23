@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/recurring-tasks",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/fx-rates",
+      "schedule": "0 14,19 * * *"
     }
   ]
 }
