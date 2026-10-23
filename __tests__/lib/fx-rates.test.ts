@@ -3,6 +3,7 @@ import {
   boiRatesUrl,
   fetchBoiRates,
   FX_HISTORY_START,
+  loadTodayFxRates,
   parseBoiCsv,
   shiftDateKey,
   syncFxRates,
@@ -158,5 +159,39 @@ describe("syncFxRates", () => {
     const notFound = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
     const result = await syncFxRates(client, { today: "2026-10-23", fetchImpl: notFound });
     expect(result).toMatchObject({ saved: 0, latest: { USD: "2026-10-10", CAD: "2026-10-22" }, stale: ["USD"] });
+  });
+});
+
+describe("loadTodayFxRates", () => {
+  function ratesTable(rows: Record<string, { rate_date: string; rate: string } | null>, failing: string[] = []) {
+    return {
+      from: () => {
+        let currency = "";
+        const query = {
+          select: () => query,
+          eq: (_column: string, value: string) => {
+            currency = value;
+            return query;
+          },
+          order: () => query,
+          limit: () => query,
+          maybeSingle: async () =>
+            failing.includes(currency) ? { data: null, error: { message: "down" } } : { data: rows[currency] ?? null, error: null },
+        };
+        return query;
+      },
+    } as never;
+  }
+
+  it("each currency's newest rate and its day", async () => {
+    const rates = await loadTodayFxRates(
+      ratesTable({ USD: { rate_date: "2026-10-22", rate: "3.107000" }, CAD: { rate_date: "2026-10-22", rate: "2.213700" } })
+    );
+    expect(rates).toEqual({ USD: { rate: 3.107, date: "2026-10-22" }, CAD: { rate: 2.2137, date: "2026-10-22" } });
+  });
+
+  it("a currency it can't read is left out", async () => {
+    const rates = await loadTodayFxRates(ratesTable({ USD: { rate_date: "2026-10-22", rate: "3.107" } }, ["CAD"]));
+    expect(rates).toEqual({ USD: { rate: 3.107, date: "2026-10-22" } });
   });
 });

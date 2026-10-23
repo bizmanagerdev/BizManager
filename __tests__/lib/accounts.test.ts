@@ -943,3 +943,51 @@ describe("loadAccountsOverview — a row in US$ or C$", () => {
     expect(acc.ledger.find((row) => row.id === "e:e1:p")).toMatchObject({ amount: 1106.85, foreign: { currency: "CAD", amount: 500 } });
   });
 });
+
+describe("loadAccountsOverview — an account kept in US$ (2026-10-23)", () => {
+  const chase = account({ id: "chase", name: "Chase", currency: "USD", opening_balance: 1000 });
+  const usd = (amount: number, rate: number) => ({ currency: "USD", foreign_amount: amount, fx_rate: rate, fx_rate_manual: false });
+
+  it("its balance, lines and running balance are in dollars, as on its statement; each line keeps its shekels", async () => {
+    const [acc] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [chase],
+        payments: [{ id: "p1", account_id: "chase", payment_date: "2024-02-01", amount_total: 1553.5, payment_status: "collected", ...usd(500, 3.107) }],
+        expenses: [{ id: "e1", account_id: "chase", expense_date: "2024-02-02", amount: 618.2, payment_status: "paid", ...usd(200, 3.091) }],
+      })
+    );
+    expect(acc.currency).toBe("USD");
+    expect(acc.postedIn).toBe(500);
+    expect(acc.postedOut).toBe(200);
+    expect(acc.currentBalance).toBe(1300);
+    // newest first: the expense, then the payment
+    expect(acc.ledger.map((row) => [row.id, row.amount, row.accountAmount, row.runningBalance])).toEqual([
+      ["e:e1", 618.2, 200, 1300],
+      ["p:p1", 1553.5, 500, 1500],
+    ]);
+  });
+
+  it("a line's 'נבדק מול הבנק' tick is kept in dollars", async () => {
+    const [acc] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [chase],
+        payments: [{ id: "p1", account_id: "chase", payment_date: "2024-02-01", amount_total: 1553.5, payment_status: "collected", ...usd(500, 3.107) }],
+        account_ledger_checks: [{ account_id: "chase", entry_key: "p:p1", amount_at_check: 500, date_at_check: "2024-02-01" }],
+      })
+    );
+    expect(acc.ledger[0].bankChecked).toBe(true);
+  });
+
+  it("a shekel account beside it is as it was", async () => {
+    const overview = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [chase, account()],
+        payments: [{ id: "p2", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "collected" }],
+      })
+    );
+    const shekels = overview.find((a) => a.id === "acc1")!;
+    expect(shekels.currency).toBe("ILS");
+    expect(shekels.currentBalance).toBe(1500);
+    expect(shekels.ledger[0].accountAmount).toBe(500);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foreignShare, readForeignMoney } from "@/lib/fx/currencies";
+import { foreignShare, readForeignMoney, shekelsToday } from "@/lib/fx/currencies";
 import { formatCurrencyAmount, formatMoneyWithForeign, formatShekelNote } from "@/lib/money";
 
 // A money row in US$ or C$ keeps its shekels in its usual column, and beside
@@ -60,5 +60,17 @@ describe("the money format for US$ and C$", () => {
       "$1,000 (≈ ₪3,107)"
     );
     expect(formatMoneyWithForeign(3107, null)).toBe("₪3,107");
+  });
+});
+
+describe("shekelsToday", () => {
+  const rates = { USD: { rate: 3.107, date: "2026-10-22" } };
+  it("a US$ amount at today's rate; shekels are themselves", () => {
+    expect(shekelsToday(1300, "USD", rates)).toBe(4039.1);
+    expect(shekelsToday(-50, "USD", rates)).toBe(-155.35);
+    expect(shekelsToday(500, "ILS", rates)).toBe(500);
+  });
+  it("no rate for the currency: nothing to say", () => {
+    expect(shekelsToday(100, "CAD", rates)).toBeNull();
   });
 });

@@ -15,6 +15,8 @@ import { fetchAccountsDirect, saveAccountDirect, deleteAccountDirect } from "@/l
 import { toHebrewError } from "@/lib/error-messages";
 import { invalidateAccountsCache } from "@/components/financial/AccountSelect";
 import { scheduleDeferredAction, registerReversibleAction } from "@/lib/undo-engine";
+import { CURRENCY_NAME, CURRENCY_SYMBOL, type CurrencyCode } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 
 const ils = new Intl.NumberFormat("he-IL", {
   style: "currency",
@@ -22,10 +24,19 @@ const ils = new Intl.NumberFormat("he-IL", {
   maximumFractionDigits: 0,
 });
 
+// The currency an account is kept in (owner, 2026-10-23: Chase is in dollars)
+// — its opening balance and its register on חשבונות are in it.
+const ACCOUNT_CURRENCIES: Array<{ value: CurrencyCode; label: string }> = [
+  { value: "ILS", label: "₪ שקל" },
+  { value: "USD", label: "$ דולר" },
+  { value: "CAD", label: "C$ דולר קנדי" },
+];
+
 type FormState = {
   id: string | null;
   name: string;
   kind: string;
+  currency: CurrencyCode;
   openingBalance: string;
   openingDate: string;
   isActive: boolean;
@@ -34,7 +45,17 @@ type FormState = {
 };
 
 function emptyForm(): FormState {
-  return { id: null, name: "", kind: "bank", openingBalance: "", openingDate: "", isActive: true, notes: "", accountNumber: "" };
+  return {
+    id: null,
+    name: "",
+    kind: "bank",
+    currency: "ILS",
+    openingBalance: "",
+    openingDate: "",
+    isActive: true,
+    notes: "",
+    accountNumber: "",
+  };
 }
 
 function toForm(account: Account): FormState {
@@ -42,6 +63,7 @@ function toForm(account: Account): FormState {
     id: account.id,
     name: account.name,
     kind: account.kind,
+    currency: account.currency ?? "ILS",
     openingBalance: String(account.openingBalance ?? 0),
     openingDate: account.openingDate,
     isActive: account.isActive,
@@ -84,6 +106,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
       id: form.id ?? undefined,
       name: form.name.trim(),
       kind: form.kind,
+      currency: form.currency,
       opening_balance: balanceNum,
       opening_date: form.openingDate,
       is_active: form.isActive,
@@ -97,6 +120,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
       const patched: Partial<Account> = {
         name: payload.name,
         kind: payload.kind as Account["kind"],
+        currency: payload.currency,
         openingBalance: payload.opening_balance,
         openingDate: payload.opening_date,
         isActive: payload.is_active,
@@ -207,6 +231,11 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
                     <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
                       {getAccountKindLabel(account.kind)}
                     </span>
+                    {account.currency && account.currency !== "ILS" && (
+                      <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                        {CURRENCY_NAME[account.currency]}
+                      </span>
+                    )}
                     {!account.isActive && (
                       <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
                         לא פעיל
@@ -219,7 +248,13 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
                         <span dir="ltr">{account.accountNumber}</span> ·{" "}
                       </>
                     )}
-                    יתרת פתיחה {ils.format(account.openingBalance)} · נכון ל-{account.openingDate}
+                    יתרת פתיחה{" "}
+                    <span dir="ltr">
+                      {account.currency && account.currency !== "ILS"
+                        ? formatCurrencyAmount(account.openingBalance, account.currency)
+                        : ils.format(account.openingBalance)}
+                    </span>{" "}
+                    · נכון ל-{account.openingDate}
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -292,10 +327,39 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
               </div>
             </div>
 
+            <div className="space-y-1">
+              <label className="text-sm font-medium">מטבע</label>
+              <div className="flex gap-1 rounded-lg border bg-secondary/40 p-1">
+                {ACCOUNT_CURRENCIES.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    aria-pressed={form.currency === c.value}
+                    onClick={() => setForm((f) => ({ ...f, currency: c.value }))}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      form.currency === c.value
+                        ? "bg-background shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              {/* The database refuses a change once there are rows in
+                  another currency — saying it here saves the surprise. */}
+              {form.id ? (
+                <p className="text-xs text-muted-foreground">
+                  אפשר לשנות את המטבע רק כשאין בחשבון תנועות במטבע אחר.
+                </p>
+              ) : null}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-sm font-medium">יתרת פתיחה</label>
                 <CurrencyInput
+                  symbol={CURRENCY_SYMBOL[form.currency]}
                   value={form.openingBalance}
                   onChange={(e) => setForm((f) => ({ ...f, openingBalance: e.target.value }))}
                 />

@@ -47,6 +47,7 @@ import { deleteCardCharge } from "@/lib/financial/cardChargesClient";
 import { deleteAccountTransfer } from "@/lib/financial/transfersClient";
 import type { Loan } from "@/lib/loans";
 import { formatCurrencyAmount, formatMoneyRounded, formatShekelNote } from "@/lib/money";
+import { CURRENCY_SYMBOL, shekelsToday, type CurrencyCode, type ForeignCurrency, type TodayFxRates } from "@/lib/fx/currencies";
 import { formatEnteredLabel, formatShortDate } from "@/lib/date";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 
@@ -70,6 +71,22 @@ const ExpenseDialog = dynamic(
 // Dates go through lib/date's formatShortDate: a register day is a calendar
 // day, and `new Date("2026-10-14")` read on the device's clock showed 13/10 on
 // a phone set to US time.
+
+// An account in US$ or C$ (owner, 2026-10-23: Chase) is read in its own
+// currency, as its bank's statement is: its balance, each line, the running
+// balance, the month's totals and the opening balance — cents kept, since the
+// statement has them. Under its balance, what it's worth in shekels at today's
+// rate; the total of all the accounts is in shekels, each at today's rate.
+function formatAccountMoney(value: number, currency: CurrencyCode | undefined) {
+  return !currency || currency === "ILS" ? formatMoneyRounded(value) : formatCurrencyAmount(value, currency);
+}
+
+/** "$1 = ₪3.107 (22/10)" — the rate a balance's shekels are worked out at. */
+function rateLabel(currency: ForeignCurrency, rates: TodayFxRates) {
+  const today = rates[currency];
+  if (!today) return null;
+  return `${CURRENCY_SYMBOL[currency]}1 = ₪${today.rate} (${formatShortDate(today.date).slice(0, 5)})`;
+}
 
 function monthLabel(monthKey: string) {
   const [year, month] = monthKey.split("-");
@@ -128,8 +145,10 @@ function AccountSummaryCard({
   showingUnchecked,
   onToggleUnchecked,
   searchCount,
+  fxRates,
 }: {
   account: AccountWithLedger;
+  fxRates: TodayFxRates;
   selected: boolean;
   onSelect: () => void;
   /** Rows on its register not yet ticked "נבדק מול הבנק". */
@@ -142,6 +161,8 @@ function AccountSummaryCard({
 }) {
   const kindLabel = getAccountKindLabel(account.kind);
   const hasRows = account.ledger.some((row) => row.posted);
+  const currency = account.currency ?? "ILS";
+  const balanceToday = currency === "ILS" ? null : shekelsToday(account.currentBalance, currency, fxRates);
   return (
     // The card selects the account; its "N לא נבדקו" line below opens it on
     // just the rows not yet compared with the bank, and again shows them all
@@ -229,7 +250,18 @@ function AccountSummaryCard({
             >
               {account.currentBalance < 0 ? "-" : "+"}
             </span>
-            {formatMoneyRounded(Math.abs(account.currentBalance))}
+            {formatAccountMoney(Math.abs(account.currentBalance), currency)}
+            {/* A US$ or C$ balance: its shekels at today's rate. */}
+            {balanceToday !== null && (
+              <span
+                className={cn(
+                  "block text-center text-[0.688rem] font-normal",
+                  selected ? "text-primary-foreground/75" : "text-muted-foreground"
+                )}
+              >
+                {formatShekelNote(balanceToday)}
+              </span>
+            )}
           </span>
         </span>
         {/* No expected amounts here any more. An account shows what actually
@@ -297,10 +329,13 @@ function AccountTotalsCard({
   total,
   positive,
   negative,
+  foreign,
 }: {
   total: number;
   positive: number;
   negative: number;
+  /** The US$ and C$ inside the total, and the rate each was counted at. */
+  foreign: Array<{ currency: ForeignCurrency; amount: number; rate: string | null }>;
 }) {
   return (
     <div className="flex h-full w-48 shrink-0 flex-col items-stretch justify-center gap-1.5 rounded-lg border border-secondary/40 bg-secondary/5 p-3 text-right">
@@ -333,6 +368,19 @@ function AccountTotalsCard({
           שלילי <span dir="ltr">{formatMoneyRounded(negative)}</span>
         </span>
       </span>
+      {foreign.map((item) => (
+        <span key={item.currency} className="text-[0.688rem] text-muted-foreground">
+          כולל <span dir="ltr">{formatCurrencyAmount(item.amount, item.currency)}</span>
+          {item.rate ? (
+            <>
+              {" "}
+              בשער <span dir="ltr">{item.rate}</span>
+            </>
+          ) : (
+            " — אין שער להיום"
+          )}
+        </span>
+      ))}
     </div>
   );
 }
@@ -345,6 +393,7 @@ export default function BankClient({
   recurringProperties = [],
   merchantMemory = {},
   dataIncomplete = false,
+  fxRates = {},
 }: {
   accounts: AccountWithLedger[];
   /** For a loan/loan_repayment row's inline edit — the full computed shape
@@ -364,6 +413,9 @@ export default function BankClient({
    *  understated, not just "no activity". Reported to Sentry already; this
    *  is the visible half of that same fix. */
   dataIncomplete?: boolean;
+  /** Each currency's newest Bank of Israel rate — a US$ or C$ account's
+   *  shekels today. */
+  fxRates?: TodayFxRates;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -375,7 +427,10 @@ export default function BankClient({
   // there and move the button to be near the icons"). Computed here (before
   // the accounts.length===0 early return below) so these hooks are always
   // called, never conditionally.
-  const totalLiquidity = accounts.filter((a) => a.isActive).reduce((sum, a) => sum + a.currentBalance, 0);
+  // In shekels: a US$ or C$ account at today's rate (one with no rate to
+  // use is left out, and the card says so).
+  const shekelBalance = (a: AccountWithLedger) => shekelsToday(a.currentBalance, a.currency ?? "ILS", fxRates) ?? 0;
+  const totalLiquidity = accounts.filter((a) => a.isActive).reduce((sum, a) => sum + shekelBalance(a), 0);
   // חיובי/שלילי split for the summary card at the end of the account strip
   // (design review, 2026-08-31: "it has room for the split I keep
   // suggesting"). Positive and negative balances summed separately —
@@ -383,10 +438,20 @@ export default function BankClient({
   // === totalLiquidity.
   const positiveLiquidity = accounts
     .filter((a) => a.isActive && a.currentBalance > 0)
-    .reduce((sum, a) => sum + a.currentBalance, 0);
+    .reduce((sum, a) => sum + shekelBalance(a), 0);
   const negativeLiquidity = accounts
     .filter((a) => a.isActive && a.currentBalance < 0)
-    .reduce((sum, a) => sum + a.currentBalance, 0);
+    .reduce((sum, a) => sum + shekelBalance(a), 0);
+  const foreignHoldings = (["USD", "CAD"] as const)
+    .map((currency) => ({
+      currency,
+      amount: accounts
+        .filter((a) => a.isActive && a.currency === currency)
+        .reduce((sum, a) => sum + a.currentBalance, 0),
+      rate: rateLabel(currency, fxRates),
+      held: accounts.some((a) => a.isActive && a.currency === currency),
+    }))
+    .filter((item) => item.held);
   const headerAction = useMemo(
     () => (
       // mt-1.5: a little breathing room above the label — the 60px bar's
@@ -587,7 +652,7 @@ export default function BankClient({
   // unticked, whichever request the network happens to finish first.
   const checkQueue = useRef(new Map<string, Promise<void>>());
   const localCheckKey = (accountId: string, row: AccountLedgerEntry) =>
-    `${accountId}|${row.id}|${ledgerSignedAmount(row.type, row.amount)}|${row.date}`;
+    `${accountId}|${row.id}|${ledgerSignedAmount(row.type, row.accountAmount)}|${row.date}`;
   const isRowChecked = (accountId: string, row: AccountLedgerEntry) =>
     localChecks.get(localCheckKey(accountId, row)) ?? row.bankChecked;
   const uncheckedCount = (account: AccountWithLedger) =>
@@ -607,7 +672,7 @@ export default function BankClient({
           body: JSON.stringify({
             account_id: accountId,
             entry_key: row.id,
-            amount: ledgerSignedAmount(row.type, row.amount),
+            amount: ledgerSignedAmount(row.type, row.accountAmount),
             date: ledgerDay(row.date),
             checked,
           }),
@@ -816,8 +881,8 @@ export default function BankClient({
             allGroups.push({ month, items: [], in: 0, out: 0, closing: 0, unchecked: 0 }) - 1
           ] as (typeof allGroups)[number]);
     group.items.push(row);
-    if (row.type === "in") group.in += row.amount;
-    else group.out += row.amount;
+    if (row.type === "in") group.in += row.accountAmount;
+    else group.out += row.accountAmount;
     if (!hiddenLedgerRowIds.has(row.id) && !isRowChecked(selected.id, row)) group.unchecked += 1;
   }
   // End-of-month balance: the running balance of that month's last row. Walk
@@ -943,10 +1008,16 @@ export default function BankClient({
               showingUnchecked={account.id === selected.id && checkFilter === "unchecked"}
               onToggleUnchecked={() => toggleUncheckedFor(account.id)}
               searchCount={searchByAccount ? (searchByAccount.get(account.id)?.items.length ?? 0) : null}
+              fxRates={fxRates}
             />
           </div>
         ))}
-        <AccountTotalsCard total={totalLiquidity} positive={positiveLiquidity} negative={negativeLiquidity} />
+        <AccountTotalsCard
+          total={totalLiquidity}
+          positive={positiveLiquidity}
+          negative={negativeLiquidity}
+          foreign={foreignHoldings}
+        />
       </div>
 
       {/* Register for the selected account. Scrolls WITHIN this bounded
@@ -1131,19 +1202,19 @@ export default function BankClient({
                       <span dir="ltr" className="hidden items-center gap-2 tabular-nums sm:flex">
                         {group.in > 0 && (
                           <span className="whitespace-nowrap text-success">
-                            +{formatMoneyRounded(group.in)}
+                            +{formatAccountMoney(group.in, selected.currency)}
                           </span>
                         )}
                         {group.out > 0 && (
                           <span className="whitespace-nowrap text-destructive">
-                            -{formatMoneyRounded(group.out)}
+                            -{formatAccountMoney(group.out, selected.currency)}
                           </span>
                         )}
                       </span>
                       {/* Where the account stood when the month ended. */}
                       <span className="hidden text-muted-foreground/70 sm:inline">יתרה</span>
                       <span dir="ltr" className="whitespace-nowrap tabular-nums font-semibold text-foreground">
-                        {formatMoneyRounded(group.closing)}
+                        {formatAccountMoney(group.closing, selected.currency)}
                       </span>
                     </span>
                   </button>
@@ -1198,8 +1269,8 @@ export default function BankClient({
                                 : formatMoneyRounded(row.amount)
                             )}
                           </div>
-                          {/* US$ or C$: what it is in shekels, which is what
-                              the balance counts. */}
+                          {/* US$ or C$: its shekels, at the rate of its own
+                              day — what the books count it as. */}
                           {row.foreign && (
                             <div dir="ltr" className="text-[11px] tabular-nums text-muted-foreground">
                               {paint(formatShekelNote(row.amount))}
@@ -1207,7 +1278,7 @@ export default function BankClient({
                           )}
                           {row.runningBalance !== null && (
                             <div dir="ltr" className="text-xs tabular-nums text-muted-foreground">
-                              {formatMoneyRounded(row.runningBalance)}
+                              {formatAccountMoney(row.runningBalance, selected.currency)}
                             </div>
                           )}
                         </div>
@@ -1466,8 +1537,14 @@ export default function BankClient({
               transactions, like a footnote, instead of being the first thing
               you scroll past or permanent sticky-header real estate. */}
           <div className="border-t px-3 py-1.5 text-xs text-muted-foreground">
-            יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
+            יתרת פתיחה <span dir="ltr">{formatAccountMoney(selected.openingBalance, selected.currency)}</span> · נכון ל-
             <span dir="ltr">{formatShortDate(selected.openingDate)}</span>
+            {selected.currency && selected.currency !== "ILS" && rateLabel(selected.currency, fxRates) ? (
+              <>
+                {" "}
+                · שער יציג היום <span dir="ltr">{rateLabel(selected.currency, fxRates)}</span>
+              </>
+            ) : null}
           </div>
           </div>
         </CardContent>

@@ -72,6 +72,18 @@ export function readForeignMoney(row: {
   };
 }
 
+/** Each currency's latest Bank of Israel rate, and the day it is of — what a
+ *  US$ balance is worth in shekels today (lib/fx/rates.ts loadTodayFxRates). */
+export type TodayFxRates = Partial<Record<ForeignCurrency, { rate: number; date: string }>>;
+
+/** An amount in its currency, in shekels at today's rate; null when there's
+ *  no rate to use. Shekels are themselves. */
+export function shekelsToday(amount: number, currency: CurrencyCode, rates: TodayFxRates): number | null {
+  if (currency === "ILS") return amount;
+  const today = rates[currency];
+  return today ? Math.round(amount * today.rate * 100) / 100 : null;
+}
+
 /** The foreign money behind part of a row's shekels — a partly paid expense's
  *  paid share, at the row's own rate. The whole row keeps its exact amount. */
 export function foreignShare(foreign: ForeignMoney, shekels: number, rowShekels: number): ForeignMoney {

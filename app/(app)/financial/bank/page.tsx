@@ -8,6 +8,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { loadAccountsOverview } from "@/lib/accounts";
 import { fetchLoans } from "@/lib/loans";
+import { loadTodayFxRates } from "@/lib/fx/rates";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
 import { propertyDisplayName } from "@/lib/properties";
 import { BANK_STRIP_COOKIE, bankStripStyle } from "@/lib/ui/bank-strip-height";
@@ -43,7 +44,7 @@ export default async function BankPage({
   }
 
   const params = await searchParams;
-  const [accounts, loans, { data: projectRows }, { data: propertyRows }, { data: mappingRows }] = await Promise.all([
+  const [accounts, loans, { data: projectRows }, { data: propertyRows }, { data: mappingRows }, fxRates] = await Promise.all([
     loadAccountsOverview(supabase),
     // For the register's inline "עריכת הלוואה"/"עריכת החזר" — a loan/loan_repayment
     // row needs the full computed Loan shape (outstanding, plannedInstallments…),
@@ -62,6 +63,8 @@ export default async function BankPage({
     supabase
       .from("expense_merchant_mappings")
       .select("merchant_key,business_domain,project_id,property_id,category"),
+    // A US$ or C$ account's balance in shekels, at today's rate.
+    loadTodayFxRates(supabase),
   ]);
 
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
@@ -108,6 +111,7 @@ export default async function BankPage({
           recurringProperties={recurringProperties}
           merchantMemory={merchantMemory}
           dataIncomplete={accounts.dataIncomplete}
+          fxRates={fxRates}
         />
       </div>
     </AppShell>

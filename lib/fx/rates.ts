@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { FOREIGN_CURRENCIES, type ForeignCurrency } from "@/lib/fx/currencies";
+import { FOREIGN_CURRENCIES, type ForeignCurrency, type TodayFxRates } from "@/lib/fx/currencies";
 import { israelDateKey } from "@/lib/timezone";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -132,6 +132,30 @@ export function shiftDateKey(dateKey: string, days: number): string {
 
 function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+/** Each currency's newest rate — today's, or the last one before today on a
+ *  weekend, a holiday or before 15:30. A currency whose read fails is left
+ *  out (the page shows its balance without the shekels then). */
+export async function loadTodayFxRates(supabase: SupabaseClient): Promise<TodayFxRates> {
+  const rates: TodayFxRates = {};
+  await Promise.all(
+    FOREIGN_CURRENCIES.map(async (currency) => {
+      const { data, error } = await supabase
+        .from("fx_rates")
+        .select("rate_date,rate")
+        .eq("currency", currency)
+        .order("rate_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const row = data as { rate_date?: string; rate?: number | string } | null;
+      const rate = Number(row?.rate);
+      if (!error && row?.rate_date && Number.isFinite(rate) && rate > 0) {
+        rates[currency] = { rate, date: row.rate_date };
+      }
+    })
+  );
+  return rates;
 }
 
 export type FxSyncResult = {

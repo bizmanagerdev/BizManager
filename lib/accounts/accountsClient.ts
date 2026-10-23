@@ -2,6 +2,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { loadAccounts, type Account } from "@/lib/accounts";
 
 const ALLOWED_KINDS = new Set(["bank", "cash", "card"]);
+const ALLOWED_CURRENCIES = new Set(["ILS", "USD", "CAD"]);
 
 /**
  * RLS ("Staff manage accounts") already scopes reads/writes to admin+office —
@@ -28,6 +29,7 @@ export async function fetchAccountsDirect(): Promise<Account[]> {
       id: typeof row.id === "string" ? row.id : "",
       name: (typeof row.name === "string" && row.name.trim()) || "חשבון",
       kind: (ALLOWED_KINDS.has(kind) ? kind : "bank") as Account["kind"],
+      currency: "ILS",
       // Not exposed to this caller — the picker only ever reads id/name/kind.
       openingBalance: 0,
       openingDate: "1970-01-01",
@@ -42,6 +44,9 @@ export type SaveAccountInput = {
   id?: string;
   name: string;
   kind: string;
+  /** ₪, US$ or C$. The database won't change it once the account has rows in
+   *  another currency, and says so. */
+  currency?: string;
   opening_balance: number;
   opening_date: string;
   is_active?: boolean;
@@ -55,6 +60,9 @@ export async function saveAccountDirect(
 ): Promise<{ ok: true; id?: string } | { ok: false; error: string }> {
   if (!input.name.trim()) return { ok: false, error: "יש להזין שם לחשבון." };
   if (!ALLOWED_KINDS.has(input.kind)) return { ok: false, error: "סוג חשבון אינו תקין." };
+  if (input.currency !== undefined && !ALLOWED_CURRENCIES.has(input.currency)) {
+    return { ok: false, error: "מטבע החשבון אינו תקין." };
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.opening_date)) return { ok: false, error: "יש לבחור תאריך פתיחה." };
 
   const supabase = createSupabaseBrowserClient();
@@ -64,6 +72,7 @@ export async function saveAccountDirect(
       .update({
         name: input.name.trim(),
         kind: input.kind,
+        ...(input.currency ? { currency: input.currency } : {}),
         opening_balance: input.opening_balance,
         opening_date: input.opening_date,
         is_active: input.is_active !== false,
@@ -82,6 +91,7 @@ export async function saveAccountDirect(
     .insert({
       name: input.name.trim(),
       kind: input.kind,
+      currency: input.currency ?? "ILS",
       opening_balance: input.opening_balance,
       opening_date: input.opening_date,
       notes: input.notes?.trim() || null,

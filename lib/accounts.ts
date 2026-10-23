@@ -14,7 +14,14 @@ import { getBusinessDomainLabel } from "@/lib/expenses";
 import { propertyDisplayName } from "@/lib/properties";
 import { withSentry } from "@/lib/sentry-lazy";
 import { israelDateKey } from "@/lib/timezone";
-import { foreignShare, MONEY_CURRENCY_COLUMNS, readForeignMoney, type ForeignMoney } from "@/lib/fx/currencies";
+import {
+  foreignShare,
+  isForeignCurrency,
+  MONEY_CURRENCY_COLUMNS,
+  readForeignMoney,
+  type CurrencyCode,
+  type ForeignMoney,
+} from "@/lib/fx/currencies";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Accounts layer (חשבונות) — real money containers with a running balance.
@@ -23,6 +30,12 @@ import { foreignShare, MONEY_CURRENCY_COLUMNS, readForeignMoney, type ForeignMon
 //
 // for rows dated on/after the account's opening_date (everything before is
 // assumed already inside the opening figure → never double-counted).
+//
+// In the account's OWN currency (2026-10-23): shekels for a shekel account,
+// dollars for a US$ one — its opening balance, every line and its running
+// balance, as its bank's statement shows them. Each line keeps its shekels too
+// (`amount`), at the rate of its own day; what a US$ balance is worth in
+// shekels today is the page's to say (lib/fx/rates.ts loadTodayFxRates).
 //
 // "Posted" = money that actually moved/cleared, mirroring the financial engine's
 // stage model: a collected payment, a paid expense, a recorded worker payment, a
@@ -47,6 +60,9 @@ export type Account = {
   id: string;
   name: string;
   kind: AccountKind;
+  /** ₪, US$ or C$ (owner, 2026-10-23: Chase is in dollars). The opening
+   *  balance and the register are in it. Absent where it isn't loaded: ₪. */
+  currency?: CurrencyCode;
   openingBalance: number;
   openingDate: string; // YYYY-MM-DD
   isActive: boolean;
@@ -131,6 +147,10 @@ export type AccountLedgerEntry = {
   /** The row's money in US$ or C$, when it's in one — `amount` is always its
    *  shekels (lib/fx/currencies.ts). Null or absent for shekels. */
   foreign?: ForeignMoney | null;
+  /** What it moved in the ACCOUNT's currency — `amount` on a shekel account,
+   *  its dollars on a US$ one. The running balance and the "נבדק מול הבנק"
+   *  tick are in it, as on the bank's statement. */
+  accountAmount: number;
   posted: boolean; // false = still expected (uncleared check / unpaid expense)
   /**
    * When the paperwork happened, if that's NOT the day the money moved — a
@@ -270,10 +290,12 @@ function intOrNull(value: unknown) {
 
 function mapAccount(row: Row): Account {
   const kind = str(row.kind);
+  const currency = str(row.currency)?.toUpperCase();
   return {
     id: str(row.id) ?? "",
     name: str(row.name)?.trim() || "חשבון",
     kind: (kind === "cash" || kind === "card" ? kind : "bank") as AccountKind,
+    currency: isForeignCurrency(currency) ? currency : "ILS",
     openingBalance: num(row.opening_balance),
     openingDate: str(row.opening_date) ?? "1970-01-01",
     isActive: row.is_active !== false,
@@ -284,7 +306,22 @@ function mapAccount(row: Row): Account {
 }
 
 const ACCOUNT_COLUMNS =
-  "id,name,kind,opening_balance,opening_date,is_active,sort_order,notes,account_number";
+  "id,name,kind,currency,opening_balance,opening_date,is_active,sort_order,notes,account_number";
+
+/**
+ * A register line's amount in its account's own currency: the shekels on a
+ * shekel account, the dollars on a US$ one. Every line on a US$ or C$ account
+ * is in that currency — the database refuses any other
+ * (supabase/migrations/20261023120000_money_currency.sql).
+ */
+export function amountInAccount(
+  account: Pick<Account, "currency">,
+  row: { amount: number; foreign?: ForeignMoney | null }
+): number {
+  const currency = account.currency ?? "ILS";
+  if (currency === "ILS") return row.amount;
+  return row.foreign && row.foreign.currency === currency ? row.foreign.amount : row.amount;
+}
 
 /** All accounts, active first then by sort_order then name. */
 export async function loadAccounts(
@@ -420,7 +457,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("loans", (from, to) =>
         supabase
           .from("loans")
-          .select("id,account_id,direction,loan_date,amount,lender,borrower,business_domain,created_at,created_by")
+          .select(`id,account_id,direction,loan_date,amount,lender,borrower,business_domain,created_at,created_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           .gte("loan_date", earliestOpening)
           .range(from, to)
@@ -436,7 +473,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           // every row this query CAN return already has account_id set, and a
           // still-planned installment never gets one (nothing's moved yet) —
           // so every row reaching this loop is safely a paid repayment.
-          .select("id,account_id,loan_id,repayment_date,amount,interest_amount,method,notes,created_at,created_by")
+          .select(`id,account_id,loan_id,repayment_date,amount,interest_amount,method,notes,created_at,created_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           .gte("repayment_date", earliestOpening)
           .range(from, to)
@@ -826,14 +863,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const date = dueDate && recordedDate && dueDate !== recordedDate ? dueDate : recordedDate;
     if (!date || date < account.openingDate) continue; // before go-live → in opening
     const posted = isCollectedPayment(status);
-    if (isRefund) {
-      if (posted) b.postedOut += amount;
-      else b.pendingOut += amount;
-    } else if (posted) {
-      b.postedIn += amount;
-    } else {
-      b.pendingIn += amount;
-    }
     b.rows.push({
       id: `p:${str(row.id) ?? ""}`,
       date,
@@ -883,8 +912,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     // Arrived only once someone confirms the deposit on צפי תזרים — not merely
     // because its date has come. (Date rule until the migration is run.)
     const posted = isSettlementArrived({ accountId: g.accountId, settlementDate: g.dueDate }, confirmations, todayIso);
-    if (posted) b.postedIn += g.amount;
-    else b.pendingIn += g.amount;
     b.rows.push({
       id: `ccb:${g.accountId}:${g.dueDate}`,
       date: g.dueDate,
@@ -986,7 +1013,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       },
     };
     if (postedAmount > 0) {
-      b.postedOut += postedAmount;
       b.rows.push({
         id: `e:${expenseId}`,
         date,
@@ -1003,7 +1029,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       });
     }
     if (pendingAmount > 0) {
-      b.pendingOut += pendingAmount;
       b.rows.push({
         id: `e:${expenseId}:p`,
         date,
@@ -1030,7 +1055,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     if (!date || date < account.openingDate) continue;
     const amount = Math.abs(num(row.amount));
     if (!amount) continue;
-    b.postedOut += amount;
     const workerName = workerNameById.get(str(row.user_id) ?? "");
     b.rows.push({
       id: `w:${str(row.id) ?? ""}`,
@@ -1101,8 +1125,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const amount = Math.abs(num(row.amount));
     if (!amount) continue;
     const taken = (str(row.direction) ?? "taken") === "taken";
-    if (taken) b.postedIn += amount;
-    else b.postedOut += amount;
     b.rows.push({
       id: `l:${str(row.id) ?? ""}`,
       date,
@@ -1112,6 +1134,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       href: `/financial/loans/${str(row.id) ?? ""}`,
       type: taken ? "in" : "out",
       amount,
+      foreign: absForeign(readForeignMoney(row)),
       posted: true,
       deleteRef: { kind: "loan", id: str(row.id) ?? "" },
       editRef: { kind: "loan", loanId: str(row.id) ?? "" },
@@ -1130,8 +1153,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     if (!amount) continue;
     const taken = (loanDirectionById.get(str(row.loan_id) ?? "") ?? "taken") === "taken";
     // taken loan → we repay (cash out); given loan → we get repaid (cash in).
-    if (taken) b.postedOut += amount;
-    else b.postedIn += amount;
     const repaymentId = str(row.id) ?? "";
     const loanId = str(row.loan_id) ?? "";
     b.rows.push({
@@ -1143,6 +1164,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       href: `/financial/loans/${loanId}`,
       type: taken ? "out" : "in",
       amount,
+      foreign: absForeign(readForeignMoney(row)),
       posted: true,
       deleteRef: { kind: "loan_repayment", id: repaymentId, loanId },
       editRef: {
@@ -1187,7 +1209,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       const card = str(cardRow?.card_label)?.trim() || "כרטיס אשראי";
       const statementId = str(cardRow?.statement_id);
       const b = buckets.get(to.id)!;
-      b.postedIn += amount;
       b.rows.push({
         id: `t:${id}:in`,
         date,
@@ -1213,7 +1234,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
 
     if (from && date >= from.openingDate) {
       const b = buckets.get(from.id)!;
-      b.postedOut += amount;
       b.rows.push({
         id: `t:${id}:out`,
         date,
@@ -1229,7 +1249,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     }
     if (to && date >= to.openingDate) {
       const b = buckets.get(to.id)!;
-      b.postedIn += amount;
       b.rows.push({
         id: `t:${id}:in`,
         date,
@@ -1253,7 +1272,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const amount = Math.abs(num(row.amount));
     if (!date || !amount || date < account.openingDate) continue;
     const b = buckets.get(account.id)!;
-    b.postedOut += amount;
     const cardLabel = str(row.card_label)?.trim() || "כרטיס אשראי";
     const statementId = str(row.statement_id) ?? "";
     b.rows.push({
@@ -1268,6 +1286,22 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       posted: true,
       deleteRef: { kind: "card_charge", id: str(row.id) ?? "" },
     });
+  }
+
+  // Each account's totals, from its lines, in the account's own currency.
+  for (const account of accounts) {
+    const b = buckets.get(account.id)!;
+    for (const row of b.rows) {
+      const value = amountInAccount(account, row);
+      if (row.type === "in") {
+        if (row.posted) b.postedIn += value;
+        else b.pendingIn += value;
+      } else if (row.posted) {
+        b.postedOut += value;
+      } else {
+        b.pendingOut += value;
+      }
+    }
   }
 
   return { buckets, failedTables };
@@ -1390,14 +1424,15 @@ export async function loadAccountsOverview(
       const recordedDate = row.recordedDate ?? null;
       const enteredAt = row.enteredAt ?? null;
       const enteredByName = row.enteredByName ?? null;
+      const accountAmount = amountInAccount(a, row);
       if (!row.posted) {
-        return { ...row, recordedDate, enteredAt, enteredByName, runningBalance: null, bankChecked: false };
+        return { ...row, accountAmount, recordedDate, enteredAt, enteredByName, runningBalance: null, bankChecked: false };
       }
-      running += row.type === "in" ? row.amount : -row.amount;
+      running += row.type === "in" ? accountAmount : -accountAmount;
       const check = checks.get(ledgerCheckKey(a.id, row.id));
       const bankChecked =
-        !!check && check.date === ledgerDay(row.date) && check.amount === ledgerSignedAmount(row.type, row.amount);
-      return { ...row, recordedDate, enteredAt, enteredByName, runningBalance: running, bankChecked };
+        !!check && check.date === ledgerDay(row.date) && check.amount === ledgerSignedAmount(row.type, accountAmount);
+      return { ...row, accountAmount, recordedDate, enteredAt, enteredByName, runningBalance: running, bankChecked };
     });
     return {
       ...a,

@@ -41,6 +41,8 @@ function row(over: Partial<AccountLedgerEntry> & Pick<AccountLedgerEntry, "id" |
     runningBalance: 0,
     bankChecked: false,
     ...over,
+    // A shekel account's line moves its own amount.
+    accountAmount: over.accountAmount ?? over.amount ?? 100,
   };
 }
 
@@ -177,5 +179,50 @@ describe("BankClient — נבדק מול הבנק", () => {
     fireEvent.click(box("חשמל"));
     fireEvent.click(box("שכר"));
     expect(screen.getByText("כל התנועות כאן נבדקו מול הבנק.")).toBeInTheDocument();
+  });
+});
+
+// An account kept in US$ (2026-10-23): read in dollars, as its statement is,
+// with its shekels at today's rate; the total of the accounts in shekels.
+describe("BankClient — an account in US$", () => {
+  const usd = (amount: number, rate: number) => ({ currency: "USD" as const, amount, rate, rateManual: false });
+  const chase = account({
+    id: "chase",
+    name: "Chase",
+    currency: "USD",
+    openingBalance: 1000,
+    currentBalance: 1300,
+    ledger: [
+      row({ id: "e:1", label: "Home Depot", amount: 618.2, accountAmount: 200, foreign: usd(200, 3.091), runningBalance: 1300, date: "2025-01-04" }),
+      row({ id: "p:1", label: "Zelle", type: "in", amount: 1553.5, accountAmount: 500, foreign: usd(500, 3.107), runningBalance: 1500, date: "2025-01-02" }),
+    ],
+  });
+  const shekels = account({ id: "acc1", name: "מזרחי עסקי", currentBalance: 1000, ledger: [] });
+  const fxRates = { USD: { rate: 3.107, date: "2026-10-22" } };
+
+  it("its card shows dollars, and their shekels at today's rate; the total counts them so", () => {
+    render(<BankClient accounts={[chase, shekels]} loans={[]} initialAccountId="chase" fxRates={fxRates} />);
+    expect(screen.getAllByText("$1,300").length).toBeGreaterThan(0);
+    expect(screen.getByText("≈ ₪4,039")).toBeInTheDocument();
+    // סך נזילות: ₪1,000 + $1,300 × 3.107
+    expect(screen.getAllByText("₪5,039").length).toBeGreaterThan(0);
+    expect(screen.getByText(/כולל/)).toHaveTextContent("כולל $1,300 בשער $1 = ₪3.107 (22/10)");
+  });
+
+  it("its register: each line in dollars with its own day's shekels, the running balance and the opening in dollars", () => {
+    render(<BankClient accounts={[chase, shekels]} loans={[]} initialAccountId="chase" fxRates={fxRates} />);
+    expect(screen.getAllByText("+$500").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("≈ ₪1,554").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$1,500").length).toBeGreaterThan(0);
+    expect(screen.getByText(/יתרת פתיחה/)).toHaveTextContent("יתרת פתיחה $1,000");
+    expect(screen.getByText(/יתרת פתיחה/)).toHaveTextContent("שער יציג היום $1 = ₪3.107 (22/10)");
+  });
+
+  it("a tick on a dollar line is saved in dollars", async () => {
+    render(<BankClient accounts={[chase, shekels]} loans={[]} initialAccountId="chase" fxRates={fxRates} />);
+    fireEvent.click(box("Zelle"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({ account_id: "chase", entry_key: "p:1", amount: 500 });
   });
 });

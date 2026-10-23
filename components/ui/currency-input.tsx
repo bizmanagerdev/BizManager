@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { applyMoneyKeystroke, groupMoneyDigits, stripMoneyGrouping } from "@/lib/money";
 
 /**
- * Money entry field: a regular Input with a fixed ₪ (shekel) marker.
+ * Money entry field: a regular Input with a fixed ₪ (shekel) marker — or the
+ * symbol of the currency it's in (`symbol="$"`, an account kept in dollars).
  *
  * The app is RTL and amounts are right-aligned, so the ₪ sits on the RIGHT,
  * immediately after the number — reading "1,234.50 ₪" like the he-IL currency
@@ -24,8 +25,8 @@ import { applyMoneyKeystroke, groupMoneyDigits, stripMoneyGrouping } from "@/lib
  */
 export const CurrencyInput = React.forwardRef<
   HTMLInputElement,
-  React.ComponentProps<typeof Input> & { containerClassName?: string; groupThousands?: boolean }
->(({ className, containerClassName, inputMode, groupThousands = true, type, value, onChange, ...props }, ref) => {
+  React.ComponentProps<typeof Input> & { containerClassName?: string; groupThousands?: boolean; symbol?: string }
+>(({ className, containerClassName, inputMode, groupThousands = true, symbol = "₪", type, value, onChange, ...props }, ref) => {
   const innerRef = React.useRef<HTMLInputElement | null>(null);
   const pendingCaret = React.useRef<number | null>(null);
   const grouping = groupThousands && value !== undefined;
@@ -98,14 +99,14 @@ export const CurrencyInput = React.forwardRef<
         data-1p-ignore="true"
         data-bwignore="true"
         data-form-type="other"
-        className={cn("pr-6 text-right", className)}
+        className={cn(symbol.length > 1 ? "pr-8" : "pr-6", "text-right", className)}
         {...props}
       />
       <span
         aria-hidden
         className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-sm text-muted-foreground"
       >
-        ₪
+        {symbol}
       </span>
     </div>
   );
