@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PAYMENT_SELECT } from "@/lib/payments";
+import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
 import { emptyProjectOwed, loadProjectOwed, type ProjectOwed } from "@/lib/projects/owed";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 
@@ -291,7 +292,7 @@ export function startProjectPageReads(supabase: SupabaseClient, id: string): Pro
     const primary = await supabase
       .from("expenses")
       .select(
-        "id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at,recurring_expense_template_id"
+        `id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at,recurring_expense_template_id,${MONEY_CURRENCY_COLUMNS}`
       )
       .order("expense_date", { ascending: false })
       .order("id")

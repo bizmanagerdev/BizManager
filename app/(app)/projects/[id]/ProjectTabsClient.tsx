@@ -111,6 +111,7 @@ import {
   toNumber,
 } from "./ProjectTabsClient.helpers";
 import { israelDateKey } from "@/lib/timezone";
+import { readForeignMoney } from "@/lib/fx/currencies";
 
 // Heavy financial-entry dialogs are lazy-loaded — their code only downloads when
 // the user opens "add expense" / "add income", keeping the initial bundle smaller.
@@ -1404,6 +1405,7 @@ export default function ProjectTabsClient({
         billed: false,
         billedAmount: null,
         amount: toNumber(payment.amount_total),
+        foreign: readForeignMoney(payment),
         account: accountName([payment.account_id]),
         hint: paymentHint,
         extras,
@@ -1498,6 +1500,7 @@ export default function ProjectTabsClient({
         billed,
         billedAmount,
         amount,
+        foreign: session || !item.expense ? null : readForeignMoney(item.expense),
         employeeId: session ? session.user_id : null,
         employeeName: session ? sessionEmployeeName : null,
         account: session

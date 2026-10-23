@@ -20,6 +20,12 @@ import {
 } from "./types";
 import { chunkStrings, isMissingColumnError, uniqueStrings } from "./utils";
 import { runTogether } from "@/lib/upload-together";
+import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
+
+/** The currency columns (2026-10-23) aren't in this database yet. */
+function isMissingCurrencyColumn(error: unknown) {
+  return MONEY_CURRENCY_COLUMNS.split(",").some((column) => isMissingColumnError(error, column));
+}
 
 // Look rows up by id, ID_CHUNK_SIZE ids per request. The chunks don't depend on
 // each other, so they go out together (up to 6 at once) instead of one round
@@ -71,6 +77,9 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
   // that never touches them now goes first; the two dead variants stay at
   // the end purely as a harmless safety net.
   const selectVariants = [
+    // With the currency (2026-10-23); the next one is for a database that
+    // doesn't have it yet.
+    `id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,account_id,${MONEY_CURRENCY_COLUMNS}`,
     "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,account_id",
     "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at",
     "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,recorded_by,created_at",
@@ -89,6 +98,7 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
     } catch (error) {
       lastError = error;
       if (
+        isMissingCurrencyColumn(error) ||
         isMissingColumnError(error, "target_type") ||
         isMissingColumnError(error, "target_id") ||
         isMissingColumnError(error, "project_id") ||
@@ -108,6 +118,7 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
 
 export async function scanExpenseRows(supabase: SupabaseClient, since?: string | null) {
   const selectVariants = [
+    `id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method,paid_date,account_id,installment_group_id,installment_index,installment_count,recurring_expense_template_id,${MONEY_CURRENCY_COLUMNS}`,
     "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method,paid_date,account_id,installment_group_id,installment_index,installment_count,recurring_expense_template_id",
     "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method,paid_date,account_id,installment_group_id,installment_index,installment_count",
     "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,created_at,payment_status,paid_amount,payment_method,paid_date,account_id",
@@ -125,6 +136,7 @@ export async function scanExpenseRows(supabase: SupabaseClient, since?: string |
     } catch (error) {
       lastError = error;
       if (
+        isMissingCurrencyColumn(error) ||
         isMissingColumnError(error, "recurring_expense_template_id") ||
         isMissingColumnError(error, "installment_group_id") ||
         isMissingColumnError(error, "installment_index") ||

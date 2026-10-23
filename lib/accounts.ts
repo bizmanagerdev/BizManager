@@ -14,6 +14,7 @@ import { getBusinessDomainLabel } from "@/lib/expenses";
 import { propertyDisplayName } from "@/lib/properties";
 import { withSentry } from "@/lib/sentry-lazy";
 import { israelDateKey } from "@/lib/timezone";
+import { foreignShare, MONEY_CURRENCY_COLUMNS, readForeignMoney, type ForeignMoney } from "@/lib/fx/currencies";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Accounts layer (חשבונות) — real money containers with a running balance.
@@ -127,6 +128,9 @@ export type AccountLedgerEntry = {
   href: string | null; // link to the source record (order / project / worker / loans page)
   type: "in" | "out";
   amount: number;
+  /** The row's money in US$ or C$, when it's in one — `amount` is always its
+   *  shekels (lib/fx/currencies.ts). Null or absent for shekels. */
+  foreign?: ForeignMoney | null;
   posted: boolean; // false = still expected (uncleared check / unpaid expense)
   /**
    * When the paperwork happened, if that's NOT the day the money moved — a
@@ -253,6 +257,12 @@ function str(value: unknown) {
   return typeof value === "string" ? value : null;
 }
 
+/** A register line's amount is unsigned (its side says in or out); so is its
+ *  foreign amount. */
+function absForeign(foreign: ForeignMoney | null): ForeignMoney | null {
+  return foreign && { ...foreign, amount: Math.abs(foreign.amount) };
+}
+
 function intOrNull(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
@@ -310,6 +320,7 @@ type RawLedgerEntry = {
   href: string | null;
   type: "in" | "out";
   amount: number;
+  foreign?: ForeignMoney | null;
   posted: boolean;
   transfer?: AccountTransferRef;
   deleteRef?: AccountDeleteRef;
@@ -370,7 +381,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("payments", (from, to) =>
         supabase
           .from("payments")
-          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain,created_at,recorded_by")
+          .select(`id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           // Either date may be the one inside the window: a check handed over
           // in May and cashed in July is May-dated but July money. And card
@@ -391,7 +402,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         supabase
           .from("expenses")
           .select(
-            "id,account_id,expense_date,paid_date,amount,paid_amount,payment_status,description,category,project_id,order_id,property_id,business_domain,payment_method,notes,created_at,recorded_by"
+            `id,account_id,expense_date,paid_date,amount,paid_amount,payment_status,description,category,project_id,order_id,property_id,business_domain,payment_method,notes,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`
           )
           .not("account_id", "is", null)
           .gte("expense_date", earliestOpening)
@@ -459,7 +470,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("payments", (from, to) =>
         supabase
           .from("payments")
-          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain,created_at,recorded_by")
+          .select(`id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
           .is("account_id", null)
           .eq("payment_method", "credit_card")
           .or(`payment_date.gte.${cardScanSince(earliestOpening)},due_date.gte.${earliestOpening}`)
@@ -843,6 +854,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           : null,
       type: isRefund ? "out" : "in",
       amount,
+      foreign: absForeign(readForeignMoney(row)),
       posted,
       deleteRef: {
         kind: "payment",
@@ -898,6 +910,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const status = str(row.payment_status)?.trim().toLowerCase() ?? "";
     const total = Math.abs(num(row.amount));
     const paid = Math.abs(num(row.paid_amount));
+    const foreign = absForeign(readForeignMoney(row));
     const label = str(row.description)?.trim() || str(row.category)?.trim() || "תשלום";
     const sublabel = composeSublabel({
       domain: str(row.business_domain),
@@ -983,6 +996,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         href,
         type: "out",
         amount: postedAmount,
+        foreign: foreign && foreignShare(foreign, postedAmount, total),
         posted: true,
         deleteRef,
         editRef,
@@ -999,6 +1013,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         href,
         type: "out",
         amount: pendingAmount,
+        foreign: foreign && foreignShare(foreign, pendingAmount, total),
         posted: false,
         deleteRef,
         editRef,

@@ -1672,3 +1672,26 @@ describe("the rent roll on the device", () => {
   });
 });
 
+
+describe("a money row's currency on the device (2026-10-23)", () => {
+  it("a row synced before the currency columns existed reads as Postgres's default: shekels", () => {
+    expect(coerceRow("payments", { id: "p1", amount_total: "100" })).toEqual({
+      id: "p1",
+      amount_total: 100,
+      currency: "ILS",
+      foreign_amount: null,
+      fx_rate: null,
+      fx_rate_manual: false,
+    });
+  });
+
+  it("a row in dollars keeps its dollars and rate, as numbers", () => {
+    expect(
+      coerceRow("expenses", { id: "e1", amount: "3107", currency: "USD", foreign_amount: "1000", fx_rate: "3.107", fx_rate_manual: 1 })
+    ).toMatchObject({ amount: 3107, currency: "USD", foreign_amount: 1000, fx_rate: 3.107, fx_rate_manual: true });
+  });
+
+  it("other tables get nothing added", () => {
+    expect(coerceRow("tasks", { id: "t1" })).toEqual({ id: "t1" });
+  });
+});

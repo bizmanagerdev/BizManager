@@ -252,3 +252,19 @@ describe("the expenses donut", () => {
     expect(donutSlices([])).toEqual([]);
   });
 });
+
+describe("money in US$ or C$ (2026-10-23)", () => {
+  it("a row keeps its shekels as its amount, and its dollars beside them", () => {
+    const usd = { currency: "USD" as const, amount: 1000, rate: 3.107, rateManual: false };
+    const cad = { currency: "CAD" as const, amount: 500, rate: 2.2137, rateManual: false };
+    const { done } = buildPropertyMovements(
+      input({
+        payments: [payment({ amount: 3107, foreign: usd })],
+        expenses: [expense({ amount: 1106.85, foreign: cad }), expense({ id: "e2" })],
+      })
+    );
+    expect(done.find((m) => m.key === "payment:p1")).toMatchObject({ amount: 3107, foreign: usd });
+    expect(done.find((m) => m.key === "expense:e1")).toMatchObject({ amount: 1106.85, foreign: cad });
+    expect(done.find((m) => m.key === "expense:e2")?.foreign).toBeNull();
+  });
+});

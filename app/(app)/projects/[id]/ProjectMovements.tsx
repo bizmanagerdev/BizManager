@@ -51,6 +51,8 @@ import { getStatusColor, getStatusLabel, type StatusColor } from "@/lib/ui/statu
 import type { FinancialAttachment } from "@/lib/payments";
 import type { LedgerGroupBy, LedgerSortBy, LedgerSortDirection } from "@/lib/projectLedgerPrefs";
 import { israelDateKey } from "@/lib/timezone";
+import type { ForeignMoney } from "@/lib/fx/currencies";
+import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
 import { formatIls, formatDate, formatDateTime, LtrInline } from "./ProjectTabsClient.helpers";
 
 export type Movement = {
@@ -78,6 +80,9 @@ export type Movement = {
    *  pass-through expense it's the same figure as `amount`. */
   billedAmount: number | null;
   amount: number | null;
+  /** The row's money in US$ or C$ — `amount` is its shekels, which every
+   *  total here adds up. Shown as "$1,000" with "≈ ₪3,107" under it. */
+  foreign?: ForeignMoney | null;
   /** Stable id + display name for "קיבוץ לפי עובד" — set on worker-cost rows
    *  (sessions, monthly salary). Null puts the row in the ungrouped bucket
    *  (payments, non-worker expenses have no single employee). */
@@ -153,9 +158,22 @@ function AmountCell({ movement, side }: { movement: Movement; side: "in" | "out"
   if (movement.amount === null || movement.direction !== side) {
     return <span className="text-muted-foreground/40">—</span>;
   }
+  const foreign = movement.foreign;
   return (
     <span className={cn("whitespace-nowrap", side === "in" ? "text-success" : "text-destructive")}>
-      <LtrInline>{formatIls(Math.abs(movement.amount))}</LtrInline>
+      <LtrInline>
+        {foreign ? formatCurrencyAmount(Math.abs(foreign.amount), foreign.currency) : formatIls(Math.abs(movement.amount))}
+      </LtrInline>
+      {foreign ? <ShekelNote shekels={Math.abs(movement.amount)} /> : null}
+    </span>
+  );
+}
+
+/** Under a US$ or C$ amount: its shekels, which the totals count. */
+function ShekelNote({ shekels }: { shekels: number }) {
+  return (
+    <span className="block text-[11px] font-normal text-muted-foreground">
+      <LtrInline>{formatShekelNote(shekels)}</LtrInline>
     </span>
   );
 }
@@ -732,10 +750,14 @@ export default function ProjectMovements({
                 <span className="block whitespace-nowrap font-semibold tabular-nums">
                   <span className={movement.direction === "in" ? "text-success" : "text-destructive"}>
                     <LtrInline>
-                      {movement.direction === "in" ? "+" : "-"} {formatIls(Math.abs(movement.amount ?? 0))}
+                      {movement.direction === "in" ? "+" : "-"}{" "}
+                      {movement.foreign
+                        ? formatCurrencyAmount(Math.abs(movement.foreign.amount), movement.foreign.currency)
+                        : formatIls(Math.abs(movement.amount ?? 0))}
                     </LtrInline>
                   </span>
                 </span>
+                {movement.foreign ? <ShekelNote shekels={Math.abs(movement.amount ?? 0)} /> : null}
                 {/* Right under the amount it annotates, not up beside the
                     name — a reader connects the two only when they're
                     actually stacked. */}

@@ -876,3 +876,70 @@ describe("ledgerSignedAmount", () => {
     expect(ledgerSignedAmount("out", 0.1 + 0.2)).toBe(-0.3);
   });
 });
+
+// ─── Money in US$ and C$ (2026-10-23) ─────────────────────────────────────────
+// A row keeps its shekels in its usual column, which the balance adds up; the
+// register shows its dollars beside them.
+
+describe("loadAccountsOverview — a row in US$ or C$", () => {
+  it("a $1,000 payment into a shekel account counts its shekels, and carries its dollars", async () => {
+    const [acc] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        payments: [
+          {
+            id: "p1",
+            account_id: "acc1",
+            payment_date: "2024-02-01",
+            amount_total: 3107,
+            payment_status: "collected",
+            currency: "USD",
+            foreign_amount: "1000.00",
+            fx_rate: "3.107000",
+            fx_rate_manual: false,
+          },
+          { id: "p2", account_id: "acc1", payment_date: "2024-02-02", amount_total: 100, payment_status: "collected", currency: "ILS" },
+        ],
+      })
+    );
+    expect(acc.currentBalance).toBe(1000 + 3107 + 100);
+    const dollars = acc.ledger.find((row) => row.id === "p:p1");
+    expect(dollars).toMatchObject({ amount: 3107, foreign: { currency: "USD", amount: 1000, rate: 3.107 } });
+    expect(acc.ledger.find((row) => row.id === "p:p2")?.foreign).toBeNull();
+  });
+
+  it("a $100 refund is an unsigned line out, its dollars unsigned too", async () => {
+    const [acc] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        payments: [
+          { id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: -309.1, payment_status: "collected", currency: "USD", foreign_amount: -100, fx_rate: 3.091 },
+        ],
+      })
+    );
+    expect(acc.ledger[0]).toMatchObject({ type: "out", amount: 309.1, foreign: { amount: 100 } });
+  });
+
+  it("a partly paid C$ expense: each line's dollars at the row's rate", async () => {
+    const [acc] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        expenses: [
+          {
+            id: "e1",
+            account_id: "acc1",
+            expense_date: "2024-02-01",
+            amount: 2213.7,
+            paid_amount: 1106.85,
+            payment_status: "partial",
+            currency: "CAD",
+            foreign_amount: 1000,
+            fx_rate: 2.2137,
+          },
+        ],
+      })
+    );
+    expect(acc.ledger.find((row) => row.id === "e:e1")).toMatchObject({ amount: 1106.85, foreign: { currency: "CAD", amount: 500 } });
+    expect(acc.ledger.find((row) => row.id === "e:e1:p")).toMatchObject({ amount: 1106.85, foreign: { currency: "CAD", amount: 500 } });
+  });
+});

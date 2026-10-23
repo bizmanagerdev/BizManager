@@ -41,7 +41,7 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   orders: ["needs_invoice", "collect_payment_on_delivery"],
   projects: ["expenses_billed_separately", "price_includes_vat", "no_charge", "origin_has_elevator", "destination_has_elevator"],
   products: ["active"],
-  payments: ["requires_split", "counts_as_rent"],
+  payments: ["requires_split", "counts_as_rent", "fx_rate_manual"],
   properties: ["is_active", "has_private_entrance", "has_storage_room", "has_parking", "has_elevator", "is_furnished"],
   attendance_sessions: ["is_billable_to_customer"],
   project_expenses: ["included_in_base_price", "billed_to_customer"],
@@ -51,6 +51,9 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   business_settings: ["id"],
   recurring_expense_templates: ["is_variable_amount", "auto_paid", "is_active"],
   outflow_source_settings: ["is_active"],
+  expenses: ["fx_rate_manual"],
+  loans: ["fx_rate_manual"],
+  loan_repayments: ["fx_rate_manual"],
 };
 
 const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
@@ -59,12 +62,12 @@ const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
   lease_agreements: ["monthly_rent_amount", "deposit_amount", "area_sqm"],
   order_items: ["quantity_ordered", "quantity_delivered", "unit_price", "discount_amount", "line_total"],
   orders: ["subtotal", "discount_amount", "total_amount"],
-  payments: ["amount_total", "amount_including_vat", "amount_before_vat", "net_amount", "vat_rate", "vat_amount"],
+  payments: ["amount_total", "amount_including_vat", "amount_before_vat", "net_amount", "vat_rate", "vat_amount", "foreign_amount", "fx_rate"],
   products: ["base_price", "base_cost", "low_stock_threshold"],
   projects: ["agreed_base_price", "actual_price", "vat_rate"],
   properties: ["rooms", "square_meters", "purchase_price", "purchase_tax"],
   attendance_sessions: ["labor_cost", "bill_to_customer_amount"],
-  expenses: ["amount", "paid_amount"],
+  expenses: ["amount", "paid_amount", "foreign_amount", "fx_rate"],
   payslips: ["calculated_base_salary", "manual_adjustments", "gross_salary"],
   salary_agreements: ["hourly_rate", "monthly_salary", "overtime_rate", "standard_daily_hours", "bill_to_customer_amount"],
   worker_payment_allocations: ["amount"],
@@ -72,8 +75,8 @@ const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
   inventory_movements: ["quantity"],
   business_settings: ["vat_rate"],
   recurring_expense_templates: ["amount"],
-  loans: ["amount", "interest_amount"],
-  loan_repayments: ["amount", "interest_amount"],
+  loans: ["amount", "interest_amount", "foreign_amount", "fx_rate"],
+  loan_repayments: ["amount", "interest_amount", "foreign_amount", "fx_rate"],
   card_statement_charges: ["amount"],
 };
 
@@ -83,6 +86,18 @@ const JSON_COLUMNS: Record<string, readonly string[]> = {
   properties: ["furniture_items"],
   // The rent months a payment was ticked for (payments.rent_allocation, 2026-10-22).
   payments: ["rent_allocation"],
+};
+
+// Columns Postgres gives a default: a row synced before such a column existed
+// has nothing for it on the device, while the server reads the default — so
+// the device fills it in, and a page reads the same either way.
+const MONEY_CURRENCY_DEFAULTS = { currency: "ILS", foreign_amount: null, fx_rate: null, fx_rate_manual: false };
+const COLUMN_DEFAULTS: Record<string, Row> = {
+  // supabase/migrations/20261023120000_money_currency.sql
+  payments: MONEY_CURRENCY_DEFAULTS,
+  expenses: MONEY_CURRENCY_DEFAULTS,
+  loans: MONEY_CURRENCY_DEFAULTS,
+  loan_repayments: MONEY_CURRENCY_DEFAULTS,
 };
 
 /** Tables synced to the device (lib/powersync/schema.ts). */
@@ -179,6 +194,9 @@ export function coerceRow(table: string, row: Row): Row {
     } else {
       out[key] = raw;
     }
+  }
+  for (const [key, value] of Object.entries(COLUMN_DEFAULTS[table] ?? {})) {
+    if (out[key] == null) out[key] = value;
   }
   return out;
 }

@@ -1,5 +1,6 @@
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import type { LoansSummary } from "@/lib/loans";
+import type { ForeignMoney } from "@/lib/fx/currencies";
 
 // ─── Internal DB row types ────────────────────────────────────────────────────
 
@@ -23,6 +24,11 @@ export type PaymentRow = {
   created_at?: string | null;
   /** Which account the money lands in — keys a card deposit's confirmation. */
   account_id?: string | null;
+  /** US$ or C$ (lib/fx/currencies.ts); amount_total stays the shekels. */
+  currency?: string | null;
+  foreign_amount?: number | string | null;
+  fx_rate?: number | string | null;
+  fx_rate_manual?: boolean | null;
 };
 
 export type ExpenseRow = {
@@ -48,6 +54,10 @@ export type ExpenseRow = {
   installment_index?: number | string | null;
   installment_count?: number | string | null;
   recurring_expense_template_id?: string | null;
+  currency?: string | null;
+  foreign_amount?: number | string | null;
+  fx_rate?: number | string | null;
+  fx_rate_manual?: boolean | null;
 };
 
 export type OrderRow = {
@@ -206,6 +216,9 @@ export type FinancialEntry = {
   type: FinancialEntryType;
   amount: number;
   signedAmount: number;
+  /** A payment or expense in US$ or C$: the amount as typed and its rate.
+   *  `amount` is always its shekels, which every total adds up. */
+  foreign?: ForeignMoney | null;
   businessDomain: ExpenseBusinessDomain | null;
   domainName: string;
   flowDate: string;

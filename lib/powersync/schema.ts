@@ -14,6 +14,15 @@ const text = column.text;
 const int = column.integer;
 const real = column.real;
 
+/** A money row's currency (supabase/migrations/20261023120000_money_currency.sql):
+ *  payments, expenses, loans and their repayments. */
+const MONEY_CURRENCY_COLUMNS = {
+  currency: text,
+  foreign_amount: text,
+  fx_rate: text,
+  fx_rate_manual: int,
+};
+
 // The structured address (lib/address/columns.ts, migration 20261018110000):
 // the same eight columns on every table that keeps an address.
 const addressColumns = (prefix: "addr" | "origin" | "destination") => ({
@@ -364,6 +373,10 @@ const payments = new Table(
     check_torn_at: text,
     // The rent months a payment was ticked for and each one's amount — JSON (payments.rent_allocation, 2026-10-22).
     rent_allocation: text,
+    // Money in US$ or C$ (2026-10-23): amount_total stays the shekels; these
+    // are the amount as typed and its day's rate. A row synced before them
+    // reads null — shekels.
+    ...MONEY_CURRENCY_COLUMNS,
     // Local only (never synced): a payment added or marked collected on the
     // phone first — the request it goes up with (lib/powersync/local-writes.ts).
     // An order's own payments, written with the order, have none.
@@ -505,6 +518,7 @@ const expenses = new Table(
     installment_group_id: text,
     installment_index: int,
     installment_count: int,
+    ...MONEY_CURRENCY_COLUMNS,
   },
   { indexes: { by_project: ["project_id"], by_date: ["expense_date"] } }
 );
@@ -697,6 +711,7 @@ const loans = new Table({
   created_at: text,
   updated_at: text,
   account_id: text,
+  ...MONEY_CURRENCY_COLUMNS,
 });
 const loan_repayments = new Table(
   {
@@ -712,6 +727,7 @@ const loan_repayments = new Table(
     status: text,
     installment_index: int,
     installment_count: int,
+    ...MONEY_CURRENCY_COLUMNS,
   },
   { indexes: { by_loan: ["loan_id"] } }
 );

@@ -46,7 +46,7 @@ import { deleteLoan, deleteRepayment } from "@/app/(app)/financial/loans/actions
 import { deleteCardCharge } from "@/lib/financial/cardChargesClient";
 import { deleteAccountTransfer } from "@/lib/financial/transfersClient";
 import type { Loan } from "@/lib/loans";
-import { formatMoneyRounded } from "@/lib/money";
+import { formatCurrencyAmount, formatMoneyRounded, formatShekelNote } from "@/lib/money";
 import { formatEnteredLabel, formatShortDate } from "@/lib/date";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 
@@ -105,7 +105,12 @@ function bankRowRecord(row: AccountLedgerEntry): SearchRecord {
       [null, hourOf(row.enteredAt)],
       ...parts.map((part) => [IN_ROW, [part.label, part.sublabel].filter(Boolean).join(" · ")] as const),
     ],
-    amounts: [[null, row.amount], ...parts.map((part) => [IN_ROW, part.amount] as const)],
+    amounts: [
+      [null, row.amount],
+      // A row in US$ or C$ is found by its dollars too.
+      ...(row.foreign ? [[null, row.foreign.amount] as const] : []),
+      ...parts.map((part) => [IN_ROW, part.amount] as const),
+    ],
     dates: [
       [null, row.date],
       ["נרשם", row.recordedDate],
@@ -1187,8 +1192,19 @@ export default function BankClient({
                             )}
                           >
                             {row.type === "in" ? "+" : "-"}
-                            {paint(formatMoneyRounded(row.amount))}
+                            {paint(
+                              row.foreign
+                                ? formatCurrencyAmount(row.foreign.amount, row.foreign.currency)
+                                : formatMoneyRounded(row.amount)
+                            )}
                           </div>
+                          {/* US$ or C$: what it is in shekels, which is what
+                              the balance counts. */}
+                          {row.foreign && (
+                            <div dir="ltr" className="text-[11px] tabular-nums text-muted-foreground">
+                              {paint(formatShekelNote(row.amount))}
+                            </div>
+                          )}
                           {row.runningBalance !== null && (
                             <div dir="ltr" className="text-xs tabular-nums text-muted-foreground">
                               {formatMoneyRounded(row.runningBalance)}
@@ -1226,7 +1242,9 @@ export default function BankClient({
                     ) : (
                       <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
                     );
-                    const rowLabel = `${row.label} · ${formatMoneyRounded(row.amount)}`;
+                    const rowLabel = `${row.label} · ${
+                      row.foreign ? formatCurrencyAmount(row.foreign.amount, row.foreign.currency) : formatMoneyRounded(row.amount)
+                    }`;
                     const hasActions = Boolean(row.editRef || row.deleteRef || transfer);
                     // Same edit/delete pair either way — just two different
                     // surfaces for it (desktop "⋮" menu vs mobile swipe strip).

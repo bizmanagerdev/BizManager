@@ -17,6 +17,8 @@
  * when the format is identical.
  */
 
+import { CURRENCY_SYMBOL, type CurrencyCode, type ForeignMoney } from "@/lib/fx/currencies";
+
 const GROUPED = new Intl.NumberFormat("he-IL", {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
@@ -47,6 +49,39 @@ export function formatMoney(value: number | string | null | undefined): string {
 /** The same, rounded to whole shekels — for axes, chips and other tight spots. */
 export function formatMoneyRounded(value: number | string | null | undefined): string {
   return withShekel(Math.round(toNumber(value)), (abs) => abs.toLocaleString("he-IL"));
+}
+
+/* ---------------------------------------------------------------------------
+ * US$ and C$ — the same shape, its own symbol first: "$1,000", "C$1,250.50",
+ * "-$50". A row in a foreign currency shows that amount with its shekels
+ * beside it, "$1,000 (≈ ₪3,107)" (owner's plan, 2026-10-23); every TOTAL
+ * stays in shekels. Cents are kept: a Chase statement is checked to the cent.
+ * ------------------------------------------------------------------------- */
+
+/** "$1,000" / "C$1,250.50" — and "₪…" for shekels, as formatMoney. */
+export function formatCurrencyAmount(
+  value: number | string | null | undefined,
+  currency: CurrencyCode
+): string {
+  if (currency === "ILS") return formatMoney(value);
+  const amount = toNumber(value);
+  const digits = GROUPED.format(Math.abs(amount));
+  return `${amount < 0 ? "-" : ""}${CURRENCY_SYMBOL[currency]}${digits}`;
+}
+
+/** "≈ ₪3,107" — a foreign amount's shekels, whole, as the note beside it. */
+export function formatShekelNote(shekels: number | string | null | undefined): string {
+  return `≈ ${formatMoneyRounded(shekels)}`;
+}
+
+/** A row's money in one string: "$1,000 (≈ ₪3,107)", or "₪3,107" for a row
+ *  in shekels. `shekels` is the row's own amount column. */
+export function formatMoneyWithForeign(
+  shekels: number | string | null | undefined,
+  foreign: ForeignMoney | null | undefined
+): string {
+  if (!foreign) return formatMoney(shekels);
+  return `${formatCurrencyAmount(foreign.amount, foreign.currency)} (${formatShekelNote(shekels)})`;
 }
 
 /* ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getPaymentStatusColor, getPaymentStatusLabel } from "@/lib/ui/status-colors";
 import { israelDateKey } from "@/lib/timezone";
+import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
 
 export type FinancialAttachment = {
   document_id: string;
@@ -33,14 +34,18 @@ export type PaymentRow = {
   requires_split: boolean | null;
   recorded_by: string | null;
   account_id: string | null;
+  /** US$ or C$ (lib/fx/currencies.ts readForeignMoney); amount_total stays the shekels. */
+  currency?: string | null;
+  foreign_amount?: number | string | null;
+  fx_rate?: number | string | null;
+  fx_rate_manual?: boolean | null;
   notes: string | null;
   created_at: string | null;
   updated_at: string | null;
   attachments?: FinancialAttachment[];
 };
 
-export const PAYMENT_SELECT =
-  "id,payment_date,amount_total,payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,net_amount,vat_amount,vat_rate,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,account_id,created_at,updated_at";
+export const PAYMENT_SELECT = `id,payment_date,amount_total,payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,net_amount,vat_amount,vat_rate,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,account_id,created_at,updated_at,${MONEY_CURRENCY_COLUMNS}`;
 
 // Single source of truth for the payment-method dropdown, shared by both the
 // expense dialog and the order/project payment dialogs so they always match.

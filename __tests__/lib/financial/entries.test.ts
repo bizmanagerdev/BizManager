@@ -435,3 +435,17 @@ describe("matchesEntryFilters", () => {
     expect(matchesEntryFilters(makeEntry({ stage: "posted" }), { ...base, stage: "pending" })).toBe(false);
   });
 });
+
+describe("buildPaymentEntries — money in US$ or C$ (2026-10-23)", () => {
+  it("the entry's amount is its shekels, which the P&L adds; its dollars ride along", () => {
+    const entries = buildPaymentEntries(
+      paymentArgs([
+        makePayment({ id: "p1", amount_total: 3107, currency: "USD", foreign_amount: "1000", fx_rate: "3.107" }),
+        makePayment({ id: "p2", amount_total: 500 }),
+      ])
+    );
+    expect(entries[0]).toMatchObject({ amount: 3107, foreign: { currency: "USD", amount: 1000, rate: 3.107 } });
+    expect(entries[1].foreign).toBeNull();
+    expect(aggregateProfitLoss(entries)[0].cashRevenue).toBe(3607);
+  });
+});

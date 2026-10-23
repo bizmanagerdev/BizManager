@@ -4,6 +4,7 @@ import { ledgerQuery, ledgerSearchRecord } from "@/lib/financial/search";
 import { matchSearchRecord, type ListSearchQuery } from "@/lib/search/listSearch";
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import type { Loan } from "@/lib/loans";
+import { readForeignMoney, type ForeignMoney } from "@/lib/fx/currencies";
 import {
   NO_CONFIRMATIONS,
   cardSettlementDate,
@@ -852,6 +853,11 @@ export function sortEntries(entries: FinancialEntry[]) {
 
 // ─── Per-origin entry builders ────────────────────────────────────────────────
 
+/** An entry's amount is unsigned (its type says in or out); so is its foreign amount. */
+function unsignedForeign(foreign: ForeignMoney | null): ForeignMoney | null {
+  return foreign && { ...foreign, amount: Math.abs(foreign.amount) };
+}
+
 export function buildPaymentEntries(args: {
   paymentRows: PaymentRow[];
   projectsById: Map<string, ProjectRow>;
@@ -904,6 +910,7 @@ export function buildPaymentEntries(args: {
       type: isRefund ? ("outflow" as const) : ("inflow" as const),
       amount,
       signedAmount: isRefund ? -amount : amount,
+      foreign: unsignedForeign(readForeignMoney(row)),
       businessDomain,
       domainName: getBusinessDomainLabel(businessDomain),
       flowDate: flowMeta.flowDate,
@@ -1004,6 +1011,7 @@ export function buildExpenseEntries(args: {
       type: "outflow" as const,
       amount,
       signedAmount: -amount,
+      foreign: unsignedForeign(readForeignMoney(row)),
       businessDomain,
       domainName: getBusinessDomainLabel(businessDomain),
       flowDate: flowMeta.flowDate,

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { MONEY_CURRENCY_COLUMNS, readForeignMoney, type ForeignMoney } from "@/lib/fx/currencies";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { SalaryAgreementRow, WorkSessionRow } from "@/lib/payroll";
@@ -640,6 +641,8 @@ export type PropertyExpense = {
   propertyId: string | null;
   /** Set when the row was generated from a recurring template (labelled by its name). */
   recurringTemplateId: string | null;
+  /** In US$ or C$: the amount as typed and its rate — `amount` is its shekels. */
+  foreign?: ForeignMoney | null;
   /** The files attached to it (a receipt, an invoice). */
   attachments: FinancialAttachment[];
 };
@@ -669,6 +672,8 @@ export type PropertyPayment = {
   rentAllocation: RentShare[] | null;
   /** False for income that isn't rent (a refund). */
   countsAsRent: boolean;
+  /** In US$ or C$: the amount as typed and its rate — `amount` is its shekels. */
+  foreign?: ForeignMoney | null;
   /** The files attached to it (a check's photo, a transfer confirmation). */
   attachments: FinancialAttachment[];
 };
@@ -882,9 +887,9 @@ const EMPTY_SERVER_PARTS: PropertyServerParts = {
 };
 
 const PROPERTY_EXPENSE_SELECT =
-  "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id,recurring_expense_template_id";
+  `id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id,recurring_expense_template_id,${MONEY_CURRENCY_COLUMNS}`;
 const PROPERTY_PAYMENT_SELECT =
-  "id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,check_torn_at,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent";
+  `id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,check_torn_at,account_id,notes,reference_number,requires_split,created_at,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent,${MONEY_CURRENCY_COLUMNS}`;
 const PROPERTY_SESSION_SELECT =
   "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id";
 const SALARY_AGREEMENT_SELECT =
@@ -910,6 +915,7 @@ function normalizePropertyPayment(r: Row): PropertyPayment {
     rentPeriods: numOrNull(r.rent_periods) ?? 1,
     rentAllocation: rentAllocationOf(r.rent_allocation),
     countsAsRent: r.counts_as_rent !== false,
+    foreign: readForeignMoney(r),
     attachments: [],
   };
 }
@@ -1008,6 +1014,7 @@ export async function loadPropertyPageCore(supabase: SupabaseClient, propertyId:
     orderId: str(r.order_id),
     propertyId: str(r.property_id),
     recurringTemplateId: str(r.recurring_expense_template_id),
+    foreign: readForeignMoney(r),
     attachments: [],
   }));
   const payments: PropertyPayment[] = paymentRows.map(normalizePropertyPayment);
