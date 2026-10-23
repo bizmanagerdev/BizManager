@@ -60,4 +60,8 @@ export type PropertyInput = {
   zoning: string;
   region: string;
   tax_account_number: string;
+  /** Its links: the tax account online, the land register, another title service (JLR). */
+  tax_account_url: string;
+  land_registry_url: string;
+  land_title_url: string;
 };

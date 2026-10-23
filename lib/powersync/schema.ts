@@ -473,6 +473,9 @@ const properties = new Table({
   zoning: text,
   region: text,
   tax_account_number: text,
+  tax_account_url: text,
+  land_registry_url: text,
+  land_title_url: text,
 });
 
 const lease_agreements = new Table(

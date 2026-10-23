@@ -86,6 +86,9 @@ export const EMPTY_PROPERTY_FORM: PropertyInput = {
   zoning: "",
   region: "",
   tax_account_number: "",
+  tax_account_url: "",
+  land_registry_url: "",
+  land_title_url: "",
 };
 
 export function propertyToForm(p: Property): PropertyInput {
@@ -134,6 +137,9 @@ export function propertyToForm(p: Property): PropertyInput {
     zoning: p.zoning ?? "",
     region: p.region ?? "",
     tax_account_number: p.taxAccountNumber ?? "",
+    tax_account_url: p.taxAccountUrl ?? "",
+    land_registry_url: p.landRegistryUrl ?? "",
+    land_title_url: p.landTitleUrl ?? "",
   };
 }
 
@@ -316,7 +322,7 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
         </label>
       </div>
       {/* ייעוד, מחוז and the city's tax account (owner, 2026-10-23: "put these … as details here"). */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block space-y-1 text-sm">
           <span className="font-medium">ייעוד</span>
           <Input value={form.zoning} onChange={(e) => set("zoning", e.target.value)} placeholder="לדוגמה: מגורים" />
@@ -328,6 +334,16 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
         <label className="block space-y-1 text-sm">
           <span className="font-medium">מספר חשבון מס</span>
           <Input dir="ltr" value={form.tax_account_number} onChange={(e) => set("tax_account_number", e.target.value)} />
+        </label>
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">קישור לחשבון המס</span>
+          <Input
+            dir="ltr"
+            inputMode="url"
+            value={form.tax_account_url}
+            onChange={(e) => set("tax_account_url", e.target.value)}
+            placeholder="https://"
+          />
         </label>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -550,6 +566,29 @@ export function PropertyPurchaseFields({ form, set }: FieldsProps) {
         <label className="block space-y-1 text-sm">
           <span className="font-medium">תת חלקה</span>
           <Input inputMode="numeric" value={form.land_sub_parcel} onChange={(e) => set("land_sub_parcel", e.target.value)} />
+        </label>
+      </div>
+      {/* Where it's registered online (owner, 2026-10-23: "these also need fields"). */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">קישור לרישום המקרקעין</span>
+          <Input
+            dir="ltr"
+            inputMode="url"
+            value={form.land_registry_url}
+            onChange={(e) => set("land_registry_url", e.target.value)}
+            placeholder="https://"
+          />
+        </label>
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">קישור נוסף לרישום (JLR)</span>
+          <Input
+            dir="ltr"
+            inputMode="url"
+            value={form.land_title_url}
+            onChange={(e) => set("land_title_url", e.target.value)}
+            placeholder="https://"
+          />
         </label>
       </div>
     </div>

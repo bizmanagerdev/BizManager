@@ -86,6 +86,11 @@ export type Property = {
   zoning: string | null;
   region: string | null;
   taxAccountNumber: string | null;
+  /** Its links as fields (owner, 2026-10-23: "these also need fields"): the tax account online — its number in the
+   *  first card opens it — and the land register and another title service (JLR), by its lot number. */
+  taxAccountUrl: string | null;
+  landRegistryUrl: string | null;
+  landTitleUrl: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   /** Its place in the list, dragged by hand (owner's card); none yet: after them, by name. */
@@ -242,6 +247,9 @@ function normalizeProperty(row: Row): Property {
     zoning: str(row.zoning),
     region: str(row.region),
     taxAccountNumber: str(row.tax_account_number),
+    taxAccountUrl: str(row.tax_account_url),
+    landRegistryUrl: str(row.land_registry_url),
+    landTitleUrl: str(row.land_title_url),
     createdAt: str(row.created_at),
     updatedAt: str(row.updated_at),
     sortOrder: numOrNull(row.sort_order),
@@ -350,7 +358,7 @@ export function pickCurrentLease(leases: LeaseAgreement[]): LeaseAgreement | nul
 }
 
 const PROPERTY_SELECT =
-  "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,rent_managed_by_company,management_company_name,management_portal_url,management_notes,owner_company_name,owner_company_number,owner_company_type,owner_company_url,owner_company_notes,zoning,region,tax_account_number,created_at,updated_at,sort_order";
+  "id,name,address,addr_city,addr_street,addr_house_number,addr_unit,addr_lat,addr_lng,addr_place_id,addr_formatted,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,rent_managed_by_company,management_company_name,management_portal_url,management_notes,owner_company_name,owner_company_number,owner_company_type,owner_company_url,owner_company_notes,zoning,region,tax_account_number,tax_account_url,land_registry_url,land_title_url,created_at,updated_at,sort_order";
 
 const LEASE_SELECT =
   "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months,area_sqm,unit_label,created_at,customer:customers(name,phone)";

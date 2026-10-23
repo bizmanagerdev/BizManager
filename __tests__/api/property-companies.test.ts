@@ -43,6 +43,8 @@ describe("a property's companies", () => {
       zoning: "מגורים",
       region: " Quebec ",
       tax_account_number: "020874-10",
+      tax_account_url: "https://montreal.ca/en/tax-account",
+      land_registry_url: "https://www.registrefoncier.gouv.qc.ca/Sirf/",
     });
     expect(result.ok).toBe(true);
     expect(updates[0]).toMatchObject({
@@ -57,6 +59,9 @@ describe("a property's companies", () => {
       zoning: "מגורים",
       region: "Quebec",
       tax_account_number: "020874-10",
+      tax_account_url: "https://montreal.ca/en/tax-account",
+      land_registry_url: "https://www.registrefoncier.gouv.qc.ca/Sirf/",
+      land_title_url: null,
     });
   });
 
@@ -73,7 +78,8 @@ describe("a property's companies", () => {
         key.startsWith("owner_company_") ||
         key === "zoning" ||
         key === "region" ||
-        key === "tax_account_number"
+        key === "tax_account_number" ||
+        key.endsWith("_url")
       )
         delete old[key];
     }
@@ -84,7 +90,8 @@ describe("a property's companies", () => {
         (k) =>
           k.includes("company") ||
           k.startsWith("management_") ||
-          ["zoning", "region", "tax_account_number"].includes(k),
+          ["zoning", "region", "tax_account_number"].includes(k) ||
+          k.endsWith("_url"),
       ),
     ).toEqual([]);
   });

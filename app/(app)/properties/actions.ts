@@ -99,6 +99,17 @@ function propertyFields(input: PropertyInput) {
     furniture_items: input.furniture_items,
     ...companyFields(input),
     ...placeFields(input),
+    ...linkFields(input),
+  };
+}
+
+/** Its tax-account and land-registry links (owner, 2026-10-23) — left as they are when a form from before them saves. */
+function linkFields(input: PropertyInput) {
+  if (typeof input.tax_account_url !== "string") return {};
+  return {
+    tax_account_url: clean(input.tax_account_url),
+    land_registry_url: clean(input.land_registry_url),
+    land_title_url: clean(input.land_title_url),
   };
 }
 

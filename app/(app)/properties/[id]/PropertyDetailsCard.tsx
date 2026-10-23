@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { AddressLink } from "@/components/ui/address-link";
+import { ExternalSiteLink } from "@/components/ui/external-site-link";
 import { BuildingIcon, CheckIcon, WazeIcon } from "@/components/ui/icons";
 import { structuredPoint } from "@/lib/address/columns";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
@@ -45,6 +46,7 @@ const BASIC_KEYS = [
   "zoning",
   "region",
   "tax_account_number",
+  "tax_account_url",
 ] as const satisfies readonly (keyof PropertyInput)[];
 
 function pick<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): Pick<T, K> {
@@ -89,6 +91,7 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
     zoning: input.zoning.trim() || null,
     region: input.region.trim() || null,
     taxAccountNumber: input.tax_account_number.trim() || null,
+    taxAccountUrl: input.tax_account_url.trim() || null,
   };
 }
 
@@ -181,11 +184,17 @@ export default function PropertyDetailsCard({
   // floor area.
   const p = displayProperty;
   const hasRoomLayout = propertyHasRoomLayout(p.propertyType);
-  const details = [
+  const facts: ({ label: string; value: ReactNode } | null)[] = [
     p.propertyType === "building" && p.apartmentsCount != null ? { label: "דירות", value: String(p.apartmentsCount) } : null,
     p.zoning ? { label: "ייעוד", value: p.zoning } : null,
     p.region ? { label: "מחוז", value: p.region } : null,
-    p.taxAccountNumber ? { label: "חשבון מס", value: p.taxAccountNumber } : null,
+    p.taxAccountNumber
+      ? {
+          label: "חשבון מס",
+          // Its number opens the account online, when there's a link.
+          value: p.taxAccountUrl ? <ExternalSiteLink url={p.taxAccountUrl} label={p.taxAccountNumber} /> : p.taxAccountNumber,
+        }
+      : null,
     p.propertyType !== "building" && hasRoomLayout && p.rooms != null ? { label: "חדרים", value: String(p.rooms) } : null,
     p.floor != null ? { label: "קומה", value: String(p.floor) } : null,
     p.squareMeters != null ? { label: "שטח", value: `${p.squareMeters} מ״ר` } : null,
@@ -193,7 +202,8 @@ export default function PropertyDetailsCard({
     hasRoomLayout && p.mezuzahCount != null ? { label: "מזוזות", value: String(p.mezuzahCount) } : null,
     p.lightBulbCount != null ? { label: "נורות", value: String(p.lightBulbCount) } : null,
     p.keyCount != null ? { label: "מפתחות", value: String(p.keyCount) } : null,
-  ].filter((d): d is { label: string; value: string } => Boolean(d));
+  ];
+  const details = facts.filter((d): d is { label: string; value: ReactNode } => d !== null);
   const amenities = [
     !p.isActive ? "לא פעיל" : null,
     p.hasPrivateEntrance ? "כניסה פרטית" : null,
