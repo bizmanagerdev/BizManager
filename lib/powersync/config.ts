@@ -66,15 +66,17 @@ export const LOCAL_DATA_PAGES = {
   // download that also to the phone", so a run works with no signal. The same
   // list as the deliveries tab (/sales, on for staff above).
   deliveries: true,
-  // The customers list (/customers) — from 2026-10-20 on the owner's devices
-  // first (LOCAL_DATA_PREVIEW_USERS); everyone's after a day of clean
-  // comparisons (LOCAL_DATA_SHADOW.customers). Searches stay on the server.
-  customers: false,
-  // A customer's page (/customers/<id>) — the same, from 2026-10-20. What only
-  // the server reads (the call log, promises, Morning documents, a linked
+  // The customers list (/customers) — on the owner's devices from 2026-10-20,
+  // every admin and office user's from 2026-10-23 (owner: "do all 3"), after
+  // its comparisons came out clean on two devices and against the live data
+  // (every page of the list). Searches stay on the server.
+  customers: true,
+  // A customer's page (/customers/<id>) — the same dates; checked against the
+  // live data for the 80 busiest customers on 2026-10-23, all the same. What
+  // only the server reads (the call log, promises, Morning documents, a linked
   // worker's pay owed — owner: "leave out those tables", 2026-10-20 — the
   // documents and history) follows from the server after the page.
-  customerPage: false,
+  customerPage: true,
   // The properties list (/properties) — from 2026-10-21 on the owner's devices
   // first (LOCAL_DATA_PREVIEW_USERS); everyone's after a day of clean
   // comparisons (LOCAL_DATA_SHADOW.properties).
