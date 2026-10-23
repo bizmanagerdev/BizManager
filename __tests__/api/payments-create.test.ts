@@ -183,3 +183,52 @@ describe("POST /api/payments/create — Hebrew error mapping", () => {
     expect((await res.json()).error).toBe("הערך כבר קיים במערכת.");
   });
 });
+
+// Money in US$ or C$ (2026-10-23): the form sends the amount as typed and its
+// currency; the row's amount_total is its shekels at the day's rate (or the
+// rate typed), with the currency columns beside it.
+describe("POST /api/payments/create — a payment in dollars", () => {
+  function withRate(rate: number | null) {
+    const inserted: unknown[] = [];
+    const rpc = vi.fn(async () => ({ data: rate, error: null }));
+    const supabase = { ...makeSupabase({ payments: { data: { id: "pay-1" }, error: null } }, [], inserted), rpc };
+    grant(supabase);
+    return { inserted, rpc };
+  }
+
+  it("$1,000 on 22/10 is ₪3,107 at the day's rate", async () => {
+    const { inserted, rpc } = withRate(3.107);
+    const res = await post({ ...VALID, payment_date: "2026-10-22", currency: "USD", fx_rate_manual: false });
+    expect(res.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("fx_rate_on", { p_currency: "USD", p_date: "2026-10-22" });
+    expect(inserted[0]).toMatchObject({
+      amount_total: 3107,
+      currency: "USD",
+      foreign_amount: 1000,
+      fx_rate: 3.107,
+      fx_rate_manual: false,
+    });
+  });
+
+  it("a rate typed by hand is used as it is, with no lookup", async () => {
+    const { inserted, rpc } = withRate(3.107);
+    await post({ ...VALID, currency: "USD", fx_rate: 3.05, fx_rate_manual: true });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(inserted[0]).toMatchObject({ amount_total: 3050, foreign_amount: 1000, fx_rate: 3.05, fx_rate_manual: true });
+  });
+
+  it("no rate for the day: refused, and says to type one", async () => {
+    withRate(null);
+    const res = await post({ ...VALID, currency: "CAD" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/אין שער יציג לדולר קנדי/);
+  });
+
+  it("a form that doesn't say a currency saves shekels, as before", async () => {
+    const { inserted, rpc } = withRate(3.107);
+    await post(VALID);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(inserted[0]).toMatchObject({ amount_total: 1000 });
+    expect(inserted[0]).not.toHaveProperty("currency");
+  });
+});

@@ -4,6 +4,8 @@ import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
+import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
+import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
 
 
 export async function POST(req: Request) {
@@ -31,7 +33,7 @@ export async function POST(req: Request) {
       payment_method?: string | null;
       account_id?: string | null;
       tag_ids?: unknown;
-    };
+    } & MoneyCurrencyBody;
 
     const expenseId = typeof body.id === "string" ? body.id.trim() : "";
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
@@ -153,8 +155,13 @@ export async function POST(req: Request) {
     const rawPaidDate = typeof body.paid_date === "string" ? body.paid_date.trim() : "";
     const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawPaidDate) ? rawPaidDate : null;
 
+    // In US$ or C$: the amounts as typed, in shekels at the day's rate (or the
+    // rate typed). A form that doesn't say the currency leaves the row's own.
+    const pricing = await currencyPricing(supabase, body, { amount: amountNumber, date: expenseDate });
+    if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+
     const baseExpensePayload = {
-      amount: amountNumber,
+      amount: pricing.toShekels(amountNumber),
       category,
       description,
       notes,
@@ -166,13 +173,14 @@ export async function POST(req: Request) {
       // actually persisted here.
       property_id: propertyId || null,
       payment_status: paymentStatus,
-      paid_amount: paidAmount,
+      paid_amount: paidAmount === null ? null : pricing.toShekels(paidAmount),
       payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? paymentMethod : null,
       account_id: accountId,
       ...(paidDateProvided ? { paid_date: paymentStatus === "paid" ? paidDate : null } : {}),
+      ...(pricing.columns ?? {}),
     };
     const selectExpense =
-      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at";
+      `id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at,${MONEY_CURRENCY_COLUMNS}`;
 
     const runExpenseUpdate = (payload: Record<string, unknown>) =>
       supabase.from("expenses").update(payload).eq("id", expenseId).select(selectExpense).maybeSingle();

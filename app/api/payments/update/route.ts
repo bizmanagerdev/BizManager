@@ -7,6 +7,7 @@ import { getCurrentVatRate } from "@/lib/settings/vat";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { allocationMismatch, rentColumnsFrom, rescaleAllocation, type RentFieldsBody } from "@/lib/payments/rent-fields";
+import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
       notes?: string;
       account_id?: string | null;
       tag_ids?: unknown;
-    } & RentFieldsBody;
+    } & RentFieldsBody & MoneyCurrencyBody;
 
     const paymentId = typeof body.id === "string" ? body.id.trim() : "";
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
@@ -43,13 +44,14 @@ export async function POST(req: Request) {
     const checkNumberInput =
       typeof body.check_number === "string" ? body.check_number.trim() || null : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
-    const amountNumber = toNumber(body.amount_total);
+    // As typed — in the payment's currency when the form says one (below).
+    const typedAmount = toNumber(body.amount_total);
     const requiresSplit = body.requires_split === true;
 
     if (!paymentId) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+    if (!Number.isFinite(typedAmount) || typedAmount <= 0) {
       return NextResponse.json({ error: "Missing or invalid amount_total" }, { status: 400 });
     }
     if (!paymentDate || !paymentMethod) {
@@ -58,16 +60,22 @@ export async function POST(req: Request) {
     if (paymentMethod === "check" && !dueDate) {
       return NextResponse.json({ error: "Missing due_date for check payment" }, { status: 400 });
     }
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    // In US$ or C$: its shekels at the day's rate (or the rate typed). A form
+    // that doesn't say the currency leaves the payment's own as it is.
+    const pricing = await currencyPricing(supabase, body, { amount: typedAmount, date: paymentDate });
+    if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+    const amountNumber = pricing.toShekels(typedAmount);
+
     // A property's rent: the lease and the month(s) it pays — only what's sent changes.
     const rent = rentColumnsFrom(body);
     if ("error" in rent) return NextResponse.json({ error: rent.error }, { status: 400 });
     // Months ticked one by one add up to the payment.
     const mismatch = allocationMismatch(rent, amountNumber);
     if (mismatch) return NextResponse.json({ error: mismatch }, { status: 400 });
-
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
-    if (!access.ok) return access.response;
-    const { supabase, user, profile } = access.value;
 
     const { data: existingPayment, error: existingPaymentError } = await supabase
       .from("payments")
@@ -156,7 +164,7 @@ export async function POST(req: Request) {
 
     const { data: payment, error: paymentError } = await supabase
       .from("payments")
-      .update({ ...paymentValues, ...(existingPayment.property_id ? rent : {}) })
+      .update({ ...paymentValues, ...(pricing.columns ?? {}), ...(existingPayment.property_id ? rent : {}) })
       .eq("id", paymentId)
       .select(PAYMENT_SELECT)
       .maybeSingle();

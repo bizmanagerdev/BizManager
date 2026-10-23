@@ -143,3 +143,44 @@ describe("POST /api/expenses/create — project link rollback", () => {
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
+
+// Money in US$ or C$ (2026-10-23): the amounts as typed, the row's amount and
+// paid share in shekels at the same rate.
+describe("POST /api/expenses/create — an expense in dollars", () => {
+  it("C$500 partly paid (C$200): both in shekels at the day's rate, the currency beside them", async () => {
+    const inserted: unknown[] = [];
+    const base = makeSupabase({ expenses: { data: { id: "e-1" }, error: null } });
+    const supabase = {
+      from: (table: string) => {
+        const builder = base.from(table) as Record<string, unknown>;
+        const insert = builder.insert as (row: unknown) => unknown;
+        builder.insert = (row: unknown) => {
+          inserted.push(row);
+          return insert(row);
+        };
+        return builder;
+      },
+      rpc: vi.fn(async () => ({ data: "2.2137", error: null })),
+    };
+    grant(supabase);
+    const res = await post({
+      ...VALID,
+      amount: 500,
+      expense_date: "2026-10-24",
+      payment_status: "partial",
+      paid_amount: 200,
+      currency: "CAD",
+      fx_rate_manual: false,
+    });
+    expect(res.status).toBe(200);
+    expect(supabase.rpc).toHaveBeenCalledWith("fx_rate_on", { p_currency: "CAD", p_date: "2026-10-24" });
+    expect(inserted[0]).toMatchObject({
+      amount: 1106.85,
+      paid_amount: 442.74,
+      currency: "CAD",
+      foreign_amount: 500,
+      fx_rate: 2.2137,
+      fx_rate_manual: false,
+    });
+  });
+});

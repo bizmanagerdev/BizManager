@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils";
 import type { Account } from "@/lib/accounts";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { israelDateKey } from "@/lib/timezone";
+import { CURRENCY_SYMBOL, isForeignCurrency } from "@/lib/fx/currencies";
 
 // No reactive source — this only answers "are we on the client yet" (same
 // pattern as DesktopQuickCreateFab, for the same reason below).
@@ -211,6 +212,8 @@ export default function QuickEntryRow({
     try {
       // A cash box moves cash; everything else moves through the bank.
       const paymentMethod = account.kind === "cash" ? "cash" : "bank_transfer";
+      // An account kept in dollars: the amount is in them, at the day's rate.
+      const currency = isForeignCurrency(account.currency) ? { currency: account.currency, fx_rate_manual: false } : {};
       const res =
         kind === "expense"
           ? await fetch("/api/expenses/create", {
@@ -227,6 +230,7 @@ export default function QuickEntryRow({
                 payment_status: "paid",
                 payment_method: paymentMethod,
                 account_id: account.id,
+                ...currency,
               }),
             })
           : await fetch("/api/payments/create", {
@@ -241,6 +245,7 @@ export default function QuickEntryRow({
                 property_id: propertyId || undefined,
                 notes: description.trim() || undefined,
                 account_id: account.id,
+                ...currency,
               }),
             });
 
@@ -401,6 +406,7 @@ export default function QuickEntryRow({
                 aria-label="תאריך"
               />
               <CurrencyInput
+                symbol={CURRENCY_SYMBOL[account.currency ?? "ILS"]}
                 className="h-9"
                 containerClassName="w-24"
                 value={amount}

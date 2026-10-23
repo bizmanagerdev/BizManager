@@ -19,6 +19,7 @@ import {
   isForeignCurrency,
   MONEY_CURRENCY_COLUMNS,
   readForeignMoney,
+  rowCurrencyFields,
   type CurrencyCode,
   type ForeignMoney,
 } from "@/lib/fx/currencies";
@@ -248,6 +249,11 @@ export type EditableExpense = {
   bill_to_customer_amount: number | null;
   created_at: string | null;
   recorded_by_name: string | null;
+  /** Its currency (2026-10-23) — amount and paid_amount are its shekels. */
+  currency?: CurrencyCode;
+  foreign_amount?: number | null;
+  fx_rate?: number | null;
+  fx_rate_manual?: boolean;
 };
 
 /** A transfer as the register needs it to prefill the edit form. */
@@ -1010,6 +1016,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         // For the dialog's "הוזן ע״י … · 14/10/26 15:32" line.
         created_at: str(row.created_at),
         recorded_by_name: workerNameById.get(creatorOf(row) ?? "") ?? null,
+        // So the dialog edits a row in dollars in dollars.
+        ...rowCurrencyFields(row),
       },
     };
     if (postedAmount > 0) {

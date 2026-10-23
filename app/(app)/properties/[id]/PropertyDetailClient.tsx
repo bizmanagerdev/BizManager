@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { currencyFieldsFrom } from "@/lib/fx/currencies";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -184,6 +185,8 @@ function toEditingExpense(e: PropertyExpense): EditingExpenseData {
     project_id: e.projectId,
     order_id: e.orderId,
     property_id: e.propertyId,
+    // So a row in dollars is edited in dollars (nothing when it wasn't read).
+    ...currencyFieldsFrom(e.foreign),
   };
 }
 

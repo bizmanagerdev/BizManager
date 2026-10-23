@@ -72,6 +72,26 @@ export function readForeignMoney(row: {
   };
 }
 
+/** A row's currency as an edit form takes it (components/fx/MoneyCurrency):
+ *  its four columns from its read foreign money — or nothing at all when it
+ *  wasn't read (`undefined`), so the form leaves the row's currency as it is. */
+export function currencyFieldsFrom(foreign: ForeignMoney | null | undefined): {
+  currency?: CurrencyCode;
+  foreign_amount?: number | null;
+  fx_rate?: number | null;
+  fx_rate_manual?: boolean;
+} {
+  if (foreign === undefined) return {};
+  if (foreign === null) return { currency: "ILS", foreign_amount: null, fx_rate: null, fx_rate_manual: false };
+  return { currency: foreign.currency, foreign_amount: foreign.amount, fx_rate: foreign.rate, fx_rate_manual: foreign.rateManual };
+}
+
+/** The same from a raw row: nothing when it was read without its currency. */
+export function rowCurrencyFields(row: Record<string, unknown> | null | undefined) {
+  if (!row || !Object.prototype.hasOwnProperty.call(row, "currency")) return {};
+  return currencyFieldsFrom(readForeignMoney(row));
+}
+
 /** Each currency's latest Bank of Israel rate, and the day it is of — what a
  *  US$ balance is worth in shekels today (lib/fx/rates.ts loadTodayFxRates). */
 export type TodayFxRates = Partial<Record<ForeignCurrency, { rate: number; date: string }>>;

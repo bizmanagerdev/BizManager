@@ -111,7 +111,7 @@ import {
   toNumber,
 } from "./ProjectTabsClient.helpers";
 import { israelDateKey } from "@/lib/timezone";
-import { readForeignMoney } from "@/lib/fx/currencies";
+import { readForeignMoney, rowCurrencyFields } from "@/lib/fx/currencies";
 
 // Heavy financial-entry dialogs are lazy-loaded — their code only downloads when
 // the user opens "add expense" / "add income", keeping the initial bundle smaller.
@@ -2207,6 +2207,8 @@ export default function ProjectTabsClient({
                 attachments: Array.isArray(editingExpense.expense["attachments"])
                   ? (editingExpense.expense["attachments"] as FinancialAttachment[])
                   : [],
+                // So a row in dollars is edited in dollars.
+                ...rowCurrencyFields(editingExpense.expense),
               }
             : null
         }

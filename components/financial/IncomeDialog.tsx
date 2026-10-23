@@ -23,7 +23,6 @@ import { OptionRow, DateQuickPicks, StepHeading } from "@/components/ui/option-r
 import { Button } from "@/components/ui/button";
 import { DocumentRow } from "@/components/ui/document-tile";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
@@ -54,6 +53,9 @@ import { buildIncomePayload, validateIncomeForm } from "@/app/(app)/dashboard/Da
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { formatCurrency } from "@/lib/payroll";
 import { cn } from "@/lib/utils";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { CURRENCY_NAME, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
 import { highlightText } from "@/components/search/highlightMatch";
 import { filterByText, prepareListSearch } from "@/lib/search/listSearch";
 
@@ -184,6 +186,11 @@ export function IncomeDialog({
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments] = useState<FinancialAttachment[]>([]);
   const [tagIds, setTagIds] = useState<string[]>([]);
+  // In ₪, US$ or C$ — the account's own when it's kept in dollars (2026-10-23).
+  const accountCurrency = accountsList.find((a) => a.id === accountId)?.currency ?? null;
+  const money = useMoneyCurrency({ open, accountCurrency, date });
+  // Dollars with no rate to use: one has to be typed.
+  const rateMissing = isForeignCurrency(money.currency) && money.rate === null && !money.loading;
 
   // Opened from a specific account (the חשבונות page's +) — start on it. Applied
   // per open, since the dialog stays mounted between uses.
@@ -278,7 +285,7 @@ export function IncomeDialog({
       case "property":
         return Boolean(effectivePropertyId);
       case "amount":
-        return amountValid;
+        return amountValid && !rateMissing;
       case "method":
         return Boolean(method);
       case "account":
@@ -320,6 +327,8 @@ export function IncomeDialog({
     setOrderId("");
     setPropertyId("");
     setAmount("");
+    money.setCurrency("ILS");
+    money.backToDayRate();
     setDate(getTodayDate());
     setMethod("");
     setAccountId("");
@@ -411,7 +420,8 @@ export function IncomeDialog({
         (part) =>
           offlineFetch(
             "/api/payments/create",
-            buildIncomePayload({
+            {
+              ...buildIncomePayload({
               incomeBusinessDomain: effectiveDomain,
               linkedProjectId,
               linkedOrderId,
@@ -427,7 +437,10 @@ export function IncomeDialog({
               incomeCheckNumber: checkNumber,
               incomeNotes: part.notes ?? "",
               incomeTagIds: tagIds,
-            }),
+              }),
+              // Its currency, and the rate when typed (the server works out the shekels).
+              ...money.body(),
+            },
             HEBREW.incomeNew,
             { idempotent: true }
           ),
@@ -695,7 +708,8 @@ export function IncomeDialog({
         <>
           <StepHeading title="כמה ההכנסה?" />
           <label className="space-y-2 text-sm">
-          <CurrencyInput
+          <CurrencyAmountInput
+            money={money}
             type="number"
             min="0"
             step="0.01"
@@ -732,6 +746,14 @@ export function IncomeDialog({
               selected={accountId === a.id}
               onClick={() => {
                 setAccountId(a.id);
+                // An account kept in dollars after an amount typed in another
+                // currency: back to the amount, now in the account's, to check it.
+                const next = a.currency ?? "ILS";
+                if (isForeignCurrency(next) && next !== money.currency && amountValid) {
+                  toast.info(`החשבון מתנהל ב${CURRENCY_NAME[next]} — יש לבדוק את הסכום`);
+                  advanceTo("amount");
+                  return;
+                }
                 advanceTo("date");
               }}
             />
@@ -899,7 +921,16 @@ export function IncomeDialog({
             {summaryLinkLabel !== undefined ? (
               <SummaryRow label={STEP_LABEL[effectiveDomain === "sales" ? "order" : effectiveDomain === "property_management" ? "property" : "project"]} value={summaryLinkLabel} />
             ) : null}
-            <SummaryRow label={HEBREW.amount} value={formatCurrency(Number(amount) || 0)} />
+            <SummaryRow
+              label={HEBREW.amount}
+              value={
+                isForeignCurrency(money.currency)
+                  ? `${formatCurrencyAmount(Number(amount) || 0, money.currency)} (${
+                      money.shekels(Number(amount) || 0) === null ? "—" : formatShekelNote(money.shekels(Number(amount) || 0))
+                    })`
+                  : formatCurrency(Number(amount) || 0)
+              }
+            />
             <SummaryRow label={HEBREW.paymentMethod} value={summaryMethodLabel ? HEBREW[summaryMethodLabel] : "—"} />
             <SummaryRow label="חשבון" value={summaryAccountName} />
             <SummaryRow label={HEBREW.date} value={normalizeDateOnly(date)} />

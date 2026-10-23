@@ -75,6 +75,16 @@ import { isImageDocument } from "@/lib/documents";
 import { uploadTogether } from "@/lib/upload-together";
 import { israelDateKey } from "@/lib/timezone";
 import { formatEnteredLabel, formatShortDate, toDateKey } from "@/lib/date";
+import {
+  CurrencyAmountInput,
+  CurrencySelect,
+  FxRateLine,
+  knowsCurrency,
+  typedAmountOf,
+  useMoneyCurrency,
+} from "@/components/fx/MoneyCurrency";
+import { CURRENCY_NAME, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
 
 type PaymentStatus = "paid" | "partial" | "not_paid";
 type PaymentChoice = "none" | "paid" | "partial";
@@ -177,6 +187,14 @@ export type EditingExpenseData = {
   included_in_base_price?: boolean | null;
   bill_to_customer_amount?: number | string | null;
   attachments?: FinancialAttachment[];
+  // The row's currency (2026-10-23): amount and paid_amount above are its
+  // shekels. A caller that carries the row's currency passes the key —
+  // "ILS" too — and the form edits it in its currency; one that doesn't
+  // leaves it out, and the form leaves the row's currency as it is.
+  currency?: string | null;
+  foreign_amount?: number | string | null;
+  fx_rate?: number | string | null;
+  fx_rate_manual?: boolean | null;
   // Who typed the expense in and when (created_at), for the small "הוזן ע״י …"
   // line under the edit title. Optional — a caller that doesn't carry them just
   // gets no line. There is deliberately no "last edited" line: expenses.updated_at
@@ -479,6 +497,17 @@ export function ExpenseDialog({
     return () => { active = false; };
   }, [open]);
 
+  // In ₪, US$ or C$ (2026-10-23) — the account's own when it's kept in
+  // dollars. A one-off expense only: a recurring bill, a split into payments
+  // and a worker's pay stay in shekels.
+  const money = useMoneyCurrency({
+    open,
+    initial: editingExpense,
+    known: !editingExpense || knowsCurrency(editingExpense),
+    accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    date: expenseDate,
+  });
+
   // Worker-session state (only used when the worker category is selected).
   const [localUsers, setLocalUsers] = useState<ExpenseWorkerOption[]>(users ?? []);
   const [workerUserId, setWorkerUserId] = useState("");
@@ -672,8 +701,8 @@ export function ExpenseDialog({
       setExistingAttachments([]);
       setTagIds([]);
     } else if (editingExpense) {
-      const raw = editingExpense.amount;
-      setAmount(typeof raw === "number" ? String(raw) : raw ?? "");
+      // A row in dollars is edited in dollars — its paid share too, at its rate.
+      setAmount(typedAmountOf(editingExpense, editingExpense.amount));
       // expense_date is a timestamptz ("2026-10-15T00:00:00+00:00") holding a
       // picked day — reduce it to that day's key, or the summary step showed the
       // raw stamp and the .slice(5, 7)/.slice(8, 10) month/day reads below
@@ -681,7 +710,15 @@ export function ExpenseDialog({
       setExpenseDate(toDateKey(editingExpense.expense_date) || israelDateKey());
       setPaymentStatus(normalizePaymentStatus(editingExpense.payment_status));
       const rawPaid = editingExpense.paid_amount;
-      setPaidAmount(rawPaid != null ? String(rawPaid) : "");
+      const rowRate = Number(editingExpense.fx_rate);
+      const inForeign = isForeignCurrency(editingExpense.currency) && Number.isFinite(rowRate) && rowRate > 0;
+      setPaidAmount(
+        rawPaid == null || rawPaid === ""
+          ? ""
+          : inForeign
+            ? String(Math.round((Number(rawPaid) / rowRate) * 100) / 100)
+            : String(rawPaid)
+      );
       setPaymentMethod(typeof editingExpense.payment_method === "string" ? editingExpense.payment_method : "");
       setPaidDate(typeof editingExpense.paid_date === "string" ? editingExpense.paid_date.slice(0, 10) : "");
       setAccountId(typeof editingExpense.account_id === "string" ? editingExpense.account_id : "");
@@ -1332,6 +1369,9 @@ export function ExpenseDialog({
             ? { paid_date: paidDate || null }
             : {}),
         tag_ids: tagIds,
+        // Its currency, and the rate when typed — the amounts above are in it
+        // (the server works out the shekels).
+        ...(inCurrency ? money.body() : {}),
       };
 
       let expenseId: string;
@@ -1607,6 +1647,15 @@ export function ExpenseDialog({
     return v;
   }
   const ils = (n: number) => "₪" + Number(n || 0).toLocaleString("en-US");
+  // The expense's amounts in its own currency, and its shekels beside them.
+  const inCurrency = !isRecurring && !installmentsMode && !isWorkerPayment;
+  const amt = (n: number) =>
+    inCurrency && isForeignCurrency(money.currency) ? formatCurrencyAmount(Number(n || 0), money.currency) : ils(n);
+  const amtWithShekels = (n: number) => {
+    if (!inCurrency || !isForeignCurrency(money.currency)) return ils(n);
+    const shekels = money.shekels(Number(n || 0));
+    return `${amt(n)}${shekels === null ? "" : ` (${formatShekelNote(shekels)})`}`;
+  };
 
   // Amount-based (session_only) workers in express skip the labor step, so the
   // opening amount IS their pay — mirror it into laborCost for submit/payment.
@@ -1701,7 +1750,7 @@ export function ExpenseDialog({
           n > 0 && filledTone ? "border-success" : "border-input"
         )}
       >
-        <span className="text-3xl font-bold text-muted-foreground">₪</span>
+        <span className="text-3xl font-bold text-muted-foreground">{inCurrency ? money.symbol : "₪"}</span>
         <span className="text-center text-4xl font-bold leading-none tabular-nums">
           {n > 0 ? n.toLocaleString("en-US") : "0"}
         </span>
@@ -1748,6 +1797,17 @@ export function ExpenseDialog({
           <>
             {expTitle("כמה עלתה ההוצאה?", "אפשר להשאיר 0 ולקבוע אחר כך")}
             {expAmountHero(amount)}
+            {/* ₪ / $ / C$, and for dollars the day's rate and its shekels. */}
+            {inCurrency && money.known ? (
+              <div className="mt-2 flex justify-center">
+                <CurrencySelect money={money} className="w-28" />
+              </div>
+            ) : null}
+            {inCurrency ? (
+              <div className="mt-1 flex justify-center text-center">
+                <FxRateLine money={money} amount={Number(amount) || 0} />
+              </div>
+            ) : null}
             {/* Allow proceeding at 0 — a recurring bill whose amount changes each
                 time (mortgage/CC) keeps this as an ESTIMATE for planning; the real
                 amount is entered when it's paid. One-offs must have a real amount. */}
@@ -1979,8 +2039,8 @@ export function ExpenseDialog({
           <>
             {expTitle("הסכום קבוע או משתנה?", "משתנה = ייקבע בעת התשלום, כמו מס")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {expCard({ badge: 1, title: "סכום קבוע", sub: Number(amount) > 0 ? ils(Number(amount)) : undefined, selected: !recurVariable, onClick: () => { setRecurVariable(false); expressAdvance(); } })}
-              {expCard({ badge: 2, title: "סכום משתנה", sub: Number(amount) > 0 ? `הערכה ${ils(Number(amount))} · הסופי בתשלום` : "הזינו הערכה למעלה · הסופי בתשלום", selected: recurVariable, onClick: () => { setRecurVariable(true); setRecurAutoPaid(false); expressAdvance(); } })}
+              {expCard({ badge: 1, title: "סכום קבוע", sub: Number(amount) > 0 ? amt(Number(amount)) : undefined, selected: !recurVariable, onClick: () => { setRecurVariable(false); expressAdvance(); } })}
+              {expCard({ badge: 2, title: "סכום משתנה", sub: Number(amount) > 0 ? `הערכה ${amt(Number(amount))} · הסופי בתשלום` : "הזינו הערכה למעלה · הסופי בתשלום", selected: recurVariable, onClick: () => { setRecurVariable(true); setRecurAutoPaid(false); expressAdvance(); } })}
             </div>
           </>
         );
@@ -2035,7 +2095,7 @@ export function ExpenseDialog({
       case "status":
         return (
           <>
-            {expTitle("מה סטטוס התשלום?", `סכום ${ils(Number(amount) || 0)}`)}
+            {expTitle("מה סטטוס התשלום?", `סכום ${amt(Number(amount) || 0)}`)}
             <div className="grid gap-2">
               {expCard({ badge: 1, title: "לא שולם", sub: "ההוצאה עדיין ממתינה לתשלום", tone: "unpaid", selected: paymentStatus === "not_paid", onClick: () => { setPaymentStatus("not_paid"); expressAdvance(); } })}
               {expCard({ badge: 2, title: "שולם חלקית", sub: "שולם חלק מהסכום", tone: "partial", selected: paymentStatus === "partial", onClick: () => { setPaymentStatus("partial"); expressAdvance(); } })}
@@ -2046,7 +2106,7 @@ export function ExpenseDialog({
       case "paidamt":
         return (
           <>
-            {expTitle("כמה שולם עד כה?", `מתוך ${ils(Number(amount) || 0)}`)}
+            {expTitle("כמה שולם עד כה?", `מתוך ${amt(Number(amount) || 0)}`)}
             {expAmountHero(paidAmount)}
             {expKeypad(setPaidAmount)}
           </>
@@ -2090,7 +2150,19 @@ export function ExpenseDialog({
                     title: a.name,
                     sub: getAccountKindLabel(a.kind),
                     selected: accountId === a.id,
-                    onClick: () => { setAccountId(a.id); expressAdvance(); },
+                    onClick: () => {
+                      setAccountId(a.id);
+                      // An account kept in dollars after an amount typed in
+                      // another currency: back to the amount, now in the
+                      // account's, to check it.
+                      const next = a.currency ?? "ILS";
+                      if (inCurrency && isForeignCurrency(next) && next !== money.currency && Number(amount) > 0) {
+                        toast.info(`החשבון מתנהל ב${CURRENCY_NAME[next]} — יש לבדוק את הסכום`);
+                        setExpStepId("amount");
+                        return;
+                      }
+                      expressAdvance();
+                    },
                   })
                 )}
               </div>
@@ -2332,7 +2404,7 @@ export function ExpenseDialog({
           <>
             {expTitle("לחייב את הלקוח?", "אפשר לדלג")}
             {Number(amount) > 0 ? (
-              <div className="mb-2 text-xs text-muted-foreground">סכום ההוצאה שהזנת: {ils(Number(amount))}</div>
+              <div className="mb-2 text-xs text-muted-foreground">סכום ההוצאה שהזנת: {amt(Number(amount))}</div>
             ) : null}
             <label className="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm">
               <input
@@ -2485,7 +2557,7 @@ export function ExpenseDialog({
                   : []),
               ]
             : [
-                ["סכום", ils(Number(amount) || 0)],
+                ["סכום", amtWithShekels(Number(amount) || 0)],
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
                 ...(sourceLabel ? [sourceLabel] : []),
                 ["קטגוריה", finalCategory || "—"],
@@ -2646,12 +2718,16 @@ export function ExpenseDialog({
                 )}
               </div>
               <div className="mt-2">
-                <CurrencyInput type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="h-12 text-2xl font-bold" />
+                {inCurrency ? (
+                  <CurrencyAmountInput money={money} type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="h-12 text-2xl font-bold" />
+                ) : (
+                  <CurrencyInput type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="h-12 text-2xl font-bold" />
+                )}
               </div>
               <div className="mt-1.5 text-xs text-muted-foreground">
                 {isRecurring && recurVariable
                   ? "הערכה לתכנון תזרים — הסכום הסופי ייקבע בעת התשלום."
-                  : (Number(amount) || 0) > 0 ? `סכום: ${ils(Number(amount))}` : "הקלד את הסכום ששולם עבור ההוצאה"}
+                  : (Number(amount) || 0) > 0 ? `סכום: ${amt(Number(amount))}` : "הקלד את הסכום ששולם עבור ההוצאה"}
               </div>
             </div>
           ) : null}
@@ -3408,7 +3484,7 @@ export function ExpenseDialog({
                   {paymentStatus === "partial" && (
                     <div className="space-y-1">
                       <div className="text-sm font-medium">סכום ששולם</div>
-                      <CurrencyInput type="number" min="0" step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} placeholder="0.00" />
+                      <CurrencyInput symbol={inCurrency ? money.symbol : "₪"} type="number" min="0" step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} placeholder="0.00" />
                     </div>
                   )}
                 </div>
@@ -3519,7 +3595,7 @@ export function ExpenseDialog({
           <DialogFooter className="flex-none border-t px-4 py-3 sm:px-6">
             {!isWorkerPayment ? (
               <div className="me-auto text-sm text-muted-foreground">
-                סה״כ: <b className="font-bold tabular-nums text-foreground">{ils(Number(amount) || 0)}</b>
+                סה״כ: <b className="font-bold tabular-nums text-foreground">{amt(Number(amount) || 0)}</b>
               </div>
             ) : null}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>

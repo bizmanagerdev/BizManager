@@ -5,6 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
+import { currencyFieldsFrom } from "@/lib/fx/currencies";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, SuccessIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
@@ -2576,6 +2577,8 @@ export default function FinancialPageClient({
           property_id: activeEditingExpense.expensePropertyId,
           created_at: activeEditingExpense.createdAt ?? null,
           recorded_by_name: activeEditingExpense.recordedByName,
+          // So a row in dollars is edited in dollars.
+          ...currencyFieldsFrom(activeEditingExpense.foreign),
         } : null}
         editingSourceLabel={activeEditingExpense?.sourceLabel ?? null}
         lockedProjectId={activeEditingExpense?.expenseProjectId}

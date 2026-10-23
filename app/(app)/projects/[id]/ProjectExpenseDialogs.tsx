@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { DocumentRow } from "@/components/ui/document-tile";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { DateInput } from "@/components/ui/date-input";
@@ -30,6 +29,8 @@ import { devicePaymentSaves, PAYMENT_NOT_SENT_YET } from "@/lib/payments/device-
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
 import { parseInstallments, splitCardInstallments, type FinancialAttachment, type PaymentRow } from "@/lib/payments";
 import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
+import { CurrencyAmountInput, knowsCurrency, typedAmountOf, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 import {
   getErrorMessage,
   isImageAttachment,
@@ -80,13 +81,24 @@ export function AddIncomeDialog({
   const [notes, setNotes] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
+  // In ₪, US$ or C$ — the account's own when it's kept in dollars (2026-10-23).
+  const money = useMoneyCurrency({
+    open,
+    initial: editingPayment,
+    known: !isEditing || knowsCurrency(editingPayment),
+    accountCurrency: paymentAccountsList.find((a) => a.id === paymentAccountId)?.currency ?? null,
+    date: paymentDate,
+  });
+  // Dollars with no rate to use: one has to be typed.
+  const rateMissing = isForeignCurrency(money.currency) && money.rate === null && !money.loading;
   const requiresDueDate = paymentMethod === "check";
   const canSubmit =
     Number.isFinite(Number(amount)) &&
     Number(amount) > 0 &&
     Boolean(paymentDate) &&
     Boolean(paymentMethod.trim()) &&
-    (!requiresDueDate || Boolean(dueDate));
+    (!requiresDueDate || Boolean(dueDate)) &&
+    !rateMissing;
 
   const amountNumber = Number(amount);
   const amountError =
@@ -125,11 +137,8 @@ export function AddIncomeDialog({
     setAmountTouched(false);
     setPaymentDateTouched(false);
     setPaymentMethodTouched(false);
-    setAmount(
-      editingPayment && toNumber(editingPayment.amount_total) !== null
-        ? String(toNumber(editingPayment.amount_total))
-        : ""
-    );
+    // A payment in dollars is edited in dollars.
+    setAmount(typedAmountOf(editingPayment, toNumber(editingPayment?.amount_total ?? null)));
     setPaymentDate(editingPayment?.payment_date ?? projectDateOrToday(projectStartDate));
     setPaymentMethod(editingPayment?.payment_method ?? "");
     setPaymentAccountId(editingPayment?.account_id ?? "");
@@ -181,6 +190,8 @@ export function AddIncomeDialog({
       check_number:
         paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
       notes: part.notes || undefined,
+      // Its currency, and the rate when typed (the server works out the shekels).
+      ...money.body(),
     });
 
     setSubmitting(true);
@@ -189,7 +200,9 @@ export function AddIncomeDialog({
       // (lib/payments/device-payment-saves.ts) — the project's money shows it
       // at once, offline too; it goes to the server in the background, where
       // the Morning receipt is issued. Files need the server.
-      const device = !isEditing && attachmentFiles.length === 0 ? devicePaymentSaves("projectPage") : null;
+      // Dollars need the server too: it has the day's rate.
+      const device =
+        !isEditing && attachmentFiles.length === 0 && money.currency === "ILS" ? devicePaymentSaves("projectPage") : null;
       const onDevice = device ? await device.addProjectPayment(bodyFor(firstPart)) : null;
 
       let savedPayment: PaymentRow | null = onDevice;
@@ -344,7 +357,8 @@ export function AddIncomeDialog({
               form the same Field). The fields keep their red border on an error. */}
           <AdaptiveGrid variant="formTwo">
             <Field label="\u05e1\u05db\u05d5\u05dd" required>
-              <CurrencyInput
+              <CurrencyAmountInput
+                money={money}
                 inputMode="numeric"
                 value={amount}
                 onChange={(e) => {

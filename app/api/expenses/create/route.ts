@@ -6,6 +6,8 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
+import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
+import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
 
 
 export async function POST(req: Request) {
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
       payment_method?: string | null;
       account_id?: string | null;
       tag_ids?: unknown;
-    };
+    } & MoneyCurrencyBody;
 
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
     const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
@@ -146,9 +148,14 @@ export async function POST(req: Request) {
       ? body.account_id.trim()
       : null;
 
+    // In US$ or C$: the amounts as typed, in shekels at the day's rate (or the
+    // rate typed) — amount and paid_amount are the shekels.
+    const pricing = await currencyPricing(supabase, body, { amount: amountNumber, date: expenseDate });
+    if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+
     const baseExpensePayload = {
       expense_date: expenseDate,
-      amount: amountNumber,
+      amount: pricing.toShekels(amountNumber),
       category,
       description,
       business_domain: businessDomain,
@@ -158,12 +165,13 @@ export async function POST(req: Request) {
       notes,
       recorded_by: profile.id,
       payment_status: paymentStatus,
-      paid_amount: paidAmount,
+      paid_amount: paidAmount === null ? null : pricing.toShekels(paidAmount),
       payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? paymentMethod : null,
       account_id: accountId,
+      ...(pricing.columns ?? {}),
     };
     const selectExpense =
-      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at";
+      `id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at,${MONEY_CURRENCY_COLUMNS}`;
 
     const { data: expenseData, error: expenseInsertError } = await supabase
       .from("expenses")

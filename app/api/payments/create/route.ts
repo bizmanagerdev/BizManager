@@ -12,6 +12,7 @@ import { mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib
 import { paymentFieldsFrom, paymentRowFrom, type PaymentBody } from "@/lib/payments/payment-input";
 import { clientRowId } from "@/lib/client-row-id";
 import { allocationMismatch, rentColumnsFrom, type RentFieldsBody } from "@/lib/payments/rent-fields";
+import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
 
 export async function POST(req: Request) {
   try {
@@ -20,10 +21,15 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "payments/create", async () => {
-    const body = (await req.json()) as PaymentBody & RentFieldsBody;
+    const body = (await req.json()) as PaymentBody & RentFieldsBody & MoneyCurrencyBody;
     // Read and checked the same way the phone does (lib/payments/payment-input.ts).
-    const fields = paymentFieldsFrom(body);
-    if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
+    const typed = paymentFieldsFrom(body);
+    if ("error" in typed) return NextResponse.json({ error: typed.error }, { status: 400 });
+    // In US$ or C$: the amount as typed, and its shekels at the day's rate (or
+    // the rate typed) — the row's amount_total is the shekels.
+    const pricing = await currencyPricing(supabase, body, { amount: typed.amount, date: typed.paymentDate });
+    if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+    const fields = { ...typed, amount: pricing.toShekels(typed.amount) };
     const { projectId, orderId, propertyId, requiresSplit } = fields;
     // A property's rent: the lease and the month(s) it pays (lib/payments/rent-fields.ts).
     const rent = rentColumnsFrom(body);
@@ -92,6 +98,7 @@ export async function POST(req: Request) {
       .insert({
         ...(clientId ? { id: clientId } : {}),
         ...paymentRowFrom(fields, { businessDomain, vatRate, recordedBy: user.id }),
+        ...(pricing.columns ?? {}),
         ...(propertyId ? rent : {}),
       })
       .select(PAYMENT_SELECT)
