@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
+import { MONEY_CURRENCY_COLUMNS, readForeignMoney, type CurrencyCode, type ForeignMoney } from "@/lib/fx/currencies";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Loans & repayments (הלוואות והחזרות). Shared between the loans UI and the
@@ -15,6 +16,12 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 // future obligation on a date; forecast only, does NOT reduce outstanding) or an
 // actual repayment (status 'paid' — cash moved). See the installment-plan
 // migration (supabase/migrations/20260802000000_loan_installment_plan.sql).
+//
+// A loan in US$ or C$ (owner, 2026-10-23): the debt is in that currency, so
+// what's left of it is too — `inCurrency`. Its repayments are in it as well,
+// each at the rate of its own day; their shekels (`amount`) are what the books
+// count. The shekel amounts below stay shekels: a loan's own at the rate of
+// the day it was made, and what's left of it at that same rate.
 // ════════════════════════════════════════════════════════════════════════════
 
 export type LoanDirection = "taken" | "given";
@@ -36,6 +43,21 @@ export type LoanRepayment = {
   /** "תשלום 2 מתוך 5" — position in the plan this row came from (nullable). */
   installment_index: number | null;
   installment_count: number | null;
+  /** In the loan's currency when it's US$ or C$: the amount and its rate
+   *  (`amount` and `interest_amount` above are the shekels). */
+  foreign?: ForeignMoney | null;
+};
+
+/** A loan's numbers in its own currency — the same as the shekel ones for a
+ *  loan in shekels. */
+export type LoanInCurrency = {
+  currency: CurrencyCode;
+  amount: number;
+  interest: number;
+  repaidPrincipal: number;
+  outstanding: number;
+  scheduledTotal: number;
+  unscheduledPrincipal: number;
 };
 
 export type Loan = {
@@ -77,7 +99,26 @@ export type Loan = {
   /** The nearest planned installment (earliest due date), if any. */
   nextInstallment: LoanRepayment | null;
   derivedStatus: LoanStatus;
+  /** The loan in US$ or C$, as typed (null for shekels). */
+  foreign?: ForeignMoney | null;
+  /** Its numbers in its own currency (see `loanInCurrency`). */
+  inCurrency?: LoanInCurrency;
 };
+
+/** A loan's numbers in its own currency — its shekel ones when it carries none. */
+export function loanInCurrency(loan: Loan): LoanInCurrency {
+  return (
+    loan.inCurrency ?? {
+      currency: "ILS",
+      amount: loan.amount,
+      interest: loan.interest_amount,
+      repaidPrincipal: loan.repaidPrincipal,
+      outstanding: loan.outstanding,
+      scheduledTotal: loan.scheduledTotal,
+      unscheduledPrincipal: loan.unscheduledPrincipal,
+    }
+  );
+}
 
 export type LoansSummary = {
   borrowedOutstanding: number; // taken loans we still owe (a liability)
@@ -125,6 +166,16 @@ function normalizeRepayment(row: Row): LoanRepayment {
     status: str(row.status) === "planned" ? "planned" : "paid",
     installment_index: intOrNull(row.installment_index),
     installment_count: intOrNull(row.installment_count),
+    foreign: readForeignMoney(row),
+  };
+}
+
+/** A repayment in its loan's currency: what it came to, and the interest in it. */
+export function repaymentInCurrency(r: Pick<LoanRepayment, "amount" | "interest_amount" | "foreign">) {
+  if (!r.foreign) return { amount: r.amount, interest: r.interest_amount };
+  return {
+    amount: Math.abs(r.foreign.amount),
+    interest: Math.round((r.interest_amount / r.foreign.rate) * 100) / 100,
   };
 }
 
@@ -134,6 +185,7 @@ function byDate(a: LoanRepayment, b: LoanRepayment) {
 
 export function deriveLoan(row: Row, repayments: LoanRepayment[]): Loan {
   const amount = num(row.amount);
+  const foreign = readForeignMoney(row);
   const paidRepayments = repayments.filter((r) => r.status !== "planned").sort(byDate);
   const plannedInstallments = repayments.filter((r) => r.status === "planned").sort(byDate);
 
@@ -143,21 +195,36 @@ export function deriveLoan(row: Row, repayments: LoanRepayment[]): Loan {
   );
   const repaidInterest = paidRepayments.reduce((sum, r) => sum + r.interest_amount, 0);
   const repaidTotal = paidRepayments.reduce((sum, r) => sum + r.amount, 0);
-  const outstanding = Math.max(amount - repaidPrincipal, 0);
 
-  const scheduledPrincipal = plannedInstallments.reduce(
-    (sum, r) => sum + Math.max(r.amount - r.interest_amount, 0),
-    0
-  );
+  // In the loan's own currency: the principal, what was repaid of it, what's
+  // left — for a loan in shekels the same numbers.
+  const principalOf = (r: LoanRepayment) => {
+    const c = repaymentInCurrency(r);
+    return Math.max(c.amount - c.interest, 0);
+  };
+  const amountIn = foreign ? Math.abs(foreign.amount) : amount;
+  const repaidIn = paidRepayments.reduce((sum, r) => sum + principalOf(r), 0);
+  const outstandingIn = Math.max(amountIn - repaidIn, 0);
+  const scheduledPrincipalIn = plannedInstallments.reduce((sum, r) => sum + principalOf(r), 0);
+  const scheduledTotalIn = plannedInstallments.reduce((sum, r) => sum + repaymentInCurrency(r).amount, 0);
+  // What's left in shekels: a loan in shekels, its principal less what was
+  // repaid of it; one in dollars, what's left of it at the rate it was made.
+  const outstanding = foreign
+    ? Math.round(outstandingIn * foreign.rate * 100) / 100
+    : Math.max(amount - repaidPrincipal, 0);
+
+  const scheduledPrincipal = foreign
+    ? Math.round(scheduledPrincipalIn * foreign.rate * 100) / 100
+    : plannedInstallments.reduce((sum, r) => sum + Math.max(r.amount - r.interest_amount, 0), 0);
   const scheduledTotal = plannedInstallments.reduce((sum, r) => sum + r.amount, 0);
 
   const storedStatus = (str(row.status) ?? "active") as LoanStatus;
   const derivedStatus: LoanStatus =
     storedStatus === "written_off"
       ? "written_off"
-      : outstanding <= 0.009
+      : outstandingIn <= 0.009
         ? "repaid"
-        : repaidPrincipal > 0.009
+        : repaidIn > 0.009
           ? "partially_repaid"
           : "active";
 
@@ -192,7 +259,23 @@ export function deriveLoan(row: Row, repayments: LoanRepayment[]): Loan {
     unscheduledPrincipal: Math.max(outstanding - scheduledPrincipal, 0),
     nextInstallment: plannedInstallments[0] ?? null,
     derivedStatus,
+    foreign,
+    inCurrency: {
+      currency: foreign?.currency ?? "ILS",
+      amount: amountIn,
+      interest: foreign ? Math.round((num(row.interest_amount) / foreign.rate) * 100) / 100 : num(row.interest_amount),
+      repaidPrincipal: repaidIn,
+      outstanding: outstandingIn,
+      scheduledTotal: scheduledTotalIn,
+      unscheduledPrincipal: Math.max(outstandingIn - scheduledPrincipalIn, 0),
+    },
   };
+}
+
+/** A loan's status from its stored row and its repayments' rows — what
+ *  `deriveLoan` works out, for the server to keep on the loan. */
+export function loanStatusFrom(row: Row, repaymentRows: Row[]): LoanStatus {
+  return deriveLoan(row, repaymentRows.map(normalizeRepayment)).derivedStatus;
 }
 
 /** Planned installments whose due date has already passed (nothing recorded yet). */
@@ -268,7 +351,7 @@ export async function fetchLoans(
       let query = supabase
         .from("loans")
         .select(
-          "id,direction,lender,borrower,loan_date,loan_method,repayment_method,documentation,amount,due_date,interest_amount,business_domain,counterparty_customer_id,status,notes,account_id,created_at"
+          `id,direction,lender,borrower,loan_date,loan_method,repayment_method,documentation,amount,due_date,interest_amount,business_domain,counterparty_customer_id,status,notes,account_id,created_at,${MONEY_CURRENCY_COLUMNS}`
         )
         .order("loan_date", { ascending: false })
         .range(from, to);

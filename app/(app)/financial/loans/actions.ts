@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
+import { currencyPricing } from "@/lib/fx/money-input";
+import { isForeignCurrency, MONEY_CURRENCY_COLUMNS, type ForeignCurrency } from "@/lib/fx/currencies";
+import { loanStatusFrom } from "@/lib/loans";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -21,8 +24,15 @@ export type LoanInput = {
   business_domain: string;
   account_id: string | null;
   notes: string;
+  /** ₪, US$ or C$ (2026-10-23): amount and interest_amount above are in it;
+   *  the rate only when typed by hand (else the Bank of Israel's of the day). */
+  currency?: string;
+  fx_rate?: number;
+  fx_rate_manual?: boolean;
 };
 
+/** A repayment's amounts are in its LOAN's currency, at the rate of its own
+ *  day — or the rate typed by hand. */
 export type RepaymentInput = {
   repayment_date: string;
   amount: number;
@@ -30,6 +40,8 @@ export type RepaymentInput = {
   method: string;
   account_id: string | null;
   notes: string;
+  fx_rate?: number;
+  fx_rate_manual?: boolean;
 };
 
 /** One row of a repayment plan: an amount owed on a date, not yet paid. */
@@ -76,30 +88,76 @@ function installmentSchemaError(message: string | undefined) {
   return null;
 }
 
-/** Recompute and persist the loan's status from its repayments (written-off is sticky). */
-async function syncLoanStatus(
-  supabase: Awaited<ReturnType<typeof requireProfile>>["supabase"],
-  loanId: string
-) {
+type Supabase = Awaited<ReturnType<typeof requireProfile>>["supabase"];
+
+/** Recompute and persist the loan's status from its repayments (written-off is
+ *  sticky) — worked out as the loans page does (lib/loans.ts deriveLoan), so a
+ *  loan in dollars is repaid when its dollars are. */
+async function syncLoanStatus(supabase: Supabase, loanId: string) {
   const [{ data: loan }, { data: repayments }] = await Promise.all([
-    supabase.from("loans").select("amount,status").eq("id", loanId).maybeSingle(),
+    supabase.from("loans").select(`amount,interest_amount,status,${MONEY_CURRENCY_COLUMNS}`).eq("id", loanId).maybeSingle(),
     // `*` so this keeps working before the installment migration adds `status`.
     supabase.from("loan_repayments").select("*").eq("loan_id", loanId),
   ]);
   if (!loan) return;
   if ((loan as { status?: string }).status === "written_off") return; // manual terminal state
-  const amount = Number((loan as { amount?: number }).amount ?? 0) || 0;
   // Planned installments are obligations, not payments — they don't repay anything.
-  const repaidPrincipal = ((repayments ?? []) as Array<Record<string, unknown>>)
-    .filter((r) => r.status !== "planned")
-    .reduce(
-      (sum, r) => sum + Math.max(Number(r.amount ?? 0) - Number(r.interest_amount ?? 0), 0),
-      0
-    );
-  const outstanding = Math.max(amount - repaidPrincipal, 0);
-  const status =
-    outstanding <= 0.009 ? "repaid" : repaidPrincipal > 0.009 ? "partially_repaid" : "active";
+  const status = loanStatusFrom(loan as Record<string, unknown>, (repayments ?? []) as Array<Record<string, unknown>>);
   await supabase.from("loans").update({ status }).eq("id", loanId);
+}
+
+/** A loan's currency and the rate it was made at — its repayments are in it. */
+async function loanCurrencyOf(
+  supabase: Supabase,
+  loanId: string
+): Promise<{ currency: "ILS" | ForeignCurrency; rate: number | null }> {
+  const { data } = await supabase.from("loans").select("currency,fx_rate").eq("id", loanId).maybeSingle();
+  const row = data as { currency?: string; fx_rate?: number | string } | null;
+  const currency = isForeignCurrency(row?.currency) ? row!.currency as ForeignCurrency : "ILS";
+  const rate = Number(row?.fx_rate);
+  return { currency, rate: Number.isFinite(rate) && rate > 0 ? rate : null };
+}
+
+/** A repayment's columns: its amounts typed in the loan's currency, in shekels
+ *  at its day's rate (or the one typed), with the currency beside them. */
+async function repaymentMoney(supabase: Supabase, loanId: string, input: RepaymentInput) {
+  const { currency } = await loanCurrencyOf(supabase, loanId);
+  const pricing = await currencyPricing(
+    supabase,
+    { currency, fx_rate: input.fx_rate, fx_rate_manual: input.fx_rate_manual },
+    { amount: input.amount, date: input.repayment_date }
+  );
+  if ("error" in pricing) return pricing;
+  const interest = Number.isFinite(input.interest_amount) ? Math.max(input.interest_amount, 0) : 0;
+  return {
+    amount: pricing.toShekels(input.amount),
+    interest_amount: pricing.toShekels(interest),
+    ...(pricing.columns ?? {}),
+  };
+}
+
+/** A planned installment in a loan in dollars: at the rate the loan was made —
+ *  it gets its own day's rate when it's paid. */
+type PlanRate = { currency: ForeignCurrency; rate: number } | null;
+
+function plannedMoney(row: InstallmentInput, plan: PlanRate) {
+  const amount = Number(row.amount);
+  const interest = Number(row.interest_amount) || 0;
+  if (!plan) return { amount, interest_amount: interest };
+  const round = (value: number) => Math.round(value * plan.rate * 100) / 100;
+  return {
+    amount: round(amount),
+    interest_amount: round(interest),
+    currency: plan.currency,
+    foreign_amount: Math.round(amount * 100) / 100,
+    fx_rate: plan.rate,
+    fx_rate_manual: false,
+  };
+}
+
+async function planRateOf(supabase: Supabase, loanId: string): Promise<PlanRate> {
+  const { currency, rate } = await loanCurrencyOf(supabase, loanId);
+  return isForeignCurrency(currency) && rate ? { currency, rate } : null;
 }
 
 function loanFields(input: LoanInput) {
@@ -143,21 +201,37 @@ export async function createLoan(
       if (invalid) return { ok: false, error: invalid };
     }
 
+    // In US$ or C$: the amounts as typed, in shekels at the day's rate.
+    const pricing = await currencyPricing(ctx.supabase, input, { amount: input.amount, date: input.loan_date });
+    if ("error" in pricing) return { ok: false, error: pricing.error };
+    const fields = loanFields(input);
+
     const { data, error } = await ctx.supabase
       .from("loans")
-      .insert({ ...loanFields(input), created_by: ctx.profile.id })
+      .insert({
+        ...fields,
+        amount: pricing.toShekels(fields.amount),
+        interest_amount: pricing.toShekels(fields.interest_amount),
+        ...(pricing.columns ?? {}),
+        created_by: ctx.profile.id,
+      })
       .select("id")
       .single();
     if (error) return { ok: false, error: toHebrewError(error.message) };
 
     const loanId = (data as { id?: string } | null)?.id ?? "";
     if (loanId && installments?.length) {
+      const columns = pricing.columns;
+      const plan: PlanRate =
+        columns && isForeignCurrency(columns.currency) && columns.fx_rate
+          ? { currency: columns.currency, rate: columns.fx_rate }
+          : null;
       const planError = await replacePlannedInstallments(
         ctx.supabase,
         loanId,
         installments,
         ctx.profile.id,
-        { newLoan: true }
+        { newLoan: true, plan }
       );
       // The loan itself is saved — report the plan failure without losing it.
       if (planError) {
@@ -193,9 +267,31 @@ export async function updateLoan(
       if (invalid) return { ok: false, error: invalid };
     }
 
+    // Its repayments are in the loan's currency: it can't change once it has any.
+    if (input.currency !== undefined) {
+      const before = await loanCurrencyOf(ctx.supabase, id);
+      const next = (input.currency || "ILS").toUpperCase();
+      if (next !== before.currency) {
+        const { count } = await ctx.supabase
+          .from("loan_repayments")
+          .select("id", { count: "exact", head: true })
+          .eq("loan_id", id);
+        if ((count ?? 0) > 0) return { ok: false, error: "אי אפשר לשנות את המטבע של הלוואה שיש לה כבר החזרים." };
+      }
+    }
+    const pricing = await currencyPricing(ctx.supabase, input, { amount: input.amount, date: input.loan_date });
+    if ("error" in pricing) return { ok: false, error: pricing.error };
+    const fields = loanFields(input);
+
     const { error } = await ctx.supabase
       .from("loans")
-      .update({ ...loanFields(input), updated_at: new Date().toISOString() })
+      .update({
+        ...fields,
+        amount: pricing.toShekels(fields.amount),
+        interest_amount: pricing.toShekels(fields.interest_amount),
+        ...(pricing.columns ?? {}),
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id);
     if (error) return { ok: false, error: toHebrewError(error.message) };
 
@@ -204,7 +300,8 @@ export async function updateLoan(
         ctx.supabase,
         id,
         installments,
-        ctx.profile.id
+        ctx.profile.id,
+        { plan: await planRateOf(ctx.supabase, id) }
       );
       if (planError) return { ok: false, error: planError };
     }
@@ -244,14 +341,16 @@ export async function addRepayment(
     if (interest > input.amount + 0.009) {
       return { ok: false, error: "הריבית לא יכולה לעלות על סכום ההחזר." };
     }
+    // In the loan's currency, at the day's rate (or the one typed).
+    const money = await repaymentMoney(ctx.supabase, loanId, input);
+    if ("error" in money) return { ok: false, error: money.error };
 
     const { data, error } = await ctx.supabase
       .from("loan_repayments")
       .insert({
         loan_id: loanId,
         repayment_date: input.repayment_date,
-        amount: input.amount,
-        interest_amount: interest,
+        ...money,
         method: clean(input.method),
         account_id: typeof input.account_id === "string" && input.account_id ? input.account_id : null,
         notes: clean(input.notes),
@@ -300,8 +399,9 @@ async function replacePlannedInstallments(
   loanId: string,
   installments: InstallmentInput[],
   userId: string,
-  /** A loan created a moment ago has no planned rows to clear — skip the delete. */
-  { newLoan = false }: { newLoan?: boolean } = {}
+  /** A loan created a moment ago has no planned rows to clear — skip the delete.
+   *  `plan`: a loan in dollars — its installments at the rate it was made. */
+  { newLoan = false, plan = null }: { newLoan?: boolean; plan?: PlanRate } = {}
 ): Promise<string | null> {
   if (!newLoan) {
     const { error: delError } = await supabase
@@ -322,8 +422,7 @@ async function replacePlannedInstallments(
     ordered.map((row, index) => ({
       loan_id: loanId,
       repayment_date: row.repayment_date,
-      amount: Number(row.amount),
-      interest_amount: Number(row.interest_amount) || 0,
+      ...plannedMoney(row, plan),
       status: "planned",
       installment_index: index + 1,
       installment_count: ordered.length,
@@ -356,7 +455,8 @@ export async function saveInstallmentPlan(
       ctx.supabase,
       loanId,
       installments,
-      ctx.profile.id
+      ctx.profile.id,
+      { plan: await planRateOf(ctx.supabase, loanId) }
     );
     if (planError) return { ok: false, error: planError };
     await syncLoanStatus(ctx.supabase, loanId);
@@ -384,8 +484,7 @@ export async function updateInstallment(
       .from("loan_repayments")
       .update({
         repayment_date: input.repayment_date,
-        amount: Number(input.amount),
-        interest_amount: Number(input.interest_amount) || 0,
+        ...plannedMoney(input, loanId ? await planRateOf(ctx.supabase, loanId) : null),
         notes: clean(input.notes),
       })
       .eq("id", id)
@@ -445,13 +544,19 @@ export async function markInstallmentPaid(
     // Insert the paid rows BEFORE deleting the planned one: if the insert fails,
     // the plan is still intact (worst case on a delete failure afterward is a
     // harmless duplicate, never a lost installment).
+    // Each part in the loan's currency, at its own day's rate (or the one typed).
+    const priced = [];
+    for (const part of parts) {
+      const money = await repaymentMoney(ctx.supabase, loanId, part);
+      if ("error" in money) return { ok: false, error: money.error };
+      priced.push({ part, money });
+    }
     const { error: insError } = await ctx.supabase.from("loan_repayments").insert(
-      parts.map((part) => ({
+      priced.map(({ part, money }) => ({
         loan_id: loanId,
         status: "paid",
         repayment_date: part.repayment_date,
-        amount: part.amount,
-        interest_amount: Number.isFinite(part.interest_amount) ? Math.max(part.interest_amount, 0) : 0,
+        ...money,
         method: clean(part.method),
         account_id: typeof part.account_id === "string" && part.account_id ? part.account_id : null,
         notes: clean(part.notes),
@@ -503,13 +608,14 @@ export async function updateRepayment(
     if (interest > input.amount + 0.009) {
       return { ok: false, error: "הריבית לא יכולה לעלות על סכום ההחזר." };
     }
+    const money = await repaymentMoney(ctx.supabase, loanId, input);
+    if ("error" in money) return { ok: false, error: money.error };
 
     const { error } = await ctx.supabase
       .from("loan_repayments")
       .update({
         repayment_date: input.repayment_date,
-        amount: input.amount,
-        interest_amount: interest,
+        ...money,
         method: clean(input.method),
         account_id:
           typeof input.account_id === "string" && input.account_id ? input.account_id : null,

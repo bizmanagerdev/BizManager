@@ -9,10 +9,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { type Loan, type LoansSummary, loanStatusLabel } from "@/lib/loans";
+import { type Loan, type LoansSummary, loanStatusLabel, loanInCurrency, repaymentInCurrency } from "@/lib/loans";
 import { deleteLoan } from "./actions";
 import { LoanDocumentsDialog, LoanFormDialog, RepaymentsDialog } from "./LoanDialogs";
-import { StatBox, formatDate, formatIls, statusColor, todayIso } from "./shared";
+import { StatBox, formatDate, formatIls, statusColor, todayIso, formatLoanMoney } from "./shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
@@ -191,15 +191,16 @@ export default function LoansClient({ loans: loansProp, summary }: { loans: Loan
                     </div>
                     <div className="text-sm">
                       <span className="text-muted-foreground">סכום </span>
-                      <span className="font-medium" dir="ltr">{formatIls(loan.amount)}</span>
+                      {/* A loan in dollars: in them (2026-10-23). */}
+                      <span className="font-medium" dir="ltr">{formatLoanMoney(loanInCurrency(loan).amount, loan)}</span>
                       <span className="text-muted-foreground"> · נפרע </span>
-                      <span className="font-medium" dir="ltr">{formatIls(loan.repaidPrincipal)}</span>
+                      <span className="font-medium" dir="ltr">{formatLoanMoney(loanInCurrency(loan).repaidPrincipal, loan)}</span>
                       <span className="text-muted-foreground"> · יתרה </span>
                       <span
                         className={"font-semibold " + (loan.direction === "taken" ? "text-destructive" : "text-success")}
                         dir="ltr"
                       >
-                        {formatIls(loan.outstanding)}
+                        {formatLoanMoney(loanInCurrency(loan).outstanding, loan)}
                       </span>
                     </div>
                     {loan.nextInstallment ? (
@@ -216,7 +217,7 @@ export default function LoansClient({ loans: loansProp, summary }: { loans: Loan
                         </span>
                         <span className="text-muted-foreground">{" "}</span>
                         <span className="font-medium tabular-nums" dir="ltr">
-                          {formatIls(loan.nextInstallment.amount)}
+                          {formatLoanMoney(repaymentInCurrency(loan.nextInstallment).amount, loan)}
                         </span>
                         <span className="text-muted-foreground"> ב-</span>
                         <span className="font-medium tabular-nums" dir="ltr">

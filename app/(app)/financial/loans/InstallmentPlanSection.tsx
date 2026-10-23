@@ -14,14 +14,14 @@ import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { type Loan, type LoanRepayment } from "@/lib/loans";
+import { loanInCurrency, repaymentInCurrency, type Loan, type LoanRepayment } from "@/lib/loans";
 import { deleteRepayment, markInstallmentPaid, saveInstallmentPlan, updateInstallment } from "./actions";
 import RepaymentPlanPicker, {
   planRows,
   planStateFromInstallments,
   type RepaymentPlanState,
 } from "./RepaymentPlanPicker";
-import { Field, METHOD_OPTIONS, formatDate, formatIls, todayIso } from "./shared";
+import { Field, METHOD_OPTIONS, formatDate, formatLoanMoney, installmentsInCurrency, loanSymbol, todayIso } from "./shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
@@ -39,8 +39,8 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
 
   const [editing, setEditing] = useState(false);
   const [plan, setPlan] = useState<RepaymentPlanState>(() =>
-    planStateFromInstallments(loan.plannedInstallments, {
-      amount: loan.outstanding,
+    planStateFromInstallments(installmentsInCurrency(loan), {
+      amount: loanInCurrency(loan).outstanding,
       dueDate: loan.due_date,
     })
   );
@@ -57,8 +57,8 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
 
   function openEditor() {
     setPlan(
-      planStateFromInstallments(loan.plannedInstallments, {
-        amount: loan.outstanding,
+      planStateFromInstallments(installmentsInCurrency(loan), {
+        amount: loanInCurrency(loan).outstanding,
         dueDate: loan.due_date,
       })
     );
@@ -66,7 +66,8 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
   }
 
   function savePlan() {
-    const rows = planRows(plan, loan.outstanding).filter(
+    // In the loan's currency: the plan covers what's left of it.
+    const rows = planRows(plan, loanInCurrency(loan).outstanding).filter(
       (row) => row.date && Number(row.amount) > 0
     );
     if (rows.length === 0) {
@@ -118,7 +119,7 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
           {planned.length > 0 ? (
             <span className="font-normal text-muted-foreground">
               {" "}
-              — {planned.length} תשלומים, {formatIls(loan.scheduledTotal)}
+              — {planned.length} תשלומים, {formatLoanMoney(loanInCurrency(loan).scheduledTotal, loan)}
             </span>
           ) : null}
         </div>
@@ -160,7 +161,7 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
                       {formatDate(installment.repayment_date)}
                     </span>
                     <span className="font-semibold tabular-nums" dir="ltr">
-                      {formatIls(installment.amount)}
+                      {formatLoanMoney(repaymentInCurrency(installment).amount, loan)}
                     </span>
                     {installment.installment_index && installment.installment_count ? (
                       <span className="text-xs text-muted-foreground">
@@ -199,11 +200,11 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
               </div>
             );
           })}
-          {loan.unscheduledPrincipal > 0.5 ? (
+          {loanInCurrency(loan).unscheduledPrincipal > 0.5 ? (
             <div className="px-1 text-xs text-muted-foreground">
               ללא תאריך:{" "}
               <span className="font-semibold tabular-nums" dir="ltr">
-                {formatIls(loan.unscheduledPrincipal)}
+                {formatLoanMoney(loanInCurrency(loan).unscheduledPrincipal, loan)}
               </span>
             </div>
           ) : null}
@@ -224,7 +225,13 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
         busy={pending}
         showCancel
       >
-        <RepaymentPlanPicker label="" state={plan} amount={loan.outstanding} onChange={setPlan} />
+        <RepaymentPlanPicker
+          currency={loanInCurrency(loan).currency}
+          label=""
+          state={plan}
+          amount={loanInCurrency(loan).outstanding}
+          onChange={setPlan}
+        />
       </FormDialog>
       <MarkPaidDialog
         loan={loan}
@@ -292,9 +299,11 @@ function MarkPaidDialog({
   const [pending, startTransition] = useTransition();
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   function firstPart(target: LoanRepayment | null) {
+    // In the loan's currency.
+    const inCurrency = target ? repaymentInCurrency(target) : null;
     return makePaymentPart(target?.repayment_date, {
-      amount: String(target?.amount ?? ""),
-      interest: target?.interest_amount ? String(target.interest_amount) : "",
+      amount: String(inCurrency?.amount ?? ""),
+      interest: inCurrency?.interest ? String(inCurrency.interest) : "",
       method: target?.method ?? loan.repayment_method ?? "",
       accountId: target?.account_id ?? loan.account_id ?? "",
       notes: target?.notes ?? "",
@@ -373,7 +382,7 @@ function MarkPaidDialog({
       title="רישום תשלום"
       description={
         installment
-          ? `תשלום שנקבע ל-${formatDate(installment.repayment_date)} על ${formatIls(installment.amount)}. אפשר לשנות סכום ותאריך, ואם שולם בכמה אמצעים — לפצל לכמה תשלומים.`
+          ? `תשלום שנקבע ל-${formatDate(installment.repayment_date)} על ${formatLoanMoney(repaymentInCurrency(installment).amount, loan)}. אפשר לשנות סכום ותאריך, ואם שולם בכמה אמצעים — לפצל לכמה תשלומים.`
           : undefined
       }
       onSubmit={submit}
@@ -405,10 +414,11 @@ function MarkPaidDialog({
                   <Input type="date" value={part.date} onChange={(e) => setPart(index, { date: e.target.value })} />
                 </Field>
                 <Field label="סכום ששולם">
-                  <CurrencyInput value={part.amount} onChange={(e) => setPart(index, { amount: e.target.value })} />
+                  <CurrencyInput symbol={loanSymbol(loan)} value={part.amount} onChange={(e) => setPart(index, { amount: e.target.value })} />
                 </Field>
                 <Field label="מתוכו ריבית (אם יש)">
                   <CurrencyInput
+                    symbol={loanSymbol(loan)}
                     value={part.interest}
                     onChange={(e) => setPart(index, { interest: e.target.value })}
                   />
@@ -456,7 +466,8 @@ function MarkPaidDialog({
             </Button>
             {parts.length > 1 ? (
               <div className="text-xs text-muted-foreground">
-                סה&quot;כ {formatIls(total)} מתוך {formatIls(installment?.amount ?? 0)}
+                סה&quot;כ {formatLoanMoney(total, loan)} מתוך{" "}
+                {formatLoanMoney(installment ? repaymentInCurrency(installment).amount : 0, loan)}
               </div>
             ) : null}
           </div>
@@ -483,10 +494,12 @@ function EditInstallmentDialog({
   const key = installment?.id ?? "";
   if (key && key !== seedKey) {
     setSeedKey(key);
+    // In the loan's currency.
+    const inCurrency = installment ? repaymentInCurrency(installment) : null;
     setForm({
       date: installment?.repayment_date ?? "",
-      amount: String(installment?.amount ?? ""),
-      interest: installment?.interest_amount ? String(installment.interest_amount) : "",
+      amount: String(inCurrency?.amount ?? ""),
+      interest: inCurrency?.interest ? String(inCurrency.interest) : "",
       notes: installment?.notes ?? "",
     });
   }
@@ -512,7 +525,10 @@ function EditInstallmentDialog({
       scope: "loan-installment",
       id,
       message: "התשלום עודכן.",
-      patch: { repayment_date: repaymentDate, amount, interest_amount: interestAmount, notes },
+      // A loan in dollars shows its installments' dollars: patch those.
+      patch: installment.foreign
+        ? { repayment_date: repaymentDate, foreign: { ...installment.foreign, amount }, notes }
+        : { repayment_date: repaymentDate, amount, interest_amount: interestAmount, notes },
       onCommit: async () => {
         const res = await updateInstallment(id, loanId, {
           repayment_date: repaymentDate,
@@ -549,12 +565,14 @@ function EditInstallmentDialog({
             </Field>
             <Field label="סכום">
               <CurrencyInput
+                symbol={loanSymbol(loan)}
                 value={form.amount}
                 onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
               />
             </Field>
             <Field label="מתוכו ריבית (אם יש)">
               <CurrencyInput
+                symbol={loanSymbol(loan)}
                 value={form.interest}
                 onChange={(e) => setForm((prev) => ({ ...prev, interest: e.target.value }))}
               />

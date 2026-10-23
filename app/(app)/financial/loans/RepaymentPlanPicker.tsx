@@ -9,6 +9,8 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { buildInstallmentSchedule, type LoanRepayment } from "@/lib/loans";
 import { Field, formatIls } from "./shared";
+import { CURRENCY_SYMBOL, type CurrencyCode } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 
 // ════════════════════════════════════════════════════════════════════════════
 // "איך מחזירים?" — the repayment structure of a loan: one payment on a date, or
@@ -110,6 +112,7 @@ export function planStateFromInstallments(
 }
 
 export default function RepaymentPlanPicker({
+  currency = "ILS",
   state,
   onChange,
   amount,
@@ -119,10 +122,13 @@ export default function RepaymentPlanPicker({
   state: RepaymentPlanState;
   onChange: (next: RepaymentPlanState) => void;
   amount: number;
+  /** The loan's currency — the plan is typed and shown in it (2026-10-23). */
+  currency?: CurrencyCode;
   label?: string;
 }) {
   const rows = planRows(state, amount);
   const total = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const money = (value: number) => (currency === "ILS" ? formatIls(value) : formatCurrencyAmount(value, currency));
   const gap = Math.round(amount - total);
 
   function setMode(mode: PlanMode) {
@@ -239,6 +245,7 @@ export default function RepaymentPlanPicker({
                   </div>
                   <div className="min-w-[8rem] flex-1">
                     <CurrencyInput
+                      symbol={CURRENCY_SYMBOL[currency]}
                       value={row.amount}
                       onChange={(e) => setRow(index, "amount", e.target.value)}
                     />
@@ -254,15 +261,15 @@ export default function RepaymentPlanPicker({
                 <span className="flex items-center gap-2 text-sm">
                   <span className="text-muted-foreground">סך הכל</span>
                   <span className="font-semibold tabular-nums" dir="ltr">
-                    {formatIls(total)}
+                    {money(total)}
                   </span>
                   {amount > 0 && Math.abs(gap) >= 1 ? (
                     <span
                       className={"rounded-md border px-2 py-0.5 text-xs " + getStatusColorClasses("warning")}
                     >
                       {gap > 0
-                        ? `חסרים ${formatIls(gap)}`
-                        : `עודף ${formatIls(Math.abs(gap))}`}
+                        ? `חסרים ${money(gap)}`
+                        : `עודף ${money(Math.abs(gap))}`}
                     </span>
                   ) : null}
                 </span>

@@ -1205,6 +1205,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           status: "paid",
           installment_index: intOrNull(row.installment_index),
           installment_count: intOrNull(row.installment_count),
+          // So the edit opens in the loan's currency.
+          foreign: readForeignMoney(row),
         },
       },
     });

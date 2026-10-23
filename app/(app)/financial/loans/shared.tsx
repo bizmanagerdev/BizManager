@@ -1,6 +1,9 @@
 "use client";
 
 import type { LoanStatus } from "@/lib/loans";
+import { CURRENCY_SYMBOL } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
+import { loanInCurrency, repaymentInCurrency, type Loan, type LoanRepayment } from "@/lib/loans";
 import { israelDateKey } from "@/lib/timezone";
 import { formatShortDate } from "@/lib/date";
 
@@ -30,6 +33,27 @@ export const METHOD_OPTIONS = [
   { value: "credit_card", label: "כרטיס אשראי" },
   { value: "other", label: "אחר" },
 ];
+
+/** An amount in a loan's own currency (2026-10-23): shekels as before,
+ *  "$52,400" for a loan in dollars. */
+export function formatLoanMoney(amount: number, loan: Loan) {
+  const currency = loanInCurrency(loan).currency;
+  return currency === "ILS" ? formatIls(amount) : formatCurrencyAmount(Math.round(amount * 100) / 100, currency);
+}
+
+/** The sign a loan's amounts are typed with. */
+export function loanSymbol(loan: Loan) {
+  return CURRENCY_SYMBOL[loanInCurrency(loan).currency];
+}
+
+/** The loan's planned installments in its own currency — what the plan editor
+ *  works in (their shekels are at the loan's rate until they're paid). */
+export function installmentsInCurrency(loan: Loan): LoanRepayment[] {
+  return loan.plannedInstallments.map((installment) => {
+    const inCurrency = repaymentInCurrency(installment);
+    return { ...installment, amount: inCurrency.amount, interest_amount: inCurrency.interest };
+  });
+}
 
 export function formatIls(amount: number) {
   return new Intl.NumberFormat("he-IL", {

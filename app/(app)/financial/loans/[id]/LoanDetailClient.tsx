@@ -11,10 +11,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ContactTapZone } from "@/components/ui/contact-link";
 import { SectionCard } from "@/components/ui/section-card";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { type Loan, loanStatusLabel } from "@/lib/loans";
+import { type Loan, loanStatusLabel, loanInCurrency } from "@/lib/loans";
 import { deleteLoan } from "../actions";
 import { LoanDocumentsDialog, LoanFormDialog, LoanRepaymentsPanel } from "../LoanDialogs";
-import { METHOD_OPTIONS, formatDate, formatIls, statusColor } from "../shared";
+import { METHOD_OPTIONS, formatDate, statusColor, formatLoanMoney } from "../shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
@@ -129,7 +129,7 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
             <InfoRow label="תאריך פרעון" value={<span dir="ltr">{formatDate(loan.due_date)}</span>} />
           ) : null}
           {loan.interest_amount > 0 ? (
-            <InfoRow label="ריבית" value={<span dir="ltr">{formatIls(loan.interest_amount)}</span>} />
+            <InfoRow label="ריבית" value={<span dir="ltr">{formatLoanMoney(loanInCurrency(loan).interest, loan)}</span>} />
           ) : null}
           {loan.loan_method ? <InfoRow label="אופן ההלוואה" value={methodLabel(loan.loan_method)} /> : null}
           {loan.repayment_method ? (

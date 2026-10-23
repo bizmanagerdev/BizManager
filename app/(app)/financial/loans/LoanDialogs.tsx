@@ -5,7 +5,7 @@
 // and a single loan's detail page (app/.../loans/[id]/LoanDetailClient.tsx) so
 // both "edit" and "add a payment" behave identically wherever they're triggered.
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { UndoIcon } from "@/components/ui/icons";
@@ -23,7 +23,12 @@ import { uploadTogether } from "@/lib/upload-together";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
-import { type Loan, type LoanDirection, type LoanRepayment } from "@/lib/loans";
+import { loanInCurrency, repaymentInCurrency, type Loan, type LoanDirection, type LoanRepayment } from "@/lib/loans";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatShekelNote } from "@/lib/money";
+import { lookupFxRate, type DayRate } from "@/lib/fx/rate-lookup";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   addRepayment,
   createLoan,
@@ -44,7 +49,17 @@ import RepaymentPlanPicker, {
   planStateFromInstallments,
   type RepaymentPlanState,
 } from "./RepaymentPlanPicker";
-import { Field, METHOD_OPTIONS, StatBox, formatDate, formatIls, todayIso } from "./shared";
+import {
+  Field,
+  METHOD_OPTIONS,
+  StatBox,
+  formatDate,
+  formatIls,
+  formatLoanMoney,
+  installmentsInCurrency,
+  loanSymbol,
+  todayIso,
+} from "./shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { formatEnteredLabel, formatShortDateTime } from "@/lib/date";
 import { DocumentRow } from "@/components/ui/document-tile";
@@ -83,15 +98,41 @@ function loanToForm(loan: Loan | null): FormState {
         : null,
     ourSide: ourSideName ?? BUSINESS_OWNER_NAME,
     loan_date: loan?.loan_date ?? todayIso(),
-    amount: loan ? String(loan.amount) : "",
+    // A loan in dollars is edited in dollars.
+    amount: loan ? String(loanInCurrency(loan).amount) : "",
     due_date: loan?.due_date ?? "",
-    interest_amount: loan && loan.interest_amount ? String(loan.interest_amount) : "",
+    interest_amount: loan && loan.interest_amount ? String(loanInCurrency(loan).interest) : "",
     loan_method: loan?.loan_method ?? "",
     repayment_method: loan?.repayment_method ?? "",
     account_id: loan?.account_id ?? "",
     documentation: loan?.documentation ?? "",
     notes: loan?.notes ?? "",
   };
+}
+
+/** A repayment's rate as its action takes it: the currency is its loan's. */
+function rateOf(body: Record<string, unknown>): { fx_rate?: number; fx_rate_manual?: boolean } {
+  return {
+    ...(typeof body.fx_rate === "number" ? { fx_rate: body.fx_rate } : {}),
+    ...(typeof body.fx_rate_manual === "boolean" ? { fx_rate_manual: body.fx_rate_manual } : {}),
+  };
+}
+
+/** Today's Bank of Israel rate for a loan in dollars — what's left of it in
+ *  shekels today; null for shekels. */
+function useTodayRate(currency: string): DayRate | null {
+  const [found, setFound] = useState<{ currency: string; rate: DayRate | null } | null>(null);
+  useEffect(() => {
+    if (!isForeignCurrency(currency)) return;
+    let active = true;
+    void lookupFxRate(createSupabaseBrowserClient(), currency, todayIso()).then((rate) => {
+      if (active) setFound({ currency, rate });
+    });
+    return () => {
+      active = false;
+    };
+  }, [currency]);
+  return found && found.currency === currency ? found.rate : null;
 }
 
 // ── Loan create / edit dialog ──────────────────────────────────────────────
@@ -111,12 +152,22 @@ export function LoanFormDialog({
   // How the loan gets paid back — chosen here, on the same form as the loan.
   const [plan, setPlan] = useState<RepaymentPlanState>(() =>
     loan
-      ? planStateFromInstallments(loan.plannedInstallments, {
-          amount: loan.outstanding,
+      ? planStateFromInstallments(installmentsInCurrency(loan), {
+          amount: loanInCurrency(loan).outstanding,
           dueDate: loan.due_date,
         })
       : emptyPlanState()
   );
+  // In ₪, US$ or C$ (2026-10-23) — the account's own when it's kept in dollars;
+  // fixed once the loan has repayments (they're in its currency).
+  const loanCurrencyRow = useMemo(() => (loan ? currencyFieldsFrom(loan.foreign ?? null) : null), [loan]);
+  const money = useMoneyCurrency({
+    open,
+    initial: loanCurrencyRow,
+    accountCurrency: loanAccountsList.find((a) => a.id === form.account_id)?.currency ?? null,
+    fixed: loan && loan.repayments.length > 0 ? loanInCurrency(loan).currency : null,
+    date: form.loan_date,
+  });
   // Only send the plan on save if it was actually touched, so editing a loan's
   // notes doesn't rewrite installments that are already planned.
   const [planDirty, setPlanDirty] = useState(false);
@@ -128,8 +179,8 @@ export function LoanFormDialog({
     setForm(loanToForm(loan));
     setPlan(
       loan
-        ? planStateFromInstallments(loan.plannedInstallments, {
-            amount: loan.outstanding,
+        ? planStateFromInstallments(installmentsInCurrency(loan), {
+            amount: loanInCurrency(loan).outstanding,
             dueDate: loan.due_date,
           })
         : emptyPlanState()
@@ -148,7 +199,7 @@ export function LoanFormDialog({
     const loanAmount = Number(form.amount) || 0;
     // The repayment plan covers what's still owed (a partly-repaid loan plans the
     // rest); the loan's תאריך פרעון is simply the date of its last payment.
-    const planAmount = loan ? Math.max(loanAmount - loan.repaidPrincipal, 0) : loanAmount;
+    const planAmount = loan ? Math.max(loanAmount - loanInCurrency(loan).repaidPrincipal, 0) : loanAmount;
     const rows = planRows(plan, planAmount).filter((row) => row.date && Number(row.amount) > 0);
     const installments = rows.map((row) => ({
       repayment_date: row.date,
@@ -173,6 +224,8 @@ export function LoanFormDialog({
       business_domain: "general_business",
       account_id: form.account_id || null,
       notes: form.notes,
+      // Its currency, and the rate when typed — the amounts above are in it.
+      ...money.body(),
     };
     if (!payload.loan_date) {
       toast.error("חובה לבחור תאריך הלוואה.");
@@ -287,13 +340,15 @@ export function LoanFormDialog({
               <Input type="date" value={form.loan_date} onChange={(e) => set("loan_date", e.target.value)} />
             </Field>
             <Field label="סכום ההלוואה">
-              <CurrencyInput
+              <CurrencyAmountInput
+                money={money}
                 value={form.amount}
                 onChange={(e) => set("amount", e.target.value)}
               />
             </Field>
             <Field label="ריבית (אם יש)">
               <CurrencyInput
+                symbol={money.symbol}
                 value={form.interest_amount}
                 onChange={(e) => set("interest_amount", e.target.value)}
               />
@@ -352,8 +407,9 @@ export function LoanFormDialog({
           <div className="rounded-md border bg-muted/20 p-3">
             <RepaymentPlanPicker
               label={form.direction === "taken" ? "איך אחזיר?" : "איך יחזירו לי?"}
+              currency={money.currency}
               state={plan}
-              amount={Math.max((Number(form.amount) || 0) - (loan?.repaidPrincipal ?? 0), 0)}
+              amount={Math.max((Number(form.amount) || 0) - (loan ? loanInCurrency(loan).repaidPrincipal : 0), 0)}
               onChange={(next) => {
                 setPlan(next);
                 setPlanDirty(true);
@@ -397,6 +453,10 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
   // so it stays folded away.
   const [adHocOpen, setAdHocOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<LoanRepayment | null>(null);
+  // A loan in dollars: its repayments are in them, at their day's rate.
+  const lc = loanInCurrency(loan);
+  const money = useMoneyCurrency({ open: adHocOpen, fixed: lc.currency, date });
+  const today = useTodayRate(lc.currency);
 
   function add() {
     const amt = Number(amount) || 0;
@@ -420,6 +480,7 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
         method,
         account_id: accountId || null,
         notes,
+        ...rateOf(money.body()),
       });
       if (res.ok) {
         setAdHocOpen(false);
@@ -480,11 +541,11 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
   return (
     <div className="space-y-4">
       <AdaptiveGrid variant="customerStats">
-        <StatBox label="סכום ההלוואה" value={formatIls(loan.amount)} />
-        <StatBox label="נפרע (קרן)" value={formatIls(loan.repaidPrincipal)} />
+        <StatBox label="סכום ההלוואה" value={formatLoanMoney(lc.amount, loan)} />
+        <StatBox label="נפרע (קרן)" value={formatLoanMoney(lc.repaidPrincipal, loan)} />
         <StatBox
-          label="יתרה"
-          value={formatIls(loan.outstanding)}
+          label={today ? `יתרה (${formatShekelNote(lc.outstanding * today.rate)} היום)` : "יתרה"}
+          value={formatLoanMoney(lc.outstanding, loan)}
           tone={loan.direction === "taken" ? "debt" : "asset"}
         />
       </AdaptiveGrid>
@@ -510,8 +571,12 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
                   </span>
                   <span className="text-muted-foreground">
                     {" · "}
-                    {formatIls(r.amount)}
-                    {r.interest_amount > 0 ? ` (מתוכו ריבית ${formatIls(r.interest_amount)})` : ""}
+                    {r.foreign
+                      ? `${formatLoanMoney(repaymentInCurrency(r).amount, loan)} (${formatShekelNote(r.amount)})`
+                      : formatIls(r.amount)}
+                    {r.interest_amount > 0
+                      ? ` (מתוכו ריבית ${formatLoanMoney(repaymentInCurrency(r).interest, loan)})`
+                      : ""}
                     {r.installment_index && r.installment_count
                       ? ` · תשלום ${r.installment_index} מתוך ${r.installment_count}`
                       : ""}
@@ -568,10 +633,10 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </Field>
             <Field label="סכום">
-              <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <CurrencyAmountInput money={money} value={amount} onChange={(e) => setAmount(e.target.value)} />
             </Field>
             <Field label="מתוכו ריבית (אם יש)">
-              <CurrencyInput value={interest} onChange={(e) => setInterest(e.target.value)} />
+              <CurrencyInput symbol={loanSymbol(loan)} value={interest} onChange={(e) => setInterest(e.target.value)} />
             </Field>
             <Field label="אופן">
               <NativeSelect
@@ -633,16 +698,25 @@ export function EditPaidRepaymentDialog({
   const [, startTransition] = useTransition();
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [form, setForm] = useState({ date: "", amount: "", interest: "", method: "", accountId: "", notes: "" });
+  // In its loan's currency, at its day's rate — or the rate it was typed at.
+  const repaymentRow = useMemo(() => (repayment ? currencyFieldsFrom(repayment.foreign ?? null) : null), [repayment]);
+  const money = useMoneyCurrency({
+    open: Boolean(repayment),
+    initial: repaymentRow,
+    fixed: loanInCurrency(loan).currency,
+    date: form.date,
+  });
 
   // Re-seed the form each time the dialog opens for a different repayment.
   const [seedKey, setSeedKey] = useState("");
   const key = repayment?.id ?? "";
   if (key && key !== seedKey) {
     setSeedKey(key);
+    const inCurrency = repayment ? repaymentInCurrency(repayment) : null;
     setForm({
       date: repayment?.repayment_date ?? "",
-      amount: String(repayment?.amount ?? ""),
-      interest: repayment?.interest_amount ? String(repayment.interest_amount) : "",
+      amount: String(inCurrency?.amount ?? ""),
+      interest: inCurrency?.interest ? String(inCurrency.interest) : "",
       method: repayment?.method ?? "",
       accountId: repayment?.account_id ?? "",
       notes: repayment?.notes ?? "",
@@ -675,12 +749,16 @@ export function EditPaidRepaymentDialog({
     const accountId = form.accountId || null;
     const notes = form.notes;
     const repaymentDate = form.date;
+    const rateBody = money.body();
     onOpenChange(false);
     scheduleDeferredEdit({
       scope: "loan-repayment",
       id,
       message: "ההחזר עודכן.",
-      patch: { repayment_date: repaymentDate, amount, interest_amount: interestAmount, method, account_id: accountId, notes },
+      // A loan in dollars shows its repayments' dollars: patch those.
+      patch: repayment.foreign
+        ? { repayment_date: repaymentDate, foreign: { ...repayment.foreign, amount }, method, account_id: accountId, notes }
+        : { repayment_date: repaymentDate, amount, interest_amount: interestAmount, method, account_id: accountId, notes },
       onCommit: async () => {
         const res = await updateRepayment(id, loanId, {
           repayment_date: repaymentDate,
@@ -689,6 +767,7 @@ export function EditPaidRepaymentDialog({
           method,
           account_id: accountId,
           notes,
+          ...rateOf(rateBody),
         });
         if (!res.ok) return { ok: false, error: res.error };
         startTransition(() => { router.refresh(); });
@@ -712,10 +791,10 @@ export function EditPaidRepaymentDialog({
               <Input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
             </Field>
             <Field label="סכום">
-              <CurrencyInput value={form.amount} onChange={(e) => set("amount", e.target.value)} />
+              <CurrencyAmountInput money={money} value={form.amount} onChange={(e) => set("amount", e.target.value)} />
             </Field>
             <Field label="מתוכו ריבית (אם יש)">
-              <CurrencyInput value={form.interest} onChange={(e) => set("interest", e.target.value)} />
+              <CurrencyInput symbol={loanSymbol(loan)} value={form.interest} onChange={(e) => set("interest", e.target.value)} />
             </Field>
             <Field label="אופן">
               <NativeSelect
@@ -774,7 +853,7 @@ export function RepaymentsDialog({
       title="החזרים ותוכנית תשלומים"
       description={
         loan
-          ? `${loan.direction === "taken" ? "החזר שלי למלווה" : "החזר מהלווה"} · יתרה לתשלום: ${formatIls(loan.outstanding)}`
+          ? `${loan.direction === "taken" ? "החזר שלי למלווה" : "החזר מהלווה"} · יתרה לתשלום: ${formatLoanMoney(loanInCurrency(loan).outstanding, loan)}`
           : undefined
       }
     >

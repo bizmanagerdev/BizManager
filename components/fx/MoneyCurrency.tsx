@@ -57,6 +57,8 @@ export type MoneyCurrency = {
   setCurrency: (currency: CurrencyCode) => void;
   /** The account's currency when it's US$ or C$ — the row has to be in it. */
   lockedTo: ForeignCurrency | null;
+  /** Fixed by the form (a loan's repayment is in the loan's currency). */
+  fixed: CurrencyCode | null;
   /** False on an edit whose caller didn't carry the row's currency: the
    *  field shows no choice and the save says nothing about it. */
   known: boolean;
@@ -82,6 +84,7 @@ export function useMoneyCurrency({
   initial,
   known = true,
   accountCurrency,
+  fixed = null,
   date,
 }: {
   /** The form is open — it starts over from `initial` each time it opens. */
@@ -91,6 +94,8 @@ export function useMoneyCurrency({
   known?: boolean;
   /** The chosen account's currency. */
   accountCurrency?: CurrencyCode | null;
+  /** A currency the row can't leave (a repayment: its loan's). */
+  fixed?: CurrencyCode | null;
   /** The row's day (the form's date field). */
   date: string | null | undefined;
 }): MoneyCurrency {
@@ -114,7 +119,7 @@ export function useMoneyCurrency({
   }, [open, start]);
 
   const lockedTo = isForeignCurrency(accountCurrency) ? accountCurrency : null;
-  const currency: CurrencyCode = lockedTo ?? chosen;
+  const currency: CurrencyCode = fixed ?? lockedTo ?? chosen;
   const day = rowDay(date);
 
   React.useEffect(() => {
@@ -152,6 +157,7 @@ export function useMoneyCurrency({
     currency,
     setCurrency: setChosen,
     lockedTo,
+    fixed,
     known,
     rate,
     dayRate,
@@ -184,7 +190,7 @@ export function CurrencySelect({ money, disabled, className }: { money: MoneyCur
       aria-label="מטבע"
       value={money.currency}
       onChange={(event) => money.setCurrency(event.target.value as CurrencyCode)}
-      disabled={disabled || Boolean(money.lockedTo)}
+      disabled={disabled || Boolean(money.lockedTo) || Boolean(money.fixed)}
       title={money.lockedTo ? `החשבון מתנהל ב${CURRENCY_NAME[money.lockedTo]}` : undefined}
       className={cn("w-24 shrink-0", className)}
     >
@@ -204,7 +210,7 @@ export function FxRateLine({ money, amount }: { money: MoneyCurrency; amount: nu
   const showInput = editing || money.manual || (!money.loading && !money.dayRate);
   return (
     <div className="space-y-1 text-xs text-muted-foreground">
-      {money.lockedTo ? <div>החשבון מתנהל ב{CURRENCY_NAME[money.lockedTo]}.</div> : null}
+      {money.lockedTo && !money.fixed ? <div>החשבון מתנהל ב{CURRENCY_NAME[money.lockedTo]}.</div> : null}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {shekels !== null && amount > 0 ? (
           <span dir="ltr" className="font-medium text-foreground">

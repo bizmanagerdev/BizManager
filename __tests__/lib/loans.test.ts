@@ -228,3 +228,48 @@ describe("label helpers", () => {
     expect(loanDirectionLabel("given")).toBe("הלוואה שנתתי");
   });
 });
+
+// A loan in US$ (2026-10-23): the debt is in dollars, so what's left is too;
+// each repayment's shekels are at its own day's rate, and what's left in
+// shekels is at the rate the loan was made.
+describe("deriveLoan — a loan in dollars", () => {
+  const usd = (amount: number, rate: number) => ({ currency: "USD" as const, amount, rate, rateManual: false });
+  const row = { id: "loan-1", direction: "taken", amount: 157200, currency: "USD", foreign_amount: "52400", fx_rate: "3.0" };
+
+  it("$52,400 taken at 3.0: owed in dollars, its shekels at 3.0", () => {
+    const loan = deriveLoan(row, []);
+    expect(loan.inCurrency).toMatchObject({ currency: "USD", amount: 52400, outstanding: 52400, repaidPrincipal: 0 });
+    expect(loan.outstanding).toBe(157200);
+    expect(loan.derivedStatus).toBe("active");
+  });
+
+  it("$20,000 repaid at 3.1: $32,400 left — ₪97,200 at the loan's rate; the books keep the ₪62,000 paid", () => {
+    const loan = deriveLoan(row, [repayment({ amount: 62000, foreign: usd(20000, 3.1) })]);
+    expect(loan.inCurrency).toMatchObject({ repaidPrincipal: 20000, outstanding: 32400 });
+    expect(loan.outstanding).toBe(97200);
+    expect(loan.repaidPrincipal).toBe(62000);
+    expect(loan.derivedStatus).toBe("partially_repaid");
+  });
+
+  it("repaid when its dollars are — whatever the shekels came to", () => {
+    const loan = deriveLoan(row, [
+      repayment({ id: "r1", amount: 62000, foreign: usd(20000, 3.1) }),
+      repayment({ id: "r2", amount: 103680, foreign: usd(32400, 3.2) }),
+    ]);
+    expect(loan.inCurrency?.outstanding).toBe(0);
+    expect(loan.outstanding).toBe(0);
+    expect(loan.derivedStatus).toBe("repaid");
+  });
+
+  it("a repayment's interest, kept in shekels, is in dollars at its own rate", () => {
+    const loan = deriveLoan(row, [repayment({ amount: 3100, interest_amount: 310, foreign: usd(1000, 3.1) })]);
+    expect(loan.inCurrency?.repaidPrincipal).toBe(900);
+    expect(loan.inCurrency?.outstanding).toBe(51500);
+  });
+
+  it("a loan in shekels is as it was", () => {
+    const loan = deriveLoan({ id: "loan-2", amount: 10000, direction: "given" }, [repayment({ amount: 4000 })]);
+    expect(loan.inCurrency).toMatchObject({ currency: "ILS", amount: 10000, outstanding: 6000 });
+    expect(loan.outstanding).toBe(6000);
+  });
+});
