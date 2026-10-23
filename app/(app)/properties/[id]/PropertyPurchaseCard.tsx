@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { EditButton } from "@/components/ui/icon-button";
 import { DocumentRow } from "@/components/ui/document-tile";
 import { MetaRow } from "@/components/ui/meta-row";
+import { ExternalSiteLink } from "@/components/ui/external-site-link";
 import { updateProperty } from "../actions";
 import { PropertyPurchaseFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
 import { formatCurrency } from "@/lib/payroll";
@@ -22,6 +23,8 @@ const PURCHASE_KEYS = [
   "land_block",
   "land_parcel",
   "land_sub_parcel",
+  "land_registry_url",
+  "land_title_url",
 ] as const satisfies readonly (keyof PropertyInput)[];
 
 function pick<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): Pick<T, K> {
@@ -46,6 +49,8 @@ function buildPurchasePatch(input: PropertyInput): Partial<Property> {
     landBlock: input.land_block.trim() || null,
     landParcel: input.land_parcel.trim() || null,
     landSubParcel: input.land_sub_parcel.trim() || null,
+    landRegistryUrl: input.land_registry_url.trim() || null,
+    landTitleUrl: input.land_title_url.trim() || null,
   };
 }
 
@@ -110,7 +115,12 @@ export default function PropertyPurchaseCard({
       displayProperty.purchaseTax != null ||
       displayProperty.landBlock ||
       displayProperty.landParcel ||
-      displayProperty.landSubParcel
+      displayProperty.landSubParcel ||
+      displayProperty.landRegistryUrl ||
+      displayProperty.landTitleUrl
+  );
+  const registryLinks = [displayProperty.landRegistryUrl, displayProperty.landTitleUrl].filter(
+    (url): url is string => Boolean(url)
   );
 
   return (
@@ -182,6 +192,14 @@ export default function PropertyPurchaseCard({
                 {[displayProperty.landBlock, displayProperty.landParcel, displayProperty.landSubParcel]
                   .filter(Boolean)
                   .join(" / ")}
+              </div>
+            ) : null}
+            {registryLinks.length > 0 ? (
+              <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-muted-foreground">רישום המקרקעין: </span>
+                {registryLinks.map((url) => (
+                  <ExternalSiteLink key={url} url={url} />
+                ))}
               </div>
             ) : null}
           </div>

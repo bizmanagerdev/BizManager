@@ -87,6 +87,19 @@ describe("a property's first card", () => {
     ]);
   });
 
+  it("its tax account online: the number opens it, in a new tab", () => {
+    renderCard({
+      ...PLOURDE,
+      taxAccountUrl: "https://montreal.ca/en/tax-account/address/list/result",
+    });
+    const link = screen.getByRole("link", { name: /020874-10/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://montreal.ca/en/tax-account/address/list/result",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
   it("none of them set: not shown", () => {
     renderCard({
       ...PLOURDE,
