@@ -248,6 +248,12 @@ describe("who paid", () => {
     const month = rentRollMonth(data({ properties: [property("d4", 1), property("yehuda", 2), property("empty", 3), property("sold", 4, { isActive: false })] }), 0, TODAY);
     expect(month.vacant.map((p) => p.id)).toEqual(["empty"]);
   });
+
+  it("one whose rent a management company collects: never without a tenant (owner, 2026-10-23)", () => {
+    const canada = property("plourde", 3, { propertyType: "building", rentManagedByCompany: true });
+    const month = rentRollMonth(data({ properties: [property("d4", 1), property("yehuda", 2), canada] }), 0, TODAY);
+    expect(month.vacant).toEqual([]);
+  });
 });
 
 describe("the rent alert's link", () => {

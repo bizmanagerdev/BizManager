@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import {
   DeleteIcon,
   EditIcon,
+  KeyIcon,
   MoreIcon,
   NotificationIcon,
   UserIcon,
@@ -150,7 +151,14 @@ export default function PropertyListCard({
 
         {/* Who rents it, what they pay and until when — it opens that part of its page. */}
         <div className="space-y-2">
-          {renters ? (
+          {p.rentManagedByCompany ? (
+            // Its rent a management company collects — never "פנוי" (owner, 2026-10-23).
+            <CardRow href={`${href}#management`} icon={KeyIcon} label="חברת ניהול">
+              <span className="truncate font-medium">
+                <Painted text={p.managementCompanyName ?? "בניהול חברה"} />
+              </span>
+            </CardRow>
+          ) : renters ? (
             <CardRow
               href={`${href}#renters`}
               icon={UserIcon}

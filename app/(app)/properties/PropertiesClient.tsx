@@ -66,6 +66,8 @@ function buildPropertyPatch(input: PropertyInput) {
     hasParking: input.has_parking,
     hasElevator: input.has_elevator,
     isFurnished: input.is_furnished,
+    rentManagedByCompany: input.rent_managed_by_company,
+    managementCompanyName: input.management_company_name.trim() || null,
   };
 }
 
