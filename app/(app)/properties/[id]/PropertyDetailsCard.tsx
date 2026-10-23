@@ -42,6 +42,9 @@ const BASIC_KEYS = [
   "management_company_name",
   "management_portal_url",
   "management_notes",
+  "zoning",
+  "region",
+  "tax_account_number",
 ] as const satisfies readonly (keyof PropertyInput)[];
 
 function pick<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): Pick<T, K> {
@@ -83,6 +86,9 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
     managementCompanyName: input.management_company_name.trim() || null,
     managementPortalUrl: input.management_portal_url.trim() || null,
     managementNotes: input.management_notes.trim() || null,
+    zoning: input.zoning.trim() || null,
+    region: input.region.trim() || null,
+    taxAccountNumber: input.tax_account_number.trim() || null,
   };
 }
 
@@ -177,6 +183,9 @@ export default function PropertyDetailsCard({
   const hasRoomLayout = propertyHasRoomLayout(p.propertyType);
   const details = [
     p.propertyType === "building" && p.apartmentsCount != null ? { label: "דירות", value: String(p.apartmentsCount) } : null,
+    p.zoning ? { label: "ייעוד", value: p.zoning } : null,
+    p.region ? { label: "מחוז", value: p.region } : null,
+    p.taxAccountNumber ? { label: "חשבון מס", value: p.taxAccountNumber } : null,
     p.propertyType !== "building" && hasRoomLayout && p.rooms != null ? { label: "חדרים", value: String(p.rooms) } : null,
     p.floor != null ? { label: "קומה", value: String(p.floor) } : null,
     p.squareMeters != null ? { label: "שטח", value: `${p.squareMeters} מ״ר` } : null,

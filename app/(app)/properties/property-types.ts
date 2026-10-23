@@ -56,4 +56,8 @@ export type PropertyInput = {
   owner_company_type: string;
   owner_company_url: string;
   owner_company_notes: string;
+  /** ייעוד, מחוז, the city's property-tax account (owner, 2026-10-23). */
+  zoning: string;
+  region: string;
+  tax_account_number: string;
 };

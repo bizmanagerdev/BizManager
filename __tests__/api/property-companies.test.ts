@@ -40,6 +40,9 @@ describe("a property's companies", () => {
       owner_company_name: "25 PLOURDE INC.",
       owner_company_number: "1180846645",
       owner_company_type: "Corporation",
+      zoning: "מגורים",
+      region: " Quebec ",
+      tax_account_number: "020874-10",
     });
     expect(result.ok).toBe(true);
     expect(updates[0]).toMatchObject({
@@ -51,6 +54,9 @@ describe("a property's companies", () => {
       owner_company_number: "1180846645",
       owner_company_type: "Corporation",
       owner_company_url: null,
+      zoning: "מגורים",
+      region: "Quebec",
+      tax_account_number: "020874-10",
     });
   });
 
@@ -64,7 +70,10 @@ describe("a property's companies", () => {
       if (
         key === "rent_managed_by_company" ||
         key.startsWith("management_") ||
-        key.startsWith("owner_company_")
+        key.startsWith("owner_company_") ||
+        key === "zoning" ||
+        key === "region" ||
+        key === "tax_account_number"
       )
         delete old[key];
     }
@@ -72,7 +81,10 @@ describe("a property's companies", () => {
     expect(result.ok).toBe(true);
     expect(
       Object.keys(updates[0]).filter(
-        (k) => k.includes("company") || k.startsWith("management_"),
+        (k) =>
+          k.includes("company") ||
+          k.startsWith("management_") ||
+          ["zoning", "region", "tax_account_number"].includes(k),
       ),
     ).toEqual([]);
   });

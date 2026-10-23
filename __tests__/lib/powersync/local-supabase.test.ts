@@ -1478,7 +1478,7 @@ const PROPERTY_COLUMNS = [
   "land_sub_parcel", "electricity_contract_number", "water_contract_number", "gas_contract_number", "arnona_contract_number",
   "is_furnished", "furniture_items", "created_at", "updated_at", "sort_order", "rent_managed_by_company",
   "management_company_name", "management_portal_url", "management_notes", "owner_company_name", "owner_company_number",
-  "owner_company_type", "owner_company_url", "owner_company_notes",
+  "owner_company_type", "owner_company_url", "owner_company_notes", "zoning", "region", "tax_account_number",
 ];
 const property = (row: Row) => ({ ...Object.fromEntries(PROPERTY_COLUMNS.map((c) => [c, null])), is_active: 1, ...row });
 const lease = (row: Row) => ({

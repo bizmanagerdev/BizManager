@@ -83,6 +83,9 @@ export const EMPTY_PROPERTY_FORM: PropertyInput = {
   owner_company_type: "",
   owner_company_url: "",
   owner_company_notes: "",
+  zoning: "",
+  region: "",
+  tax_account_number: "",
 };
 
 export function propertyToForm(p: Property): PropertyInput {
@@ -128,6 +131,9 @@ export function propertyToForm(p: Property): PropertyInput {
     owner_company_type: p.ownerCompanyType ?? "",
     owner_company_url: p.ownerCompanyUrl ?? "",
     owner_company_notes: p.ownerCompanyNotes ?? "",
+    zoning: p.zoning ?? "",
+    region: p.region ?? "",
+    tax_account_number: p.taxAccountNumber ?? "",
   };
 }
 
@@ -307,6 +313,21 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
               lease ("מפתחות שנמסרו"), not here. */}
           <span className="font-medium">מספר מפתחות</span>
           <Input inputMode="numeric" value={form.key_count} onChange={(e) => set("key_count", e.target.value)} />
+        </label>
+      </div>
+      {/* ייעוד, מחוז and the city's tax account (owner, 2026-10-23: "put these … as details here"). */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">ייעוד</span>
+          <Input value={form.zoning} onChange={(e) => set("zoning", e.target.value)} placeholder="לדוגמה: מגורים" />
+        </label>
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">מחוז</span>
+          <Input value={form.region} onChange={(e) => set("region", e.target.value)} />
+        </label>
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">מספר חשבון מס</span>
+          <Input dir="ltr" value={form.tax_account_number} onChange={(e) => set("tax_account_number", e.target.value)} />
         </label>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

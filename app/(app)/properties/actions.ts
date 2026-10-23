@@ -98,6 +98,17 @@ function propertyFields(input: PropertyInput) {
     is_furnished: input.is_furnished,
     furniture_items: input.furniture_items,
     ...companyFields(input),
+    ...placeFields(input),
+  };
+}
+
+/** ייעוד, מחוז and the tax account (owner, 2026-10-23) — left as they are when a form from before them saves. */
+function placeFields(input: PropertyInput) {
+  if (typeof input.zoning !== "string") return {};
+  return {
+    zoning: clean(input.zoning),
+    region: clean(input.region),
+    tax_account_number: clean(input.tax_account_number),
   };
 }
 

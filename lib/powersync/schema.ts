@@ -457,6 +457,9 @@ const properties = new Table({
   owner_company_type: text,
   owner_company_url: text,
   owner_company_notes: text,
+  zoning: text,
+  region: text,
+  tax_account_number: text,
 });
 
 const lease_agreements = new Table(
