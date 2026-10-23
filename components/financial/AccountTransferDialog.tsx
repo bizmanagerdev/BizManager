@@ -16,6 +16,11 @@
 // account_transfers row, which the accounts ledger reads as one OUT leg and one
 // IN leg (see lib/accounts.ts).
 //
+// Between accounts in different currencies (owner, 2026-10-23) it asks for
+// both sides — what left, in the first account's currency, and what arrived,
+// in the second's — since a bank's rate isn't the official one; the rate the
+// two came to shows beside the Bank of Israel's.
+//
 // Rebuilt 2026-08-25 onto the same atomic step-wizard architecture as
 // IncomeDialog/CollectPaymentDialog/ExpenseDialog (one question per screen,
 // tap-a-card-to-advance) instead of a single-page FormDialog — part of
@@ -40,6 +45,10 @@ import { getAccountKindLabel, type Account, type AccountTransferRef } from "@/li
 import { loadAccounts as loadActiveAccounts } from "@/components/financial/AccountSelect";
 import { getTodayDate, normalizeDateOnly } from "@/app/(app)/dashboard/DashboardActions.helpers";
 import { formatCurrency } from "@/lib/payroll";
+import { CURRENCY_SYMBOL, isForeignCurrency, type CurrencyCode } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
+import { lookupFxRate, type DayRate } from "@/lib/fx/rate-lookup";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /** משיכה = bank→cash, הפקדה = cash→bank, העברה = free choice on both sides. */
 type TransferMode = "withdraw" | "deposit" | "between";
@@ -91,7 +100,10 @@ export function AccountTransferDialog({
   const [mode, setMode] = useState<TransferMode>("between");
   const [fromAccountId, setFromAccountId] = useState("");
   const [toAccountId, setToAccountId] = useState("");
+  // What left the first account, in its currency — and, when the second is in
+  // another currency, what arrived there in its own.
   const [amount, setAmount] = useState("");
+  const [arrived, setArrived] = useState("");
   const [date, setDate] = useState(getTodayDate());
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -103,6 +115,16 @@ export function AccountTransferDialog({
   const quickModesAvailable = bankAccounts.length > 0 && cashAccounts.length > 0;
   const modes: TransferMode[] = quickModesAvailable ? ["withdraw", "deposit", "between"] : ["between"];
   const notEnoughAccounts = !loading && accounts.length < 2;
+
+  // Each side's account and currency (2026-10-23): one amount when they're the
+  // same, what left and what arrived when they aren't.
+  const fromAccount = accounts.find((a) => a.id === fromAccountId);
+  const toAccount = accounts.find((a) => a.id === toAccountId);
+  const fromCurrency: CurrencyCode = fromAccount?.currency ?? "ILS";
+  const toCurrency: CurrencyCode = toAccount?.currency ?? "ILS";
+  const sameCurrency = fromCurrency === toCurrency;
+  const leftNumber = Number(amount);
+  const arrivedNumber = sameCurrency ? leftNumber : Number(arrived);
 
   /** Set the mode and pre-fill whichever side the mode already decides. */
   function applyMode(next: TransferMode, list: Account[]) {
@@ -150,7 +172,9 @@ export function AccountTransferDialog({
         setError(null);
         setFromAccountId(transfer.fromAccountId);
         setToAccountId(transfer.toAccountId);
-        setAmount(String(transfer.amount));
+        // Each side as it was, in its account's currency.
+        setAmount(String(transfer.fromAmount ?? transfer.amount));
+        setArrived(String(transfer.toAmount ?? transfer.amount));
         setDate(transfer.date);
         setNotes(transfer.notes ?? "");
         setStepId("from");
@@ -219,7 +243,11 @@ export function AccountTransferDialog({
       case "to":
         return Boolean(toAccountId) && toAccountId !== fromAccountId;
       case "amount":
-        return Number.isFinite(Number(amount)) && Number(amount) > 0;
+        return (
+          Number.isFinite(Number(amount)) &&
+          Number(amount) > 0 &&
+          (sameCurrency || (Number.isFinite(Number(arrived)) && Number(arrived) > 0))
+        );
       case "date":
         return Boolean(date);
       case "notes":
@@ -271,6 +299,7 @@ export function AccountTransferDialog({
     setFromAccountId("");
     setToAccountId("");
     setAmount("");
+    setArrived("");
     setDate(getTodayDate());
     setNotes("");
     setError(null);
@@ -283,8 +312,37 @@ export function AccountTransferDialog({
     if (!next) resetForm();
   }
 
-  const fromAccount = accounts.find((a) => a.id === fromAccountId);
-  const toAccount = accounts.find((a) => a.id === toAccountId);
+  // The Bank of Israel rate of the day for a side in dollars, beside the rate
+  // the two sides came to.
+  const [dayRates, setDayRates] = useState<Partial<Record<CurrencyCode, DayRate | null>>>({});
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    for (const currency of [fromCurrency, toCurrency]) {
+      if (!isForeignCurrency(currency)) continue;
+      void lookupFxRate(createSupabaseBrowserClient(), currency, date || getTodayDate()).then((found) => {
+        if (active) setDayRates((prev) => ({ ...prev, [currency]: found }));
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [open, fromCurrency, toCurrency, date]);
+  /** "$1 = ₪3.05 (שער יציג 3.107)" — what one unit of the side that left came to. */
+  function rateNote(): string | null {
+    if (sameCurrency || !(leftNumber > 0) || !(arrivedNumber > 0)) return null;
+    // Said per unit of the foreign side: $1 = ₪…, or $1 = C$… between two.
+    const [unit, other, unitAmount, otherAmount] = isForeignCurrency(fromCurrency)
+      ? [fromCurrency, toCurrency, leftNumber, arrivedNumber]
+      : [toCurrency, fromCurrency, arrivedNumber, leftNumber];
+    const rate = Math.round((otherAmount / unitAmount) * 10000) / 10000;
+    const official =
+      other === "ILS" && isForeignCurrency(unit) && dayRates[unit] ? ` (שער יציג ${dayRates[unit]!.rate})` : "";
+    return `שער בפועל: ${CURRENCY_SYMBOL[unit]}1 = ${CURRENCY_SYMBOL[other]}${rate}${official}`;
+  }
+  /** An amount in a side's currency, for the summary. */
+  const sideMoney = (value: number, currency: CurrencyCode) =>
+    currency === "ILS" ? formatCurrency(value || 0) : formatCurrencyAmount(value || 0, currency);
 
   async function save() {
     setError(null);
@@ -301,7 +359,18 @@ export function AccountTransferDialog({
     if (fromAccountId === toAccountId) return setError("לא ניתן להעביר לאותו חשבון.");
     const amountValue = Number(amount);
     if (!Number.isFinite(amountValue) || amountValue <= 0) return setError("יש להזין סכום תקין.");
+    if (!sameCurrency && !(Number.isFinite(arrivedNumber) && arrivedNumber > 0)) {
+      return setError("יש להזין כמה הגיע לחשבון היעד.");
+    }
     if (!date) return setError("יש לבחור תאריך.");
+    // Each side in its account's currency; the shekels are what left or
+    // arrived in shekels — between two dollar accounts the database works
+    // them out from the day's rate (what's sent then is only a placeholder).
+    const sides = {
+      amount: fromCurrency === "ILS" ? amountValue : toCurrency === "ILS" ? arrivedNumber : amountValue,
+      from_amount: fromCurrency === "ILS" ? null : amountValue,
+      to_amount: toCurrency === "ILS" ? null : arrivedNumber,
+    };
 
     setSubmitting(true);
     try {
@@ -309,7 +378,7 @@ export function AccountTransferDialog({
         ...(transfer ? { id: transfer.id } : null),
         from_account_id: fromAccountId,
         to_account_id: toAccountId,
-        amount: amountValue,
+        ...sides,
         transfer_date: date,
         notes: notes.trim() || null,
       });
@@ -438,10 +507,47 @@ export function AccountTransferDialog({
         </>
       ) : stepId === "amount" ? (
         <>
-          <StepHeading title="כמה כסף מועבר?" />
-          <label className="space-y-2 text-sm">
-            <CurrencyInput autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} />
-          </label>
+          {sameCurrency ? (
+            <>
+              <StepHeading title="כמה כסף מועבר?" />
+              <label className="space-y-2 text-sm">
+                <CurrencyInput
+                  autoFocus
+                  symbol={CURRENCY_SYMBOL[fromCurrency]}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              {/* Two currencies: what left, and what arrived — the bank's rate
+                  is whatever the two came to. */}
+              <StepHeading title="כמה יצא וכמה הגיע?" />
+              <div className="grid gap-3">
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">יצא מ{fromAccount?.name ?? "החשבון"}</span>
+                  <CurrencyInput
+                    autoFocus
+                    aria-label="יצא"
+                    symbol={CURRENCY_SYMBOL[fromCurrency]}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">הגיע ל{toAccount?.name ?? "חשבון היעד"}</span>
+                  <CurrencyInput
+                    aria-label="הגיע"
+                    symbol={CURRENCY_SYMBOL[toCurrency]}
+                    value={arrived}
+                    onChange={(e) => setArrived(e.target.value)}
+                  />
+                </label>
+                {rateNote() ? <div className="text-xs text-muted-foreground">{rateNote()}</div> : null}
+              </div>
+            </>
+          )}
         </>
       ) : stepId === "date" ? (
         <>
@@ -482,7 +588,15 @@ export function AccountTransferDialog({
             <SummaryRow label="כיוון" value={MODE_LABELS[mode].label} />
             <SummaryRow label="מחשבון" value={fromAccount?.name ?? "—"} />
             <SummaryRow label="לחשבון" value={toAccount?.name ?? "—"} />
-            <SummaryRow label="סכום" value={formatCurrency(Number(amount) || 0)} />
+            {sameCurrency ? (
+              <SummaryRow label="סכום" value={sideMoney(leftNumber, fromCurrency)} />
+            ) : (
+              <>
+                <SummaryRow label="יצא" value={sideMoney(leftNumber, fromCurrency)} />
+                <SummaryRow label="הגיע" value={sideMoney(arrivedNumber, toCurrency)} />
+                {rateNote() ? <SummaryRow label="שער" value={rateNote()!.replace("שער בפועל: ", "")} /> : null}
+              </>
+            )}
             <SummaryRow label="תאריך" value={normalizeDateOnly(date)} />
             {notes.trim() ? <SummaryRow label="הערה" value={notes} /> : null}
           </SummarySection>

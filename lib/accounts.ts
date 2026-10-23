@@ -261,10 +261,24 @@ export type AccountTransferRef = {
   id: string;
   fromAccountId: string;
   toAccountId: string;
+  /** Its shekels: what left a shekel account, what arrived in one, or what
+   *  left at the day's rate between two dollar accounts. */
   amount: number;
+  /** What left / arrived in the account's own currency, when it's US$ or C$
+   *  (supabase/migrations/20261023150000_transfer_currencies.sql). */
+  fromAmount: number | null;
+  toAmount: number | null;
   date: string; // YYYY-MM-DD
   notes: string | null;
 };
+
+/** A transfer side's money in its account's currency, when that's US$ or C$:
+ *  what moved there, at the rate the two sides came to. */
+function transferSide(account: Account | undefined, sideAmount: number | null, shekels: number): ForeignMoney | null {
+  const currency = account?.currency ?? "ILS";
+  if (!isForeignCurrency(currency) || !sideAmount || sideAmount <= 0) return null;
+  return { currency, amount: sideAmount, rate: Math.round((shekels / sideAmount) * 1e6) / 1e6, rateManual: false };
+}
 
 export type AccountWithLedger = AccountBalance & { ledger: AccountLedgerEntry[] };
 
@@ -491,7 +505,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         supabase
           .from("account_transfers")
           .select(
-            "id,from_account_id,to_account_id,amount,transfer_date,notes,created_at,created_by,card_statement_row_id," +
+            "id,from_account_id,to_account_id,amount,from_amount,to_amount,transfer_date,notes,created_at,created_by,card_statement_row_id," +
               "card_row:card_statement_rows(statement_id,card_label,description)"
           )
           .gte("transfer_date", earliestOpening)
@@ -1207,6 +1221,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const from = byId.get(str(row.from_account_id) ?? "");
     const to = byId.get(str(row.to_account_id) ?? "");
     const note = str(row.notes)?.trim() || null;
+    // Each side in its account's currency (2026-10-23): $1,000 left Chase,
+    // ₪3,050 arrived — `amount` is the shekels.
+    const fromAmount = row.from_amount == null ? null : Math.abs(num(row.from_amount));
+    const toAmount = row.to_amount == null ? null : Math.abs(num(row.to_amount));
 
     // "מול מזומן": a card purchase someone paid us for in cash. Only the IN leg —
     // the bank's side is inside the card's charge. Undone from its statement line,
@@ -1226,6 +1244,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         href: statementId ? `/financial/statements/${statementId}` : "/financial/statements",
         type: "in",
         amount,
+        foreign: transferSide(to, toAmount, amount),
         posted: true,
       });
       continue;
@@ -1236,6 +1255,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       fromAccountId: str(row.from_account_id) ?? "",
       toAccountId: str(row.to_account_id) ?? "",
       amount,
+      fromAmount,
+      toAmount,
       date,
       notes: note,
     };
@@ -1251,6 +1272,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         href: null,
         type: "out",
         amount,
+        foreign: transferSide(from, fromAmount, amount),
         posted: true,
         transfer: ref,
       });
@@ -1266,6 +1288,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         href: null,
         type: "in",
         amount,
+        foreign: transferSide(to, toAmount, amount),
         posted: true,
         transfer: ref,
       });

@@ -6,7 +6,13 @@ export type TransferInput = {
   id?: string;
   from_account_id: string;
   to_account_id: string;
+  /** The shekels: what left a shekel account, or what arrived in one. Between
+   *  two dollar accounts the database works them out (any positive number). */
   amount: number;
+  /** What left / arrived in that account's own currency, when it's US$ or C$
+   *  (supabase/migrations/20261023150000_transfer_currencies.sql). */
+  from_amount?: number | null;
+  to_amount?: number | null;
   transfer_date: string;
   notes?: string | null;
 };
@@ -37,6 +43,8 @@ export async function saveAccountTransfer(input: TransferInput): Promise<Result>
         from_account_id: input.from_account_id,
         to_account_id: input.to_account_id,
         amount: input.amount,
+        from_amount: input.from_amount ?? null,
+        to_amount: input.to_amount ?? null,
         transfer_date: input.transfer_date,
         notes: input.notes?.trim() || null,
         updated_at: new Date().toISOString(),
@@ -63,6 +71,8 @@ export async function saveAccountTransfer(input: TransferInput): Promise<Result>
       from_account_id: input.from_account_id,
       to_account_id: input.to_account_id,
       amount: input.amount,
+      from_amount: input.from_amount ?? null,
+      to_amount: input.to_amount ?? null,
       transfer_date: input.transfer_date,
       notes: input.notes?.trim() || null,
       created_by: myId,

@@ -397,6 +397,9 @@ describe("loadAccountBalances — transfers between our own accounts", () => {
         fromAccountId: "bank",
         toAccountId: "cash",
         amount: 400,
+        // Both sides in shekels: neither has an amount of its own.
+        fromAmount: null,
+        toAmount: null,
         date: "2024-02-01",
         notes: "משיכה לקופה",
       });
@@ -989,5 +992,41 @@ describe("loadAccountsOverview — an account kept in US$ (2026-10-23)", () => {
     expect(shekels.currency).toBe("ILS");
     expect(shekels.currentBalance).toBe(1500);
     expect(shekels.ledger[0].accountAmount).toBe(500);
+  });
+});
+
+describe("loadAccountsOverview — a transfer between currencies (2026-10-23)", () => {
+  const chase = account({ id: "chase", name: "Chase", currency: "USD", opening_balance: 0 });
+  const biz = account({ id: "biz", name: "מזרחי עסקי", opening_balance: 10000 });
+
+  it("₪3,050 out of the shekel account, $1,000 into Chase — each side in its account's currency", async () => {
+    const overview = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [chase, biz],
+        account_transfers: [
+          { id: "t1", from_account_id: "biz", to_account_id: "chase", amount: 3050, from_amount: null, to_amount: 1000, transfer_date: "2024-02-01" },
+        ],
+      })
+    );
+    const usd = overview.find((a) => a.id === "chase")!;
+    const ils = overview.find((a) => a.id === "biz")!;
+    expect(usd.currentBalance).toBe(1000);
+    expect(ils.currentBalance).toBe(6950);
+    expect(usd.ledger[0]).toMatchObject({ type: "in", amount: 3050, accountAmount: 1000, foreign: { currency: "USD", amount: 1000, rate: 3.05 } });
+    expect(ils.ledger[0]).toMatchObject({ type: "out", amount: 3050, accountAmount: 3050, foreign: null });
+    expect(usd.ledger[0].transfer).toMatchObject({ amount: 3050, fromAmount: null, toAmount: 1000 });
+  });
+
+  it("$1,000 out of Chase, ₪3,080 into the shekel account", async () => {
+    const overview = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [chase, biz],
+        account_transfers: [
+          { id: "t2", from_account_id: "chase", to_account_id: "biz", amount: 3080, from_amount: 1000, to_amount: null, transfer_date: "2024-02-01" },
+        ],
+      })
+    );
+    expect(overview.find((a) => a.id === "chase")!.currentBalance).toBe(-1000);
+    expect(overview.find((a) => a.id === "biz")!.currentBalance).toBe(13080);
   });
 });
