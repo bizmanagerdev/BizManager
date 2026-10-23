@@ -280,7 +280,8 @@ export function rentRollMonth(data: RentRollData, offset: number, today: string 
       : new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" }).format(noon(from));
 
   const rented = new Set(rows.map((r) => r.property.id));
-  const vacant = data.properties.filter((p) => p.isActive && !rented.has(p.id));
+  // One whose rent a management company collects is never empty for us (owner, 2026-10-23).
+  const vacant = data.properties.filter((p) => p.isActive && !p.rentManagedByCompany && !rented.has(p.id));
 
   const totals: RentRollTotals = {
     expected: 0,

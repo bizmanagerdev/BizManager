@@ -448,6 +448,15 @@ const properties = new Table({
   arnona_contract_number: text,
   key_count: int,
   sort_order: int,
+  rent_managed_by_company: int,
+  management_company_name: text,
+  management_portal_url: text,
+  management_notes: text,
+  owner_company_name: text,
+  owner_company_number: text,
+  owner_company_type: text,
+  owner_company_url: text,
+  owner_company_notes: text,
 });
 
 const lease_agreements = new Table(

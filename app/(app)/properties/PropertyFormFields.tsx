@@ -74,6 +74,15 @@ export const EMPTY_PROPERTY_FORM: PropertyInput = {
   arnona_contract_number: "",
   is_furnished: false,
   furniture_items: [],
+  rent_managed_by_company: false,
+  management_company_name: "",
+  management_portal_url: "",
+  management_notes: "",
+  owner_company_name: "",
+  owner_company_number: "",
+  owner_company_type: "",
+  owner_company_url: "",
+  owner_company_notes: "",
 };
 
 export function propertyToForm(p: Property): PropertyInput {
@@ -110,6 +119,15 @@ export function propertyToForm(p: Property): PropertyInput {
     arnona_contract_number: p.arnonaContractNumber ?? "",
     is_furnished: p.isFurnished,
     furniture_items: p.furnitureItems,
+    rent_managed_by_company: p.rentManagedByCompany,
+    management_company_name: p.managementCompanyName ?? "",
+    management_portal_url: p.managementPortalUrl ?? "",
+    management_notes: p.managementNotes ?? "",
+    owner_company_name: p.ownerCompanyName ?? "",
+    owner_company_number: p.ownerCompanyNumber ?? "",
+    owner_company_type: p.ownerCompanyType ?? "",
+    owner_company_url: p.ownerCompanyUrl ?? "",
+    owner_company_notes: p.ownerCompanyNotes ?? "",
   };
 }
 
@@ -317,6 +335,95 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
         <input type="checkbox" checked={form.is_active} onChange={(e) => set("is_active", e.target.checked)} />
         <span>נכס פעיל</span>
       </label>
+      <PropertyManagementFields form={form} set={set} />
+    </div>
+  );
+}
+
+/** "השכירות מנוהלת על ידי חברת ניהול" (owner, 2026-10-23: "a checkbox … when we add or when we edit it to mark it,
+ *  we don't deal with the rent") and, ticked, the company's name, its owner portal and anything else about it
+ *  ("I just want to save the link to the portal and the name of the company and if we have anything else"). */
+export function PropertyManagementFields({ form, set }: FieldsProps) {
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={form.rent_managed_by_company}
+          onChange={(e) => set("rent_managed_by_company", e.target.checked)}
+        />
+        <span>השכירות מנוהלת על ידי חברת ניהול</span>
+      </label>
+      {form.rent_managed_by_company ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block space-y-1 text-sm">
+            <span className="font-medium">חברת הניהול</span>
+            <Input
+              value={form.management_company_name}
+              onChange={(e) => set("management_company_name", e.target.value)}
+              placeholder="לדוגמה: Redleaf Management"
+            />
+          </label>
+          <label className="block space-y-1 text-sm">
+            <span className="font-medium">קישור לפורטל</span>
+            <Input
+              dir="ltr"
+              inputMode="url"
+              value={form.management_portal_url}
+              onChange={(e) => set("management_portal_url", e.target.value)}
+              placeholder="https://"
+            />
+          </label>
+          <label className="block space-y-1 text-sm sm:col-span-2">
+            <span className="font-medium">הערות</span>
+            <Textarea rows={2} value={form.management_notes} onChange={(e) => set("management_notes", e.target.value)} />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The company that bought the property — a Canada building's Inc. (owner, 2026-10-23: "for the purchaser I want
+ *  to save all the details we have for each apartment separately"). */
+export function PropertyOwnerCompanyFields({ form, set }: FieldsProps) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <label className="block space-y-1 text-sm">
+        <span className="font-medium">שם החברה</span>
+        <Input value={form.owner_company_name} onChange={(e) => set("owner_company_name", e.target.value)} />
+      </label>
+      <label className="block space-y-1 text-sm">
+        <span className="font-medium">מספר חברה (NEQ / ח.פ.)</span>
+        <Input dir="ltr" value={form.owner_company_number} onChange={(e) => set("owner_company_number", e.target.value)} />
+      </label>
+      <label className="block space-y-1 text-sm">
+        <span className="font-medium">סוג</span>
+        <Input
+          value={form.owner_company_type}
+          onChange={(e) => set("owner_company_type", e.target.value)}
+          placeholder="לדוגמה: Corporation"
+        />
+      </label>
+      <label className="block space-y-1 text-sm">
+        <span className="font-medium">קישור לרשם החברות</span>
+        <Input
+          dir="ltr"
+          inputMode="url"
+          value={form.owner_company_url}
+          onChange={(e) => set("owner_company_url", e.target.value)}
+          placeholder="https://"
+        />
+      </label>
+      <label className="block space-y-1 text-sm sm:col-span-2">
+        <span className="font-medium">הערות</span>
+        <Textarea
+          rows={2}
+          value={form.owner_company_notes}
+          onChange={(e) => set("owner_company_notes", e.target.value)}
+          placeholder="בעלי המניות, כתובת רשומה…"
+        />
+      </label>
     </div>
   );
 }
@@ -443,6 +550,10 @@ export function PropertyFormFields({ form, set }: FieldsProps) {
       <div className="border-t pt-3">
         <div className="mb-2 text-sm font-semibold">פרטי רכישה וזיהוי בטאבו</div>
         <PropertyPurchaseFields form={form} set={set} />
+      </div>
+      <div className="border-t pt-3">
+        <div className="mb-2 text-sm font-semibold">חברה בעלת הנכס</div>
+        <PropertyOwnerCompanyFields form={form} set={set} />
       </div>
     </div>
   );

@@ -359,9 +359,11 @@ describe("the server's own loaders, run on the device copy", () => {
     const db = createLocalSupabase(
       fakeReader({
         properties: [
-          { id: "p1", name: "דירה 1", address: "א", is_active: 1 },
-          { id: "p2", name: null, address: "רחוב ב", is_active: 1 },
-          { id: "p3", name: "סגור", address: "ג", is_active: 0 },
+          { id: "p1", name: "דירה 1", address: "א", is_active: 1, rent_managed_by_company: 0 },
+          { id: "p2", name: null, address: "רחוב ב", is_active: 1, rent_managed_by_company: null },
+          { id: "p3", name: "סגור", address: "ג", is_active: 0, rent_managed_by_company: 0 },
+          // Its rent a management company collects: never vacant (owner, 2026-10-23).
+          { id: "p4", name: "25 Plourde", address: "ד", is_active: 1, rent_managed_by_company: 1 },
         ],
         lease_agreements: [{ id: "l1", property_id: "p1", customer_id: "c1", status: "active", end_date: "2026-11-01" }],
         customers: [{ id: "c1", name: "שוכר" }],
@@ -378,8 +380,8 @@ describe("the server's own loaders, run on the device copy", () => {
     const db = createLocalSupabase(
       fakeReader({
         properties: [
-          { id: "b", name: "הר יונה שונות", address: "x", is_active: 1 },
-          { id: "a", name: "אחיסמך", address: "y", is_active: 1 },
+          { id: "b", name: "הר יונה שונות", address: "x", is_active: 1, rent_managed_by_company: 0 },
+          { id: "a", name: "אחיסמך", address: "y", is_active: 1, rent_managed_by_company: 0 },
         ],
         lease_agreements: [],
         customers: [],
@@ -1474,7 +1476,9 @@ const PROPERTY_COLUMNS = [
   "bathrooms", "mezuzah_count", "light_bulb_count", "key_count", "has_private_entrance", "has_storage_room", "has_parking",
   "has_elevator", "purchased_from", "purchase_date", "purchase_price", "purchase_tax", "land_block", "land_parcel",
   "land_sub_parcel", "electricity_contract_number", "water_contract_number", "gas_contract_number", "arnona_contract_number",
-  "is_furnished", "furniture_items", "created_at", "updated_at", "sort_order",
+  "is_furnished", "furniture_items", "created_at", "updated_at", "sort_order", "rent_managed_by_company",
+  "management_company_name", "management_portal_url", "management_notes", "owner_company_name", "owner_company_number",
+  "owner_company_type", "owner_company_url", "owner_company_notes",
 ];
 const property = (row: Row) => ({ ...Object.fromEntries(PROPERTY_COLUMNS.map((c) => [c, null])), is_active: 1, ...row });
 const lease = (row: Row) => ({

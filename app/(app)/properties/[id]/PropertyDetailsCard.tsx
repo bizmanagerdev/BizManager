@@ -14,6 +14,7 @@ import { updateProperty } from "../actions";
 import { PropertyBasicFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
 import { propertyDisplayName, propertyHasRoomLayout, propertyTypeLabel, type Property } from "@/lib/properties";
 import { PropertyPhotoBanner } from "../PropertyPhotoTile";
+import { PropertyDescription } from "./PropertyDescription";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,10 @@ const BASIC_KEYS = [
   "has_storage_room",
   "has_parking",
   "has_elevator",
+  "rent_managed_by_company",
+  "management_company_name",
+  "management_portal_url",
+  "management_notes",
 ] as const satisfies readonly (keyof PropertyInput)[];
 
 function pick<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): Pick<T, K> {
@@ -74,6 +79,10 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
     hasStorageRoom: input.has_storage_room,
     hasParking: input.has_parking,
     hasElevator: input.has_elevator,
+    rentManagedByCompany: input.rent_managed_by_company,
+    managementCompanyName: input.management_company_name.trim() || null,
+    managementPortalUrl: input.management_portal_url.trim() || null,
+    managementNotes: input.management_notes.trim() || null,
   };
 }
 
@@ -202,7 +211,7 @@ export default function PropertyDetailsCard({
             <span className="min-w-0 break-words">{p.address || "אין כתובת"}</span>
           </AddressLink>
         }
-        subtitles={[p.assetDescription]}
+        subtitles={[p.assetDescription ? <PropertyDescription text={p.assetDescription} /> : null]}
       >
         {/* Its details as a ruled grid, two to a row, its photo beside them as tall as they are — the photo never
             adds height of its own (owner, 2026-10-22: "toooo tall"; "maybe we can design it better, more like

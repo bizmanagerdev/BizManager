@@ -45,4 +45,15 @@ export type PropertyInput = {
   arnona_contract_number: string;
   is_furnished: boolean;
   furniture_items: string[];
+  /** A management company collects the rent — its name, owner-portal link and notes (owner, 2026-10-23). */
+  rent_managed_by_company: boolean;
+  management_company_name: string;
+  management_portal_url: string;
+  management_notes: string;
+  /** The company that bought the property. */
+  owner_company_name: string;
+  owner_company_number: string;
+  owner_company_type: string;
+  owner_company_url: string;
+  owner_company_notes: string;
 };

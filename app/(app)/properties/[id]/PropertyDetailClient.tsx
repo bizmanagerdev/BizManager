@@ -77,6 +77,7 @@ import { PropertyRentersCard, PropertyRentersRentCard, PropertyRentersSection, r
 import { hasRenters, rentCoverage, renterPayments, runningLeases } from "@/lib/property-rent";
 import { israelDateKey } from "@/lib/timezone";
 import { PropertyRentCard, PropertyTenantCard } from "./PropertyLeaseCards";
+import { PropertyManagementCard, PropertyOwnerCompanyBlock, PropertyOwnerCompanyCard } from "./PropertyCompanyCards";
 import { buildPropertyMovements, toRentPayment } from "./propertyMovements";
 import type { PropertyStaffUser } from "@/lib/properties";
 import { hebrewDayName } from "@/lib/rent-periods";
@@ -795,7 +796,7 @@ export default function PropertyDetailClient({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => setReminderOpen(true)}>תזכורת</DropdownMenuItem>
-                <DropdownMenuItem onClick={openAddLease}>חוזה חדש</DropdownMenuItem>
+                {property.rentManagedByCompany ? null : <DropdownMenuItem onClick={openAddLease}>חוזה חדש</DropdownMenuItem>}
                 {currentLease ? (
                   <DropdownMenuItem onClick={() => openSchedule(null)}>קביעת תשלומים מראש</DropdownMenuItem>
                 ) : null}
@@ -812,7 +813,9 @@ export default function PropertyDetailClient({
       />
 
       {/* The head row, like a project's: what it is, who rents it, and where
-          this month's rent stands. The three share the tallest one's height. */}
+          this month's rent stands. The three share the tallest one's height.
+          Its rent collected by a management company: who manages it and the
+          company that owns it instead (owner, 2026-10-23). */}
       <div className="grid grid-cols-1 gap-3 lg:@[31rem]:grid-cols-3">
         <PropertyDetailsCard
           propertyId={propertyId}
@@ -824,7 +827,12 @@ export default function PropertyDetailClient({
           editOpen={detailsEditOpen}
           onEditOpenChange={setDetailsEditOpen}
         />
-        {withRenters ? (
+        {property.rentManagedByCompany ? (
+          <>
+            <PropertyManagementCard propertyId={propertyId} property={property} />
+            <PropertyOwnerCompanyCard propertyId={propertyId} property={property} />
+          </>
+        ) : withRenters ? (
           <>
             <PropertyRentersCard renters={renters} onNew={openAddLease} />
             <PropertyRentersRentCard renters={renters} />
@@ -854,7 +862,7 @@ export default function PropertyDetailClient({
           column the third's — same gap, so their edges line up. */}
       <div className="flex flex-col gap-3 lg:@[31rem]:grid lg:@[31rem]:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:@[31rem]:items-start">
         <div className="min-w-0 space-y-3">
-          {withRenters ? (
+          {withRenters && !property.rentManagedByCompany ? (
             <PropertyRentersSection
               renters={renters}
               ended={leases.filter((l) => !running.some((r) => r.id === l.id))}
@@ -1175,6 +1183,10 @@ export default function PropertyDetailClient({
               onAddDocument={openAddPurchaseDoc}
               onDeleteDocument={(id, label) => setDel({ kind: "document", id, label })}
             />
+            {/* Its own renters, a company owns it: the company here (with a management company it heads the page). */}
+            {!property.rentManagedByCompany && property.ownerCompanyName ? (
+              <PropertyOwnerCompanyBlock propertyId={propertyId} property={property} />
+            ) : null}
             <PropertyUtilitiesCard propertyId={propertyId} property={property} />
             <PropertyFurnitureCard propertyId={propertyId} property={property} />
           </CollapsibleSection>

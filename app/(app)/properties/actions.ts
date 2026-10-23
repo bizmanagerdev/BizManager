@@ -97,6 +97,24 @@ function propertyFields(input: PropertyInput) {
     arnona_contract_number: clean(input.arnona_contract_number),
     is_furnished: input.is_furnished,
     furniture_items: input.furniture_items,
+    ...companyFields(input),
+  };
+}
+
+/** The management company and the owning company (owner, 2026-10-23) — left as they are when a form from before
+ *  them (an app not yet updated) saves, rather than emptied. */
+function companyFields(input: PropertyInput) {
+  if (typeof input.rent_managed_by_company !== "boolean") return {};
+  return {
+    rent_managed_by_company: input.rent_managed_by_company,
+    management_company_name: clean(input.management_company_name),
+    management_portal_url: clean(input.management_portal_url),
+    management_notes: clean(input.management_notes),
+    owner_company_name: clean(input.owner_company_name),
+    owner_company_number: clean(input.owner_company_number),
+    owner_company_type: clean(input.owner_company_type),
+    owner_company_url: clean(input.owner_company_url),
+    owner_company_notes: clean(input.owner_company_notes),
   };
 }
 
