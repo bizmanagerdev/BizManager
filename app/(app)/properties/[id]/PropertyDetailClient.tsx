@@ -20,7 +20,6 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
-import { deleteRecurringExpenseTemplate } from "@/lib/recurring/deleteTemplate";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
@@ -58,8 +57,11 @@ import {
   type PropertyWithLeases,
 } from "@/lib/properties";
 import { toHebrewError } from "@/lib/error-messages";
-import { offlineUpload } from "@/lib/offline-upload";
-import { createLease, updateLease, deleteLease, deleteProperty, setLeaseDocument, type LeaseInput } from "../actions";
+import { offlineUpload, queueUploadsAfter } from "@/lib/offline-upload";
+import { offlineFetch } from "@/lib/offline-queue";
+import { sendChange } from "@/lib/offline-send";
+import { leaseFromForm, withSavedLeases } from "./savedLeases";
+import { deleteProperty, setLeaseDocument, type LeaseInput } from "../actions";
 import { EditButton } from "@/components/ui/icon-button";
 import { DocumentLink, DocumentRow, DocumentTile } from "@/components/ui/document-tile";
 import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
@@ -119,6 +121,17 @@ const EMPTY_LEASE_FORM = {
 };
 
 type LeaseForm = typeof EMPTY_LEASE_FORM;
+
+/** What each delete is called while it waits on the device. */
+const DELETE_LABELS = {
+  expense: "מחיקת הוצאה",
+  payment: "מחיקת הכנסה",
+  document: "מחיקת מסמך",
+  lease: "מחיקת חוזה",
+  task: "מחיקת משימה",
+  template: "מחיקת הוצאה קבועה",
+  session: "מחיקת משמרת",
+} as const;
 
 function toLeaseForm(lease: LeaseAgreement): LeaseForm {
   return {
@@ -234,7 +247,10 @@ export default function PropertyDetailClient({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => { router.refresh(); });
-  const leases = useUndoOverlay(property.leases, (l) => l.id, "property-lease");
+  // Leases saved with no signal (owner, 2026-10-24): kept on the device, sent with the connection — here at once.
+  const [savedLeases, setSavedLeases] = useState<LeaseAgreement[]>([]);
+  const pageLeases = useMemo(() => withSavedLeases(property.leases, savedLeases), [property.leases, savedLeases]);
+  const leases = useUndoOverlay(pageLeases, (l) => l.id, "property-lease");
   const activityExpenses = useUndoOverlay(activity.expenses, (e) => e.id, "property-expense");
   const activitySessions = useUndoOverlay(activity.sessions, (s) => s.id, "property-session");
   const activityPayments = useUndoOverlay(activity.payments, (p) => p.id, "property-payment");
@@ -493,15 +509,16 @@ export default function PropertyDetailClient({
             ? "התשלום סומן כנפרע."
             : "הסימון בוטל.",
       patch: collected ? { paymentStatus: "cleared" } : { paymentStatus: "pending", tornAt: null },
+      // With no signal it waits on the device and goes out with the connection.
       onCommit: async () => {
-        const res = await fetch("/api/payments/mark-collected", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: payment.id, collected }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
-        refresh();
+        const sent = await sendChange(
+          "/api/payments/mark-collected",
+          { id: payment.id, collected },
+          collected ? "צ׳ק נפרע" : "צ׳ק לממתין",
+          "עדכון הצ׳ק נכשל."
+        );
+        if (!sent.ok) return { ok: false, error: sent.error };
+        if (!sent.queued) refresh();
         return { ok: true };
       },
     });
@@ -588,41 +605,32 @@ export default function PropertyDetailClient({
     setTaskOpen(true);
   }
 
+  /** A lease's signed agreement, filed as חוזה/הסכם, not the generic default — a signed lease is the one
+   *  document on a property whose category is never in doubt, and it makes it findable by category in the
+   *  archive. Attached to its lease as it goes up (lease_id), so one kept on the device reaches its lease too. */
+  function leaseDocUpload(file: File, leaseId: string) {
+    return {
+      url: "/api/documents/upload",
+      fields: { business_domain: "property_management", property_id: propertyId, category: "חוזה/הסכם", lease_id: leaseId },
+      file,
+      label: file.name,
+    };
+  }
+
   async function uploadLeaseDoc(leaseId: string, file: File) {
     setLeaseDocBusy(true);
     try {
-      const result = await offlineUpload("/api/documents/upload", {
-        // Filed as חוזה/הסכם, not the generic default — a signed lease is the
-        // one document on a property whose category is never in doubt, and it
-        // makes it findable by category in the archive.
-        fields: {
-          business_domain: "property_management",
-          property_id: propertyId,
-          category: "חוזה/הסכם",
-        },
-        file,
-        label: file.name,
-      });
-      if (result.queued) {
-        // The queue only replays the raw upload — it has no way to also call
-        // setLeaseDocument once connectivity returns, so the attach step
-        // needs a manual follow-up. Say so plainly instead of implying the
-        // lease is already linked.
-        toast.success("הקובץ יישמר ויועלה בהתחברות מחדש. לאחר ההעלאה יש לפתוח את החוזה שוב ולצרף את המסמך.");
-        return;
-      }
+      const upload = leaseDocUpload(file, leaseId);
+      const result = await offlineUpload(upload.url, { fields: upload.fields, file, label: upload.label });
+      // Kept on the device: it goes up, and onto its lease, with the connection.
+      if (result.queued) return;
       if (!result.ok) {
         toast.error("שגיאה בהעלאת המסמך", { description: result.error });
         return;
       }
-      const documentId = (result.data as { document?: { id?: string } } | null)?.document?.id;
-      if (!documentId) {
-        toast.error("שגיאה בהעלאת המסמך", { description: "לא התקבל מזהה מסמך מהשרת." });
-        return;
-      }
-      const attachResult = await setLeaseDocument(propertyId, leaseId, documentId);
-      if (!attachResult.ok) {
-        toast.error(attachResult.error);
+      if ((result.data as { lease_attached?: boolean } | null)?.lease_attached === false) {
+        toast.error("המסמך הועלה, אבל לא צורף לחוזה. אפשר לצרף אותו שוב מהחוזה.");
+        refresh();
         return;
       }
       toast.success("המסמך צורף לחוזה.");
@@ -682,19 +690,34 @@ export default function PropertyDetailClient({
     };
     setLeaseBusy(true);
     try {
-      const result = editLeaseId
-        ? await updateLease(propertyId, editLeaseId, input)
-        : await createLease(propertyId, input);
-      if (result.ok) {
-        toast.success(editLeaseId ? "החוזה עודכן." : "החוזה נוסף.");
-        if (!editLeaseId && pendingLeaseDocFile && result.id) {
-          await uploadLeaseDoc(result.id, pendingLeaseDocFile);
+      const before = editLeaseId ? (leases.find((l) => l.id === editLeaseId) ?? null) : null;
+      // A new one gets its id here — sent twice (no signal, then again), it's still one lease.
+      const leaseId = editLeaseId ?? crypto.randomUUID();
+      const result = await offlineFetch(
+        "/api/leases/save",
+        { property_id: propertyId, ...(editLeaseId ? { lease_id: editLeaseId } : { id: leaseId }), lease: input },
+        editLeaseId ? "עדכון חוזה" : "חוזה חדש",
+        { idempotent: true }
+      );
+      if (!result.queued && !result.ok) {
+        toast.error(toHebrewError(result.error, "שמירת החוזה נכשלה."));
+        return;
+      }
+      toast.success(editLeaseId ? "החוזה עודכן." : "החוזה נוסף.");
+      if (result.queued) {
+        // Kept on the device, sent with the connection (owner, 2026-10-24) — on the page meanwhile, as saved;
+        // its contract goes up, onto it, right after it.
+        setSavedLeases((list) => [...list.filter((l) => l.id !== leaseId), leaseFromForm(leaseId, propertyId, leaseForm, before)]);
+        if (!editLeaseId && pendingLeaseDocFile && result.key) {
+          await queueUploadsAfter({ key: result.key, idPath: "lease.id" }, [leaseDocUpload(pendingLeaseDocFile, "{id}")]);
         }
         setLeaseOpen(false);
-        refresh();
-      } else {
-        toast.error(result.error);
+        return;
       }
+      setSavedLeases((list) => list.filter((l) => l.id !== leaseId));
+      if (!editLeaseId && pendingLeaseDocFile) await uploadLeaseDoc(leaseId, pendingLeaseDocFile);
+      setLeaseOpen(false);
+      refresh();
     } finally {
       setLeaseBusy(false);
     }
@@ -760,37 +783,25 @@ export default function PropertyDetailClient({
       scope: `property-${target.kind}`,
       id: target.id,
       message: target.kind === "lease" ? "החוזה נמחק" : "נמחק",
+      // With no signal it waits on the device and goes out with the connection (owner, 2026-10-24).
       onCommit: async () => {
-        if (target.kind === "lease") {
-          const result = await deleteLease(propertyId, target.id);
-          if (!result.ok) return { ok: false, error: result.error };
-          refresh();
-          return { ok: true };
-        }
-        if (target.kind === "template") {
-          const result = await deleteRecurringExpenseTemplate(target.id);
-          if (!result.ok) return { ok: false, error: toHebrewError(result.error, "") };
-          refresh();
-          return { ok: true };
-        }
-        const endpoint =
-          target.kind === "expense"
-            ? ["/api/expenses/delete", { id: target.id, property_id: propertyId }]
-            : target.kind === "payment"
-              ? ["/api/payments/delete", { id: target.id }]
-              : target.kind === "task"
-                ? ["/api/tasks/delete", { id: target.id }]
-                : target.kind === "session"
-                  ? ["/api/payroll/sessions/delete", { session_id: target.id }]
-                  : ["/api/documents/delete", { document_id: target.id }];
-        const res = await fetch(endpoint[0] as string, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(endpoint[1]),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
-        refresh();
+        const [url, body]: [string, Record<string, unknown>] =
+          target.kind === "lease"
+            ? ["/api/leases/delete", { property_id: propertyId, id: target.id }]
+            : target.kind === "template"
+              ? ["/api/recurring-expenses/delete", { id: target.id }]
+              : target.kind === "expense"
+                ? ["/api/expenses/delete", { id: target.id, property_id: propertyId }]
+                : target.kind === "payment"
+                  ? ["/api/payments/delete", { id: target.id }]
+                  : target.kind === "task"
+                    ? ["/api/tasks/delete", { id: target.id }]
+                    : target.kind === "session"
+                      ? ["/api/payroll/sessions/delete", { session_id: target.id }]
+                      : ["/api/documents/delete", { document_id: target.id }];
+        const sent = await sendChange(url, body, DELETE_LABELS[target.kind], "המחיקה נכשלה.");
+        if (!sent.ok) return { ok: false, error: sent.error };
+        if (!sent.queued) refresh();
         return { ok: true };
       },
     });

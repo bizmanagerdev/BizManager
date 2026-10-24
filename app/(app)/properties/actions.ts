@@ -9,6 +9,7 @@ import { paidTowards, rentAllocationOf, type RentLease } from "@/lib/property-re
 import type { PropertyInput } from "./property-types";
 import { addressColumnsKeepingMark, parseStructuredAddress } from "@/lib/address/columns";
 import { addressLine } from "@/lib/address/structured";
+import { clientRowId } from "@/lib/client-row-id";
 
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 
@@ -285,7 +286,8 @@ function rentDay(value: string | null | undefined): number | null {
   return day >= 1 && day <= 31 ? day : null;
 }
 
-export async function createLease(propertyId: string, input: LeaseInput): Promise<ActionResult> {
+/** `id`: the one the app gave it (a lease saved with no signal, sent later) — sent twice, it's still one lease. */
+export async function createLease(propertyId: string, input: LeaseInput, id?: string): Promise<ActionResult> {
   try {
     const ctx = await getStaffContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
@@ -297,11 +299,14 @@ export async function createLease(propertyId: string, input: LeaseInput): Promis
       return { ok: false, error: "יש לבחור את היום בחודש העברי." };
     }
 
+    const clientId = clientRowId(id);
     const { data, error } = await ctx.supabase
       .from("lease_agreements")
-      .insert({ property_id: propertyId, ...leaseFields(input) })
+      .insert({ ...(clientId ? { id: clientId } : {}), property_id: propertyId, ...leaseFields(input) })
       .select("id")
       .single();
+    // Already there with that id: the same lease sent again.
+    if (error?.code === "23505" && clientId) return { ok: true, id: clientId };
     if (error || !data) return { ok: false, error: toHebrewError(error, "שגיאה ביצירת החוזה.") };
 
     revalidateProperties(propertyId);

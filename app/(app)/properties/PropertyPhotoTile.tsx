@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { BuildingIcon, CameraIcon, CloseIcon, SpinnerIcon } from "@/components/ui/icons";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { offlineUpload } from "@/lib/offline-upload";
-import { toHebrewError } from "@/lib/error-messages";
+import { sendChange } from "@/lib/offline-send";
 import { registerReversibleAction } from "@/lib/undo-engine";
 import { cn } from "@/lib/utils";
 import { forgetPropertyPhotos } from "./propertyPhotos";
@@ -95,15 +95,8 @@ export function PropertyPhotoBanner({
         key: `property-photo:add:${documentId}`,
         message: "התמונה נשמרה",
         onUndo: async () => {
-          const res = await fetch("/api/documents/delete", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ document_id: documentId }),
-          });
-          if (!res.ok) {
-            const json = await res.json().catch(() => ({}));
-            return { ok: false, error: toHebrewError((json as { error?: string })?.error, "ביטול ההעלאה נכשל.") };
-          }
+          const sent = await sendChange("/api/documents/delete", { document_id: documentId }, "מחיקת תמונה", "ביטול ההעלאה נכשל.");
+          if (!sent.ok) return { ok: false, error: sent.error };
           setLocal(null);
           forgetPropertyPhotos();
           onChanged();

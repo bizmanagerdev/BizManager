@@ -40,7 +40,7 @@ import { PageStack } from "@/components/layout/page-layout";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { CONNECTION_EVENTS } from "@/lib/offline-queue";
 import { scheduleDeferredEdit } from "@/lib/undo-engine";
-import { toHebrewError } from "@/lib/error-messages";
+import { sendChange } from "@/lib/offline-send";
 import { formatShortDate } from "@/lib/date";
 import { formatCurrency } from "@/lib/payroll";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
@@ -328,15 +328,16 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
           ? `${checkName(payment)} שוחזר.`
           : `${checkName(payment)} חזר לממתין.`,
       patch: bounced ? { paymentStatus: "rejected" } : { paymentStatus: "pending", tornAt: null },
+      // With no signal it waits on the device and goes out with the connection.
       onCommit: async () => {
-        const res = await fetch("/api/payments/mark-collected", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(bounced ? { id: payment.id, bounced: true } : { id: payment.id, collected: false }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "עדכון הצ׳ק נכשל.") };
-        startTransition(() => router.refresh());
+        const sent = await sendChange(
+          "/api/payments/mark-collected",
+          bounced ? { id: payment.id, bounced: true } : { id: payment.id, collected: false },
+          bounced ? "צ׳ק חזר" : "צ׳ק לממתין",
+          "עדכון הצ׳ק נכשל."
+        );
+        if (!sent.ok) return { ok: false, error: sent.error };
+        if (!sent.queued) startTransition(() => router.refresh());
         return { ok: true };
       },
     });

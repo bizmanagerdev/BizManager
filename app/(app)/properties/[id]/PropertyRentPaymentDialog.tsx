@@ -19,6 +19,7 @@ import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { defaultAccountForMethod, getAccountKindLabel, type Account } from "@/lib/accounts";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { offlineFetch } from "@/lib/offline-queue";
+import { sendChange } from "@/lib/offline-send";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { uploadTogether } from "@/lib/upload-together";
 import { queueFinancialAttachmentsAfter } from "@/lib/payments/uploadCheckPhotos";
@@ -417,24 +418,16 @@ export default function PropertyRentPaymentDialog({
         scope: "payment",
         id: ids[0],
         message,
+        // With no signal the undo waits on the device too, and goes out with the connection.
         onUndo: async () => {
           for (const id of ids) {
-            const res = await fetch("/api/payments/delete", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ id }),
-            });
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            const sent = await sendChange("/api/payments/delete", { id }, "ביטול תשלום שכירות", "ביטול נכשל.");
+            if (!sent.ok) return { ok: false, error: sent.error };
             onUndone?.(id);
           }
           // The checks back to waiting, not torn.
           for (const id of tornIds) {
-            await fetch("/api/payments/mark-collected", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ id, collected: false }),
-            }).catch(() => null);
+            await sendChange("/api/payments/mark-collected", { id, collected: false }, "צ׳ק לממתין", "");
           }
           startTransition(() => router.refresh());
           return { ok: true };

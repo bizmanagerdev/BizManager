@@ -8,8 +8,8 @@ import AccountSelect from "@/components/financial/AccountSelect";
 import type { Account } from "@/lib/accounts";
 import type { PropertyPayment } from "@/lib/properties";
 import { formatCurrency } from "@/lib/payroll";
-import { toHebrewError } from "@/lib/error-messages";
 import { scheduleDeferredEdit } from "@/lib/undo-engine";
+import { sendChange } from "@/lib/offline-send";
 
 // A rent check that's due, and it cleared (owner, 2026-10-21): into which
 // account, really — the one it was recorded with, unless the money landed
@@ -51,15 +51,16 @@ export default function PropertyCheckArrivedDialog({
       id,
       message: "הצ׳ק סומן כנפרע.",
       patch: { paymentStatus: "cleared", accountId: account },
+      // With no signal it waits on the device and goes out with the connection (owner's list, 2026-10-24).
       onCommit: async () => {
-        const res = await fetch("/api/payments/mark-collected", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id, collected: true, account_id: account }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "סימון הצ׳ק נכשל.") };
-        startTransition(() => router.refresh());
+        const sent = await sendChange(
+          "/api/payments/mark-collected",
+          { id, collected: true, account_id: account },
+          "צ׳ק נפרע",
+          "סימון הצ׳ק נכשל."
+        );
+        if (!sent.ok) return { ok: false, error: sent.error };
+        if (!sent.queued) startTransition(() => router.refresh());
         return { ok: true };
       },
     });
