@@ -38,6 +38,8 @@ import { buildFixedPaymentRows, summarizeFixedPayments, type FixedPaymentRow } f
 import { useOutflowSources } from "./useOutflowSources";
 import { useBackfillMissing } from "./useBackfillMissing";
 import { formatShortDate } from "@/lib/date";
+import { isForeignCurrency, type CurrencyCode } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 
 const ExpenseDialog = dynamic(
   () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
@@ -71,7 +73,13 @@ export type RecurringExpenseTemplateItem = {
   id: string;
   template_name: string;
   category: string;
+  /** In its currency (2026-10-24). */
   amount: number;
+  /** ILS | USD | CAD; absent: ₪. */
+  currency?: CurrencyCode;
+  /** A US$ / C$ bill's amount in shekels at today's rate — for the monthly
+   *  total; null when there's no rate. */
+  shekels_today?: number | null;
   is_variable_amount: boolean;
   auto_paid: boolean;
   reminder_work_days_before: number | null;
@@ -138,6 +146,13 @@ const REMINDER_CHOICES: Array<{ value: number; label: string }> = [
   { value: 3, label: "3 ימי עבודה לפני" },
   { value: 5, label: "5 ימי עבודה לפני" },
 ];
+
+/** A bill's amount in its currency: "₪500", or "$25 (≈ ₪78)" at today's rate. */
+function templateAmountText(t: RecurringExpenseTemplateItem): string {
+  if (!isForeignCurrency(t.currency)) return formatCurrency(t.amount);
+  const own = formatCurrencyAmount(t.amount, t.currency);
+  return t.shekels_today == null ? own : `${own} (≈ ${formatCurrency(t.shekels_today)})`;
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -571,11 +586,11 @@ export default function RecurringExpensesManager(props: Props) {
         <div>
           {t.is_variable_amount ? (
             <div className="flex items-center justify-end gap-1.5">
-              {t.amount > 0 ? <span className="font-semibold tabular-nums">~{formatCurrency(t.amount)}</span> : null}
+              {t.amount > 0 ? <span className="font-semibold tabular-nums">~{templateAmountText(t)}</span> : null}
               <Badge variant="warning">משתנה</Badge>
             </div>
           ) : (
-            <span className="font-semibold tabular-nums">{formatCurrency(t.amount)}</span>
+            <span className="font-semibold tabular-nums">{templateAmountText(t)}</span>
           )}
           {caption}
         </div>

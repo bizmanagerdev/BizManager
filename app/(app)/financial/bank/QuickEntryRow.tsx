@@ -51,7 +51,8 @@ import { cn } from "@/lib/utils";
 import type { Account } from "@/lib/accounts";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { israelDateKey } from "@/lib/timezone";
-import { CURRENCY_SYMBOL, isForeignCurrency } from "@/lib/fx/currencies";
+import { isForeignCurrency } from "@/lib/fx/currencies";
+import { CurrencySymbolMenu, FxRateLine, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
 
 // No reactive source — this only answers "are we on the client yet" (same
 // pattern as DesktopQuickCreateFab, for the same reason below).
@@ -100,6 +101,8 @@ export default function QuickEntryRow({
   const [date, setDate] = useState(israelDateKey());
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  // ₪ / $ / C$, by clicking the sign (2026-10-24) — an account kept in dollars: its own.
+  const money = useMoneyCurrency({ open: true, accountCurrency: account.currency ?? null, date });
   const [businessDomain, setBusinessDomain] = useState("");
   const [category, setCategory] = useState<string>(DEFAULT_EXPENSE_CATEGORY);
   const [projectId, setProjectId] = useState("");
@@ -194,6 +197,10 @@ export default function QuickEntryRow({
       toast.error("יש להזין סכום גדול מאפס.");
       return;
     }
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      toast.error(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
     if (!businessDomain) {
       toast.error("יש לבחור תחום.");
       return;
@@ -212,8 +219,8 @@ export default function QuickEntryRow({
     try {
       // A cash box moves cash; everything else moves through the bank.
       const paymentMethod = account.kind === "cash" ? "cash" : "bank_transfer";
-      // An account kept in dollars: the amount is in them, at the day's rate.
-      const currency = isForeignCurrency(account.currency) ? { currency: account.currency, fx_rate_manual: false } : {};
+      // In US$ / C$: the amount as typed, at the day's rate (or the one typed).
+      const currency = money.body();
       const res =
         kind === "expense"
           ? await fetch("/api/expenses/create", {
@@ -406,9 +413,10 @@ export default function QuickEntryRow({
                 aria-label="תאריך"
               />
               <CurrencyInput
-                symbol={CURRENCY_SYMBOL[account.currency ?? "ILS"]}
+                symbol={money.symbol}
+                symbolSlot={<CurrencySymbolMenu money={money} />}
                 className="h-9"
-                containerClassName="w-24"
+                containerClassName="w-32"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="סכום"
@@ -515,6 +523,12 @@ export default function QuickEntryRow({
                 </Button>
               </div>
             </div>
+            {/* In US$ / C$: the day's rate and its shekels, under the line. */}
+            {isForeignCurrency(money.currency) ? (
+              <div className="mt-1">
+                <FxRateLine money={money} amount={Number(amount) || 0} />
+              </div>
+            ) : null}
           </CardContent>
         )}
         </div>

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
+import { MONEY_CURRENCY_COLUMNS, readForeignMoney, type ForeignMoney } from "@/lib/fx/currencies";
 
 // Central "check register": every payment recorded as a צ׳ק, surfaced in one
 // searchable place so the office can answer "which check is this / whose is it /
@@ -15,7 +16,10 @@ export type CheckStatus = "pending" | "cleared" | "bounced" | "torn";
 export type CheckRow = {
   payment_id: string;
   check_number: string | null;
+  /** In shekels — what every sum here counts. */
   amount: number;
+  /** A check in US$ / C$ (2026-10-24): its own amount and rate. */
+  foreign?: ForeignMoney | null;
   /** When the check can be cashed (post-dated date). */
   due_date: string | null;
   /** When the check was recorded. */
@@ -100,7 +104,7 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       supabase
         .from("payments")
         .select(
-          "id,amount_total,due_date,payment_date,payment_status,check_torn_at,cleared_at,check_number,order_id,project_id,property_id,lease_id,notes,account_id,reference_number,requires_split"
+          `id,amount_total,due_date,payment_date,payment_status,check_torn_at,cleared_at,check_number,order_id,project_id,property_id,lease_id,notes,account_id,reference_number,requires_split,${MONEY_CURRENCY_COLUMNS}`
         )
         .eq("payment_method", "check")
         .order("id")
@@ -297,6 +301,7 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       payment_id: paymentId,
       check_number: str(row, "check_number"),
       amount: toNum(row.amount_total),
+      foreign: readForeignMoney(row),
       due_date: str(row, "due_date"),
       payment_date: str(row, "payment_date"),
       cleared_at: str(row, "cleared_at"),

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 import { useRateTable } from "@/components/fx/useRateTable";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -38,7 +39,7 @@ import { IncomeDialog } from "@/components/financial/IncomeDialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/customers/CustomerPicker";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
-import { formatCurrency, type SalaryAgreementRow } from "@/lib/payroll";
+import { type SalaryAgreementRow } from "@/lib/payroll";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { appendDictatedText } from "@/lib/dictation";
 import { filterByText } from "@/lib/search/listSearch";
@@ -147,6 +148,7 @@ function toEditingTemplate(t: PropertyRecurringTemplate, propertyId: string): Ed
     template_name: t.templateName,
     category: t.category,
     amount: t.amount,
+    currency: t.currency,
     is_variable_amount: t.isVariableAmount,
     auto_paid: t.autoPaid,
     reminder_work_days_before: t.reminderWorkDaysBefore,
@@ -1097,7 +1099,7 @@ export default function PropertyDetailClient({
                     </button>
                     <div className="flex shrink-0 items-center gap-1">
                       {!t.isActive ? <Badge variant="neutral">לא פעיל</Badge> : null}
-                      <span className="text-sm font-semibold tabular-nums">{formatCurrency(t.amount ?? 0)}</span>
+                      <span className="text-sm font-semibold tabular-nums">{formatCurrencyAmount(t.amount ?? 0, t.currency)}</span>
                       <RowMenu
                         label="פעולות להוצאה הקבועה"
                         onEdit={() => openEditTemplate(t)}

@@ -40,6 +40,8 @@ import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { parseInstallments, splitCardInstallments } from "@/lib/payments";
 import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
+import { CurrencySymbolMenu, FxRateLine, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import { appendOrderComment, formatOrderCommentTimestamp } from "@/lib/orders/comments";
 import { israelDateKey, israelWallClockToUtc } from "@/lib/timezone";
@@ -502,8 +504,20 @@ export default function OrderConfirmDialog({
     arrivalPin?.lng !== initialArrival.pin?.lng;
 
   const totalAmount = subtotal - (data?.initialOrder.discount_amount ?? 0);
+  // The payment taken: in ₪, US$ or C$ (2026-10-24) — the account's own when
+  // it's kept in dollars. The order counts its shekels.
+  const money = useMoneyCurrency({
+    open,
+    accountCurrency: accountsList.find((a) => a.id === paymentAccountId)?.currency ?? null,
+    date: paymentDate,
+  });
+  const foreignPayment = isForeignCurrency(money.currency);
   const paymentAmountNumber = Number(paymentAmount || 0);
   const pendingPaymentAmount = Number.isFinite(paymentAmountNumber) && paymentAmountNumber > 0 ? paymentAmountNumber : 0;
+  const pendingPaymentShekels = foreignPayment ? (money.shekels(pendingPaymentAmount) ?? 0) : pendingPaymentAmount;
+  /** Shekels as an amount to type in the payment's currency (the "הכל" / "חצי" buttons). */
+  const inPaymentCurrency = (shekels: number) =>
+    foreignPayment ? (money.rate ? Math.round((shekels / money.rate) * 100) / 100 : 0) : shekels;
   // A check doesn't count as collected until it clears — matches lib/
   // payments.ts's defaultPaymentStatusForMethod, which always starts a check
   // payment as 'pending' and excludes it from the server's own
@@ -513,7 +527,7 @@ export default function OrderConfirmDialog({
   // field and recomputes independently, so this only fixes the DISPLAY, but
   // a wrong display is exactly what misled whoever read it.
   const pendingPaymentCounts = paymentMethod !== "check";
-  const projectedPaid = existingPaid + (pendingPaymentCounts ? pendingPaymentAmount : 0);
+  const projectedPaid = existingPaid + (pendingPaymentCounts ? pendingPaymentShekels : 0);
   const refundDue = Math.max(projectedPaid - totalAmount, 0);
   const refundToRecord = recordRefund ? refundDue : 0;
   const finalPaidAfterRefund = projectedPaid - refundToRecord;
@@ -630,6 +644,10 @@ export default function OrderConfirmDialog({
         setError("יש לבחור חשבון לתשלום.");
         return;
       }
+      if (foreignPayment && money.rate === null) {
+        setError(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+        return;
+      }
     }
 
     if (refundDue > 0 && recordRefund) {
@@ -724,6 +742,8 @@ export default function OrderConfirmDialog({
                 ...(part.dueDate ? { due_date: part.dueDate } : {}),
                 reference_number: referenceNumber.trim() || null,
                 notes: part.notes,
+                // In US$ / C$: the amount as typed; the server works out its shekels.
+                ...money.body(),
               }))
             : [],
         refunds:
@@ -1015,7 +1035,7 @@ export default function OrderConfirmDialog({
           </div>
         );
       case "amount": {
-        const outstanding = Math.max(totalAmount - existingPaid, 0);
+        const outstanding = inPaymentCurrency(Math.max(totalAmount - existingPaid, 0));
         const appendDigit = (d: string) =>
           setPaymentAmount((prev) => {
             if (d === ".") {
@@ -1034,14 +1054,16 @@ export default function OrderConfirmDialog({
           <div className="mx-auto max-w-xs space-y-1.5">
             <p className="text-xs text-muted-foreground">
               יתרה לתשלום:{" "}
-              <span className="font-semibold text-foreground">{formatCurrency(outstanding)}</span> · אפשר להשאיר 0
+              <span className="font-semibold text-foreground">{formatCurrency(Math.max(totalAmount - existingPaid, 0))}</span> · אפשר להשאיר 0
             </p>
             {/* Amount hero — the ₪ on the amount's left, as in every written
                 amount ("₪5,000"; owner, 2026-10-11: money the dashboard way). */}
             <div className="flex items-baseline justify-start gap-2 rounded-lg border border-border/60 bg-muted/10 px-4 py-1.5">
               <span className="text-2xl font-bold tabular-nums">{paymentAmount || "0"}</span>
-              <span className="text-lg text-muted-foreground">₪</span>
+              {/* ₪ / $ / C$: a click on the sign (2026-10-24). */}
+              <CurrencySymbolMenu money={money} className="text-lg text-muted-foreground" />
             </div>
+            {foreignPayment ? <FxRateLine money={money} amount={pendingPaymentAmount} /> : null}
             {/* Quick amounts */}
             <div className="grid grid-cols-3 gap-1.5">
               <button type="button" className={quickClass} onClick={() => setPaymentAmount(String(outstanding))}>
@@ -1111,6 +1133,7 @@ export default function OrderConfirmDialog({
                   onChange={setInstallments}
                   amount={pendingPaymentAmount}
                   paymentDate={paymentDate}
+                  currency={money.currency}
                 />
               </div>
             ) : null}

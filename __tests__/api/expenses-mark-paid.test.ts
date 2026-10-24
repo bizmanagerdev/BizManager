@@ -90,3 +90,16 @@ describe("POST /api/expenses/mark-paid", () => {
     expect(patch.payment_method).toBeNull();
   });
 });
+
+describe("POST /api/expenses/mark-paid — a bill in US$ / C$", () => {
+  it("takes the amount in the bill's currency, its shekels at the bill's own rate", async () => {
+    const supabase = makeSupabase({
+      expenses: { data: { id: "exp-1", currency: "USD", fx_rate: 3.1, payment_status: "paid" }, error: null },
+    });
+    grant(supabase);
+    const res = await post({ id: "exp-1", amount: 25, account_id: "acc-1" });
+    expect(res.status).toBe(200);
+    const [patch] = supabase.calls.update.expenses as Array<Record<string, unknown>>;
+    expect(patch).toMatchObject({ foreign_amount: 25, amount: 77.5, paid_amount: 77.5, payment_status: "paid" });
+  });
+});

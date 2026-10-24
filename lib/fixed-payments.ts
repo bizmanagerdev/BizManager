@@ -113,7 +113,9 @@ export function summarizeFixedPayments(
   const variableCount = active.filter((t) => t.is_variable_amount).length;
   const templatesTotal = active.reduce((sum, t) => {
     if (t.is_variable_amount) return sum;
-    const per = t.frequency === "yearly" ? t.amount / 12 : t.amount / Math.max(1, t.interval_months || 1);
+    // A bill in US$ / C$ counts at today's rate (none: left out of the ₪ total).
+    const shekels = t.currency && t.currency !== "ILS" ? t.shekels_today ?? 0 : t.amount;
+    const per = t.frequency === "yearly" ? shekels / 12 : shekels / Math.max(1, t.interval_months || 1);
     return sum + per;
   }, 0);
   const activeSources = sources.filter(isSourceActive);

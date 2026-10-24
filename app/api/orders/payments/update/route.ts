@@ -4,10 +4,11 @@ import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import { derivePaymentStatus, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
+import { currencyPricing, signedColumns, type MoneyCurrencyBody } from "@/lib/fx/money-input";
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as {
+    const body = (await req.json()) as MoneyCurrencyBody & {
       id?: string;
       order_id?: string;
       payment_date?: string | null;
@@ -70,8 +71,15 @@ export async function POST(req: Request) {
         ? existing.payment_status
         : undefined;
 
+    // In US$ or C$ (2026-10-24): the amount as typed (a refund's negative),
+    // the row's amount its shekels at the day's rate (or the rate typed). A
+    // form that didn't say the currency leaves it as it is.
+    const pricing = await currencyPricing(supabase, body, { amount: Math.abs(amountNumber), date: paymentDate });
+    if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+    const shekels = Math.sign(amountNumber) * pricing.toShekels(Math.abs(amountNumber));
+
     const { recorded_by: _ignored, ...paymentValues } = buildPaymentInsert({
-      amountTotal: amountNumber,
+      amountTotal: shekels,
       businessDomain: "sales",
       orderId,
       projectId: existing.project_id ?? undefined,
@@ -90,7 +98,7 @@ export async function POST(req: Request) {
 
     const { data: updatedPayment, error: updateError } = await supabase
       .from("payments")
-      .update(paymentValues)
+      .update({ ...paymentValues, ...(signedColumns(pricing.columns, amountNumber < 0) ?? {}) })
       .eq("id", paymentId)
       .select(PAYMENT_SELECT)
       .maybeSingle();

@@ -782,6 +782,7 @@ export function IncomeDialog({
         <>
           <StepHeading title="בכמה תשלומים?" />
           <CardInstallmentsField
+            currency={money.currency}
             value={installments}
             onChange={setInstallments}
             amount={amountValid ? Number(amount) : 0}

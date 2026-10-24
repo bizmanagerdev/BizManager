@@ -29,6 +29,7 @@ import { nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/
 import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { LineAmountInput, lineShekels, type LineCurrency } from "@/components/fx/MoneyCurrency";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
@@ -134,6 +135,8 @@ type PaymentDraft = {
   notes: string;
   /** Card only: saved as this many payments, a month apart. Absent on older saved drafts. */
   installments?: string;
+  /** In US$ / C$ (2026-10-24): its currency, rate and what the save sends. Absent: shekels. */
+  currency?: LineCurrency;
 };
 
 /** Serialisable in-progress form, persisted to localStorage so a create draft
@@ -638,12 +641,9 @@ export default function NewOrderClient({
     () => initialPayments.reduce((sum, payment) => sum + payment.amount_total, 0),
     [initialPayments]
   );
+  // In shekels — a line in US$ / C$ at its rate.
   const newPaidTotal = useMemo(
-    () =>
-      newPayments.reduce((sum, payment) => {
-        const amount = Number(payment.amount_total || 0);
-        return sum + (Number.isFinite(amount) ? amount : 0);
-      }, 0),
+    () => newPayments.reduce((sum, payment) => sum + lineShekels(Number(payment.amount_total || 0), payment.currency), 0),
     [newPayments]
   );
   const combinedPaidTotal = existingPaidTotal + newPaidTotal;
@@ -775,10 +775,7 @@ export default function NewOrderClient({
 
   function addPaymentDraft() {
     setNewPayments((prev) => {
-      const alreadyDrafted = prev.reduce((sum, draft) => {
-        const value = Number(draft.amount_total || 0);
-        return sum + (Number.isFinite(value) ? value : 0);
-      }, 0);
+      const alreadyDrafted = prev.reduce((sum, draft) => sum + lineShekels(Number(draft.amount_total || 0), draft.currency), 0);
       const openBalance = Math.max(totalAmount - existingPaidTotal - alreadyDrafted, 0);
       const prefillAmount = openBalance > 0 ? openBalance.toFixed(2) : "";
       return [
@@ -895,6 +892,10 @@ export default function NewOrderClient({
       setSubmitError("יש להשלים לכל תשלום חדש סכום, תאריך ואמצעי תשלום.");
       return;
     }
+    if (paymentsToSubmit.some((payment) => payment.currency && payment.currency.currency !== "ILS" && !payment.currency.rate)) {
+      setSubmitError("יש להקליד את השער לתשלום בדולרים.");
+      return;
+    }
 
     const paymentWithoutAccount = paymentsToSubmit.find((payment) => !payment.account_id);
     if (paymentAccountsList.length > 0 && paymentWithoutAccount) {
@@ -944,6 +945,8 @@ export default function NewOrderClient({
               ? payment.check_number.trim()
               : null,
           notes: payment.notes.trim() || null,
+          // In US$ / C$: the amount as typed; the server works out its shekels.
+          ...(payment.currency?.body ?? {}),
         })),
         items: lines.map((line) => {
           const isCustom = line.product_id.startsWith("custom:");
@@ -970,7 +973,9 @@ export default function NewOrderClient({
       const withCheckPhotos = expandedPayments.some(
         (payment) => payment.payment_method === "check" && payment.check_photo_files.length > 0
       );
-      const device = withCheckPhotos ? null : deviceOrderSaves();
+      // So does a payment in US$ / C$ (its shekels are worked out on the server).
+      const withForeignPayment = expandedPayments.some((payment) => payment.currency && payment.currency.currency !== "ILS");
+      const device = withCheckPhotos || withForeignPayment ? null : deviceOrderSaves();
       let savedOrderId: string | null = null;
       if (device) {
         if (isEditMode) {
@@ -2174,7 +2179,12 @@ export default function NewOrderClient({
                     its red "*". */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="סכום" required>
-                    <CurrencyInput
+                    {/* ₪ / $ / C$: a click on the sign (2026-10-24). */}
+                    <LineAmountInput
+                      currency={payment.currency?.currency ?? null}
+                      accountCurrency={paymentAccountsList.find((a) => a.id === payment.account_id)?.currency ?? null}
+                      date={payment.payment_date}
+                      onCurrency={(line) => updatePaymentDraft(index, { currency: line })}
                       type="number"
                       min="0"
                       step="0.01"
@@ -2242,6 +2252,7 @@ export default function NewOrderClient({
                       amount={Number(payment.amount_total) || 0}
                       paymentDate={payment.payment_date}
                       disabled={actionLocked}
+                      currency={payment.currency?.currency ?? "ILS"}
                     />
                   ) : (
                   <Field

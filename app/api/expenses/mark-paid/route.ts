@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { israelDateKey } from "@/lib/timezone";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 
 // Lightweight confirmation that an expense was actually paid. Unlike
 // /api/expenses/update (which rewrites the whole row), this only flips
@@ -30,7 +31,8 @@ export async function POST(req: Request) {
       paid_date?: string | null;
       // The real figure for a row that was generated from a variable-amount
       // (סכום משתנה) template and so far only carries the estimate. Optional;
-      // ignored unless a positive number.
+      // ignored unless a positive number. In the row's own currency (a bill
+      // in US$ / C$: dollars, its shekels at the bill's rate).
       amount?: number | string | null;
     };
 
@@ -50,12 +52,26 @@ export async function POST(req: Request) {
       : israelDateKey();
     const rawAmount = typeof body.amount === "number" ? body.amount
       : typeof body.amount === "string" && body.amount.trim() ? Number(body.amount) : NaN;
-    // When given, the row's amount becomes the real one and it reads as fully paid.
-    const amountPatch = Number.isFinite(rawAmount) && rawAmount > 0 ? { amount: rawAmount, paid_amount: rawAmount } : {};
-
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
+
+    // When given, the row's amount becomes the real one and it reads as fully paid.
+    let amountPatch: Record<string, number> = {};
+    if (Number.isFinite(rawAmount) && rawAmount > 0) {
+      const { data: row } = await supabase
+        .from("expenses")
+        .select("currency,fx_rate")
+        .eq("id", expenseId)
+        .maybeSingle<{ currency: string | null; fx_rate: number | string | null }>();
+      const rate = Number(row?.fx_rate);
+      if (isForeignCurrency(row?.currency) && rate > 0) {
+        const shekels = Math.round(rawAmount * rate * 100) / 100;
+        amountPatch = { foreign_amount: rawAmount, amount: shekels, paid_amount: shekels };
+      } else {
+        amountPatch = { amount: rawAmount, paid_amount: rawAmount };
+      }
+    }
 
     const selectExpense =
       "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,paid_date,created_at,updated_at";

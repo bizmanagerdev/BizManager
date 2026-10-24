@@ -6,12 +6,13 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { CURRENCY_SYMBOL } from "@/lib/fx/currencies";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import type { Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { fmtIls } from "./calendar.helpers";
+import { amountLabel } from "./calendar.helpers";
 import { israelDateKey } from "@/lib/timezone";
 
 // Only what the dialog reads — so a list that isn't the calendar (the חובות page)
@@ -19,7 +20,7 @@ import { israelDateKey } from "@/lib/timezone";
 export type MarkPaidTarget = Pick<
   PaymentCalendarItem,
   "id" | "label" | "amount" | "variableAmount" | "expenseId" | "recurringTemplateId" | "recurrenceKey" | "date"
->;
+> & Partial<Pick<PaymentCalendarItem, "foreign">>;
 
 // ── Inline mark-paid dialog (account required) ──────────────────────────────────
 export default function MarkPaidDialog({
@@ -44,9 +45,13 @@ export default function MarkPaidDialog({
   const open = Boolean(item);
   const isVariable = Boolean(item?.variableAmount);
 
+  // A bill in US$ / C$ is paid in its currency (the server prices it at the bill's rate).
+  const foreign = item?.foreign ?? null;
+  const estimate = foreign ? foreign.amount : item?.amount ?? 0;
+
   // On open, seed the amount with the bill's estimate (variable bills) so you can
   // just tweak it to the real charge instead of typing from scratch.
-  useEffect(() => { setPayAmount(item?.variableAmount && item.amount > 0 ? String(item.amount) : ""); setError(""); }, [item?.id, item?.variableAmount, item?.amount]);
+  useEffect(() => { setPayAmount(item?.variableAmount && estimate > 0 ? String(estimate) : ""); setError(""); }, [item?.id, item?.variableAmount, estimate]);
 
   async function submit() {
     if (!item) return;
@@ -124,7 +129,7 @@ export default function MarkPaidDialog({
         if (!o) onClose();
       }}
       title="סימון תשלום כשולם"
-      description={item ? `${item.label} — ${isVariable ? "סכום משתנה" : fmtIls(item.amount)}` : undefined}
+      description={item ? `${item.label} — ${isVariable ? "סכום משתנה" : amountLabel({ ...item, foreign })}` : undefined}
       size="formMd"
       onSubmit={() => void submit()}
       submitLabel="סמן כשולם"
@@ -136,7 +141,12 @@ export default function MarkPaidDialog({
           {isVariable ? (
             <div className="space-y-1">
               <div className="text-sm font-medium">כמה שולם? *</div>
-              <CurrencyInput value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="0" />
+              <CurrencyInput
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                placeholder="0"
+                symbol={foreign ? CURRENCY_SYMBOL[foreign.currency] : undefined}
+              />
             </div>
           ) : null}
           <div className="space-y-1">

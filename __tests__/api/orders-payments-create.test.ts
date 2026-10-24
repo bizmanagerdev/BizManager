@@ -169,3 +169,35 @@ describe("POST /api/orders/payments/create — Morning auto-receipt", () => {
     expect(await res.json()).not.toHaveProperty("morning_auto_receipt");
   });
 });
+
+describe("POST /api/orders/payments/create — in US$ / C$", () => {
+  it("a payment typed in dollars is saved in shekels at the day's rate, its dollars beside them", async () => {
+    const database = { ...sb(), rpc: vi.fn(async () => ({ data: 3.1, error: null })) };
+    grant(database);
+    const res = await post({ ...VALID, amount_total: 100, currency: "USD" });
+    expect(res.status).toBe(200);
+    expect(database.rpc).toHaveBeenCalledWith("fx_rate_on", { p_currency: "USD", p_date: "2026-05-01" });
+    expect(database.calls.insert.payments[0]).toMatchObject({
+      amount_total: 310,
+      currency: "USD",
+      foreign_amount: 100,
+      fx_rate: 3.1,
+      fx_rate_manual: false,
+    });
+  });
+
+  it("a refund in C$ is negative on both sides", async () => {
+    const database = { ...sb(), rpc: vi.fn(async () => ({ data: 2.2, error: null })) };
+    grant(database);
+    await post({ ...VALID, amount_total: 50, entry_type: "refund", currency: "CAD" });
+    expect(database.calls.insert.payments[0]).toMatchObject({ amount_total: -110, currency: "CAD", foreign_amount: -50 });
+  });
+
+  it("no rate for the day: refused, nothing written", async () => {
+    const database = { ...sb(), rpc: vi.fn(async () => ({ data: null, error: null })) };
+    grant(database);
+    const res = await post({ ...VALID, amount_total: 100, currency: "USD" });
+    expect(res.status).toBe(400);
+    expect(database.calls.insert.payments ?? []).toHaveLength(0);
+  });
+});

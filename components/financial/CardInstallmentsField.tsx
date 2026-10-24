@@ -4,6 +4,8 @@ import { useId } from "react";
 import { Input } from "@/components/ui/input";
 import { MAX_CARD_INSTALLMENTS, parseInstallments, splitCardInstallments } from "@/lib/payments";
 import { formatCurrency } from "@/lib/payroll";
+import { formatCurrencyAmount } from "@/lib/money";
+import type { CurrencyCode } from "@/lib/fx/currencies";
 
 // "מספר תשלומים" for a card payment. With more than one, the form saves that
 // many payments instead of one — each a share of the amount, dated a month
@@ -17,6 +19,7 @@ export function CardInstallmentsField({
   paymentDate,
   disabled,
   labelClassName = "text-sm font-medium",
+  currency = "ILS",
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -26,7 +29,10 @@ export function CardInstallmentsField({
   paymentDate: string;
   disabled?: boolean;
   labelClassName?: string;
+  /** The amount's currency — each share is shown in it. */
+  currency?: CurrencyCode;
 }) {
+  const money = (value: number) => (currency === "ILS" ? formatCurrency(value) : formatCurrencyAmount(value, currency));
   const id = useId();
   const count = parseInstallments(value);
   const invalid = value.trim() !== "" && count === null;
@@ -53,8 +59,8 @@ export function CardInstallmentsField({
         <p className="text-xs text-destructive">מספר התשלומים צריך להיות בין 1 ל-{MAX_CARD_INSTALLMENTS}.</p>
       ) : first && rest ? (
         <p className="text-xs text-muted-foreground">
-          יירשמו {parts.length} תשלומים של {formatCurrency(rest.amount)}
-          {first.amount !== rest.amount ? ` (הראשון ${formatCurrency(first.amount)})` : ""}, אחד בכל חודש החל
+          יירשמו {parts.length} תשלומים של {money(rest.amount)}
+          {first.amount !== rest.amount ? ` (הראשון ${money(first.amount)})` : ""}, אחד בכל חודש החל
           מ-{first.paymentDate.slice(8, 10)}/{first.paymentDate.slice(5, 7)}. כל אחד נכנס לחשבון ב-10 לחודש שאחריו.
         </p>
       ) : (

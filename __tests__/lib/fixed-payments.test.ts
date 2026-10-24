@@ -108,6 +108,14 @@ describe("summarizeFixedPayments — the monthly pill", () => {
     expect(s.activeCount).toBe(2);
     expect(s.sourceCount).toBe(4);
   });
+
+  it("a bill in US$ / C$ counts in shekels at today's rate — and not at all with no rate", () => {
+    const insurance = tpl({ id: "ca", amount: 300, currency: "CAD", shekels_today: 664.11 });
+    const fee = tpl({ id: "us", amount: 25, currency: "USD", shekels_today: null });
+    const s = summarizeFixedPayments([insurance, fee], []);
+    expect(s.monthlyTotal).toBeCloseTo(664.11, 2);
+    expect(s.activeCount).toBe(2);
+  });
 });
 
 describe("summarizeFixedPayments — incoming sources", () => {

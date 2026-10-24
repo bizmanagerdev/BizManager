@@ -141,13 +141,15 @@ export async function loadTodayFxRates(supabase: SupabaseClient): Promise<TodayF
   const rates: TodayFxRates = {};
   await Promise.all(
     FOREIGN_CURRENCIES.map(async (currency) => {
-      const { data, error } = await supabase
-        .from("fx_rates")
-        .select("rate_date,rate")
-        .eq("currency", currency)
-        .order("rate_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await Promise.resolve(
+        supabase
+          .from("fx_rates")
+          .select("rate_date,rate")
+          .eq("currency", currency)
+          .order("rate_date", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      ).catch((err: unknown) => ({ data: null, error: err }));
       const row = data as { rate_date?: string; rate?: number | string } | null;
       const rate = Number(row?.rate);
       if (!error && row?.rate_date && Number.isFinite(rate) && rate > 0) {

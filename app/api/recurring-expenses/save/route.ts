@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { CURRENCY_NAME, isForeignCurrency, type CurrencyCode } from "@/lib/fx/currencies";
 import {
   ensureRecurringExpensesForDate,
   invalidateRecurringExpensesEnsureCache,
@@ -14,6 +15,8 @@ type Payload = {
   template_name?: string | null;
   category?: string | null;
   amount?: number | string | null;
+  /** The currency its amount is in (2026-10-24): ILS | USD | CAD. Absent: left as it is. */
+  currency?: string | null;
   description_template?: string | null;
   notes_template?: string | null;
   business_domain?: string | null;
@@ -142,6 +145,10 @@ export async function POST(req: Request) {
     const endDate = normalizeText(body.end_date);
     const isActive = body.is_active === false ? false : true;
     const isVariableAmount = body.is_variable_amount === true;
+    // Its currency, as the form said it; a form from before it says nothing.
+    const sentCurrency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : "";
+    const currency: CurrencyCode | null =
+      sentCurrency === "ILS" ? "ILS" : isForeignCurrency(sentCurrency) ? sentCurrency : null;
     // Bank standing order (הוראת קבע): generated rows are auto-marked paid. Meaningless
     // for a variable-amount bill (amount unknown until paid), so they're exclusive.
     const autoPaid = !isVariableAmount && body.auto_paid === true;
@@ -171,7 +178,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing yearly month values" }, { status: 400 });
     }
 
+    // An account kept in US$ / C$ takes bills in its own currency only (the
+    // database refuses the bill otherwise, and the daily run with it).
+    if (accountId) {
+      const { data: account } = await supabase
+        .from("accounts")
+        .select("name,currency")
+        .eq("id", accountId)
+        .maybeSingle<{ name: string | null; currency: string | null }>();
+      const accountCurrency = account?.currency ?? "ILS";
+      if (isForeignCurrency(accountCurrency) && currency !== null && currency !== accountCurrency) {
+        return NextResponse.json(
+          { error: `החשבון "${account?.name ?? ""}" מתנהל ב${CURRENCY_NAME[accountCurrency]} — גם ההוצאה הקבועה צריכה להיות בו.` },
+          { status: 400 }
+        );
+      }
+    }
+
     const payload = {
+      ...(currency ? { currency } : {}),
       template_name: templateName,
       category,
       amount: effectiveAmount,
@@ -204,15 +229,18 @@ export async function POST(req: Request) {
     // The amount BEFORE this save — needed both to know whether it actually
     // changed and to spot rows that were fully paid at the old figure.
     let previousAmount: number | null = null;
+    // The currency it's in after this save — its bills' amounts are in it.
+    let templateCurrency: CurrencyCode = currency ?? "ILS";
 
     if (templateId) {
       const { data: existing } = await supabase
         .from("recurring_expense_templates")
-        .select("amount")
+        .select("amount,currency")
         .eq("id", templateId)
-        .maybeSingle<{ amount: number | string | null }>();
+        .maybeSingle<{ amount: number | string | null; currency: string | null }>();
       const parsed = existing ? Number(existing.amount) : NaN;
       previousAmount = Number.isFinite(parsed) ? parsed : null;
+      if (!currency && isForeignCurrency(existing?.currency)) templateCurrency = existing.currency;
 
       const { error } = await supabase
         .from("recurring_expense_templates")
@@ -253,13 +281,33 @@ export async function POST(req: Request) {
 
     // A variable bill's ESTIMATE propagates the same way (its unpaid rows carry
     // the estimate until confirmed); an estimate of 0 never overwrites anything.
-    if (id && propagation !== "none" && amountChanged && effectiveAmount > 0) {
+    // In US$ / C$ the bills' own amount is what changes (their shekels follow at
+    // each one's rate); only the bills in the template's currency are touched.
+    const foreignTemplate = isForeignCurrency(templateCurrency);
+    if (id && propagation !== "none" && amountChanged && effectiveAmount > 0 && foreignTemplate) {
+      const from = propagation === "all" ? startDate ?? "1900-01-01" : null;
+      let query = supabase
+        .from("expenses")
+        .update({ foreign_amount: effectiveAmount, updated_at: new Date().toISOString() })
+        .eq("recurring_expense_template_id", id)
+        .eq("currency", templateCurrency);
+      query = from ? query.gte("expense_date", from) : query.in("payment_status", ["not_paid", "pending"]);
+      const { data, error } = await query.select("id,amount,paid_amount,payment_status");
+      if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
+      const repriced = (data ?? []) as Array<{ id: string; amount: number | string; payment_status: string | null }>;
+      repricedCount = repriced.length;
+      // A bill paid in full stays paid in full at its new shekels.
+      for (const row of repriced.filter((r) => r.payment_status === "paid")) {
+        await supabase.from("expenses").update({ paid_amount: Number(row.amount) }).eq("id", row.id);
+      }
+    } else if (id && propagation !== "none" && amountChanged && effectiveAmount > 0) {
       if (propagation === "unpaid") {
         // Nothing has moved on these yet, so re-pricing them rewrites no history.
         const { data, error } = await supabase
           .from("expenses")
           .update({ amount: effectiveAmount, updated_at: new Date().toISOString() })
           .eq("recurring_expense_template_id", id)
+          .eq("currency", "ILS")
           .in("payment_status", ["not_paid", "pending"])
           .select("id");
         if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
@@ -271,6 +319,7 @@ export async function POST(req: Request) {
           .from("expenses")
           .update({ amount: effectiveAmount, updated_at: new Date().toISOString() })
           .eq("recurring_expense_template_id", id)
+          .eq("currency", "ILS")
           .gte("expense_date", from)
           .select("id");
         if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });

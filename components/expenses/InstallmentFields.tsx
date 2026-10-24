@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { cn } from "@/lib/utils";
+import { CURRENCY_SYMBOL, type CurrencyCode } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 
 export type InstallmentRow = { date: string; amount: string; paid?: boolean };
 
@@ -13,7 +15,8 @@ export function installmentsPaidSum(rows: InstallmentRow[]) {
   return rows.reduce((s, r) => s + (r.paid ? Number(r.amount) || 0 : 0), 0);
 }
 
-function fmtIls(value: number) {
+function fmtIls(value: number, currency: CurrencyCode = "ILS") {
+  if (currency !== "ILS") return formatCurrencyAmount(Math.round(value * 100) / 100, currency);
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
 }
 
@@ -52,14 +55,14 @@ export function installmentsSum(rows: InstallmentRow[]) {
  * Validate a schedule: at least 2 rows, each with a valid date + positive amount,
  * and (when `total` is given) the amounts summing to it. Returns a Hebrew error or null.
  */
-export function validateInstallments(rows: InstallmentRow[], total?: number): string | null {
+export function validateInstallments(rows: InstallmentRow[], total?: number, currency: CurrencyCode = "ILS"): string | null {
   if (rows.length < 2) return "יש להזין לפחות שני תשלומים.";
   for (const r of rows) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date)) return "לכל תשלום יש להזין תאריך תקין.";
     if (!Number.isFinite(Number(r.amount)) || Number(r.amount) <= 0) return "לכל תשלום יש להזין סכום גדול מאפס.";
   }
   if (total != null && Math.abs(total - installmentsSum(rows)) > 0.01) {
-    return `סכום התשלומים (${fmtIls(installmentsSum(rows))}) אינו שווה לסכום הכולל (${fmtIls(total)}).`;
+    return `סכום התשלומים (${fmtIls(installmentsSum(rows), currency)}) אינו שווה לסכום הכולל (${fmtIls(total, currency)}).`;
   }
   return null;
 }
@@ -71,10 +74,13 @@ type Props = {
   startDate: string;
   rows: InstallmentRow[];
   onChange: (rows: InstallmentRow[]) => void;
+  /** The amounts' currency (2026-10-24) — typed and shown in it. */
+  currency?: CurrencyCode;
 };
 
 /** Editable installment schedule — N dated amount rows with an even-split helper. */
-export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
+export function InstallmentFields({ total, startDate, rows, onChange, currency = "ILS" }: Props) {
+  const money = (value: number) => fmtIls(value, currency);
   const sum = installmentsSum(rows);
   const paidSum = installmentsPaidSum(rows);
   const diff = Math.round((total - sum) * 100) / 100;
@@ -93,8 +99,8 @@ export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
     <div className="space-y-2 rounded-xl border bg-muted/20 p-3">
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
-          סה״כ תשלומים: <span className={`font-semibold ${off ? "text-destructive" : "text-foreground"}`}>{fmtIls(sum)}</span>
-          {off ? <span className="text-destructive"> (הפרש {fmtIls(diff)})</span> : null}
+          סה״כ תשלומים: <span className={`font-semibold ${off ? "text-destructive" : "text-foreground"}`}>{money(sum)}</span>
+          {off ? <span className="text-destructive"> (הפרש {money(diff)})</span> : null}
         </span>
         <Button type="button" size="sm" variant="secondary" onClick={distributeEvenly}>
           חלק שווה בשווה
@@ -103,7 +109,7 @@ export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
 
       {paidSum > 0 ? (
         <div className="text-xs font-medium text-success">
-          שולם כבר: {fmtIls(paidSum)} · נותר: {fmtIls(Math.max(0, sum - paidSum))}
+          שולם כבר: {money(paidSum)} · נותר: {money(Math.max(0, sum - paidSum))}
         </div>
       ) : null}
 
@@ -118,7 +124,7 @@ export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
               </div>
               <div className="flex-1 space-y-1">
                 <div className="text-xs font-medium text-muted-foreground">סכום</div>
-                <CurrencyInput type="number" min="0" step="0.01" value={row.amount} onChange={(e) => updateRow(index, { amount: e.target.value })} />
+                <CurrencyInput symbol={CURRENCY_SYMBOL[currency]} type="number" min="0" step="0.01" value={row.amount} onChange={(e) => updateRow(index, { amount: e.target.value })} />
               </div>
               <DeleteButton
                 label="הסרת תשלום"
