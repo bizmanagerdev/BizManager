@@ -125,7 +125,7 @@ function bankRowRecord(row: AccountLedgerEntry): SearchRecord {
     amounts: [
       [null, row.amount],
       // A row in US$ or C$ is found by its dollars too.
-      ...(row.foreign ? [[null, row.foreign.amount] as const] : []),
+      ...(row.foreign ? [[null, row.foreign.amount, row.foreign.currency] as const] : []),
       ...parts.map((part) => [IN_ROW, part.amount] as const),
     ],
     dates: [

@@ -435,6 +435,8 @@ export default function PropertyDetailClient({
     m.hint,
     m.account,
     m.amount != null ? String(m.amount) : null,
+    // A row in US$ / C$ is found by its dollars too.
+    m.foreign ? String(m.foreign.amount) : null,
     ...m.extras.map((x) => x.value),
   ];
   const inCategory = (m: (typeof movements.done)[number]) =>

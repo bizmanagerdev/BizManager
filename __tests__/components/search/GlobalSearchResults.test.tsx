@@ -61,7 +61,18 @@ describe("GlobalSearchResults", () => {
   it("says how many, and what was understood", () => {
     render(<GlobalSearchResults results={response} />);
     expect(screen.getByText("17 תוצאות")).toBeTruthy();
-    expect(screen.getByText("סכום ₪1,000")).toBeTruthy();
+    // No currency typed: looked for in ₪, $ and C$ alike.
+    expect(screen.getByText("סכום 1,000")).toBeTruthy();
+  });
+
+  it("an amount typed with its currency says it", () => {
+    render(
+      <GlobalSearchResults
+        results={{ ...response, understood: [{ kind: "amount", value: "1000", currency: "USD" }, { kind: "amount", value: "300", currency: "CAD" }] }}
+      />
+    );
+    expect(screen.getByText("סכום $1,000")).toBeTruthy();
+    expect(screen.getByText("סכום C$300")).toBeTruthy();
   });
 
   it("paints the matched word in the title and in the reason line", () => {

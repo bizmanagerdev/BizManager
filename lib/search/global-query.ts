@@ -1,4 +1,5 @@
 import { osaDistance } from "@/lib/search/customerMatch";
+import type { CurrencyCode } from "@/lib/fx/currencies";
 import { israelDateKey } from "@/lib/timezone";
 
 /**
@@ -7,7 +8,9 @@ import { israelDateKey } from "@/lib/timezone";
  * amount of money I want all the expenses to come up … I put in a date,
  * anything that happened on that date … a phone number".
  *
- *   "1000" / "₪1,000" / "1000 ש״ח"   → an amount (also a whole number in text)
+ *   "1000"                            → an amount in any currency (also a whole number in text)
+ *   "₪1,000", "$1,000", "C$1,000",
+ *   "1000 ש״ח", "1000 דולר", "1000 קנדי" → an amount in that currency only (2026-10-24)
  *   "15/10", "15.10.26", "2026-10-15" → a date
  *   "14:30", "9:05"                   → an hour (owner, 2026-10-19: "by hour")
  *   "054-893-3553", "+972 54 8933553" → a phone (digits, +972 folded to 0)
@@ -25,6 +28,8 @@ export type GlobalSearchToken = {
   w?: boolean;
   /** An exact amount. */
   a?: number;
+  /** The currency it was typed with; none: an amount in any currency. */
+  c?: CurrencyCode;
   /** A day, "YYYY-MM-DD". */
   d?: string;
   /** Phone digits (local form, 0-prefixed). */
@@ -33,7 +38,12 @@ export type GlobalSearchToken = {
   h?: string;
 };
 
-export type UnderstoodPart = { kind: "amount" | "date" | "phone" | "hour"; value: string };
+export type UnderstoodPart = {
+  kind: "amount" | "date" | "phone" | "hour";
+  value: string;
+  /** An amount's currency, when it was typed with one. */
+  currency?: CurrencyCode;
+};
 
 export type ParsedGlobalQuery = {
   tokens: GlobalSearchToken[];
@@ -85,8 +95,30 @@ function validDate(year: number, month: number, day: number): string | null {
   return `${year}-${pad2(month)}-${pad2(day)}`;
 }
 
-// Currency words only mean "this is an amount" — they aren't searched for.
+// Currency marks only say which currency an amount is in — they aren't
+// searched for. C$ before $, and "דולר קנדי" before "דולר".
 const CURRENCY_WORD = /(^|\s)(ש["״׳'`]?ח|שקלים|שקל|nis|ils)(?=\s|$)/gi;
+const CURRENCY_MARKS: ReadonlyArray<readonly [RegExp, CurrencyCode]> = [
+  [/(^|\s)(ב?דולר(?:ים)?\s+קנדי(?:ים)?|ב?קנדי(?:ים)?|cad)(?=\s|$)/gi, "CAD"],
+  [/ca?\$/gi, "CAD"],
+  [/(^|\s)(ב?דולר(?:ים)?|usd)(?=\s|$)/gi, "USD"],
+  [/(?:us)?\$/gi, "USD"],
+  [/₪/g, "ILS"],
+  [CURRENCY_WORD, "ILS"],
+];
+
+/** The marks taken out, and the one currency they name (two different ones: none). */
+function takeCurrency(text: string): { text: string; currency?: CurrencyCode } {
+  const found = new Set<CurrencyCode>();
+  let rest = text;
+  for (const [mark, currency] of CURRENCY_MARKS) {
+    rest = rest.replace(mark, (_whole: string, lead: unknown) => {
+      found.add(currency);
+      return typeof lead === "string" ? `${lead} ` : " ";
+    });
+  }
+  return { text: rest, currency: found.size === 1 ? [...found][0] : undefined };
+}
 const PHONE_RUN = /(^|\s)(\+?\d[\d\s\-().]{6,}\d)(?=\s|$)/g;
 const DATE_PART = /^(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2}|\d{4}))?$/;
 const HOUR_PART = /^([01]?\d|2[0-3]):([0-5]\d)$/;
@@ -104,8 +136,10 @@ export function parseGlobalQuery(raw: string, today: string = israelDateKey(new 
   let text = (raw ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!text) return { tokens, words, understood };
 
-  const hasDigit = /\d/.test(text);
-  if (hasDigit) text = text.replace(/₪/g, " ").replace(CURRENCY_WORD, "$1 ");
+  // "$1,000", "1000 דולר": the amounts in it are in that currency.
+  let currency: CurrencyCode | undefined;
+  if (/\d/.test(text)) ({ text, currency } = takeCurrency(text));
+  const inCurrency = currency ? { c: currency } : {};
 
   // A phone typed with spaces or dashes inside it ("054 893 3553").
   text = text.replace(PHONE_RUN, (whole, lead: string, run: string) => {
@@ -140,7 +174,7 @@ export function parseGlobalQuery(raw: string, today: string = israelDateKey(new 
       if (date) {
         const token: GlobalSearchToken = { d: date };
         // "1.5" is also one and a half shekels.
-        if (dmy && !dmy[3] && part.includes(".")) token.a = Number(part);
+        if (dmy && !dmy[3] && part.includes(".")) Object.assign(token, { a: Number(part) }, inCurrency);
         tokens.push(token);
         understood.push({ kind: "date", value: date });
         continue;
@@ -160,12 +194,12 @@ export function parseGlobalQuery(raw: string, today: string = israelDateKey(new 
       }
       const value = Number(decimals ? `${intDigits}.${decimals}` : intDigits);
       if (Number.isFinite(value)) {
-        const token: GlobalSearchToken = { a: value, w: true };
+        const token: GlobalSearchToken = { a: value, w: true, ...inCurrency };
         if (!decimals) token.t = [intDigits];
         // Five digits and up may also be part of a phone, plate or account number.
         if (!decimals && intDigits.length >= 5) token.p = intDigits;
         tokens.push(token);
-        understood.push({ kind: "amount", value: String(value) });
+        understood.push({ kind: "amount", value: String(value), ...(currency ? { currency } : {}) });
         continue;
       }
     }

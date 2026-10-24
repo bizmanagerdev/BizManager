@@ -101,6 +101,10 @@ describe("formatReason", () => {
   it("shows an amount in shekels", () => {
     expect(formatReason({ k: "amount", l: "סכום", v: "1000.00" })?.value).toBe("₪1,000");
   });
+  it("…or in its currency, when it matched in US$ / C$", () => {
+    expect(formatReason({ k: "amount", l: "סכום", v: "1000.00", c: "USD" })?.value).toBe("$1,000");
+    expect(formatReason({ k: "amount", l: "תשלום", v: "300.50", c: "CAD" })?.value).toBe("C$300.5");
+  });
   it("drops an empty reason", () => {
     expect(formatReason({ k: "text", l: "הערה", v: "" })).toBeNull();
   });
@@ -120,6 +124,33 @@ describe("toGlobalSearchResult", () => {
     );
     expect(result?.meta.find((item) => item.text === "₪1,000")?.hit).toBe(true);
     expect(result?.reasons).toEqual([{ kind: "amount", label: "סכום", value: "₪1,000" }]);
+  });
+
+  it("a row in dollars: its dollars as a chip beside its shekels, painted when they matched", () => {
+    const result = toGlobalSearchResult(
+      row({
+        kind: "payment",
+        id: "p1",
+        title: "Chase",
+        info: { amount: 3107, currency: "USD", foreign_amount: 1000, date: "2026-10-22" },
+        reasons: [{ k: "amount", l: "סכום", v: "1000.00", c: "USD" }],
+      }),
+      "admin"
+    );
+    expect(result?.meta.map((item) => item.text)).toEqual(["$1,000", "₪3,107", "22/10/26"]);
+    expect(result?.meta.find((item) => item.text === "$1,000")?.hit).toBe(true);
+  });
+
+  it("a transfer between currencies: what left and what arrived, each in its own", () => {
+    const result = toGlobalSearchResult(
+      row({
+        kind: "transfer",
+        id: "t1",
+        info: { amount: 3050, from_amount: null, from_currency: "ILS", to_amount: 1000, to_currency: "USD", date: "2026-10-22" },
+      }),
+      "admin"
+    );
+    expect(result?.meta.map((item) => item.text)).toEqual(["$1,000", "₪3,050", "22/10/26"]);
   });
 
   it("keeps a word reason (a branch, a reply) under the title", () => {

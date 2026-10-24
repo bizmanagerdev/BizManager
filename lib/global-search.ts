@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { buildFocusHref } from "@/lib/audit";
 import { formatDateWithTime, formatShortDate, formatShortDateTime, formatTimeOnly } from "@/lib/date";
-import { formatMoney } from "@/lib/money";
+import { formatCurrencyAmount, formatMoney } from "@/lib/money";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 import {
   getOrderStatusLabel,
   getPaymentStatusLabel,
@@ -151,7 +152,7 @@ export function isGlobalSearchKind(value: unknown): value is GlobalSearchKind {
 export type GlobalSearchReason = {
   kind: "date" | "amount" | "phone" | "text";
   label: string;
-  /** Ready to show (a date as 15/10/26, an amount as ₪1,000). */
+  /** Ready to show (a date as 15/10/26, an amount as ₪1,000 — or $1,000 / C$1,000). */
   value: string;
 };
 
@@ -198,7 +199,7 @@ type Row = {
   subtitle: string | null;
   at: string | null;
   info: Record<string, unknown> | null;
-  reasons: Array<{ k?: string; l?: string; v?: string }> | null;
+  reasons: Array<{ k?: string; l?: string; v?: string; c?: string }> | null;
   rank: number | null;
   total: number | string | null;
 };
@@ -227,6 +228,12 @@ function num(value: unknown): number | null {
 function money(value: unknown): string | null {
   const amount = num(value);
   return amount === null ? null : formatMoney(amount);
+}
+
+/** A row's amount in US$ / C$ ("$1,000"), when it's in one. */
+function foreignMoney(amount: unknown, currency: unknown): string | null {
+  const value = num(amount);
+  return value !== null && isForeignCurrency(currency) ? formatCurrencyAmount(value, currency) : null;
 }
 
 function day(value: unknown): string | null {
@@ -264,7 +271,7 @@ function chips(...items: Array<string | null | undefined | false>): GlobalSearch
 }
 
 /** A reason as the screen shows it: dates and amounts in the app's own format. */
-export function formatReason(raw: { k?: string; l?: string; v?: string }): GlobalSearchReason | null {
+export function formatReason(raw: { k?: string; l?: string; v?: string; c?: string }): GlobalSearchReason | null {
   const kind = raw.k === "date" || raw.k === "amount" || raw.k === "phone" ? raw.k : "text";
   const label = str(raw.l);
   const value = str(raw.v);
@@ -275,7 +282,11 @@ export function formatReason(raw: { k?: string; l?: string; v?: string }): Globa
     const shown = end && end !== start ? `${formatShortDate(start, start)} – ${formatShortDate(end, end)}` : formatShortDate(start, start);
     return { kind, label, value: shown };
   }
-  if (kind === "amount") return { kind, label, value: money(value) ?? value };
+  if (kind === "amount") {
+    // An amount in US$ / C$ says so ("c").
+    const shown = isForeignCurrency(raw.c) ? foreignMoney(value, raw.c) : money(value);
+    return { kind, label, value: shown ?? value };
+  }
   return { kind, label, value };
 }
 
@@ -391,6 +402,7 @@ function metaFor(kind: GlobalSearchKind, info: Record<string, unknown>, at: stri
       );
     case "payment":
       return chips(
+        foreignMoney(info.foreign_amount, info.currency),
         money(info.amount),
         day(info.date),
         methodLabel(info.method),
@@ -399,6 +411,7 @@ function metaFor(kind: GlobalSearchKind, info: Record<string, unknown>, at: stri
       );
     case "expense":
       return chips(
+        foreignMoney(info.foreign_amount, info.currency),
         money(info.amount),
         day(info.date),
         str(info.category),
@@ -445,9 +458,22 @@ function metaFor(kind: GlobalSearchKind, info: Record<string, unknown>, at: stri
     case "reminder":
       return chips(str(info.when) ? formatShortDateTime(str(info.when), "") : null);
     case "loan":
-      return chips(money(info.amount), day(info.date), str(info.due) && `להחזר ${day(info.due)}`);
+      return chips(
+        foreignMoney(info.foreign_amount, info.currency),
+        money(info.amount),
+        day(info.date),
+        str(info.due) && `להחזר ${day(info.due)}`
+      );
     case "loan_repayment":
+      return chips(foreignMoney(info.foreign_amount, info.currency), money(info.amount), day(info.date));
     case "transfer":
+      // Between currencies: what left and what arrived, each in its own.
+      return chips(
+        foreignMoney(info.from_amount, info.from_currency),
+        foreignMoney(info.to_amount, info.to_currency),
+        money(info.amount),
+        day(info.date)
+      );
     case "card_row":
     case "card_charge":
     case "promise":

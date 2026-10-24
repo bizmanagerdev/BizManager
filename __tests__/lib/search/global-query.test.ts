@@ -21,12 +21,43 @@ describe("phoneDigits", () => {
 });
 
 describe("parseGlobalQuery", () => {
-  it("an amount in any form", () => {
-    for (const typed of ["1000", "1,000", "₪1,000", "1000 ש\"ח", "1000 שקל"]) {
+  it("an amount in any form — with no currency, in any currency", () => {
+    for (const typed of ["1000", "1,000"]) {
       const parsed = parseGlobalQuery(typed, TODAY);
       expect(parsed.tokens).toEqual([{ a: 1000, w: true, t: ["1000"] }]);
       expect(parsed.understood).toEqual([{ kind: "amount", value: "1000" }]);
     }
+  });
+
+  it("an amount typed with its currency is in that currency only (2026-10-24)", () => {
+    const cases: Array<[string, string]> = [
+      ["₪1,000", "ILS"],
+      ["1000 ש\"ח", "ILS"],
+      ["1000 שקל", "ILS"],
+      ["$1,000", "USD"],
+      ["1,000$", "USD"],
+      ["US$1000", "USD"],
+      ["1000 דולר", "USD"],
+      ["1000 בדולרים", "USD"],
+      ["1000 usd", "USD"],
+      ["C$1,000", "CAD"],
+      ["1000C$", "CAD"],
+      ["CA$1000", "CAD"],
+      ["1000 קנדי", "CAD"],
+      ["1000 דולר קנדי", "CAD"],
+      ["1000 CAD", "CAD"],
+    ];
+    for (const [typed, currency] of cases) {
+      const parsed = parseGlobalQuery(typed, TODAY);
+      expect(parsed.tokens, typed).toEqual([{ a: 1000, w: true, c: currency, t: ["1000"] }]);
+      expect(parsed.understood, typed).toEqual([{ kind: "amount", value: "1000", currency }]);
+    }
+  });
+
+  it("currency marks aren't searched for; two different ones: any currency; with no number, דולר is a word", () => {
+    expect(parseGlobalQuery("צ'ייס 1000 דולר", TODAY).tokens).toEqual([{ t: ["צייס"] }, { a: 1000, w: true, c: "USD", t: ["1000"] }]);
+    expect(parseGlobalQuery("$1000 ₪", TODAY).tokens).toEqual([{ a: 1000, w: true, t: ["1000"] }]);
+    expect(parseGlobalQuery("דולר", TODAY).tokens).toEqual([{ t: ["דולר"] }]);
   });
 
   it("a decimal amount is matched as an amount only", () => {

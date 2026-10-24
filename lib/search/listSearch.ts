@@ -1,6 +1,7 @@
 import type { GlobalSearchReason } from "@/lib/global-search";
 import { formatShortDate, formatTimeOnly, toDateKey } from "@/lib/date";
-import { formatMoney } from "@/lib/money";
+import { formatCurrencyAmount, formatMoney } from "@/lib/money";
+import type { CurrencyCode } from "@/lib/fx/currencies";
 import {
   fuzzyAlternatives,
   gsNorm,
@@ -19,7 +20,8 @@ import {
 //    marks and niqqud folded; a misspelt word also by its close spellings that
 //    exist in the list — "באין" → "ביאן");
 //  - an amount ("1447", "₪1,447") equals one of the row's amounts, or stands as
-//    a number in its words; a date ("15/10") is one of its days; an hour
+//    a number in its words — typed with a currency ("$1,000", "1000 קנדי"), only
+//    an amount in that currency; a date ("15/10") is one of its days; an hour
 //    ("14:30") is in its words; a phone ("050-1234567") is one of its phones,
 //    whatever dashes or +972 either side was written with.
 //
@@ -29,10 +31,13 @@ import {
 
 type Field<T> = readonly [label: string | null, value: T | null | undefined];
 
+/** An amount, in ₪ unless it says its currency (a row in US$ / C$ gives its dollars too). */
+type AmountField = readonly [label: string | null, value: number | null | undefined, currency?: CurrencyCode | null];
+
 export type SearchRecord = {
   /** Words. A null label = shown on the row itself. */
   text?: ReadonlyArray<Field<string>>;
-  amounts?: ReadonlyArray<Field<number>>;
+  amounts?: ReadonlyArray<AmountField>;
   /** A day ("YYYY-MM-DD") or an instant — compared as Israel's calendar day. */
   dates?: ReadonlyArray<Field<string>>;
   phones?: ReadonlyArray<Field<string>>;
@@ -44,6 +49,8 @@ type Token = {
   /** The spellings as typed and fixed — what's painted. */
   spellings: string[];
   amount?: number;
+  /** The currency the amount was typed with; none: any. */
+  currency?: CurrencyCode;
   date?: string;
   phone?: string;
   hour?: RegExp;
@@ -87,6 +94,7 @@ function toToken(raw: GlobalSearchToken): Token {
     words: spellings.map((word) => wordPattern(word, Boolean(raw.w))),
     spellings,
     amount: raw.a,
+    currency: raw.c,
     date: raw.d,
     phone: raw.p,
     hour: raw.h ? new RegExp(`(^|[^0-9])${raw.h}(?![0-9])`) : undefined,
@@ -160,9 +168,11 @@ function hitsFor(token: Token, record: SearchRecord, folded: Array<{ label: stri
     }
   }
   if (token.amount !== undefined) {
-    for (const [label, value] of record.amounts ?? []) {
+    for (const [label, value, inCurrency] of record.amounts ?? []) {
+      const currency = inCurrency ?? "ILS";
+      if (token.currency && token.currency !== currency) continue;
       if (typeof value === "number" && Number.isFinite(value) && sameAmount(value, token.amount)) {
-        hits.push({ kind: "amount", label, value: formatMoney(value) });
+        hits.push({ kind: "amount", label, value: currency === "ILS" ? formatMoney(value) : formatCurrencyAmount(value, currency) });
       }
     }
   }

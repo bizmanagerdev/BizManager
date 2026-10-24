@@ -30,7 +30,7 @@ export function ledgerSearchRecord(entry: FinancialEntry): SearchRecord {
     amounts: [
       [null, entry.amount],
       // A row in US$ or C$ is found by its dollars too.
-      [null, entry.foreign?.amount ?? null],
+      [null, entry.foreign?.amount ?? null, entry.foreign?.currency ?? null],
       ["שולם", entry.expensePaidAmount],
     ],
     dates: [

@@ -36,6 +36,21 @@ describe("matchSearchRecord", () => {
     expect(match(bankLine, "144")).toBeNull();
   });
 
+  it("a row in dollars: by its dollars (in $ or with no currency) and by its shekels (in ₪)", () => {
+    const chase: SearchRecord = { text: [[null, "Chase"]], amounts: [[null, 3107], [null, 1000, "USD"]] };
+    expect(match(chase, "1000")).toEqual([]);
+    expect(match(chase, "$1,000")).toEqual([]);
+    expect(match(chase, "1000 דולר")).toEqual([]);
+    expect(match(chase, "C$1,000")).toBeNull();
+    expect(match(chase, "₪1,000")).toBeNull();
+    expect(match(chase, "₪3,107")).toEqual([]);
+    expect(match(chase, "$3,107")).toBeNull();
+    // Shown when it's not on the row: in its currency.
+    expect(match({ text: [[null, "Chase"]], amounts: [["סכום בדולרים", 1000, "USD"]] }, "1000")).toEqual([
+      { kind: "amount", label: "סכום בדולרים", value: "$1,000" },
+    ]);
+  });
+
   it("a date finds the row by any of its days, and says which one when the row doesn't show it", () => {
     expect(match(bankLine, "15/10")).toEqual([]);
     expect(match(bankLine, "12.10.26")).toEqual([{ kind: "date", label: "נרשם", value: "12/10/26" }]);

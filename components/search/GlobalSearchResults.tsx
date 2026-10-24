@@ -4,7 +4,7 @@ import Link from "next/link";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { HighlightAll, MatchReason, highlightText } from "@/components/search/highlightMatch";
 import { formatShortDate } from "@/lib/date";
-import { formatMoney } from "@/lib/money";
+import { formatCurrencyAmount } from "@/lib/money";
 import type { GlobalSearchReason, GlobalSearchResponse, GlobalSearchResult } from "@/lib/global-search";
 import type { UnderstoodPart } from "@/lib/search/global-query";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,11 @@ import { cn } from "@/lib/utils";
 // record itself.
 
 function understoodText(part: UnderstoodPart) {
-  if (part.kind === "amount") return `סכום ${formatMoney(Number(part.value))}`;
+  // With no currency typed an amount is looked for in ₪, $ and C$ alike: no sign.
+  if (part.kind === "amount") {
+    const value = Number(part.value);
+    return `סכום ${part.currency ? formatCurrencyAmount(value, part.currency) : value.toLocaleString("he-IL")}`;
+  }
   if (part.kind === "date") return `תאריך ${formatShortDate(part.value, part.value)}`;
   if (part.kind === "hour") return `שעה ${part.value}`;
   return `טלפון ${part.value}`;
