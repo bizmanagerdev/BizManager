@@ -390,6 +390,11 @@ function isPermanentFailure(status: number): boolean {
   return status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
+/** A delete route — "/api/…/delete". */
+export function isDeleteUrl(url: string): boolean {
+  return /\/delete(?:$|[?#])/.test(url);
+}
+
 export async function processQueue(): Promise<ProcessResult> {
   let processed = 0;
   let failed = 0;
@@ -438,6 +443,14 @@ export async function processQueue(): Promise<ProcessResult> {
         if (json.error) error = json.error;
       } catch {}
       const hebrewError = toHebrewError(error);
+
+      // Deleting something that's already gone did what it was meant to — a
+      // delete sent again because its first try (slow) did arrive after all.
+      if (response.status === 404 && isDeleteUrl(entry.url)) {
+        dequeue(entry.id);
+        processed++;
+        continue;
+      }
 
       if (isPermanentFailure(response.status)) {
         failEntry(entry, hebrewError);

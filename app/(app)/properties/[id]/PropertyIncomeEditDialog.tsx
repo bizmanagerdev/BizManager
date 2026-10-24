@@ -14,8 +14,8 @@ import AccountSelect from "@/components/financial/AccountSelect";
 import type { Account } from "@/lib/accounts";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import type { LeaseAgreement, PropertyPayment } from "@/lib/properties";
-import { toHebrewError } from "@/lib/error-messages";
 import { scheduleDeferredEdit } from "@/lib/undo-engine";
+import { sendChange } from "@/lib/offline-send";
 import { leaseForPayment, rentCoverage } from "@/lib/property-rent";
 import { rentPeriodChoices, rentPeriodLabel } from "@/lib/rent-periods";
 import { formatShortDate } from "@/lib/date";
@@ -194,11 +194,11 @@ export default function PropertyIncomeEditDialog({
         accountId: saved.accountId || null,
         ...rentPatch,
       },
+      // With no signal it waits on the device and goes out with the connection (owner, 2026-10-24).
       onCommit: async () => {
-        const res = await fetch("/api/payments/update", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+        const sent = await sendChange(
+          "/api/payments/update",
+          {
             id,
             business_domain: "property_management",
             payment_date: saved.paymentDate,
@@ -212,11 +212,12 @@ export default function PropertyIncomeEditDialog({
             requires_split: payment.requiresSplit,
             account_id: saved.accountId || null,
             ...rent,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
-        startTransition(() => router.refresh());
+          },
+          "עדכון הכנסה",
+          "עדכון ההכנסה נכשל."
+        );
+        if (!sent.ok) return { ok: false, error: sent.error };
+        if (!sent.queued) startTransition(() => router.refresh());
         return { ok: true };
       },
     });

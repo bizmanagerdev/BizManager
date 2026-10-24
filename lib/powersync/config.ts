@@ -77,15 +77,16 @@ export const LOCAL_DATA_PAGES = {
   // worker's pay owed — owner: "leave out those tables", 2026-10-20 — the
   // documents and history) follows from the server after the page.
   customerPage: true,
-  // The properties list (/properties) — from 2026-10-21 on the owner's devices
-  // first (LOCAL_DATA_PREVIEW_USERS); everyone's after a day of clean
-  // comparisons (LOCAL_DATA_SHADOW.properties).
-  properties: false,
-  // A property's page (/properties/<id>) — the same, from 2026-10-21. Its
-  // documents, files and recurring bills follow from the server after the page.
-  propertyPage: false,
-  // The rent roll (/rent) — the same, from 2026-10-21 (owner's devices first).
-  rentRoll: false,
+  // The properties list (/properties) — on the owner's devices from 2026-10-21,
+  // every admin and office user's from 2026-10-24 (owner: "do 5"), after its
+  // comparisons came out clean (Oct 21–24, two devices; none differed).
+  properties: true,
+  // A property's page (/properties/<id>) — the same dates; still clean after
+  // the companies and zoning columns (Oct 24). Its documents, files and
+  // recurring bills follow from the server after the page.
+  propertyPage: true,
+  // The rent roll (/rent) — the same dates.
+  rentRoll: true,
 } as const;
 
 /**

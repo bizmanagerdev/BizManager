@@ -11,6 +11,7 @@ import { STORAGE_BUCKET } from "@/lib/storage";
 import { insertDocumentRow } from "@/lib/documents/insert";
 import { undoDocumentCreate } from "@/lib/documents/undoCreate";
 import { parseDateToIso } from "@/lib/financial/cardImport";
+import { clientRowId } from "@/lib/client-row-id";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -41,6 +42,9 @@ export async function POST(req: Request) {
     const projectId = String(form.get("project_id") ?? "").trim();
     const propertyId = String(form.get("property_id") ?? "").trim();
     const customerId = String(form.get("customer_id") ?? "").trim();
+    // A lease's signed agreement: attached to its lease as it goes up (one request, so a contract kept on the
+    // device with no signal reaches its lease too — owner, 2026-10-24).
+    const leaseId = clientRowId(form.get("lease_id"));
     const category = String(form.get("category") ?? form.get("tag") ?? "").trim();
     // Optional vehicle/tag links sent as a JSON array string, plus the year the
     // file is FOR (e.g. a 2026 טסט) so it's searchable by year.
@@ -180,6 +184,19 @@ export async function POST(req: Request) {
       refYear,
     });
 
+    let leaseAttached = false;
+    if (leaseId && linkedEntityType === "property" && linkedEntityId) {
+      const { data: lease, error: leaseError } = await supabase
+        .from("lease_agreements")
+        .update({ document_id: documentId, updated_at: new Date().toISOString() })
+        .eq("id", leaseId)
+        .eq("property_id", linkedEntityId)
+        .select("id")
+        .maybeSingle();
+      if (leaseError) console.error("[documents/upload] lease attach failed", { documentId, leaseId, leaseError });
+      leaseAttached = Boolean(lease);
+    }
+
     logAuditEventAfterResponse({
       supabase,
       tableName: "documents",
@@ -200,6 +217,7 @@ export async function POST(req: Request) {
         project_id: linkedEntityType === "project" ? linkedEntityId : null,
         property_id: linkedEntityType === "property" ? linkedEntityId : null,
       },
+      ...(leaseId ? { lease_attached: leaseAttached } : {}),
     });
     });
   } catch (err: unknown) {
