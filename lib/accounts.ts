@@ -332,7 +332,7 @@ const ACCOUNT_COLUMNS =
  * A register line's amount in its account's own currency: the shekels on a
  * shekel account, the dollars on a US$ one. Every line on a US$ or C$ account
  * is in that currency — the database refuses any other
- * (supabase/migrations/20261023120000_money_currency.sql).
+ * (supabase/migrations/20261023120001_money_currency.sql).
  */
 export function amountInAccount(
   account: Pick<Account, "currency">,

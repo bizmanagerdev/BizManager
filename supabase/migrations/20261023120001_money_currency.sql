@@ -41,7 +41,7 @@
 -- account changes currency here (Chase becomes US$ in step 8, with its rows).
 --
 -- Idempotent; safe to re-run.
--- Rollback: supabase/rollbacks/20261023120000_money_currency.rollback.sql
+-- Rollback: supabase/rollbacks/20261023120001_money_currency.rollback.sql
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- ── Accounts ─────────────────────────────────────────────────────────────────
