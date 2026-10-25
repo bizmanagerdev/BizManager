@@ -21,7 +21,8 @@ import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
 import { israelDateKey } from "@/lib/timezone";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { summarizeStatement, type StatementMathCharge, type StatementMathRow } from "@/lib/financial/cardStatementMath";
-import { paidTowards, rentAllocationOf, type RentLease, type RentPayment } from "@/lib/property-rent";
+import { leaseForPayment, rentAllocationOf, rentPeriodStatus, type RentLease, type RentPayment } from "@/lib/property-rent";
+import { rentLeftOf } from "@/lib/rent-roll";
 import { firstRentPeriod, rentDueDateLabel, rentPeriodLabel, rentPeriodOf } from "@/lib/rent-periods";
 
 // ---------------------------------------------------------------------------
@@ -454,7 +455,7 @@ const rentDueRule: SystemRule = {
     const payments = await fetchAllPagedResult<Row>((from, to) =>
       supabase
         .from("payments")
-        .select("property_id,payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent")
+        .select("property_id,payment_date,due_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent")
         .in("property_id", propertyIds)
         .range(from, to)
     );
@@ -473,8 +474,26 @@ const rentDueRule: SystemRule = {
         periods: getNumber(row, "rent_periods"),
         countsAsRent: getBoolean(row, "counts_as_rent"),
         allocation: rentAllocationOf(row.rent_allocation),
+        dueDate: getString(row, "due_date"),
       });
       paymentsByProperty.set(propertyId, list);
+    }
+
+    const rentLeaseOf = (row: Row): RentLease => ({
+      id: getString(row, "id"),
+      status: getString(row, "status"),
+      startDate: getString(row, "start_date"),
+      endDate: getString(row, "end_date"),
+      monthlyRentAmount: getNumber(row, "monthly_rent_amount") ?? 0,
+      rentDayOfMonth: getNumber(row, "rent_day_of_month"),
+      rentCalendar: getString(row, "rent_calendar"),
+      rentHebrewDay: getNumber(row, "rent_hebrew_day"),
+      periodMonths: getNumber(row, "period_months"),
+    });
+    const leasesByProperty = new Map<string, Array<RentLease & { id: string }>>();
+    for (const row of leases) {
+      const propertyId = getString(row, "property_id") as string;
+      leasesByProperty.set(propertyId, [...(leasesByProperty.get(propertyId) ?? []), { ...rentLeaseOf(row), id: getString(row, "id") as string }]);
     }
 
     const items: SystemReminderItem[] = [];
@@ -483,17 +502,7 @@ const rentDueRule: SystemRule = {
       const propertyId = getString(row, "property_id") as string;
       const propertyRow = (Array.isArray(row.property) ? row.property[0] : row.property) as Row | undefined;
       if (getBoolean(propertyRow, "is_active") === false) continue;
-      const lease: RentLease = {
-        id,
-        status: getString(row, "status"),
-        startDate: getString(row, "start_date"),
-        endDate: getString(row, "end_date"),
-        monthlyRentAmount: getNumber(row, "monthly_rent_amount") ?? 0,
-        rentDayOfMonth: getNumber(row, "rent_day_of_month"),
-        rentCalendar: getString(row, "rent_calendar"),
-        rentHebrewDay: getNumber(row, "rent_hebrew_day"),
-        periodMonths: getNumber(row, "period_months"),
-      };
+      const lease = rentLeaseOf(row);
       if (!(lease.monthlyRentAmount > 0)) continue;
       // The period due by `days_before` from now — inside the lease.
       const period = rentPeriodOf(lease, aheadIso);
@@ -501,22 +510,23 @@ const rentDueRule: SystemRule = {
       if (!first || period < first || period > aheadIso) continue;
       if (lease.endDate && period > lease.endDate.slice(0, 10)) continue;
 
-      let collected = 0;
-      let pending = 0;
-      for (const payment of paymentsByProperty.get(propertyId) ?? []) {
-        const part = paidTowards(lease, payment, period);
-        if (part <= 0) continue;
-        if (payment.paymentStatus === "pending") pending += part;
-        else collected += part;
-      }
-      // Paid, or a check for it waiting to clear: nothing to chase.
-      if (collected >= lease.monthlyRentAmount - 0.5 || (collected === 0 && pending > 0)) continue;
+      // Its own payments — the lease each names, else the one running on its date (the only one on the property
+      // for one before its start) — and the rent page's rule (owner, 2026-10-25): paid, or a check for it not due
+      // yet, is nothing to chase; a check we hold past its day and not in still is, said.
+      const here = leasesByProperty.get(propertyId) ?? [];
+      const mine = (paymentsByProperty.get(propertyId) ?? []).filter(
+        (payment) => leaseForPayment(here, payment, here.length === 1 ? here[0] : null)?.id === id
+      );
+      const status = rentPeriodStatus(lease, mine, period, ctx.todayIso);
+      const owed = rentLeftOf(status);
+      if (owed <= 0.5) continue;
+      const collected = status.collected;
+      const held = (status.pendingDue ?? 0) > 0.5;
 
       const customerRow = (Array.isArray(row.customer) ? row.customer[0] : row.customer) as Row | undefined;
       const place = getString(propertyRow, "name") || getString(propertyRow, "address") || "נכס";
       const unit = getString(row, "unit_label");
       const tenant = getString(customerRow, "name");
-      const owed = lease.monthlyRentAmount - collected;
       const late = period < ctx.todayIso;
       const when = rentDueDateLabel(lease, period);
       items.push({
@@ -525,6 +535,7 @@ const rentDueRule: SystemRule = {
         content: [
           tenant,
           `${ils(owed)}${collected > 0 ? ` (נותרו מתוך ${ils(lease.monthlyRentAmount)})` : ""}`,
+          held ? "צ׳ק ביד, לא הופקד" : null,
           late ? `היה לשלם ב-${when}` : period === ctx.todayIso ? "לתשלום היום" : `לתשלום ב-${when}`,
         ]
           .filter(Boolean)

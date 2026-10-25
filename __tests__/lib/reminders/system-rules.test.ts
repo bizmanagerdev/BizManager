@@ -531,6 +531,15 @@ describe("rent_due — rent coming due, by the lease's own calendar", () => {
     expect(part[0].content).toBe(`כהן · ${ils(2500)} (נותרו מתוך ${ils(4000)}) · לתשלום ב-א׳ כסלו`);
   });
 
+  it("a check we hold past its day and not deposited: still owed — and said (owner, 2026-10-25: \"show both\")", async () => {
+    const check = { property_id: "prop-d4", payment_date: "2026-11-01", due_date: "2026-11-11", payment_status: "pending", amount_total: 4000, lease_id: "lease-d4", rent_period_start: "2026-11-11", rent_periods: 1, counts_as_rent: true };
+    // Not due yet: it covers כסלו.
+    expect(await evaluate("2026-11-10", [cheshvan, check])).toHaveLength(0);
+    // Past its day, not in: the alert, with the check said.
+    const items = await evaluate("2026-11-20", [cheshvan, check]);
+    expect(items[0]).toMatchObject({ severity: "danger", content: `כהן · ${ils(4000)} · צ׳ק ביד, לא הופקד · היה לשלם ב-א׳ כסלו` });
+  });
+
   it("late: danger, until the next month's comes", async () => {
     const items = await evaluate("2026-11-20");
     expect(items[0]).toMatchObject({ key: "lease-d4:2026-11-11", severity: "danger", content: `כהן · ${ils(4000)} · היה לשלם ב-א׳ כסלו` });

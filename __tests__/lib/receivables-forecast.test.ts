@@ -245,6 +245,33 @@ describe("projectRent — the lease's own calendar and the months payments say",
     const rows = projectRent([hebrew], new Map(), window, rentPayments);
     expect(rows.map((r) => r.date)).toEqual(["2027-01-09", "2027-02-08", "2027-03-10"]);
   });
+
+  it("a part payment leaves the rest projected; a check for a month shows as its own item, so none is projected (owner, 2026-10-25)", () => {
+    const pay = (fields: Record<string, unknown>) => ({ date: "2026-10-12", paymentStatus: "cleared", amount: 4000, leaseId: "D4", periods: 1, ...fields });
+    const rentPayments = new Map([
+      [
+        "prop-d4",
+        [
+          pay({ amount: 1500, periodStart: "2026-10-12" }), // חשון, ₪1,500 of ₪4,000
+          pay({ paymentStatus: "pending", periodStart: "2026-11-11" }), // כסלו's check
+        ],
+      ],
+    ]);
+    const rows = projectRent([hebrew], new Map(), { ...window, toIso: "2026-12-31" }, rentPayments);
+    expect(rows.map((r) => [r.date, r.amount])).toEqual([
+      ["2026-10-12", 2500],
+      ["2026-12-11", 4000],
+    ]);
+  });
+
+  it("each lease's own payments: a storage renter's beside it doesn't pay the apartment", () => {
+    const storage: LeaseRow = { ...hebrew, id: "S1", customerId: "c2", monthlyAmount: 300, rentCalendar: null, rentHebrewDay: null, startDate: "2026-07-01" };
+    const rentPayments = new Map([
+      ["prop-d4", [{ date: "2026-10-12", paymentStatus: "cleared", amount: 4000, leaseId: "S1", periodStart: "2026-10-01", periods: 1 }]],
+    ]);
+    const rows = projectRent([hebrew, storage], new Map(), { ...window, toIso: "2026-10-31" }, rentPayments);
+    expect(rows.map((r) => r.id)).toEqual(["rent_proj:D4:2026-10-12"]);
+  });
 });
 
 describe("projectRent — the agreed rent day", () => {

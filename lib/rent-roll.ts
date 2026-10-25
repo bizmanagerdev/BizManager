@@ -124,8 +124,9 @@ export function toRollRent(payment: RentRollPayment): RentPayment {
   };
 }
 
-/** A month's rent still owed: the rent, less what's in and the checks for it not due yet. */
-function leftOf(status: RentMonthStatus): number {
+/** A month's rent still owed: the rent, less what's in and the checks for it not due yet — a check we hold past
+ *  its day and not in doesn't cover it (owner, 2026-10-25). The rent alert asks it too. */
+export function rentLeftOf(status: RentMonthStatus): number {
   return Math.max(0, status.rent - status.collected - (status.pending - (status.pendingDue ?? 0)));
 }
 
@@ -206,7 +207,7 @@ export function rentDebtOf(lease: LeaseAgreement, rents: RentPayment[], today: s
     const status = rentPeriodStatus(lease, rents, start, today);
     debt.due += status.rent;
     debt.paid += Math.min(status.collected, status.rent);
-    const left = leftOf(status);
+    const left = rentLeftOf(status);
     if (left <= 0.5) continue;
     debt.amount += left;
     debt.withCheck += Math.min(left, status.pendingDue ?? 0);
@@ -270,8 +271,8 @@ function rowFor(
     periodLabel: rentPeriodLabel(lease, period),
     dueLabel: rentDueDateLabel(lease, period),
     status,
-    owed: leftOf(status),
-    checkHeld: Math.min(leftOf(status), status.pendingDue ?? 0),
+    owed: rentLeftOf(status),
+    checkHeld: Math.min(rentLeftOf(status), status.pendingDue ?? 0),
     collectedByCheck: paying
       .filter((p) => p.method === "check" && p.paymentStatus !== "pending")
       .reduce((sum, p) => sum + paidTowards(lease, toRollRent(p), period), 0),

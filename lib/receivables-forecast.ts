@@ -12,7 +12,7 @@
 //     pre-creates N months from a lease, and the months past that are invisible.
 import type { PaymentCalendarItem } from "@/lib/payables";
 import { NO_CONFIRMATIONS, isSettlementArrived, type SettlementConfirmations, type SettlementPayment } from "@/lib/card-settlements";
-import { paidTowards, type RentLease, type RentPayment } from "@/lib/property-rent";
+import { leaseForPayment, paidTowards, type RentLease, type RentPayment } from "@/lib/property-rent";
 import { isHebrewLease, rentPeriodStarts } from "@/lib/rent-periods";
 
 /** The fields every incoming item shares; callers fill what distinguishes theirs. */
@@ -283,12 +283,13 @@ export function projectRent(
   rentPayments?: Map<string, RentPayment[]>
 ): PaymentCalendarItem[] {
   const items: PaymentCalendarItem[] = [];
+  const periodLeases = new Map<string, RentLease & { id: string; propertyId: string }>();
   for (const lease of leases) {
-    if (!(lease.monthlyAmount > 0) || !lease.startDate) continue;
-    const startIso = lease.startDate.slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startIso)) continue;
-    const periodLease: RentLease = {
+    const startIso = (lease.startDate ?? "").slice(0, 10);
+    if (!(lease.monthlyAmount > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(startIso)) continue;
+    periodLeases.set(lease.id, {
       id: lease.id,
+      propertyId: lease.propertyId,
       status: "active",
       monthlyRentAmount: lease.monthlyAmount,
       startDate: startIso,
@@ -297,11 +298,28 @@ export function projectRent(
       rentCalendar: lease.rentCalendar,
       rentHebrewDay: lease.rentHebrewDay,
       periodMonths: lease.periodMonths,
-    };
+    });
+  }
+  for (const lease of leases) {
+    const periodLease = periodLeases.get(lease.id);
+    if (!periodLease) continue;
+    const startIso = periodLease.startDate as string;
     const taken = existingMonthsByProperty.get(lease.propertyId) ?? new Set<string>();
-    const payments = rentPayments?.get(lease.propertyId)?.filter((p) => p.paymentStatus !== "rejected");
-    const paidFor = (due: string) =>
-      payments ? payments.some((p) => paidTowards(periodLease, { ...p, amount: 1 }, due) > 0) : taken.has(ym(due));
+    // Its own payments (owner, 2026-10-25): the lease each names, else the one running on its date — the only lease
+    // on the property for one before its start — not every payment on the property (a storage renter's beside it).
+    const here = [...periodLeases.values()].filter((l) => l.propertyId === lease.propertyId);
+    const payments = rentPayments
+      ?.get(lease.propertyId)
+      ?.filter(
+        (p) => p.paymentStatus !== "rejected" && leaseForPayment(here, p, here.length === 1 ? periodLease : null)?.id === lease.id
+      );
+    // What no payment row covers — a check or a part payment shows as its own item; only the rest is projected.
+    const uncovered = (due: string) =>
+      payments
+        ? Math.max(0, lease.monthlyAmount - payments.reduce((sum, p) => sum + paidTowards(periodLease, p, due), 0))
+        : taken.has(ym(due))
+          ? 0
+          : lease.monthlyAmount;
     const endIso = lease.endDate ? lease.endDate.slice(0, 10) : null;
     // Two Hebrew months can start in one calendar month: those are told apart by their day.
     const idPart = (due: string) => (isHebrewLease(periodLease) ? due : ym(due));
@@ -309,13 +327,14 @@ export function projectRent(
     // From whichever is later: the lease or the window.
     for (const due of rentPeriodStarts(periodLease, fromIso > startIso ? fromIso : startIso, toIso)) {
       if (endIso && due > endIso) break;
-      if (paidFor(due)) continue;
+      const left = uncovered(due);
+      if (left <= 0.5) continue;
       const future = due > todayIso;
       items.push(
         incomeItem({
           id: `rent_proj:${lease.id}:${idPart(due)}`,
           date: due,
-          amount: lease.monthlyAmount,
+          amount: left,
           label: `שכר דירה — ${lease.propertyLabel}`,
           sourceLabel: lease.propertyLabel,
           sourceHref: `/properties/${lease.propertyId}`,

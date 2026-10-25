@@ -190,10 +190,12 @@ export async function loadLeasesAndBookedMonths(
   const { data, error } = await supabase
     .from("lease_agreements")
     .select("id,property_id,customer_id,start_date,end_date,monthly_rent_amount,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months,status")
-    .eq("status", "active");
+    .in("status", ["active", "ended"]);
   if (error || !data) return { leases: [], bookedMonths: new Map(), rentPayments: new Map() };
 
-  const rows = (data ?? []) as Row[];
+  // Running ones, and those that ended on a known day — what they didn't pay stays owed until paid (owner,
+  // 2026-10-25). A cancelled one never ran.
+  const rows = ((data ?? []) as Row[]).filter((r) => str(r, "status") === "active" || Boolean(str(r, "end_date")));
   const propertyIds = Array.from(new Set(rows.map((r) => str(r, "property_id")).filter((v): v is string => Boolean(v))));
   if (propertyIds.length === 0) return { leases: [], bookedMonths: new Map(), rentPayments: new Map() };
 
