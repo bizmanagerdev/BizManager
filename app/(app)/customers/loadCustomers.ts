@@ -7,6 +7,8 @@ import { chunkStrings } from "@/lib/financial/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import type { CustomersFilters } from "@/app/(app)/customers/customersFilters";
 import { addressPoint } from "@/lib/address/columns";
+import { loadRentFor } from "@/lib/properties";
+import { rentDebtByLease } from "@/lib/rent-roll";
 
 export type { CustomerFilterMode, CustomersFilters } from "@/app/(app)/customers/customersFilters";
 
@@ -147,13 +149,38 @@ async function readProjectMoney(supabase: SupabaseClient, customerIds: string[])
  * The reads go out together; only the project money waits — for the project
  * ids, and for nothing else.
  */
+/**
+ * The rent each of them still owes as a tenant — the rent page's own rule (lib/rent-roll.ts; owner, 2026-10-25:
+ * "add the חוב שכירות note to the customers list"): their leases' properties read whole, so each payment counts for
+ * the lease it was for. A note beside the list's debt — the "with debt" filter is the database's and stays orders
+ * and projects. Best-effort: none on a failed read.
+ */
+async function readRentOwed(supabase: SupabaseClient, customerIds: string[]): Promise<Map<string, number>> {
+  const owed = new Map<string, number>();
+  try {
+    const leases = await readByIds(customerIds, (batch, from, to) =>
+      supabase.from("lease_agreements").select("id,property_id,customer_id").in("customer_id", batch).order("id").range(from, to)
+    );
+    if (leases.error || leases.data.length === 0) return owed;
+    const debts = rentDebtByLease(await loadRentFor(supabase, leases.data.map((row) => text(row, "property_id"))));
+    for (const lease of leases.data) {
+      const customerId = text(lease, "customer_id");
+      const amount = debts.get(text(lease, "id"))?.amount ?? 0;
+      if (customerId && amount > 0.5) owed.set(customerId, (owed.get(customerId) ?? 0) + amount);
+    }
+  } catch {
+    return new Map();
+  }
+  return owed;
+}
+
 async function enrichCustomerOverviewRows(
   supabase: SupabaseClient,
   overviewRows: Row[]
 ): Promise<{ rows: Row[]; error: string | null }> {
   const customerIds = Array.from(new Set(overviewRows.map(rowId).filter(Boolean)));
 
-  const [customers, orders, projectMoney] = await Promise.all([
+  const [customers, orders, projectMoney, rentOwed] = await Promise.all([
     readCustomers(supabase, customerIds),
     readByIds(customerIds, (batch, from, to) =>
       supabase
@@ -164,6 +191,7 @@ async function enrichCustomerOverviewRows(
         .range(from, to)
     ),
     readProjectMoney(supabase, customerIds),
+    readRentOwed(supabase, customerIds),
   ]);
 
   const customerById = new Map<string, Row>();
@@ -249,6 +277,7 @@ async function enrichCustomerOverviewRows(
       total_paid: totalPaid,
       expected_amount: expectedAmount,
       open_balance: Math.max(totalSales - totalPaid, 0),
+      rent_owed: rentOwed.get(id) ?? 0,
       whatsapp: typeof customer?.whatsapp === "string" ? customer.whatsapp : null,
       morning_client_id: typeof customer?.morning_client_id === "string" ? customer.morning_client_id : null,
       requires_prepayment: customer?.requires_prepayment === true,
@@ -277,21 +306,52 @@ type FilterableQuery = {
   gt(column: string, value: number): FilterableQuery;
   lte(column: string, value: number): FilterableQuery;
   eq(column: string, value: boolean): FilterableQuery;
+  or(filters: string): FilterableQuery;
+  not(column: string, operator: string, value: string): FilterableQuery;
 };
+
+/**
+ * The tenants who still owe rent (owner, 2026-10-25: the "with debt" filter has to find a tenant who owes only
+ * rent): by the rent page's own rule, worked out here — the database can't (the Hebrew calendar) — and handed to
+ * the filter as ids. Only asked when the debt filter is on. Best-effort: none on a failed read.
+ */
+export async function rentDebtorIds(supabase: SupabaseClient, filters: CustomersFilters): Promise<string[]> {
+  if (filters.withDebt !== "yes" && filters.withDebt !== "no") return [];
+  try {
+    const leases = await fetchAllPagedResult<Row>((from, to) =>
+      supabase.from("lease_agreements").select("id,property_id,customer_id").order("id").range(from, to)
+    );
+    if (leases.error || leases.data.length === 0) return [];
+    const debts = rentDebtByLease(await loadRentFor(supabase, leases.data.map((row) => text(row, "property_id"))));
+    const ids = new Set<string>();
+    for (const lease of leases.data) {
+      const customerId = text(lease, "customer_id");
+      if (customerId && (debts.get(text(lease, "id"))?.amount ?? 0) > 0.5) ids.add(customerId);
+    }
+    return [...ids].sort();
+  } catch {
+    return [];
+  }
+}
 
 /**
  * The list's four filters on a customer_overview_view query — the page, a
  * search and the export alike. Typed loosely on purpose: matching supabase-js's
  * own filter types structurally is too deep for the compiler.
  */
-export function applyCustomersFilters<Q>(query: Q, filters: CustomersFilters): Q {
+export function applyCustomersFilters<Q>(query: Q, filters: CustomersFilters, rentDebtors: string[] = []): Q {
   let next = query as unknown as FilterableQuery;
+  // With debt: orders and projects (the view's open_balance) — or rent, the tenants rentDebtorIds found.
+  const debtors = rentDebtors.length > 0 ? `(${rentDebtors.join(",")})` : null;
   if (filters.withProjects === "yes") next = next.gt("projects_count", 0);
   if (filters.withProjects === "no") next = next.lte("projects_count", 0);
   if (filters.withOrders === "yes") next = next.gt("orders_count", 0);
   if (filters.withOrders === "no") next = next.lte("orders_count", 0);
-  if (filters.withDebt === "yes") next = next.gt("open_balance", 0);
-  if (filters.withDebt === "no") next = next.lte("open_balance", 0);
+  if (filters.withDebt === "yes") next = debtors ? next.or(`open_balance.gt.0,customer_id.in.${debtors}`) : next.gt("open_balance", 0);
+  if (filters.withDebt === "no") {
+    next = next.lte("open_balance", 0);
+    if (debtors) next = next.not("customer_id", "in", debtors);
+  }
   if (filters.activeOnly === "yes") next = next.eq("active", true);
   if (filters.activeOnly === "no") next = next.eq("active", false);
   return next as unknown as Q;
@@ -312,9 +372,11 @@ export async function loadCustomersPage(
 
   // Ties broken by id: customers who share a name otherwise come back in any
   // order, so a page could repeat one and skip another.
+  const rentDebtors = await rentDebtorIds(supabase, filters);
   const overviewQuery = applyCustomersFilters(
     supabase.from("customer_overview_view").select(OVERVIEW_SELECT, { count: "estimated" }),
-    filters
+    filters,
+    rentDebtors
   )
     .order("customer_name", { ascending: true })
     .order("customer_id", { ascending: true });
@@ -475,9 +537,10 @@ export async function loadCustomersByIds(
   const ids = uniqueIds(customerIds);
   if (ids.length === 0) return { rows: [], error: null };
 
+  const rentDebtors = filters ? await rentDebtorIds(supabase, filters) : [];
   const overview = await readByIds(ids, (batch, from, to) => {
     const query = supabase.from("customer_overview_view").select(OVERVIEW_SELECT).in("customer_id", batch);
-    return (filters ? applyCustomersFilters(query, filters) : query)
+    return (filters ? applyCustomersFilters(query, filters, rentDebtors) : query)
       .order("customer_name", { ascending: true })
       .order("customer_id", { ascending: true })
       .range(from, to);
@@ -501,10 +564,12 @@ export async function loadCustomerIdsPassingFilters(
   const ids = uniqueIds(customerIds);
   if (ids.length === 0) return { ids: [], error: null };
 
+  const rentDebtors = await rentDebtorIds(supabase, filters);
   const passing = await readByIds(ids, (batch, from, to) =>
     applyCustomersFilters(
       supabase.from("customer_overview_view").select("customer_id").in("customer_id", batch),
-      filters
+      filters,
+      rentDebtors
     )
       .order("customer_id", { ascending: true })
       .range(from, to)

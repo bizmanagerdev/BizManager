@@ -305,6 +305,15 @@ describe("CustomersClient — the computer's table", () => {
     expect(within(tableRow("בני לוי")).getAllByText("—").length).toBeGreaterThan(0);
   });
 
+  it("a tenant's rent owed: 'חוב שכירות' in the debt column, in red — beside the debt, or alone (owner, 2026-10-25)", () => {
+    renderList({ rows: [{ ...AVI, rent_owed: 4000 }, { ...BENNY, rent_owed: 8000 }] });
+    expect(within(tableRow("אבי כהן")).getByText("₪1,357")).toHaveClass("text-destructive");
+    expect(within(tableRow("אבי כהן")).getByText("חוב שכירות ₪4,000")).toHaveClass("text-destructive");
+    expect(within(tableRow("בני לוי")).getByText("חוב שכירות ₪8,000")).toHaveClass("text-destructive");
+    // On the phone card too.
+    expect(within(card("בני לוי")).getByText("חוב שכירות ₪8,000")).toHaveClass("text-destructive");
+  });
+
   it("phone and email are the shared contact links", () => {
     renderList();
     expect(within(tableRow("אבי כהן")).getByText("050-1234567").closest("a")).toHaveAttribute("href", "tel:0501234567");

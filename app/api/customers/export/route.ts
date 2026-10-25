@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { applyCustomersFilters } from "@/app/(app)/customers/loadCustomers";
+import { applyCustomersFilters, rentDebtorIds } from "@/app/(app)/customers/loadCustomers";
 import { parseCustomersFilters, type CustomersFilters } from "@/app/(app)/customers/customersFilters";
 import { chunkStrings } from "@/lib/financial/utils";
 import { israelDateKey } from "@/lib/timezone";
@@ -29,11 +29,13 @@ async function fetchAllFilteredCustomers(
 ): Promise<{ rows: Row[]; error: string | null }> {
   const all: Row[] = [];
   let from = 0;
+  // A tenant who owes only rent is "with debt" too, as on the list.
+  const rentDebtors = await rentDebtorIds(supabase, filters);
 
   for (;;) {
     // The list's own order, ties broken by id: paging over a name several
     // customers share could otherwise repeat one and skip another.
-    const query = applyCustomersFilters(supabase.from("customer_overview_view").select(OVERVIEW_SELECT), filters)
+    const query = applyCustomersFilters(supabase.from("customer_overview_view").select(OVERVIEW_SELECT), filters, rentDebtors)
       .order("customer_name", { ascending: true })
       .order("customer_id", { ascending: true });
 

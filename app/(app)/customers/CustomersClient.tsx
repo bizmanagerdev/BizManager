@@ -256,9 +256,10 @@ function CardFacts({ row }: { row: Row }) {
   const orders = n(row, "orders_count");
   const projects = n(row, "projects_count");
   const debt = n(row, "open_balance");
+  const rent = n(row, "rent_owed");
   const morning = s(row, "morning_client_id");
   const flagged = Boolean(row.linked_user_id) || row.requires_prepayment === true || row[SYNC_PENDING] === true;
-  if (!pending && orders <= 0 && projects <= 0 && !morning && !flagged && debt <= 0) return null;
+  if (!pending && orders <= 0 && projects <= 0 && !morning && !flagged && debt <= 0 && rent <= 0) return null;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
       {pending ? (
@@ -288,9 +289,11 @@ function CardFacts({ row }: { row: Row }) {
       <CustomerFlags row={row} />
       {/* What it owes, in red at the card's end — the four sections' one name
           for it. Whole shekels: a figure with agorot ran past the card. */}
-      {!pending && debt > 0 ? (
-        <span className="ms-auto whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
-          חוב פתוח {formatMoneyRounded(debt)}
+      {!pending && (debt > 0 || rent > 0) ? (
+        <span className="ms-auto flex flex-wrap justify-end gap-x-2 text-xs font-semibold tabular-nums text-destructive">
+          {debt > 0 ? <span className="whitespace-nowrap text-destructive">חוב פתוח {formatMoneyRounded(debt)}</span> : null}
+          {/* A tenant's rent owed, by the rent page's rule (owner, 2026-10-25). */}
+          {rent > 0 ? <span className="whitespace-nowrap text-destructive">חוב שכירות {formatMoneyRounded(rent)}</span> : null}
         </span>
       ) : null}
     </div>
@@ -1005,6 +1008,7 @@ export default function CustomersClient({
                   const pin = pinFrom(row.delivery_lat, row.delivery_lng) ?? ((row.address_point as DeliveryPin | null | undefined) ?? null);
                   const morningId = s(row, "morning_client_id");
                   const debt = n(row, "open_balance");
+                  const rent = n(row, "rent_owed");
                   const pending = row[ENRICH_PENDING] === true;
                   return (
                     <tr
@@ -1084,10 +1088,20 @@ export default function CustomersClient({
                             next column at a bigger text size. */}
                         {pending ? (
                           <Skeleton className="h-4 w-12" />
-                        ) : debt > 0 ? (
-                          <span className="font-medium tabular-nums text-destructive [overflow-wrap:anywhere]">
-                            {formatMoneyRounded(debt)}
-                          </span>
+                        ) : debt > 0 || rent > 0 ? (
+                          <>
+                            {debt > 0 ? (
+                              <span className="block font-medium tabular-nums text-destructive [overflow-wrap:anywhere]">
+                                {formatMoneyRounded(debt)}
+                              </span>
+                            ) : null}
+                            {/* A tenant's rent owed, by the rent page's rule (owner, 2026-10-25). */}
+                            {rent > 0 ? (
+                              <span className="block text-xs font-medium tabular-nums text-destructive [overflow-wrap:anywhere]">
+                                חוב שכירות {formatMoneyRounded(rent)}
+                              </span>
+                            ) : null}
+                          </>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
