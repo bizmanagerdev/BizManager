@@ -15,6 +15,8 @@ import { loadOutflowSources } from "@/lib/outflow-sources";
 import { fetchDocumentCategories } from "@/lib/documents/categories";
 import { supersededDocumentIds } from "@/lib/documents/expiry";
 import { UNLINKED_MONEY_GRACE_DAYS } from "@/lib/documents/moneyLink";
+import { isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
 import { israelDateKey } from "@/lib/timezone";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
@@ -901,7 +903,11 @@ const paymentOutflowDueRule: SystemRule = {
       const dueToday = f.date === ctx.todayIso;
       const days = Math.round((new Date(f.date).getTime() - new Date(ctx.todayIso).getTime()) / 86_400_000);
       const when = overdue ? `באיחור ${Math.abs(days)} ימים` : dueToday ? "לתשלום היום" : `בעוד ${days} ימים`;
-      const amountText = f.variableAmount ? "סכום משתנה" : ils(f.amount);
+      const amountText = f.variableAmount
+        ? "סכום משתנה"
+        : f.foreign
+          ? formatCurrencyAmount(f.foreign.amount, f.foreign.currency)
+          : ils(f.amount);
       items.push({
         key: `recur:${f.recurringTemplateId}:${f.recurrenceKey}`,
         title: `תשלום לתשלום: ${f.label}`,
@@ -957,7 +963,7 @@ const recurringPaymentReminderRule: SystemRule = {
     // Each period we surface a heads-up from its remind-day up to the payment day.
     const { data, error } = await supabase
       .from("recurring_expense_templates")
-      .select("id,template_name,category,amount,is_variable_amount,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,created_at,reminder_work_days_before")
+      .select("id,template_name,category,amount,currency,is_variable_amount,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,created_at,reminder_work_days_before")
       .eq("is_active", true)
       .not("reminder_work_days_before", "is", null)
       .gt("reminder_work_days_before", 0)
@@ -999,7 +1005,10 @@ const recurringPaymentReminderRule: SystemRule = {
       const name = getString(t, "template_name") || getString(t, "category") || "תשלום קבוע";
       const isVar = getBoolean(t, "is_variable_amount") === true;
       const amount = getNumber(t, "amount") ?? 0;
-      const amountText = isVar ? (amount > 0 ? `~${ils(amount)}` : "סכום משתנה") : ils(amount);
+      // In the bill's own currency: "$25" for a bill in dollars.
+      const currency = getString(t, "currency");
+      const own = (n: number) => (isForeignCurrency(currency) ? formatCurrencyAmount(n, currency) : ils(n));
+      const amountText = isVar ? (amount > 0 ? `~${own(amount)}` : "סכום משתנה") : own(amount);
       items.push({
         key: `${id}:${occ.key}`,
         title: `תשלום קרוב: ${name}`,

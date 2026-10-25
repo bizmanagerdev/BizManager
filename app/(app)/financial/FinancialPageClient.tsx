@@ -5,7 +5,8 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
-import { currencyFieldsFrom } from "@/lib/fx/currencies";
+import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, SuccessIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
@@ -750,6 +751,12 @@ export default function FinancialPageClient({
   );
   const [incomeCheckPhotoFiles, setIncomeCheckPhotoFiles] = useState<File[]>([]);
   const [isCreatingIncome, setIsCreatingIncome] = useState(false);
+  // The new income in ₪, US$ or C$ (2026-10-24) — the account's own when it's kept in dollars.
+  const incomeMoney = useMoneyCurrency({
+    open: incomeCreateOpen,
+    accountCurrency: incomeAccountsList.find((a) => a.id === incomeCreateForm.accountId)?.currency ?? null,
+    date: incomeCreateForm.paymentDate,
+  });
 
 
   useEffect(() => {
@@ -900,6 +907,11 @@ export default function FinancialPageClient({
       toast.error("יש לבחור חשבון לתנועה.");
       return;
     }
+    if (isForeignCurrency(incomeMoney.currency) && incomeMoney.rate === null) {
+      toast.error(incomeMoney.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
+    const incomeCurrencyBody = incomeMoney.body();
     // due_date is optional for non-check methods (e.g., שוטף+30 bank transfer).
     const isCard = incomeCreateForm.paymentMethod === "credit_card";
     const installmentCount = isCard ? parseInstallments(incomeCreateForm.installments ?? "1") : 1;
@@ -935,6 +947,8 @@ export default function FinancialPageClient({
           property_id:
             incomeCreateForm.businessDomain === "property_management" ? incomeCreateForm.propertyId : null,
           amount_total: part.amount,
+          // In US$ / C$: the amount as typed; the server works out its shekels.
+          ...incomeCurrencyBody,
           payment_date: part.paymentDate,
           due_date: part.dueDate || null,
           requires_split: incomeCreateForm.requiresSplit,
@@ -2403,7 +2417,8 @@ export default function FinancialPageClient({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <div className="text-sm font-medium">סכום *</div>
-                <CurrencyInput
+                <CurrencyAmountInput
+                  money={incomeMoney}
                   type="number"
                   min="0"
                   step="0.01"
@@ -2466,6 +2481,7 @@ export default function FinancialPageClient({
                   amount={Number(incomeCreateForm.amount) || 0}
                   paymentDate={incomeCreateForm.paymentDate}
                   disabled={isCreatingIncome}
+                  currency={incomeMoney.currency}
                 />
               ) : (
               <div className="space-y-1">

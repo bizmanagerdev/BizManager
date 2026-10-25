@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // The amount field in ₪, US$ or C$ (owner, 2026-10-23: "a ₪ / $ / C$ choice
-// beside the amount … the rate filled in and editable").
+// beside the amount … the rate filled in and editable"), chosen by clicking the
+// sign in the field (owner, 2026-10-24: "I can't have a separate drop down").
+
+vi.mock("@/components/ui/dropdown-menu", () => import("@/__tests__/mocks/dropdown-menu"));
 
 const lookupFxRate = vi.fn();
 vi.mock("@/lib/supabase/client", () => ({ createSupabaseBrowserClient: () => ({}) }));
@@ -36,6 +39,18 @@ function Harness({
   return <CurrencyAmountInput money={money} value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="סכום" />;
 }
 
+/** The sign in the field, as a button: "מטבע: שקל". */
+function signButton() {
+  return screen.queryByRole("button", { name: /^מטבע: / });
+}
+
+/** Click the sign, then the currency. */
+function choose(symbol: string) {
+  fireEvent.click(signButton()!);
+  const item = screen.getAllByRole("menuitem").find((el) => el.querySelector("span")?.textContent === symbol);
+  fireEvent.click(item!);
+}
+
 beforeEach(() => {
   lookupFxRate.mockReset();
   lookupFxRate.mockResolvedValue({ rate: 3.107, date: "2026-10-22" });
@@ -44,27 +59,30 @@ beforeEach(() => {
 describe("CurrencyAmountInput", () => {
   it("shekels by default: ₪, no rate line, and the save says ILS", () => {
     render(<Harness />);
-    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("ILS");
-    // The marker inside the field (the select's option says it too).
-    expect(screen.getAllByText("₪").some((el) => el.tagName === "SPAN")).toBe(true);
+    // The sign in the field is the choice — no other control beside or under it.
+    expect(signButton()).toHaveAccessibleName("מטבע: שקל");
+    expect(signButton()).toHaveTextContent("₪");
+    expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByText(/שער יציג/)).toBeNull();
     expect(sent.body).toEqual({ currency: "ILS" });
   });
 
   it("dollars: the day's rate (Saturday takes Thursday's), its shekels, and the save asks the server for the rate", async () => {
     render(<Harness />);
-    fireEvent.change(screen.getByRole("combobox", { name: "מטבע" }), { target: { value: "USD" } });
+    choose("$");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(signButton()).toHaveAccessibleName("מטבע: דולר");
     fireEvent.change(screen.getByRole("textbox", { name: "סכום" }), { target: { value: "1000" } });
     await waitFor(() => expect(screen.getByText(/שער יציג/)).toHaveTextContent("שער יציג 3.107 (22/10)"));
     expect(lookupFxRate).toHaveBeenCalledWith({}, "USD", "2026-10-24");
     expect(screen.getByText("≈ ₪3,107")).toBeInTheDocument();
-    expect(screen.getAllByText("$").some((el) => el.tagName === "SPAN")).toBe(true);
+    expect(signButton()).toHaveTextContent("$");
     expect(sent.body).toEqual({ currency: "USD", fx_rate_manual: false });
   });
 
   it("a rate typed in place of the day's is what it counts, and is sent", async () => {
     render(<Harness />);
-    fireEvent.change(screen.getByRole("combobox", { name: "מטבע" }), { target: { value: "USD" } });
+    choose("$");
     fireEvent.change(screen.getByRole("textbox", { name: "סכום" }), { target: { value: "1000" } });
     await screen.findByText(/שער יציג/);
     fireEvent.click(screen.getByRole("button", { name: "שינוי השער" }));
@@ -77,15 +95,16 @@ describe("CurrencyAmountInput", () => {
 
   it("an account kept in dollars fixes the currency, and says so", async () => {
     render(<Harness accountCurrency="USD" />);
-    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("USD");
-    expect(screen.getByRole("combobox", { name: "מטבע" })).toBeDisabled();
+    // The sign alone, not a button: it can't be changed.
+    expect(signButton()).toBeNull();
+    expect(screen.getByTitle("החשבון מתנהל בדולר")).toHaveTextContent("$");
     expect(screen.getByText("החשבון מתנהל בדולר.")).toBeInTheDocument();
   });
 
   it("no rate for the day: asks for one", async () => {
     lookupFxRate.mockResolvedValue(null);
     render(<Harness />);
-    fireEvent.change(screen.getByRole("combobox", { name: "מטבע" }), { target: { value: "CAD" } });
+    choose("C$");
     expect(await screen.findByText("אין שער יציג לתאריך הזה — יש להקליד את השער")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "שער" })).toBeInTheDocument();
   });
@@ -99,21 +118,21 @@ describe("CurrencyAmountInput", () => {
 
   it("a new row on a Canada building's page starts in C$; one being edited keeps its own", () => {
     render(<Harness preferred="CAD" />);
-    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("CAD");
+    expect(signButton()).toHaveAccessibleName("מטבע: דולר קנדי");
     expect(sent.body).toEqual({ currency: "CAD", fx_rate_manual: false });
   });
 
   it("…an edit of a row in shekels stays in shekels, and an account kept in dollars still wins", () => {
     const { unmount } = render(<Harness preferred="CAD" initial={{ currency: "ILS", foreign_amount: null, fx_rate: null, fx_rate_manual: false }} />);
-    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("ILS");
+    expect(signButton()).toHaveAccessibleName("מטבע: שקל");
     unmount();
     render(<Harness preferred="CAD" accountCurrency="USD" />);
-    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("USD");
+    expect(screen.getByTitle("החשבון מתנהל בדולר")).toHaveTextContent("$");
   });
 
   it("an edit whose page didn't carry the currency: no choice, and the save says nothing about it", () => {
     render(<Harness known={false} />);
-    expect(screen.queryByRole("combobox", { name: "מטבע" })).toBeNull();
+    expect(signButton()).toBeNull();
     expect(sent.body).toEqual({});
   });
 });

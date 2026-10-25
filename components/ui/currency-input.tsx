@@ -12,6 +12,9 @@ import { applyMoneyKeystroke, groupMoneyDigits, stripMoneyGrouping } from "@/lib
  * formatter. `pr-6` reserves just enough room so the value butts up against the
  * marker instead of hiding under it.
  *
+ * `symbolSlot` puts a control in the sign's place — the ₪ / $ / C$ menu
+ * (components/fx/MoneyCurrency.tsx), opened by clicking the sign itself.
+ *
  * For fixed-width fields pass `containerClassName` (e.g. "w-32") and keep the
  * input at `w-full`, so the marker stays anchored to the input, not the cell.
  *
@@ -25,8 +28,14 @@ import { applyMoneyKeystroke, groupMoneyDigits, stripMoneyGrouping } from "@/lib
  */
 export const CurrencyInput = React.forwardRef<
   HTMLInputElement,
-  React.ComponentProps<typeof Input> & { containerClassName?: string; groupThousands?: boolean; symbol?: string }
->(({ className, containerClassName, inputMode, groupThousands = true, symbol = "₪", type, value, onChange, ...props }, ref) => {
+  React.ComponentProps<typeof Input> & {
+    containerClassName?: string;
+    groupThousands?: boolean;
+    symbol?: string;
+    /** A control shown in the sign's place (it must show the sign itself). */
+    symbolSlot?: React.ReactNode;
+  }
+>(({ className, containerClassName, inputMode, groupThousands = true, symbol = "₪", symbolSlot, type, value, onChange, ...props }, ref) => {
   const innerRef = React.useRef<HTMLInputElement | null>(null);
   const pendingCaret = React.useRef<number | null>(null);
   const grouping = groupThousands && value !== undefined;
@@ -99,15 +108,19 @@ export const CurrencyInput = React.forwardRef<
         data-1p-ignore="true"
         data-bwignore="true"
         data-form-type="other"
-        className={cn(symbol.length > 1 ? "pr-8" : "pr-6", "text-right", className)}
+        className={cn(symbolSlot ? "pr-12" : symbol.length > 1 ? "pr-8" : "pr-6", "text-right", className)}
         {...props}
       />
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-sm text-muted-foreground"
-      >
-        {symbol}
-      </span>
+      {symbolSlot ? (
+        <span className="absolute inset-y-0 right-1 flex items-center text-sm text-muted-foreground">{symbolSlot}</span>
+      ) : (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-sm text-muted-foreground"
+        >
+          {symbol}
+        </span>
+      )}
     </div>
   );
 });

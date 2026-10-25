@@ -14,7 +14,7 @@ const text = column.text;
 const int = column.integer;
 const real = column.real;
 
-/** A money row's currency (supabase/migrations/20261023120000_money_currency.sql):
+/** A money row's currency (supabase/migrations/20261023120001_money_currency.sql):
  *  payments, expenses, loans and their repayments. */
 const MONEY_CURRENCY_COLUMNS = {
   currency: text,
@@ -688,6 +688,8 @@ const recurring_expense_templates = new Table({
   created_by: text,
   category: text,
   amount: text,
+  // The currency its amount is in (supabase/migrations/20261024120000_recurring_and_order_currencies.sql).
+  currency: text,
   is_variable_amount: int,
   auto_paid: int,
   description_template: text,

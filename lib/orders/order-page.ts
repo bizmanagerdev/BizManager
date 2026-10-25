@@ -1,3 +1,4 @@
+import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { attachProductStock } from "@/lib/orders/productStock";
@@ -49,7 +50,7 @@ export function readOrderPayments(supabase: SupabaseClient, id: string): Promise
   return Promise.resolve(
     supabase
       .from("payments")
-      .select("id,payment_date,amount_total,payment_method,payment_status,due_date,reference_number,check_number,account_id,notes,created_at,recorded_by")
+      .select(`id,payment_date,amount_total,payment_method,payment_status,due_date,reference_number,check_number,account_id,notes,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
       .eq("order_id", id)
       .order("payment_date", { ascending: false })
       .order("created_at", { ascending: false })

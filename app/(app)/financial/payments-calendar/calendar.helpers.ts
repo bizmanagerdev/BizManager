@@ -3,6 +3,7 @@
 // PaymentCalendarItem lives here so it can be tested in node and reused by an
 // incoming-money view unchanged.
 import { isoLocal, toDateOnly } from "@/components/ui/month-calendar";
+import { formatCurrencyAmount } from "@/lib/money";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import type { CalendarDirection, PaymentCalendarItem } from "@/lib/payables";
 
@@ -82,11 +83,24 @@ export function fmtIls(value: number) {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
 }
 
+// A bill in US$ / C$ reads in its own currency with its shekels beside it,
+// "$25 (≈ ₪78)" — or the dollars alone while there's no rate to price it at.
+function foreignText(item: Pick<PaymentCalendarItem, "amount" | "foreign">): string | null {
+  const foreign = item.foreign;
+  if (!foreign) return null;
+  const own = formatCurrencyAmount(foreign.amount, foreign.currency);
+  return foreign.rate > 0 ? `${own} (≈ ${fmtIls(item.amount)})` : own;
+}
+
 // How an amount reads on a row: a variable bill shows its ESTIMATE as "~₪X"
 // (or "משתנה" when no estimate was given); everything else is the exact amount.
-export function amountLabel(item: PaymentCalendarItem): string {
-  if (item.variableAmount) return item.amount > 0 ? `~${fmtIls(item.amount)}` : "משתנה";
-  return fmtIls(item.amount);
+export function amountLabel(item: Pick<PaymentCalendarItem, "amount" | "foreign" | "variableAmount">): string {
+  const ownText = foreignText(item);
+  if (item.variableAmount) {
+    if (item.foreign) return item.foreign.amount > 0 ? `~${ownText}` : "משתנה";
+    return item.amount > 0 ? `~${fmtIls(item.amount)}` : "משתנה";
+  }
+  return ownText ?? fmtIls(item.amount);
 }
 
 // A partly-paid bill is on the board for what's left of it (`amount`). This is

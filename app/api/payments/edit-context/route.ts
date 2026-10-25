@@ -1,3 +1,4 @@
+import { rowCurrencyFields } from "@/lib/fx/currencies";
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -79,6 +80,8 @@ export async function GET(req: Request) {
           check_number: payment.check_number,
           account_id: payment.account_id,
           notes: payment.notes,
+          // In US$ / C$: edited in its currency.
+          ...rowCurrencyFields(payment as Record<string, unknown>),
           // Not used by EditPaymentDialog itself — kept only to satisfy
           // PaymentItem's shape without a second (unnecessary) fetch.
           insertedByLabel: null,

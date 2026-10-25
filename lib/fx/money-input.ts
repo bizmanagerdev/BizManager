@@ -15,7 +15,7 @@ import { israelDateKey } from "@/lib/timezone";
 // and its amounts IN THAT CURRENCY. A route turns them into the row's columns:
 // the shekel amount(s) its usual columns hold — at the same rate, so a partly
 // paid expense's paid share matches — and the currency columns beside them
-// (supabase/migrations/20261023120000_money_currency.sql keeps them in step).
+// (supabase/migrations/20261023120001_money_currency.sql keeps them in step).
 // ════════════════════════════════════════════════════════════════════════════
 
 export type MoneyCurrencyBody = {
@@ -39,6 +39,39 @@ export type CurrencyPricing = {
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
+
+export type PricedLine = { shekels: number; columns: MoneyCurrencyColumns | null };
+
+/**
+ * Each of a list's money lines priced — an order's payment or refund lines,
+ * whose currency is read by position from what the form sent (the routes'
+ * list readers keep only the fields they know): its shekels, and its currency
+ * columns (null: a form that didn't say).
+ */
+export async function priceMoneyLines(
+  supabase: SupabaseClient,
+  sent: unknown,
+  lines: readonly { amount_total: number; payment_date: string | null }[]
+): Promise<PricedLine[] | { error: string }> {
+  const raw = Array.isArray(sent) ? sent : [];
+  const priced: PricedLine[] = [];
+  for (const [index, line] of lines.entries()) {
+    const entry = raw[index];
+    const body = (entry && typeof entry === "object" ? entry : {}) as MoneyCurrencyBody;
+    const amount = Math.abs(line.amount_total);
+    const pricing = await currencyPricing(supabase, body, { amount, date: line.payment_date });
+    if ("error" in pricing) return pricing;
+    priced.push({ shekels: pricing.toShekels(amount), columns: pricing.columns });
+  }
+  return priced;
+}
+
+/** A row whose amount is negative (a refund): its foreign amount is too —
+ *  the database keeps foreign_amount × rate = the row's amount. */
+export function signedColumns(columns: MoneyCurrencyColumns | null, negative: boolean): MoneyCurrencyColumns | null {
+  if (!columns || !negative || columns.foreign_amount === null) return columns;
+  return { ...columns, foreign_amount: -Math.abs(columns.foreign_amount) };
+}
 
 /** The row's day by Israel's calendar: "2026-10-22" as it is, a timestamp
  *  turned into its Israeli date. */

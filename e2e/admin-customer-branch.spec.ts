@@ -38,6 +38,11 @@ test.describe("admin — customer branches", () => {
       await expect(dialog).toBeHidden();
 
       await expect.poll(() => getCustomerBranchByName(customer.id, branchName)).not.toBeNull();
+      // The branch lists under "אנשי קשר וסניפים", a section that starts folded
+      // (the customer page folds its sections since 2026-10-14) — open it if
+      // it still is.
+      const contactsToggle = page.getByRole("button", { name: /אנשי קשר וסניפים/ });
+      if ((await contactsToggle.getAttribute("aria-expanded")) === "false") await contactsToggle.click();
       await expect(page.getByText(branchName)).toBeVisible();
     } finally {
       await deleteTestCustomer(customer.id);

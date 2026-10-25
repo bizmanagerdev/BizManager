@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { loginAs } from "./fixtures";
+import { loginAs, mockAddressSearch, pickAddress } from "./fixtures";
 import {
   createTestProperty,
   deleteTestProperty,
@@ -14,19 +14,33 @@ import {
 // tests elsewhere in this suite.
 test.describe("admin — properties", () => {
   test("admin can create a property through the dialog", async ({ page }) => {
+    test.setTimeout(60_000);
     const propertyName = `E2E property ${Date.now()}`;
     let propertyId: string | null = null;
     try {
+      await mockAddressSearch(page);
       await loginAs(page, "admin");
       await page.goto("/properties");
 
-      await page.getByRole("button", { name: "הוספת נכס" }).click();
+      // The list lost its own add button with its heading (owner, 2026-10-21):
+      // a property is added from the top bar's "+", whose "נכס" tile shows on
+      // this list only — opened by hover, the tile portaled after the page's
+      // own cards, as in admin-vehicle-create.spec.ts.
+      const propertyTile = page.getByRole("button", { name: "נכס", exact: true }).last();
+      const dialog = page.getByRole("dialog").filter({ hasText: "הוספת נכס" });
+      await expect(async () => {
+        await page.locator("#topbar-quick-create-trigger").hover();
+        await expect(propertyTile).toBeVisible({ timeout: 2_000 });
+        await propertyTile.click();
+        await expect(dialog).toBeVisible({ timeout: 5_000 });
+      }).toPass({ timeout: 30_000 });
       // PropertyFormFields wraps each field in a real <label> (implicit
       // association, unlike most other forms in this app), so getByLabel
-      // genuinely works here.
-      await page.getByLabel("שם הנכס *").fill(propertyName);
-      await page.getByLabel("כתובת *").fill("רחוב הבדיקה 1, תל אביב");
-      await page.getByRole("button", { name: "הוספה" }).click();
+      // genuinely works here — except the address, picked from Google's list
+      // since 2026-10-18 (fixtures.ts pickAddress).
+      await dialog.getByLabel("שם הנכס *").fill(propertyName);
+      await pickAddress(page, dialog);
+      await dialog.getByRole("button", { name: "הוספה", exact: true }).click();
 
       await expect.poll(() => getPropertyIdByName(propertyName)).not.toBeNull();
       propertyId = await getPropertyIdByName(propertyName);
@@ -58,7 +72,10 @@ test.describe("admin — properties", () => {
       await page.getByRole("button", { name: "0", exact: true }).click();
       await page.getByRole("button", { name: "המשך" }).click();
 
-      await page.getByRole("button", { name: "רכישה" }).click();
+      // A property's expense takes only a property's categories since
+      // 2026-10-22 (lib/expenses.ts EXPENSE_PROPERTY_CATEGORIES) — the general
+      // "רכישה" isn't one.
+      await page.getByRole("button", { name: "תיקונים" }).click();
 
       await page.getByRole("textbox").fill(description);
       await page.getByRole("button", { name: "המשך" }).click();

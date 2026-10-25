@@ -10,6 +10,8 @@ import { withOpenAmount } from "@/lib/financial/expenseOpen";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { loadOutflowSourceSettings } from "@/lib/outflow-sources";
 import { sourceSettingKey, type OutflowSourceSettings, type OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
+import { foreignShare, isForeignCurrency, shekelsToday, type ForeignMoney, type TodayFxRates } from "@/lib/fx/currencies";
+import { loadTodayFxRates } from "@/lib/fx/rates";
 
 // ── Payments calendar item ─────────────────────────────────────────────────────
 // One outgoing obligation placed on a calendar day. Sourced from the single
@@ -32,6 +34,11 @@ export type PaymentCalendarItem = {
   // expense). Anything that writes the expense back — the edit dialog — must
   // seed from this, never from `amount`, or it would shrink the bill.
   totalAmount?: number | null;
+  /**
+   * A bill in US$ / C$: `amount` in its own currency (for a partly-paid one,
+   * what's left of it). A forecast's shekels are at today's rate. Null: ₪.
+   */
+  foreign?: ForeignMoney | null;
   label: string;
   sourceLabel: string;
   sourceHref: string | null;
@@ -137,6 +144,7 @@ export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: stri
       date: entry.flowDate,
       amount,
       totalAmount,
+      foreign: entry.foreign ? foreignShare(entry.foreign, amount, entry.amount) : null,
       label: entry.description,
       sourceLabel: entry.sourceLabel,
       sourceHref: expenseSourceHref(entry),
@@ -338,7 +346,7 @@ export async function loadProjectedRecurringExpenses(
 ): Promise<PaymentCalendarItem[]> {
   const { data: tplRows, error } = await supabase
     .from("recurring_expense_templates")
-    .select("id,template_name,category,amount,is_variable_amount,auto_paid,description_template,notes_template,business_domain,account_id,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,end_date,created_at,is_active")
+    .select("id,template_name,category,amount,currency,is_variable_amount,auto_paid,description_template,notes_template,business_domain,account_id,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,end_date,created_at,is_active")
     .eq("is_active", true);
   if (error || !tplRows?.length) return [];
 
@@ -347,6 +355,7 @@ export async function loadProjectedRecurringExpenses(
     template_name: string | null;
     category: string | null;
     amount: number | string | null;
+    currency: string | null;
     is_variable_amount: boolean | null;
     auto_paid: boolean | null;
     description_template: string | null;
@@ -362,6 +371,14 @@ export async function loadProjectedRecurringExpenses(
     created_at: string | null;
   };
   const templates = tplRows as Tpl[];
+
+  // A bill in US$ / C$ is planned in shekels at today's rate (its real
+  // shekels are its own day's, once it's written). No rates (the phone has
+  // none): its shekels wait, its own amount still shows.
+  let fxRates: TodayFxRates = {};
+  if (templates.some((t) => isForeignCurrency(t.currency))) {
+    fxRates = await loadTodayFxRates(supabase).catch(() => ({}));
+  }
 
   const monthIndex = (iso: string) => {
     const y = Number(iso.slice(0, 4));
@@ -402,8 +419,13 @@ export async function loadProjectedRecurringExpenses(
     const isVar = tpl.is_variable_amount === true;
     // For a variable bill the stored amount is an ESTIMATE (e.g. ~mortgage) used
     // for cash planning — carry it so the forecast/total isn't blind to it.
-    const amount = Number(tpl.amount) || 0;
-    if (!isVar && !(Number.isFinite(amount) && amount > 0)) continue;
+    const ownAmount = Number(tpl.amount) || 0;
+    if (!isVar && !(Number.isFinite(ownAmount) && ownAmount > 0)) continue;
+    const todayRate = isForeignCurrency(tpl.currency) ? fxRates[tpl.currency] : undefined;
+    const foreign: ForeignMoney | null = isForeignCurrency(tpl.currency)
+      ? { currency: tpl.currency, amount: ownAmount, rate: todayRate?.rate ?? 0, rateManual: false }
+      : null;
+    const amount = foreign ? shekelsToday(ownAmount, foreign.currency, fxRates) ?? 0 : ownAmount;
     const expenseDay = Number(tpl.expense_day_of_month) || 1;
 
     // Occurrence dates within the forecast horizon.
@@ -453,6 +475,7 @@ export async function loadProjectedRecurringExpenses(
         direction: "out" as const,
         date: occ.date,
         amount,
+        foreign,
         label,
         sourceLabel: "הוצאה קבועה",
         sourceHref: null,

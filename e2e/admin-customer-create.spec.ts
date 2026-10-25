@@ -1,12 +1,13 @@
 import { test, expect } from "@playwright/test";
-import { loginAs } from "./fixtures";
+import { loginAs, mockAddressSearch, pickAddress } from "./fixtures";
 import { deleteTestCustomer } from "./db";
 
 // CreateCustomerDialog (quick-create "לקוח" tile) is a much bigger wizard
-// than project memory suggested (13 possible steps, not "4") — name, contact
-// (phone, required), email, city (required), cityOther, nameForInvoice,
-// regNumber, address, prepayment, notes, contacts, branches, summary. Only
-// name/phone/city are actually required; everything else defaults through.
+// than project memory suggested (11 steps, not "4") — name, contact (phone,
+// required), email, address (required: at least a city, picked from Google's
+// list since 2026-10-18 — the city buttons are gone), nameForInvoice,
+// regNumber, prepayment, notes, contacts, branches, summary. Only
+// name/phone/address are actually required; everything else defaults through.
 //
 // Uses StepWizardDialog with nextLabel left undefined for every intermediate
 // step, so the button falls back to step-wizard.tsx's own default —
@@ -92,6 +93,7 @@ test.describe("admin — customer creation", () => {
     // real diagnostic dump instead of a bare "Test timeout exceeded".
     const T = 8_000;
     try {
+      await mockAddressSearch(page);
       await loginAs(page, "admin");
 
       await step("open quick-create", () => page.getByRole("button", { name: "הוספה מהירה" }).click({ timeout: T }));
@@ -103,10 +105,10 @@ test.describe("admin — customer creation", () => {
       );
       await step("contact -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
       await step("email -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
-      await step("pick city תל אביב", () => page.getByRole("button", { name: "תל אביב", exact: true }).click({ timeout: T }));
+      await step("pick address הרצל 1, תל אביב", () => pickAddress(page, page.getByRole("dialog"), { timeout: T }));
+      await step("address -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
       await step("nameForInvoice -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
       await step("regNumber -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
-      await step("address -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
       await step("prepayment -> לא", () => page.getByRole("button", { name: "לא", exact: true }).click({ timeout: T }));
       await step("notes -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
       await step("contacts -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));

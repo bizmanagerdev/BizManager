@@ -8,6 +8,7 @@ import { PAYMENT_SELECT } from "@/lib/payments";
 import { derivePaymentStatus, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { orderPaymentFrom, type OrderPaymentBody } from "@/lib/orders/order-payment-input";
 import { clientRowId } from "@/lib/client-row-id";
+import { currencyPricing, signedColumns, type MoneyCurrencyBody } from "@/lib/fx/money-input";
 
 export async function POST(req: Request) {
   try {
@@ -16,11 +17,22 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "orders/payments/create", async () => {
-    const body = (await req.json()) as OrderPaymentBody;
+    const body = (await req.json()) as OrderPaymentBody & MoneyCurrencyBody;
     // The row — built the same way the phone builds it (lib/orders/order-payment-input.ts).
-    const built = orderPaymentFrom(body, user.id);
+    const typed = orderPaymentFrom(body, user.id);
+    if ("error" in typed) return NextResponse.json({ error: typed.error }, { status: 400 });
+    // In US$ or C$ (2026-10-24): the amount as typed, and the row's amount its
+    // shekels at the day's rate (or the rate typed) — the order counts shekels.
+    const typedAmount = Math.abs(typed.row.amount_total);
+    const pricing = await currencyPricing(supabase, body, { amount: typedAmount, date: typed.row.payment_date });
+    if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+    const built =
+      pricing.columns?.foreign_amount != null
+        ? orderPaymentFrom({ ...body, amount_total: pricing.toShekels(typedAmount) }, user.id)
+        : typed;
     if ("error" in built) return NextResponse.json({ error: built.error }, { status: 400 });
     const { orderId, entryType, row } = built;
+    const currencyColumns = signedColumns(pricing.columns, entryType === "refund");
     // A payment saved on the phone first comes with the app's own id (lib/powersync/local-writes.ts).
     const clientId = clientRowId(body.id);
 
@@ -35,7 +47,7 @@ export async function POST(req: Request) {
 
     const { data: createdPayment, error: paymentError } = await supabase
       .from("payments")
-      .insert({ ...(clientId ? { id: clientId } : {}), ...row })
+      .insert({ ...(clientId ? { id: clientId } : {}), ...row, ...(currencyColumns ?? {}) })
       .select(PAYMENT_SELECT)
       .maybeSingle();
 

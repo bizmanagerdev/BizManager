@@ -6,7 +6,7 @@
 -- page starts in, what its purchase price and purchase tax are in, and — for
 -- US$ or C$ — that its page sums its money in ₪, $ and C$, each movement at its
 -- own day's rate. Its rows keep their own currency (supabase/migrations/
--- 20261023120000_money_currency.sql); this changes none of them, so it can be
+-- 20261023120001_money_currency.sql); this changes none of them, so it can be
 -- changed at any time.
 --
 -- Every property stays ₪: a constant default is only written to the catalog,

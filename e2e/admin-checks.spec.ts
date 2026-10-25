@@ -30,7 +30,9 @@ test.describe("admin — checks register", () => {
       await loginAs(page, "admin");
       await page.goto("/checks");
 
-      await page.getByPlaceholder("חיפוש לפי מספר צ׳ק / שם / טלפון...").fill(checkNumber);
+      // The search runs on the global search's rules since 2026-10-19, and its
+      // placeholder says what it reads.
+      await page.getByPlaceholder("מספר צ׳ק, סכום, תאריך, שם או טלפון...").fill(checkNumber);
       const row = page.locator("tr", { hasText: checkNumber });
       await expect(row).toBeVisible();
       await row.getByRole("button", { name: "סמן כנפרע" }).click();

@@ -19,7 +19,10 @@ test.describe("admin — customer edit", () => {
       await loginAs(page, "admin");
       await page.goto(`/customers/${customer.id}`);
 
-      await page.getByRole("button", { name: "עריכת הערות" }).click();
+      // The customer page folds its sections (2026-10-14): הערות starts folded
+      // when there are no notes, and its header's "+ הערה" opens it straight
+      // into the editor.
+      await page.getByRole("button", { name: "הוספת הערה" }).click();
       await page.getByPlaceholder("הערות ללקוח...").fill(newNotes);
       await page.getByRole("button", { name: "שמירה" }).click();
 

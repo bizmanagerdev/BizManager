@@ -28,6 +28,7 @@ import type { OrderPageCore } from "@/lib/orders/order-page";
 import type { OrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPageExtras";
 import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
+import { rowCurrencyFields } from "@/lib/fx/currencies";
 import { addressNotFound, addressPoint } from "@/lib/address/columns";
 
 // An order's page, from what was read for it: the order itself
@@ -256,6 +257,8 @@ export default function OrderPageView({
       check_number: getString(payment, "check_number"),
       account_id: getString(payment, "account_id"),
       notes: getString(payment, "notes"),
+      // In US$ / C$: its own amount and rate, so it's shown and edited in them.
+      ...rowCurrencyFields(payment as Record<string, unknown>),
       insertedByLabel: paymentInsertedByLabel(payment, {
         paymentRecordedByNameByValue,
         paymentAuditById: extras?.paymentAudit ?? NO_PAYMENT_AUDIT,

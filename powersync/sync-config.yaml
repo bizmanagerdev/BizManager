@@ -1,4 +1,7 @@
-# BizManager — PowerSync Sync Streams, v1.11 (2026-10-13): staff also get
+# BizManager — PowerSync Sync Streams, v1.12 (2026-10-24): a recurring
+# bill's currency (recurring_expense_templates.currency) — a bill in US$ / C$
+# reads in its currency on the device.
+# v1.11 (2026-10-13): staff also get
 # customers' contacts, and the tags and which records carry them — the
 # customers list and a customer's page drawn on the device.
 # v1.10 (2026-10-11): each worker's own
@@ -146,7 +149,8 @@ streams:
       - |
         SELECT recurring_expense_templates.id, recurring_expense_templates.template_name,
                recurring_expense_templates.created_by, recurring_expense_templates.category,
-               recurring_expense_templates.amount, recurring_expense_templates.is_variable_amount,
+               recurring_expense_templates.amount, recurring_expense_templates.currency,
+               recurring_expense_templates.is_variable_amount,
                recurring_expense_templates.auto_paid, recurring_expense_templates.description_template,
                recurring_expense_templates.notes_template, recurring_expense_templates.business_domain,
                recurring_expense_templates.account_id, recurring_expense_templates.frequency,

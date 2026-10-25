@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  amountLabel,
   buildSplitRequestBody,
   compactAmount,
   dayStageCompactText,
@@ -120,5 +121,19 @@ describe("compactAmount", () => {
     expect(dayStageCompactText({ amount: 55_634, variable: true, unknown: false })).toBe("~56K");
     expect(dayStageCompactText({ amount: 0, variable: false, unknown: true })).toBe("משתנה");
     expect(dayStageCompactText({ amount: 0, variable: false, unknown: false })).toBeNull();
+  });
+});
+
+describe("amountLabel — a bill in US$ / C$", () => {
+  const usd = { currency: "USD" as const, amount: 25, rate: 3.1, rateManual: false };
+  it("its own currency first, its shekels beside it", () => {
+    expect(amountLabel({ amount: 77.5, foreign: usd, variableAmount: false })).toMatch(/^\$25 \(≈ .*78.*₪\)$/);
+  });
+  it("an estimate reads with ~; no rate yet shows the dollars alone", () => {
+    expect(amountLabel({ amount: 77.5, foreign: usd, variableAmount: true })).toMatch(/^~\$25 \(≈/);
+    expect(amountLabel({ amount: 0, foreign: { ...usd, rate: 0 }, variableAmount: false })).toBe("$25");
+  });
+  it("shekels as before", () => {
+    expect(amountLabel({ amount: 500, foreign: null, variableAmount: false })).toBe(amountLabel({ amount: 500, variableAmount: false }));
   });
 });

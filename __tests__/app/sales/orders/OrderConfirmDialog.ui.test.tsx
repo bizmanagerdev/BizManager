@@ -291,7 +291,8 @@ function press(...keys: string[]) {
 
 /** What the amount keypad shows, beside its ₪. */
 function amountShown() {
-  return screen.getByText("₪").previousElementSibling?.textContent;
+  // The sign beside the amount is the ₪ / $ / C$ menu (2026-10-24).
+  return screen.getByRole("button", { name: /^מטבע:/ }).previousElementSibling?.textContent;
 }
 
 /** A date field shows dd/mm/yy; today's, as it appears before anything is typed. */
@@ -789,6 +790,8 @@ describe("payment", () => {
         account_id: null,
         reference_number: "4417",
         notes: "נמסר לנהג",
+        // Its currency goes with it (2026-10-24): shekels unless the sign was changed.
+        currency: "ILS",
       },
     ]);
   });

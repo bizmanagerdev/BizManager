@@ -23,6 +23,7 @@ vi.mock("@/components/financial/AccountSelect", () => ({
     </select>
   ),
 }));
+vi.mock("@/components/ui/dropdown-menu", () => import("@/__tests__/mocks/dropdown-menu"));
 const lookupFxRate = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/supabase/client", () => ({ createSupabaseBrowserClient: () => ({}) }));
 vi.mock("@/lib/fx/rate-lookup", () => ({ lookupFxRate: (...args: unknown[]) => lookupFxRate(...args) }));
@@ -65,7 +66,7 @@ const sentBody = () => JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
 describe("editing a property's income in its currency", () => {
   it("a C$ income: its C$ in the field, and the save sends the C$ as typed", async () => {
     render(<PropertyIncomeEditDialog payment={income} onClose={vi.fn()} />);
-    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("CAD");
+    expect(screen.getByRole("button", { name: "מטבע: דולר קנדי" })).toBeInTheDocument();
     const amount = screen.getAllByRole("textbox").find((el) => (el as HTMLInputElement).value === "5,500") as HTMLElement;
     expect(amount).toBeTruthy();
     expect(await screen.findByText(/שער יציג/)).toHaveTextContent("שער יציג 2.2 (22/10)");
@@ -79,7 +80,7 @@ describe("editing a property's income in its currency", () => {
 
   it("a shekel income stays in shekels", async () => {
     render(<PropertyIncomeEditDialog payment={{ ...income, foreign: null }} onClose={vi.fn()} />);
-    expect(screen.getByRole("combobox", { name: "מטבע" })).toHaveValue("ILS");
+    expect(screen.getByRole("button", { name: "מטבע: שקל" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "שמירה" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(sentBody()).toMatchObject({ amount_total: 12100, currency: "ILS" });

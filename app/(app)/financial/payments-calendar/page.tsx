@@ -9,6 +9,8 @@ import { loadIncomeCalendarItems } from "@/lib/receivables-load";
 import { loadAccounts, type Account } from "@/lib/accounts";
 import { propertyDisplayName } from "@/lib/properties";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
+import { isForeignCurrency, shekelsToday, type TodayFxRates } from "@/lib/fx/currencies";
+import { loadTodayFxRates } from "@/lib/fx/rates";
 import PaymentsHubClient from "./PaymentsHubClient";
 import { israelDateKey } from "@/lib/timezone";
 
@@ -50,7 +52,7 @@ export default async function PaymentsCalendarPage() {
   const lookupsPromise = Promise.all([
     supabase
       .from("recurring_expense_templates")
-      .select("id,template_name,category,amount,is_variable_amount,auto_paid,reminder_work_days_before,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template,frequency,interval_months,create_day_of_month,expense_day_of_month,create_month_of_year,expense_month_of_year,start_date,end_date,is_active")
+      .select("id,template_name,category,amount,currency,is_variable_amount,auto_paid,reminder_work_days_before,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template,frequency,interval_months,create_day_of_month,expense_day_of_month,create_month_of_year,expense_month_of_year,start_date,end_date,is_active")
       .order("created_at", { ascending: true }),
     // project_overview_view has project_dashboard_view's rows without the
     // financial and task totals these options never read.
@@ -61,6 +63,8 @@ export default async function PaymentsCalendarPage() {
     supabase.from("order_overview_view").select("order_id,customer_name,order_date")
       .order("order_date", { ascending: false }).range(0, 499),
     loadAccounts(supabase).catch(() => [] as Account[]),
+    // A bill in US$ / C$ shows its shekels at today's rate.
+    loadTodayFxRates(supabase).catch(() => ({}) as TodayFxRates),
   ]);
   // Awaited below. This only stops a failure that lands meanwhile from being
   // reported as unhandled before then.
@@ -113,7 +117,7 @@ export default async function PaymentsCalendarPage() {
     error = (err as { message?: string })?.message ?? "שגיאה בטעינת התשלומים";
   }
 
-  const [expResult, projectsResult, propertiesResult, ordersResult, accounts] = await lookupsPromise;
+  const [expResult, projectsResult, propertiesResult, ordersResult, accounts, fxRates] = await lookupsPromise;
 
   const expenseMissingSchema = Boolean(expResult.error?.message && looksLikeMissingSchema(expResult.error.message));
 
@@ -124,6 +128,8 @@ export default async function PaymentsCalendarPage() {
         template_name: getString(r, "template_name") ?? "",
         category: getString(r, "category") ?? "",
         amount: getNumber(r, "amount") ?? 0,
+        currency: isForeignCurrency(r.currency) ? r.currency : "ILS",
+        shekels_today: isForeignCurrency(r.currency) ? shekelsToday(getNumber(r, "amount") ?? 0, r.currency, fxRates) : null,
         is_variable_amount: r.is_variable_amount === true,
         auto_paid: r.auto_paid === true,
         reminder_work_days_before: getNumber(r, "reminder_work_days_before"),

@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 // Matches supabase/seed.sql — three logins, one per role, all sharing this
 // password. See e2e/README.md.
@@ -38,4 +38,46 @@ export async function loginWithCredentials(page: Page, email: string, password: 
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole("button", { name: "התחברות" }).click();
+}
+
+/** The one address the stand-in Google below knows: a full one, so no house-number step and no warning. */
+export const E2E_ADDRESS = {
+  city: "תל אביב",
+  street: "הרצל",
+  houseNumber: "1",
+  unit: "",
+  lat: 32.0627,
+  lng: 34.7708,
+  placeId: "e2e-place-herzl-1-tel-aviv",
+  formatted: "הרצל 1, תל אביב",
+};
+
+/**
+ * Every address field (components/ui/address-picker.tsx, since 2026-10-18)
+ * asks Google through /api/places/* and saves only an address picked from its
+ * list. The local stack has no Google key, so this answers both calls in the
+ * browser with E2E_ADDRESS. No save asks Google again on the server, so what's
+ * picked here is what gets saved. Call it before the form opens.
+ */
+export async function mockAddressSearch(page: Page) {
+  await page.route("**/api/places/autocomplete", (route) =>
+    route.fulfill({
+      json: {
+        suggestions: [{ placeId: E2E_ADDRESS.placeId, main: "הרצל 1", secondary: "תל אביב, ישראל", kind: "address" }],
+      },
+    })
+  );
+  await page.route("**/api/places/details", (route) => route.fulfill({ json: { address: E2E_ADDRESS } }));
+}
+
+/**
+ * Types into the address field inside `scope` and picks the suggestion
+ * (needs mockAddressSearch). The list opens in a portal, outside a dialog, so
+ * it's looked for on the whole page.
+ */
+export async function pickAddress(page: Page, scope: Page | Locator = page, options: { timeout?: number } = {}) {
+  await scope.getByRole("combobox", { name: "כתובת", exact: true }).fill("הרצל 1", options);
+  await page.getByRole("option", { name: /הרצל 1/ }).click(options);
+  // Picked: the field turns into the address with its "שינוי" and clear buttons.
+  await expect(scope.getByRole("button", { name: "ניקוי הכתובת" })).toBeVisible(options);
 }
