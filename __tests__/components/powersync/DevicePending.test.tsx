@@ -30,7 +30,12 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: () => {} }));
 vi.mock("@/components/powersync/LocalPagesWarmup", () => ({ default: () => null }));
-vi.mock("@/lib/powersync/device-frames", () => ({ clearDeviceFrames: async () => {}, keepDeviceFramesFor: () => {} }));
+vi.mock("@/lib/powersync/device-frames", () => ({
+  clearDeviceFrames: async () => {},
+  keepDeviceFramesFor: () => {},
+  menuFramePaths: () => [],
+  saveDeviceFrames: () => {},
+}));
 const jar = vi.hoisted(() => ({ names: new Set<string>() }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ has: (name: string) => jar.names.has(name) }) }));
 

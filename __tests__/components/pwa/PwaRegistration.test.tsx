@@ -8,19 +8,20 @@ import { act, cleanup, render } from "@testing-library/react";
 // there. Two things say there's one: a new service worker taking control, and
 // the server reporting a newer build when the app opens or comes back to the
 // screen (owner, 2026-10-20: a phone kept alive by Android stayed on an old
-// version for days). Before the reload the saved page copies go, so it lands
-// on the new version. Once per build — and again after a while, not once per
-// session.
+// version for days). Before the reload this page's saved copy goes, so it
+// lands on the new version — the other pages' copies stay, for opening with no
+// connection. Once per build — and again after a while, not once per session.
 
 const hoisted = vi.hoisted(() => {
   process.env.NEXT_PUBLIC_BUILD_ID = "old1";
-  return { clearDeviceFrames: vi.fn(async () => {}) };
+  return { dropDeviceFrame: vi.fn(async (_href: string) => {}), toastInfo: vi.fn() };
 });
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/lib/offline-queue", () => ({ processQueue: vi.fn() }));
 vi.mock("@/lib/offline-upload", () => ({ processUploadQueue: vi.fn() }));
-vi.mock("@/lib/powersync/device-frames", () => ({ clearDeviceFrames: hoisted.clearDeviceFrames }));
+vi.mock("@/lib/powersync/device-frames", () => ({ dropDeviceFrame: hoisted.dropDeviceFrame }));
+vi.mock("sonner", () => ({ toast: { info: hoisted.toastInfo } }));
 
 import PwaRegistration from "@/components/pwa/PwaRegistration";
 import { UPDATE_RETRY_MS } from "@/lib/pwa/app-version";
@@ -45,7 +46,8 @@ describe("loading a new version of the app", () => {
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "production");
     reload.mockReset();
-    hoisted.clearDeviceFrames.mockClear();
+    hoisted.dropDeviceFrame.mockClear();
+    hoisted.toastInfo.mockClear();
     sessionStorage.clear();
     visibility = "visible";
     liveBuild = "old1";
@@ -76,7 +78,7 @@ describe("loading a new version of the app", () => {
     setVisibility("hidden");
     await settle();
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(hoisted.clearDeviceFrames).toHaveBeenCalledTimes(1);
+    expect(hoisted.dropDeviceFrame).toHaveBeenCalledTimes(1);
     setVisibility("visible");
     setVisibility("hidden");
     await settle();
@@ -110,7 +112,7 @@ describe("loading a new version of the app", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it("the server runs a newer build: reloads onto it when the app is left, with the saved copies gone", async () => {
+  it("the server runs a newer build: reloads onto it when the app is left, without this page's saved copy", async () => {
     liveBuild = "new2";
     render(<PwaRegistration />);
     await settle();
@@ -118,7 +120,9 @@ describe("loading a new version of the app", () => {
 
     setVisibility("hidden");
     await settle();
-    expect(hoisted.clearDeviceFrames).toHaveBeenCalledTimes(1);
+    // Only the page being reloaded — the rest stay for opening with no connection.
+    expect(hoisted.dropDeviceFrame).toHaveBeenCalledTimes(1);
+    expect(hoisted.dropDeviceFrame).toHaveBeenCalledWith(window.location.href);
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
@@ -153,5 +157,74 @@ describe("loading a new version of the app", () => {
     setVisibility("hidden");
     await settle();
     expect(reload).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Moving inside the app to a page with no saved copy, with no connection: the
+// service worker keeps this page on screen and says which page it was. The
+// page says so, and settles Next.js's router (which gave up on the move and
+// waits for a whole-page load that isn't coming) by putting the same address
+// in the history again (owner, 2026-10-24).
+
+describe("a page moved to with no connection that isn't saved", () => {
+  const replaceState = vi.fn();
+  let historySpy: { mockRestore: () => void } | undefined;
+  beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "production");
+    hoisted.toastInfo.mockClear();
+    replaceState.mockReset();
+    visibility = "visible";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, href: "https://www.biz-h.com/customers", pathname: "/customers", search: "", reload },
+    });
+    historySpy = vi.spyOn(window.history, "replaceState").mockImplementation(replaceState);
+    sw.controller = {};
+    sw.register = vi.fn(async () => ({ update: async () => {} }));
+    sw.ready = new Promise(() => {});
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: sw });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204, headers: { "X-Bizh-Build": "old1" } })));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    historySpy?.mockRestore();
+    vi.useRealTimers();
+  });
+
+  const tell = (url: string) =>
+    sw.dispatchEvent(new MessageEvent("message", { data: { type: "PAGE_NOT_SAVED", url } }));
+
+  it("says so, and settles the router on the page on screen", async () => {
+    render(<PwaRegistration />);
+    await settle();
+    tell("https://www.biz-h.com/customers/c1");
+    expect(hoisted.toastInfo).toHaveBeenCalledWith("הדף הזה לא שמור במכשיר — ייפתח כשיחזור החיבור", {
+      id: "page-not-saved",
+    });
+    expect(replaceState).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(300);
+    expect(replaceState).toHaveBeenCalledWith(null, "", "https://www.biz-h.com/customers");
+  });
+
+  it("the page on screen itself (refreshed with no connection): nothing to say", async () => {
+    render(<PwaRegistration />);
+    await settle();
+    tell("https://www.biz-h.com/customers");
+    vi.advanceTimersByTime(300);
+    expect(hoisted.toastInfo).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it("a tab in the background says nothing (every open tab hears it)", async () => {
+    visibility = "hidden";
+    render(<PwaRegistration />);
+    await settle();
+    tell("https://www.biz-h.com/customers/c1");
+    vi.advanceTimersByTime(300);
+    expect(hoisted.toastInfo).not.toHaveBeenCalled();
   });
 });

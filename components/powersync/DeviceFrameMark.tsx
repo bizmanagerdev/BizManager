@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { saveDeviceFrames } from "@/lib/powersync/device-frames";
 
 /** A frame rendered this long before the app opened came from a saved copy. */
 const FRAME_FRESH_MS = 15_000;
@@ -17,9 +18,19 @@ const REFRESH_AT_MOST_EVERY_MS = 60_000;
  * current anyway. Moving between pages inside the app never triggers it (a
  * page loaded ahead is rendered after the app opened), and neither does
  * being offline.
+ *
+ * A page reached by moving inside the app was never loaded whole, so the
+ * service worker didn't see it: it's asked to save this page's frame in the
+ * background, to open with no connection next time (owner's offline test,
+ * 2026-10-24). The page loaded whole is saved by the worker itself.
  */
 export default function DeviceFrameMark({ page, renderedAt }: { page: string; renderedAt: number }) {
   const router = useRouter();
+  useEffect(() => {
+    const here = window.location.href.split("#")[0];
+    const loadedWhole = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.name;
+    if (here !== loadedWhole?.split("#")[0]) saveDeviceFrames([here]);
+  }, [renderedAt]);
   useEffect(() => {
     if (renderedAt >= performance.timeOrigin - FRAME_FRESH_MS) return;
     if (!navigator.onLine) return;

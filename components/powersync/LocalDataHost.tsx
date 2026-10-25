@@ -15,6 +15,8 @@ import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { withSentry } from "@/lib/sentry-lazy";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
+import OfflineMenuFrames from "@/components/powersync/OfflineMenuFrames";
+import type { SectionAccess } from "@/lib/auth/sections";
 import { installNavigationTiming } from "@/lib/ui/navigation-timing";
 import { clearDeviceFrames, keepDeviceFramesFor } from "@/lib/powersync/device-frames";
 import { setDeviceCopyPending } from "@/lib/powersync/device-pending";
@@ -29,7 +31,8 @@ import { copyHasMoneyTables, setMoneyCopyReady } from "@/lib/powersync/money-cop
 // - someone else signs in on this device: wipe the previous person's copy;
 // - signed out (here or in another tab): wipe.
 // With the signed-in person's details (`viewer`), it also keeps their
-// device-version pages ready in the background (LocalPagesWarmup).
+// device-version pages ready in the background (LocalPagesWarmup), and the
+// menu's pages saved to open with no connection (OfflineMenuFrames).
 // The page results stored on the device (lib/powersync/stored-results.ts) and
 // the dashboard's picture (lib/dashboard/picture.ts) go with the copy: wiped
 // at logout, and anyone else's dropped when this person is signed in.
@@ -37,7 +40,14 @@ import { copyHasMoneyTables, setMoneyCopyReady } from "@/lib/powersync/money-cop
 // sync is known not to connect at all (useSyncBlocked) — the server sends
 // the device pages' server version (lib/powersync/device-pending.ts); the
 // moment it has / it connects, they switch over by themselves.
-export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & { name?: string | null } }) {
+export default function LocalDataHost({
+  viewer,
+  access,
+}: {
+  viewer?: LocalCardViewer & { name?: string | null };
+  /** A worker's sections (lib/auth/sections.ts) — which menu pages are his. */
+  access?: SectionAccess;
+}) {
   const viewerId = viewer?.userId;
   const viewerRole = viewer?.role;
   const viewerLocale = viewer?.locale ?? "he";
@@ -134,6 +144,7 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & {
     <>
       <DeviceSaveNotices locale={viewer?.locale ?? "he"} />
       {viewer ? <LocalPagesWarmup viewer={viewer} /> : null}
+      {viewer ? <OfflineMenuFrames viewer={viewer} access={access} /> : null}
     </>
   );
 }
