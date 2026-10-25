@@ -23,6 +23,9 @@ vi.mock("@/lib/offline-queue", () => ({
     sent.push([url, body]);
     return { ok: true, data: { payment: { id: crypto.randomUUID() } } };
   },
+  // Nothing waiting on the device: the page is read again after the save.
+  getQueueLength: () => 0,
+  CONNECTION_EVENTS: { synced: "biz:conn-synced" },
 }));
 vi.mock("@/lib/payments/uploadCheckPhotos", () => ({ queueFinancialAttachmentsAfter: vi.fn() }));
 vi.mock("@/app/(app)/dashboard/DashboardActions.helpers", () => ({ uploadFinancialAttachment: vi.fn() }));
