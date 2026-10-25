@@ -46,12 +46,18 @@ export type RentPayment = {
   countsAsRent?: boolean | null;
   /** The months it was recorded for, and how much each — when they were ticked; null: evenly over its run. */
   allocation?: RentShare[] | null;
+  /** A check's day (פירעון). Past it and not in, its rent is still owed — we hold the check (owner, 2026-10-25). */
+  dueDate?: string | null;
 };
 
 export type RentMonthStatus = {
   state: RentMonthState;
   collected: number;
   pending: number;
+  /** Of `pending`, the checks whose day has passed and that aren't in: still owed, though we hold them (owner,
+   *  2026-10-25: "I want to show that it's debt, and I want to show that we have it" — a check kept back is
+   *  usually kept back for a reason, a transfer promised instead). */
+  pendingDue?: number;
   rent: number;
   /** The period this is about — its due date — and its name ("חשון", "נובמבר"). */
   periodStart: string | null;
@@ -166,12 +172,16 @@ export function rentPeriodStatus(
 ): RentMonthStatus {
   let collected = 0;
   let pending = 0;
+  let pendingDue = 0;
   for (const payment of payments) {
     if (payment.paymentStatus === "rejected") continue;
     const part = paidTowards(lease, payment, period);
     if (part <= 0) continue;
-    if (payment.paymentStatus === "pending") pending += part;
-    else collected += part;
+    if (payment.paymentStatus === "pending") {
+      pending += part;
+      const day = dayKey(payment.dueDate ?? payment.date);
+      if (day && day < today) pendingDue += part;
+    } else collected += part;
   }
   const rent = lease.monthlyRentAmount;
   const state: RentMonthState =
@@ -186,7 +196,7 @@ export function rentPeriodStatus(
             : "upcoming";
   // Just the month's name for the chip ("חשון", "נובמבר"); the year shows only for a yearly lease.
   const label = Number(lease.periodMonths) === 12 ? rentPeriodLabel(lease, period) : rentPeriodLabel(lease, period).replace(/ (תש\S*|\d{4})$/, "");
-  return { state, collected, pending, rent, periodStart: period, periodLabel: label };
+  return { state, collected, pending, pendingDue, rent, periodStart: period, periodLabel: label };
 }
 
 /** The lease a payment is rent for: the one it names, else the one running on its date, else the current one. */

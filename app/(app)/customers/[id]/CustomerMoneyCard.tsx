@@ -78,17 +78,44 @@ export default function CustomerMoneyCard({
   onCollectionActions: (() => void) | null;
 }) {
   const hasDebt = money.openBalance > 0.009;
+  const rent = money.rent;
+  const paidAny = money.totalPaid > 0.009 || (rent?.paid ?? 0) > 0.009;
 
-  const details: { label: string; value: ReactNode }[] = [
-    {
+  const details: { label: string; value: ReactNode }[] = [];
+  // Sales: orders and projects. A tenant with none — rent only — has no sales line.
+  if (money.totalSales > 0 || !rent) {
+    details.push({
       label: "נגבה",
       value: (
         <span>
           <Money value={money.totalPaid} /> מתוך <Money value={money.totalSales} />
         </span>
       ),
-    },
-  ];
+    });
+  }
+  // Their rent, as the rent page counts it (owner, 2026-10-25): what's in of what was due, what's still owed —
+  // and of that, what a check we hold covers ("I want to show that it's debt, and I want to show that we have it").
+  if (rent) {
+    details.push({
+      label: "שכירות",
+      value: (
+        <span>
+          <Money value={rent.paid} /> מתוך <Money value={rent.due} />
+          {rent.owed > 0.5 ? (
+            <span className="ms-1 text-destructive">
+              · חוב <Money value={rent.owed} />
+              {rent.withCheck > 0.5 ? (
+                <span className="text-muted-foreground">
+                  {" "}
+                  (צ׳ק ביד <Money value={rent.withCheck} />)
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+        </span>
+      ),
+    });
+  }
   if (money.totalExpected > 0.009) {
     details.push({
       label: "צפוי לגבייה",
@@ -108,6 +135,9 @@ export default function CustomerMoneyCard({
     if (money.maxDaysLate > 0) {
       details.push({ label: "באיחור", value: <span className="text-destructive">{daysHe(money.maxDaysLate)}</span> });
     }
+  }
+  // Payment terms are the orders' and projects' — not rent's.
+  if (money.salesOpenBalance > 0.009) {
     details.push({
       label: "תנאי תשלום",
       value: `${paymentTermsLabel(money.terms)}${money.dueDate ? ` · פירעון ${formatShortDate(money.dueDate, "—")}` : ""}`,
@@ -133,7 +163,7 @@ export default function CustomerMoneyCard({
       valueClassName={`tabular-nums ${hasDebt ? "text-destructive" : "text-success-soft-foreground"}`}
       badges={
         <span className={`text-xs font-semibold ${hasDebt ? "text-destructive" : "text-muted-foreground"}`}>
-          {hasDebt ? (money.totalPaid > 0.009 ? "שולם חלקית" : "טרם שולם") : "אין חוב פתוח"}
+          {hasDebt ? (paidAny ? "שולם חלקית" : "טרם שולם") : "אין חוב פתוח"}
         </span>
       }
       details={details}
@@ -165,6 +195,7 @@ export default function CustomerMoneyCard({
 function BalanceBlock({ balance }: { balance: CounterpartyBalance }) {
   const rows: { label: string; value: ReactNode }[] = [];
   if (balance.salesOwedToUs > 0.009) rows.push({ label: "הזמנות ופרויקטים", value: <Money value={balance.salesOwedToUs} /> });
+  if (balance.rentOwedToUs > 0.009) rows.push({ label: "שכירות", value: <Money value={balance.rentOwedToUs} /> });
   if (balance.loansOwedToUs > 0.009) rows.push({ label: "הלוואה שנתתי לו", value: <Money value={balance.loansOwedToUs} /> });
   if (balance.loansOwedByUs > 0.009) {
     rows.push({ label: "הלוואה שלקחתי ממנו", value: <Money value={balance.loansOwedByUs} className="text-success-soft-foreground" /> });

@@ -46,8 +46,8 @@ export function monthSheet(month: RentRollMonth, accountNames: Record<string, st
     row.lease.customerName ?? "",
     row.periodLabel,
     row.dueLabel,
-    formatCurrency(row.status.rent),
-    RENT_STATE[row.status.state].label + (row.returned.length > 0 ? " (צ׳ק חזר)" : ""),
+    row.ended ? "" : formatCurrency(row.status.rent),
+    row.ended ? "החוזה הסתיים" : RENT_STATE[row.status.state].label + (row.returned.length > 0 ? " (צ׳ק חזר)" : ""),
     // What each payment gave this month (one for several months: its share).
     lines(row, (p) => formatCurrency(paidTowards(row.lease, toRollRent(p), row.period))),
     lines(row, money),

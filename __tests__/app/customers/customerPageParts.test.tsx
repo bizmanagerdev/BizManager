@@ -191,7 +191,7 @@ describe("the money card", () => {
     render(
       <CustomerMoneyCard
         money={summarizeCustomerMoney({ orders: [], projects: [], receivables: [] })}
-        balance={{ salesOwedToUs: 0, loansOwedToUs: 2000, loansOwedByUs: 500, totalOwedToUs: 2000, totalOwedByUs: 500, net: 1500, payrollOwed: 800 }}
+        balance={{ salesOwedToUs: 0, rentOwedToUs: 0, loansOwedToUs: 2000, loansOwedByUs: 500, totalOwedToUs: 2000, totalOwedByUs: 500, net: 1500, payrollOwed: 800 }}
         payments={settled(NO_PAYMENTS)}
         today="2026-10-13"
         onCollectionActions={null}

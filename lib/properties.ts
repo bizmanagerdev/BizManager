@@ -653,6 +653,38 @@ export async function loadRentRoll(supabase: SupabaseClient): Promise<RentRollDa
 }
 
 /**
+ * The rent of these properties as the rent roll reads it — every lease on them (not one tenant's alone: a payment
+ * counts for the lease it was for) and every payment — for what a tenant owes (lib/rent-roll.ts rentDebtByLease;
+ * owner, 2026-10-25). The same on the server and the device copy. Throws when a read fails.
+ */
+export async function loadRentFor(
+  supabase: SupabaseClient,
+  propertyIds: string[]
+): Promise<Pick<RentRollData, "leases" | "payments">> {
+  const ids = [...new Set(propertyIds.filter(Boolean))].sort();
+  if (ids.length === 0) return { leases: [], payments: [] };
+  const [leaseRows, paymentRows] = await Promise.all([
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase.from("lease_agreements").select(LEASE_SELECT).in("property_id", ids).order("id").range(lo, hi)
+    ),
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase
+        .from("payments")
+        .select(`${PROPERTY_PAYMENT_SELECT},property_id`)
+        .in("property_id", ids)
+        .order("id")
+        .range(lo, hi)
+    ),
+  ]);
+  return {
+    leases: leaseRows.map(normalizeLease).sort((a, b) => a.id.localeCompare(b.id)),
+    payments: paymentRows
+      .map((row) => ({ ...normalizePropertyPayment(row), propertyId: str(row.property_id) ?? "" }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  };
+}
+
+/**
  * The files on these payments — a check's photo, a transfer's confirmation —
  * with signed links (an hour), by payment id: the rent roll's check column.
  * The server's only (the device copy has no files).

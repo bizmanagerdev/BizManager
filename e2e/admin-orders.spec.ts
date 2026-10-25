@@ -30,8 +30,12 @@ test.describe("admin — order creation and payment collection", () => {
       await page.getByText(customer.name, { exact: true }).first().click();
       // A customer without a full address Google found is asked about the
       // moment it's picked (owner, 2026-10-16/18) — the test customer has only
-      // a city. "המשך בלי" goes on with the order as it is.
-      await page.getByRole("button", { name: "המשך בלי", exact: true }).click();
+      // a city. "המשך בלי" goes on with the order as it is. Wait until the
+      // question is gone: while it fades out the wizard behind it is hidden,
+      // and the "המשך" below would find "המשך בלי" again instead.
+      const keepGoing = page.getByRole("button", { name: "המשך בלי", exact: true });
+      await keepGoing.click();
+      await expect(keepGoing).toBeHidden();
       await page.getByRole("button", { name: "המשך" }).click();
 
       // Items step: a free-text line avoids needing a seeded product/catalog

@@ -25,11 +25,13 @@ import { fetchLoans, type Loan } from "@/lib/loans";
 export type CounterpartyBalance = {
   /** Open receivable on orders + projects. */
   salesOwedToUs: number;
+  /** Rent still owed by this person as a tenant (lib/rent-roll.ts rentDebtOf — owner, 2026-10-25). */
+  rentOwedToUs: number;
   /** Outstanding principal on loans the business LENT this person. */
   loansOwedToUs: number;
   /** Outstanding principal on loans the business TOOK FROM this person. */
   loansOwedByUs: number;
-  /** salesOwedToUs + loansOwedToUs */
+  /** salesOwedToUs + rentOwedToUs + loansOwedToUs */
   totalOwedToUs: number;
   /** loansOwedByUs (salary is not included — see above). */
   totalOwedByUs: number;
@@ -70,23 +72,27 @@ export async function getCustomerLoanPositions(
 
 export function buildCounterpartyBalance({
   salesOwedToUs,
+  rentOwedToUs = 0,
   loansOwedToUs,
   loansOwedByUs,
   payrollOwed,
 }: {
   salesOwedToUs: number;
+  rentOwedToUs?: number;
   loansOwedToUs: number;
   loansOwedByUs: number;
   payrollOwed: number | null;
 }): CounterpartyBalance {
   const sales = Math.max(salesOwedToUs, 0);
+  const rent = Math.max(rentOwedToUs, 0);
   const lent = Math.max(loansOwedToUs, 0);
   const borrowed = Math.max(loansOwedByUs, 0);
-  const totalOwedToUs = sales + lent;
+  const totalOwedToUs = sales + rent + lent;
   const totalOwedByUs = borrowed;
 
   return {
     salesOwedToUs: sales,
+    rentOwedToUs: rent,
     loansOwedToUs: lent,
     loansOwedByUs: borrowed,
     totalOwedToUs,
