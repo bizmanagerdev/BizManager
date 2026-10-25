@@ -898,9 +898,11 @@ export default function PropertyDetailClient({
       </div>
 
       {/* The main column takes the head row's first two cards' width, the side
-          column the third's — same gap, so their edges line up. */}
+          column the third's — same gap, so their edges line up. On a phone the
+          two are one list, the money summary first: after the rent, before the
+          movements (owner, 2026-10-25). */}
       <div className="flex flex-col gap-3 lg:@[31rem]:grid lg:@[31rem]:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:@[31rem]:items-start">
-        <div className="min-w-0 space-y-3">
+        <div className="contents lg:@[31rem]:block lg:@[31rem]:min-w-0 lg:@[31rem]:space-y-3">
           {withRenters && !property.rentManagedByCompany ? (
             <PropertyRentersSection
               renters={renters}
@@ -1084,16 +1086,18 @@ export default function PropertyDetailClient({
 
         {/* The side column: the money in one card, then what repeats, its files,
             and the rest of what's known about it. */}
-        <div className="min-w-0 space-y-3">
-          <PropertyMoneyCard
-            payments={activityPayments}
-            expenses={activityExpenses}
-            sessions={activitySessions}
-            currency={property.currency}
-            rates={rates}
-            selectedCategory={categoryFilter?.label ?? null}
-            onSelectCategory={chooseCategory}
-          />
+        <div className="contents lg:@[31rem]:block lg:@[31rem]:min-w-0 lg:@[31rem]:space-y-3">
+          <div className="order-first">
+            <PropertyMoneyCard
+              payments={activityPayments}
+              expenses={activityExpenses}
+              sessions={activitySessions}
+              currency={property.currency}
+              rates={rates}
+              selectedCategory={categoryFilter?.label ?? null}
+              onSelectCategory={chooseCategory}
+            />
+          </div>
 
           <CollapsibleSection
             defaultOpen
@@ -1146,11 +1150,16 @@ export default function PropertyDetailClient({
             summary={otherDocuments.length + photos.length > 0 ? <SectionCount count={otherDocuments.length + photos.length} /> : null}
             action={
               <>
-                <Button type="button" size="sm" variant="outline" onClick={openAddDoc}>
+                {/* On a phone one "+" (owner, 2026-10-25): the upload's category makes it a photo. */}
+                <Button type="button" size="sm" variant="outline" onClick={openAddDoc} className="sm:hidden">
+                  <AddIcon className="h-4 w-4" />
+                  הוספה
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={openAddDoc} className="hidden sm:inline-flex">
                   <AddIcon className="h-4 w-4" />
                   מסמך
                 </Button>
-                <Button type="button" size="sm" variant="outline" onClick={openAddPhotos}>
+                <Button type="button" size="sm" variant="outline" onClick={openAddPhotos} className="hidden sm:inline-flex">
                   <AddIcon className="h-4 w-4" />
                   תמונה
                 </Button>

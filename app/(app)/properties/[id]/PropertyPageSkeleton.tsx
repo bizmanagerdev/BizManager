@@ -110,8 +110,9 @@ export function PropertyDetailBodySkeleton() {
           }
         />
       </div>
+      {/* On a phone one list, the money summary first — as the page. */}
       <div className="flex flex-col gap-3 lg:@[31rem]:grid lg:@[31rem]:grid-cols-[minmax(0,1fr)_calc((100%_-_1.5rem)/3)] lg:@[31rem]:items-start">
-        <div className="min-w-0 space-y-3">
+        <div className="contents lg:@[31rem]:block lg:@[31rem]:min-w-0 lg:@[31rem]:space-y-3">
           <CollapsibleSection
             collapsible={false}
             title="תנועות"
@@ -132,23 +133,26 @@ export function PropertyDetailBodySkeleton() {
             <Skeleton className="mb-2 h-10 w-full" />
             <TableRows />
           </CollapsibleSection>
-        </div>
-        <div className="min-w-0 space-y-3">
-          <CollapsibleSection collapsible={false} title="סיכום כספי" icon={<ChartIcon className={SECTION_ICON_CLASS} />}>
-            <div className="divide-y">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="flex h-[2.25rem] items-center justify-between gap-3">
-                  <Line className="w-24" />
-                  <Skeleton className="h-4 w-16" />
-                </div>
-              ))}
-            </div>
-            <Skeleton className="mx-auto mt-3 h-36 w-36 rounded-full" />
-          </CollapsibleSection>
-          <CollapsibleSection collapsible={false} title="הוצאות קבועות" icon={<RecurringIcon className={SECTION_ICON_CLASS} />}>
+          {/* Under the movements, as the page (2026-10-22). */}
+          <CollapsibleSection collapsible={false} title="משימות" icon={<TaskIcon className={SECTION_ICON_CLASS} />}>
             <Skeleton className="h-10 w-full" />
           </CollapsibleSection>
-          <CollapsibleSection collapsible={false} title="משימות" icon={<TaskIcon className={SECTION_ICON_CLASS} />}>
+        </div>
+        <div className="contents lg:@[31rem]:block lg:@[31rem]:min-w-0 lg:@[31rem]:space-y-3">
+          <div className="order-first">
+            <CollapsibleSection collapsible={false} title="סיכום כספי" icon={<ChartIcon className={SECTION_ICON_CLASS} />}>
+              <div className="divide-y">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex h-[2.25rem] items-center justify-between gap-3">
+                    <Line className="w-24" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                ))}
+              </div>
+              <Skeleton className="mx-auto mt-3 h-36 w-36 rounded-full" />
+            </CollapsibleSection>
+          </div>
+          <CollapsibleSection collapsible={false} title="הוצאות קבועות" icon={<RecurringIcon className={SECTION_ICON_CLASS} />}>
             <Skeleton className="h-10 w-full" />
           </CollapsibleSection>
           <CollapsibleSection collapsible={false} title="מסמכים ותמונות" icon={<DocumentIcon className={SECTION_ICON_CLASS} />}>
