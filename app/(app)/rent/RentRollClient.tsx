@@ -43,6 +43,7 @@ import { scheduleDeferredEdit } from "@/lib/undo-engine";
 import { sendChange } from "@/lib/offline-send";
 import { formatShortDate } from "@/lib/date";
 import { formatCurrency } from "@/lib/payroll";
+import { formatCurrencyAmount } from "@/lib/money";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { whatsappHref } from "@/lib/whatsapp";
 import { STATUS_PILL_CLASSES } from "@/lib/ui/status-color-classes";
@@ -562,6 +563,12 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
                 )}
               >
                 <span className={cn("font-medium", p.tornAt && "line-through")}>{methodWord(p)}</span>
+                {/* Paid in US$ / C$: its own money; the month counts its shekels. */}
+                {p.foreign ? (
+                  <span className={cn("tabular-nums text-muted-foreground", p.tornAt && "line-through")} dir="ltr">
+                    {formatCurrencyAmount(p.foreign.amount, p.foreign.currency)}
+                  </span>
+                ) : null}
                 {several || p.rentPeriods > 1 ? (
                   <span
                     className={cn("tabular-nums", p.tornAt && "line-through")}

@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { LineAmountInput, lineShekels, type LineCurrency } from "@/components/fx/MoneyCurrency";
+import { CURRENCY_SYMBOL, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 import { Field } from "@/components/ui/field";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { IconButton } from "@/components/ui/icon-button";
@@ -58,17 +60,32 @@ import { toRentPayment } from "./propertyMovements";
 // can be brought back) — and if it's the check itself that came in, the
 // dialog says so and leads to marking it cleared instead ("won't the user think
 // just to press that instead of opening the row to mark the check deposited?").
+//
+// A payment can be in US$ or C$ (owner, 2026-10-25: "rent stays in shekels; a
+// tenant can pay in dollars and the shekels come off the month"): the sign on
+// its amount opens ₪ / $ / C$, and its shekels — at its day's Bank of Israel
+// rate, or the rate typed — are what fill the months.
 
 /** Where a new rent payment starts: a given month (the rent roll's row), paid the lease's usual way when that's known. */
 export type RentPaymentPrefill = { periodStart?: string | null; method?: string | null; accountId?: string | null };
 
-type Line = { key: number; amount: string; method: string; accountId: string; date: string; checkNumber: string; photos: File[] };
+type Line = {
+  key: number;
+  amount: string;
+  method: string;
+  accountId: string;
+  date: string;
+  checkNumber: string;
+  photos: File[];
+  /** Its currency and rate, as its amount field tells them; absent: shekels. */
+  currency?: LineCurrency;
+};
 
 /** A month the payment can be for: where it stands, and its checks still waiting. */
 type Month = { period: string; label: string; rent: number; collected: number; pending: number; checks: PropertyPayment[] };
 
 /** One line's columns: amount, how, account, date, its ×. On a phone each line is a small card of two rows. */
-const LINE_GRID = "grid grid-cols-2 gap-2 sm:grid-cols-[6.5rem_minmax(0,1fr)_minmax(0,1.3fr)_8.5rem_2.25rem] sm:items-center";
+const LINE_GRID = "grid grid-cols-2 gap-2 sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,1.3fr)_8.5rem_2.25rem] sm:items-start";
 const FIELD_LABEL = "mb-1 block text-xs text-muted-foreground sm:sr-only";
 const YEAR = / (תש\S*|\d{4})$/;
 
@@ -76,6 +93,15 @@ const YEAR = / (תש\S*|\d{4})$/;
 let lineKeys = 0;
 
 const amountOf = (line: Line) => Number(line.amount) || 0;
+/** What a line comes to in shekels — what fills the months (0 while a US$ / C$ line has no rate yet). */
+const shekelsOf = (line: Line) => lineShekels(amountOf(line), line.currency);
+const foreignLine = (line: Line) => Boolean(line.currency && isForeignCurrency(line.currency.currency));
+/** Shekels the months still need, as an amount in the line's currency — rounded up a cent, so its shekels cover them. */
+function inLineCurrency(need: number, currency: LineCurrency | undefined): string {
+  if (!(need > 0)) return "";
+  if (!currency || !isForeignCurrency(currency.currency)) return String(Math.round(need * 100) / 100);
+  return currency.rate ? String(Math.ceil((need / currency.rate) * 100 - 1e-6) / 100) : "";
+}
 const checkName = (check: PropertyPayment) => (check.checkNumber ? `צ׳ק #${check.checkNumber}` : "הצ׳ק");
 
 /** The months offered: three back (and any older one still owing) to a year ahead — and the one it opened on. */
@@ -223,10 +249,11 @@ export default function PropertyRentPaymentDialog({
   const chosen = months.filter((m) => ticked.includes(m.period));
   const needs = chosen.map((m) => ({ period: m.period, need: needOf(rentLease, m, torn) }));
   const totalNeed = needs.reduce((sum, n) => sum + n.need, 0);
-  const { shares, short, extra } = allocateRent(lines.map(amountOf), needs);
+  // In shekels: a line in US$ / C$ fills the months with its shekels.
+  const { shares, short, extra } = allocateRent(lines.map(shekelsOf), needs);
   const given = new Map<string, number>();
   for (const share of shares.flat()) given.set(share.period, (given.get(share.period) ?? 0) + share.amount);
-  const total = lines.reduce((sum, l) => sum + amountOf(l), 0);
+  const total = lines.reduce((sum, l) => sum + shekelsOf(l), 0);
   // The waiting checks of the months ticked, each once.
   const waiting = [...new Map(chosen.flatMap((m) => m.checks).map((c) => [c.id, c])).values()];
   const tearing = waiting.filter(torn);
@@ -238,8 +265,18 @@ export default function PropertyRentPaymentDialog({
     if (amountTouched || lines.length !== 1) return;
     const tornNext = (c: PropertyPayment) => !nextKept.includes(c.id);
     const need = months.filter((m) => nextTicked.includes(m.period)).reduce((sum, m) => sum + needOf(rentLease, m, tornNext), 0);
+    setLines((prev) => prev.map((l, i) => (i === 0 ? { ...l, amount: inLineCurrency(need, l.currency) } : l)));
+  }
+  /** A line's currency (or its rate) as its field tells it; the one line not typed by hand follows it. */
+  function setLineCurrency(key: number, currency: LineCurrency) {
     setLines((prev) =>
-      prev.map((l, i) => (i === 0 ? { ...l, amount: need > 0 ? String(Math.round(need * 100) / 100) : "" } : l))
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        const sameMoney = l.currency?.currency === currency.currency && l.currency?.rate === currency.rate;
+        if (sameMoney && JSON.stringify(l.currency?.body) === JSON.stringify(currency.body)) return l;
+        const follows = !amountTouched && prev.length === 1 && !sameMoney;
+        return { ...l, currency, ...(follows ? { amount: inLineCurrency(totalNeed, currency) } : {}) };
+      })
     );
   }
   function toggleMonth(period: string) {
@@ -268,7 +305,7 @@ export default function PropertyRentPaymentDialog({
       )
     );
   }
-  /** Another payment: for what the months still lack, the way the one before it came. */
+  /** Another payment: for what the months still lack (in shekels — its sign can change it), the way the one before it came. */
   function addLine() {
     const last = lines[lines.length - 1];
     const method = last?.method ?? "bank_transfer";
@@ -299,6 +336,10 @@ export default function PropertyRentPaymentDialog({
       toast.error("יש לבחור חשבון לכל תשלום.");
       return;
     }
+    if (lines.some((l) => foreignLine(l) && !l.currency?.rate)) {
+      toast.error("יש להקליד את השער לתשלום במטבע זר.");
+      return;
+    }
     if (extra > 0.5) {
       toast.error(`הסכום גבוה ב־${formatCurrency(extra)} ממה שהחודשים שסומנו צריכים — אפשר לסמן עוד חודש.`);
       return;
@@ -315,7 +356,24 @@ export default function PropertyRentPaymentDialog({
       let failed: string | null = null;
       for (const [i, line] of sent.entries()) {
         const isCheck = line.method === "check";
-        const share: RentShare[] = sentShares[i];
+        // In US$ / C$: the amount as typed, with its currency; the months get its shekels.
+        const shekels = shekelsOf(line);
+        // … all of them: the agorot its rate leaves over go to its last month (the
+        // server wants the months to add up to the payment).
+        const share: RentShare[] = sentShares[i].map((s) => ({ ...s }));
+        const leftOver = Math.round((shekels - share.reduce((sum, s) => sum + s.amount, 0)) * 100) / 100;
+        if (foreignLine(line) && share.length > 0 && leftOver > 0 && leftOver <= 0.05) {
+          share[share.length - 1].amount = Math.round((share[share.length - 1].amount + leftOver) * 100) / 100;
+        }
+        const foreign =
+          line.currency && isForeignCurrency(line.currency.currency) && line.currency.rate
+            ? {
+                currency: line.currency.currency,
+                amount: amountOf(line),
+                rate: line.currency.rate,
+                rateManual: line.currency.body.fx_rate_manual === true,
+              }
+            : null;
         const result = await offlineFetch(
           "/api/payments/create",
           {
@@ -325,6 +383,7 @@ export default function PropertyRentPaymentDialog({
             payment_date: isCheck ? today : line.date,
             due_date: isCheck ? line.date : null,
             amount_total: amountOf(line),
+            ...(line.currency?.body ?? {}),
             payment_method: line.method,
             check_number: isCheck ? line.checkNumber.trim() : "",
             reference_number: "",
@@ -342,7 +401,8 @@ export default function PropertyRentPaymentDialog({
         const recorded = (id: string): PropertyPayment => ({
           id,
           date: isCheck ? today : line.date,
-          amount: amountOf(line),
+          amount: shekels,
+          foreign,
           method: line.method,
           dueDate: isCheck ? line.date : null,
           checkNumber: isCheck ? line.checkNumber.trim() || null : null,
@@ -547,17 +607,24 @@ export default function PropertyRentPaymentDialog({
               className="space-y-2 rounded-xl border border-border/60 p-2 sm:rounded-none sm:border-0 sm:p-0"
             >
               <div className={LINE_GRID}>
-                <label className="min-w-0">
+                {/* Not a <label>: the sign in the field is a button, and a label would pass its click on. */}
+                <div className="min-w-0">
                   <span className={FIELD_LABEL}>סכום</span>
-                  <CurrencyInput
+                  {/* ₪ / $ / C$: a click on the sign; the account's own when it's kept in dollars. */}
+                  <LineAmountInput
                     aria-label="סכום"
+                    currency={line.currency?.currency ?? null}
+                    accountCurrency={accounts.find((a) => a.id === line.accountId)?.currency ?? null}
+                    // The day it's priced at: a check's is the day it's received.
+                    date={line.method === "check" ? today : line.date}
+                    onCurrency={(currency) => setLineCurrency(line.key, currency)}
                     value={line.amount}
                     onChange={(e) => {
                       setLine(line.key, { amount: e.target.value });
                       setAmountTouched(true);
                     }}
                   />
-                </label>
+                </div>
                 <label className="min-w-0">
                   <span className={FIELD_LABEL}>איך שולם</span>
                   <NativeSelect aria-label="איך שולם" value={line.method} onChange={(e) => pickMethod(line.key, e.target.value)}>
@@ -616,6 +683,17 @@ export default function PropertyRentPaymentDialog({
 
         <p className="text-sm">
           סה״כ <span className="font-semibold tabular-nums">{formatCurrency(total)}</span>
+          {lines.some(foreignLine) ? (
+            <span className="text-muted-foreground">
+              {" "}
+              (
+              {lines
+                .filter(foreignLine)
+                .map((l) => formatCurrencyAmount(amountOf(l), l.currency!.currency as keyof typeof CURRENCY_SYMBOL))
+                .join(" + ")}
+              {lines.some((l) => !foreignLine(l)) ? " ועוד בשקלים" : ""})
+            </span>
+          ) : null}
           {given.size > 0 ? <> · ל{rentPeriodsLabel(rentLease, [...given.keys()])}</> : null}
           {short > 0.5 ? <span className="font-medium text-warning-strong"> · חסר {formatCurrency(short)}</span> : null}
           {extra > 0.5 ? <span className="font-medium text-destructive"> · יותר ב־{formatCurrency(extra)}</span> : null}

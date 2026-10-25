@@ -31,8 +31,13 @@ vi.mock("@/components/financial/AccountSelect", () => ({
     { id: "acc-bank", name: "מזרחי בית", kind: "bank", isActive: true },
     { id: "acc-leumi", name: "לאומי", kind: "bank", isActive: true },
     { id: "acc-cash", name: "קופה", kind: "cash", isActive: true },
+    { id: "acc-chase", name: "Chase", kind: "bank", currency: "USD", isActive: true },
   ],
 }));
+// A payment in US$ / C$: the sign opens the currency; the day's rate is 3.112.
+vi.mock("@/components/ui/dropdown-menu", () => import("@/__tests__/mocks/dropdown-menu"));
+vi.mock("@/lib/supabase/client", () => ({ createSupabaseBrowserClient: () => ({}) }));
+vi.mock("@/lib/fx/rate-lookup", () => ({ lookupFxRate: async () => ({ rate: 3.112, date: "2026-10-21" }) }));
 vi.mock("@/components/ui/searchable-select", () => ({
   SearchableSelect: ({
     ariaLabel,
@@ -256,5 +261,44 @@ describe("רישום תשלום — the months ticked, the money into them", () 
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(onCheckCleared).toHaveBeenCalledWith(expect.objectContaining({ id: "chk-0" }));
     expect(sent).toEqual([]);
+  });
+});
+
+// Rent stays in shekels; a tenant can pay in dollars (owner, 2026-10-25): the
+// payment's shekels, at its day's rate, are what fill the months.
+describe("רישום תשלום — paid in dollars", () => {
+  function chooseCurrency(symbol: string) {
+    fireEvent.click(screen.getByRole("button", { name: /^מטבע: / }));
+    const item = screen.getAllByRole("menuitem").find((el) => el.querySelector("span")?.textContent === symbol);
+    fireEvent.click(item!);
+  }
+
+  it("₪4,000 for כסלו paid in $: the amount follows in dollars, its shekels fill the month", async () => {
+    await open({ prefill: { periodStart: "2026-11-11" } });
+    chooseCurrency("$");
+    await act(async () => {});
+    expect(screen.getByRole("textbox", { name: "סכום" })).toHaveValue("1,285.35");
+    fireEvent.change(screen.getByRole("combobox", { name: "חשבון" }), { target: { value: "acc-bank" } });
+    expect(screen.getByText(/^סה״כ/)).toHaveTextContent("סה״כ ₪4,000.01 ($1,285.35) · לכסלו תשפ״ז");
+    await save();
+    expect(sent[0][1]).toMatchObject({
+      amount_total: 1285.35,
+      currency: "USD",
+      fx_rate_manual: false,
+      account_id: "acc-bank",
+      rent_allocation: [{ period: "2026-11-11", amount: 4000.01 }],
+    });
+  });
+
+  it("paid into Chase: the line turns to dollars by itself", async () => {
+    await open({ prefill: { periodStart: "2026-11-11" } });
+    await act(async () => {
+      fireEvent.change(screen.getByRole("combobox", { name: "חשבון" }), { target: { value: "acc-chase" } });
+    });
+    await act(async () => {});
+    expect(screen.getByRole("textbox", { name: "סכום" })).toHaveValue("1,285.35");
+    expect(screen.getByText("החשבון מתנהל בדולר.")).toBeInTheDocument();
+    await save();
+    expect(sent[0][1]).toMatchObject({ amount_total: 1285.35, currency: "USD", account_id: "acc-chase" });
   });
 });
