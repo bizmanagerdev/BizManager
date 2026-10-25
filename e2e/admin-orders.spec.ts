@@ -28,6 +28,10 @@ test.describe("admin — order creation and payment collection", () => {
       await page.getByRole("button", { name: "לקוח קיים" }).click();
       await page.locator('[aria-label="חיפוש לקוח"]').fill(customer.name);
       await page.getByText(customer.name, { exact: true }).first().click();
+      // A customer without a full address Google found is asked about the
+      // moment it's picked (owner, 2026-10-16/18) — the test customer has only
+      // a city. "המשך בלי" goes on with the order as it is.
+      await page.getByRole("button", { name: "המשך בלי", exact: true }).click();
       await page.getByRole("button", { name: "המשך" }).click();
 
       // Items step: a free-text line avoids needing a seeded product/catalog

@@ -27,6 +27,15 @@ test.describe("admin — project creation, status change, and expenses", () => {
       await page.getByRole("button", { name: "לקוח קיים" }).click();
       await page.locator('[aria-label="חיפוש לקוח"]').fill(customer.name);
       await page.getByText(customer.name, { exact: true }).first().click();
+      // A customer without a full address Google found is asked about when
+      // it's picked (owner, 2026-10-18) — the test customer has only a city.
+      // The project wizard asks only once its customer index knows the
+      // customer, so the question may not come. "המשך בלי" goes on as it is.
+      const keepGoing = page.getByRole("button", { name: "המשך בלי", exact: true });
+      await keepGoing.waitFor({ timeout: 5_000 }).then(
+        () => keepGoing.click(),
+        () => undefined
+      );
       await page.getByRole("button", { name: "המשך" }).click();
 
       // name (required, no default) — the only other step with mandatory
