@@ -31,11 +31,14 @@ test.describe("admin — project creation, status change, and expenses", () => {
       // it's picked (owner, 2026-10-18) — the test customer has only a city.
       // The project wizard asks only once its customer index knows the
       // customer, so the question may not come. "המשך בלי" goes on as it is.
+      // Then wait until it's gone: while it fades out the wizard behind it is
+      // hidden, and the "המשך" below would find "המשך בלי" again instead.
       const keepGoing = page.getByRole("button", { name: "המשך בלי", exact: true });
       await keepGoing.waitFor({ timeout: 5_000 }).then(
         () => keepGoing.click(),
         () => undefined
       );
+      await expect(keepGoing).toBeHidden();
       await page.getByRole("button", { name: "המשך" }).click();
 
       // name (required, no default) — the only other step with mandatory
