@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshIcon, WarningIcon } from "@/components/ui/icons";
 import { withSentry } from "@/lib/sentry-lazy";
 import { reloadIfStaleBuild } from "@/lib/ui/auto-recover";
+import { noteOffline } from "@/lib/pwa/offline-report";
 
 export default function AppError({
   error,
@@ -36,6 +37,8 @@ export default function AppError({
     // promise callbacks run, and the browser already has the SDK loaded, so
     // the lazily loaded report still goes out first (lib/sentry-lazy.ts).
     withSentry((Sentry) => Sentry.captureException(error));
+    // With no connection that report is lost: kept for when it's back.
+    if (!navigator.onLine) noteOffline("page error", { name: error.name, message: error.message.slice(0, 300) });
     // A stale/mismatched build gets one automatic hard reload instead of
     // making the user notice and press "נסה שוב" — reset() alone can't fix
     // this class of error since it re-renders against the same broken

@@ -8,6 +8,7 @@ import { peekResult, resultKey, watchResult } from "@/lib/powersync/local-result
 import { parseStoredResult, readStoredResultRaw, storedResultJson } from "@/lib/powersync/stored-results";
 import { deviceCopyPending, setDeviceCopyPending } from "@/lib/powersync/device-pending";
 import { withSentry } from "@/lib/sentry-lazy";
+import { noteOffline } from "@/lib/pwa/offline-report";
 import type { LocalCardKind, LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
 
 // One page part from the on-device copy (LOCAL_DATA_PAGES), worked out with
@@ -33,7 +34,56 @@ const fellBack = new Set<string>();
 /** Said once a session: the device's copy isn't updating, so pages come from the server. */
 let toldBehind = false;
 
-function fallBackToServer(router: ReturnType<typeof useRouter>, page: string, href: string, reason: string) {
+/** Pages waiting for the connection to go to their server version (fallBackWhenOnline). */
+const waitingForConnection = new Set<string>();
+
+/**
+ * No connection: the server version can't come either — asking for it only
+ * reached the service worker's "not saved" (owner's test, 2026-10-25: the
+ * sales tab's notice on the customers page). The page keeps what it shows,
+ * says why, and goes to the server version once the connection is back — if
+ * it's still the page on screen and the device still hasn't drawn it.
+ */
+function fallBackWhenOnline(
+  router: ReturnType<typeof useRouter>,
+  page: string,
+  href: string,
+  reason: string,
+  error: unknown,
+  stillNeeded: () => boolean
+) {
+  if (waitingForConnection.has(page)) return;
+  waitingForConnection.add(page);
+  noteOffline("device page failed", {
+    pageKind: page,
+    reason,
+    message: error instanceof Error ? error.message.slice(0, 300) : undefined,
+  });
+  // Only slow, the device may still answer: nothing to say yet.
+  if (reason !== "slow") toast.info("הדף לא נטען מהמכשיר — ייטען כשיחזור החיבור", { id: "device-page-offline" });
+  const here = window.location.pathname;
+  window.addEventListener(
+    "online",
+    () => {
+      waitingForConnection.delete(page);
+      if (window.location.pathname === here && stillNeeded()) router.replace(href);
+    },
+    { once: true }
+  );
+}
+
+function fallBackToServer(
+  router: ReturnType<typeof useRouter>,
+  page: string,
+  href: string,
+  reason: string,
+  error?: unknown,
+  stillNeeded: () => boolean = () => true
+) {
+  if (!navigator.onLine) {
+    fallBackWhenOnline(router, page, href, reason, error, stillNeeded);
+    return;
+  }
   if (reason === "not-synced") setDeviceCopyPending(true);
   if (reason === "behind" && !toldBehind) {
     toldBehind = true;
@@ -146,22 +196,29 @@ export function useLocalCard<K extends LocalCardKind>({
   // (even with a stored copy on screen). A copy known to be incomplete — its
   // own status, or (before it has opened) the device's note of it — goes
   // there at once; so does a page that already fell back this session while
-  // the copy still isn't ready.
+  // the copy still isn't ready. With no connection the device's note isn't
+  // acted on before the copy itself says: it may have been written while the
+  // sync was blocked, and the copy is all there is now.
   const answered = current !== null;
+  const answeredRef = useRef(answered);
+  useEffect(() => {
+    answeredRef.current = answered;
+  }, [answered]);
   const statusKnown = status !== null;
   const copyIncomplete = statusKnown && !status.hasSynced;
   useEffect(() => {
     if (answered) return;
-    if (copyIncomplete || (!statusKnown && deviceCopyPending())) {
+    if (copyIncomplete || (!statusKnown && navigator.onLine && deviceCopyPending())) {
       fallBackToServer(router, page, serverHrefRef.current, "not-synced");
       return;
     }
-    if (fellBack.has(page) && !ready) {
+    if (fellBack.has(page) && !ready && navigator.onLine) {
       router.replace(serverHrefRef.current);
       return;
     }
     const timer = setTimeout(
-      () => fallBackToServer(router, page, serverHrefRef.current, ready ? "slow" : "not-synced"),
+      () =>
+        fallBackToServer(router, page, serverHrefRef.current, ready ? "slow" : "not-synced", undefined, () => !answeredRef.current),
       FALLBACK_AFTER_MS
     );
     return () => clearTimeout(timer);
@@ -213,7 +270,7 @@ export function useLocalCard<K extends LocalCardKind>({
               Sentry.captureException(error, { tags: { area: "powersync", local_card: kind }, fingerprint: ["powersync", "local-card", kind] })
             );
           }
-          fallBackToServer(router, page, serverHrefRef.current, reason);
+          fallBackToServer(router, page, serverHrefRef.current, reason, error);
         },
       }
     );
