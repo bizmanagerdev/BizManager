@@ -393,3 +393,74 @@ describe("GET /api/payroll/worker-payments", () => {
     expect(json.workerName).toBe("דוד כהן");
   });
 });
+
+// Paid in US$ / C$ (2026-10-25): the amount is in its currency, and its
+// shekels — at the payment day's rate — are what its allocations may take off.
+describe("POST/PATCH /api/payroll/worker-payments — in US$ / C$", () => {
+  const withRate = (database: ReturnType<typeof sb>, rate: unknown) => ({
+    ...database,
+    rpc: vi.fn(async () => ({ data: rate, error: null })),
+  });
+
+  it("$500 is saved as its shekels at the day's rate, its dollars beside them", async () => {
+    const database = withRate(sb(), 3.11);
+    grant(database);
+    const res = await POST(req("http://test", "POST", { ...VALID_CREATE, amount: 500, currency: "USD" }));
+    expect(res.status).toBe(200);
+    expect(database.rpc).toHaveBeenCalledWith("fx_rate_on", { p_currency: "USD", p_date: "2026-05-15" });
+    expect(database.calls.paymentInsert[0]).toMatchObject({
+      amount: 1555,
+      currency: "USD",
+      foreign_amount: 500,
+      fx_rate: 3.11,
+      fx_rate_manual: false,
+    });
+  });
+
+  it("its shekels, not its dollars, are what may be allocated", async () => {
+    const debtItems = [{ source_type: "payslip", source_id: "ps-1", user_id: "u1", owed_amount: 2000 }];
+    const fits = withRate(sb({ debtItems }), 3.11);
+    grant(fits);
+    const ok = await POST(
+      req("http://test", "POST", { ...VALID_CREATE, amount: 500, currency: "USD", allocations: [{ source_type: "payslip", source_id: "ps-1", amount: 1555 }] })
+    );
+    expect(ok.status).toBe(200);
+    expect(fits.calls.allocationInsert[0]).toEqual([expect.objectContaining({ payslip_id: "ps-1", amount: 1555 })]);
+
+    const over = withRate(sb({ debtItems }), 3.11);
+    grant(over);
+    const res = await POST(
+      req("http://test", "POST", { ...VALID_CREATE, amount: 500, currency: "USD", allocations: [{ source_type: "payslip", source_id: "ps-1", amount: 1600 }] })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("a rate typed by hand is used as it is", async () => {
+    const database = withRate(sb(), 3.11);
+    grant(database);
+    await POST(req("http://test", "POST", { ...VALID_CREATE, amount: 100, currency: "CAD", fx_rate: "2.5", fx_rate_manual: true }));
+    expect(database.rpc).not.toHaveBeenCalled();
+    expect(database.calls.paymentInsert[0]).toMatchObject({ amount: 250, currency: "CAD", foreign_amount: 100, fx_rate: 2.5, fx_rate_manual: true });
+  });
+
+  it("no rate for the day: refused, nothing written", async () => {
+    const database = withRate(sb(), null);
+    grant(database);
+    const res = await POST(req("http://test", "POST", { ...VALID_CREATE, amount: 100, currency: "USD" }));
+    expect(res.status).toBe(400);
+    expect(database.calls.paymentInsert).toHaveLength(0);
+  });
+
+  it("an edit in dollars writes its dollars; a form that sends no currency leaves it as it is", async () => {
+    const edited = withRate(sb(), 3.0);
+    grant(edited);
+    await PATCH(req("http://test", "PATCH", { ...VALID_CREATE, payment_id: "wp-1", amount: 200, currency: "USD" }));
+    expect(edited.calls.paymentUpdate[0]).toMatchObject({ amount: 600, currency: "USD", foreign_amount: 200 });
+
+    const older = withRate(sb(), 3.0);
+    grant(older);
+    await PATCH(req("http://test", "PATCH", { ...VALID_CREATE, payment_id: "wp-1", amount: 600 }));
+    expect(older.calls.paymentUpdate[0]).toMatchObject({ amount: 600 });
+    expect(older.calls.paymentUpdate[0]).not.toHaveProperty("currency");
+  });
+});

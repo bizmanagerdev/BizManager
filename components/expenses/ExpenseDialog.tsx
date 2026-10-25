@@ -529,6 +529,15 @@ export function ExpenseDialog({
   const [workerPaymentChoice, setWorkerPaymentChoice] = useState<PaymentChoice>("none");
   const [workerPaidAmount, setWorkerPaidAmount] = useState("");
   const [workerAccountId, setWorkerAccountId] = useState("");
+  // The shift's payment in ₪, US$ or C$ (2026-10-25) — the account's own when
+  // it's kept in dollars, at the shift's day's rate. Its shekels are what come
+  // off the shift's cost.
+  const workerMoneyDay = (clockOut || clockIn).slice(0, 10);
+  const workerMoney = useMoneyCurrency({
+    open,
+    accountCurrency: accountsList.find((a) => a.id === workerAccountId)?.currency ?? null,
+    date: workerMoneyDay || null,
+  });
   const [workerPaymentMethod, setWorkerPaymentMethod] = useState("");
   // Worker step tabs, matching the existing/new pattern used to add a customer
   // from the order/project wizards — "new" replaces the old inline reveal so
@@ -1007,6 +1016,12 @@ export function ExpenseDialog({
       setErrorMessage("יש לבחור חשבון לתשלום לעובד.");
       return;
     }
+    if (canManageWorkerSessions && workerPaymentChoice !== "none" && isForeignCurrency(workerMoney.currency) && workerMoney.rate === null) {
+      setErrorMessage(workerMoney.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
+    const workerCurrencyBody = workerMoney.body();
+    const workerRate = isForeignCurrency(workerMoney.currency) ? workerMoney.rate : null;
     const billAmountNumber = !billedToCustomer || !billToCustomerAmount.trim() ? null : Number(billToCustomerAmount);
     if (billedToCustomer && (billAmountNumber === null || !Number.isFinite(billAmountNumber) || billAmountNumber <= 0)) {
       setErrorMessage("יש להזין סכום לחיוב לקוח.");
@@ -1062,7 +1077,13 @@ export function ExpenseDialog({
       if (canManageWorkerSessions && workerPaymentChoice !== "none") {
         const sessionLaborCost = savedSession.labor_cost != null ? Number(savedSession.labor_cost) : null;
         const payDate = (savedSession.clock_out || savedSession.clock_in || new Date().toISOString()).slice(0, 10);
-        const desired = workerPaymentChoice === "paid" ? sessionLaborCost : enteredPaid;
+        // In shekels: a partial payment typed in US$ / C$ at its rate.
+        const desired =
+          workerPaymentChoice === "paid"
+            ? sessionLaborCost
+            : enteredPaid !== null && workerRate
+              ? Math.round(enteredPaid * workerRate * 100) / 100
+              : enteredPaid;
         const existingPaid = isEditingSession ? existingWorkerPaidAmount : 0;
 
         if (sessionLaborCost === null || sessionLaborCost <= 0) {
@@ -1078,19 +1099,26 @@ export function ExpenseDialog({
           });
         } else {
           const paymentAmount = Math.round(Math.max(0, desired - existingPaid) * 100) / 100;
+          // In US$ / C$: the dollars it comes to, and of their shekels no more
+          // than the shift still owes.
+          const foreignAmount = workerRate ? Math.round((paymentAmount / workerRate) * 100) / 100 : null;
+          const allocatedShekels =
+            foreignAmount !== null ? Math.min(paymentAmount, Math.round(foreignAmount * (workerRate ?? 1) * 100) / 100) : paymentAmount;
           if (paymentAmount > 0.009) {
             const payRes = await fetch("/api/payroll/worker-payments", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 user_id: savedSession.user_id ?? targetUserId,
-                payment_date: payDate,
-                amount: paymentAmount,
+                // Priced at the day the form priced it at.
+                payment_date: workerRate && workerMoneyDay ? workerMoneyDay : payDate,
+                amount: foreignAmount ?? paymentAmount,
+                ...workerCurrencyBody,
                 payment_method: workerPaymentMethod || null,
                 account_id: workerAccountId || null,
                 reference_number: null,
                 notes: `תשלום שסומן מתוך טופס הוצאה עבור משמרת ${payDate}`,
-                allocations: [{ source_type: "session", source_id: sessionId, amount: paymentAmount }],
+                allocations: [{ source_type: "session", source_id: sessionId, amount: allocatedShekels }],
               }),
             });
             if (!payRes.ok) {
@@ -1669,6 +1697,13 @@ export function ExpenseDialog({
   // The expense's amounts in its own currency, and its shekels beside them.
   // An expense split into payments, and a recurring bill, too (2026-10-24).
   const inCurrency = !isWorkerPayment;
+  // The shift payment's "how much": in full, the shift's cost in the payment's currency.
+  const workerPaidFieldValue = (() => {
+    if (workerPaymentChoice !== "paid") return workerPaidAmount;
+    if (suggestedWorkerAmount === null) return workerPaidAmount;
+    if (!isForeignCurrency(workerMoney.currency)) return String(suggestedWorkerAmount);
+    return workerMoney.rate ? String(Math.round((suggestedWorkerAmount / workerMoney.rate) * 100) / 100) : "";
+  })();
   const amt = (n: number) =>
     inCurrency && isForeignCurrency(money.currency) ? formatCurrencyAmount(Number(n || 0), money.currency) : ils(n);
   const amtWithShekels = (n: number) => {
@@ -2459,8 +2494,9 @@ export function ExpenseDialog({
               <div className="mt-3 space-y-2">
                 <div className="space-y-1">
                   <div className="text-sm font-medium">כמה שולם</div>
-                  <CurrencyInput
-                    value={workerPaymentChoice === "paid" ? String(suggestedWorkerAmount ?? workerPaidAmount) : workerPaidAmount}
+                  <CurrencyAmountInput
+                    money={workerMoney}
+                    value={workerPaidFieldValue}
                     readOnly={workerPaymentChoice === "paid"}
                     onChange={(e) => setWorkerPaidAmount(e.target.value)}
                     placeholder={workerPaymentChoice === "paid" ? "מחושב אוטומטית" : "למשל 300"}
@@ -2509,7 +2545,18 @@ export function ExpenseDialog({
                     title: a.name,
                     sub: getAccountKindLabel(a.kind),
                     selected: workerAccountId === a.id,
-                    onClick: () => { setWorkerAccountId(a.id); expressAdvance(); },
+                    onClick: () => {
+                      setWorkerAccountId(a.id);
+                      // An account kept in dollars after a partial amount typed in
+                      // another currency: back to it, now in the account's, to check it.
+                      const next = a.currency ?? "ILS";
+                      if (isForeignCurrency(next) && next !== workerMoney.currency && workerPaymentChoice === "partial" && Number(workerPaidAmount) > 0) {
+                        toast.info(`החשבון מתנהל ב${CURRENCY_NAME[next]} — יש לבדוק את הסכום`);
+                        setExpStepId("wpayment");
+                        return;
+                      }
+                      expressAdvance();
+                    },
                   })
                 )}
               </div>
@@ -3061,8 +3108,9 @@ export function ExpenseDialog({
                     <>
                       <div className="space-y-1">
                         <div className="text-sm font-medium">כמה שולם</div>
-                        <CurrencyInput
-                          value={workerPaymentChoice === "paid" ? String(suggestedWorkerAmount ?? workerPaidAmount) : workerPaidAmount}
+                        <CurrencyAmountInput
+                          money={workerMoney}
+                          value={workerPaidFieldValue}
                           readOnly={workerPaymentChoice === "paid"}
                           onChange={(e) => setWorkerPaidAmount(e.target.value)}
                           placeholder={workerPaymentChoice === "paid" ? "מחושב אוטומטית" : "למשל 300"}

@@ -468,7 +468,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("worker_payments", (from, to) =>
         supabase
           .from("worker_payments")
-          .select("id,account_id,payment_date,amount,notes,user_id,created_at,recorded_by")
+          .select(`id,account_id,payment_date,amount,notes,user_id,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           .gte("payment_date", earliestOpening)
           .range(from, to)
@@ -1087,6 +1087,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       href: str(row.user_id) ? `/payroll/workers/${str(row.user_id)}` : "/payroll",
       type: "out",
       amount,
+      // Paid in US$ / C$ (2026-10-25): its own money beside the shekels.
+      foreign: absForeign(readForeignMoney(row)),
       posted: true,
       deleteRef: { kind: "worker_payment", id: str(row.id) ?? "", userId: str(row.user_id) },
       editRef: { kind: "worker_payment", id: str(row.id) ?? "" },

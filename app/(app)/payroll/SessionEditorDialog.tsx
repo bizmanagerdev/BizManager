@@ -14,7 +14,8 @@
 // original FormDialog version — only the outer chrome and how the fields are
 // grouped into screens changed.
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
 import type { ReactNode } from "react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,9 @@ import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { IsraelTimeNote } from "@/components/ui/israel-time-note";
 import { israelDateKey, israelLocalValueToDate, israelLocalValueToIso } from "@/lib/timezone";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { CURRENCY_NAME, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
@@ -179,6 +183,17 @@ export default function SessionEditorDialog({
   // Which bank/cash account a "mark paid" payment leaves from (see accounts layer).
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
+  // "Paid now" in ₪, US$ or C$ (2026-10-25) — the account's own when it's kept
+  // in dollars, at the shift's day's rate. Its shekels are what come off the shift.
+  const paidMoneyDay = (sessionForm.clock_out || sessionForm.clock_in).slice(0, 10);
+  const paidMoney = useMoneyCurrency({
+    open,
+    accountCurrency: accountsList.find((a) => a.id === paymentAccountId)?.currency ?? null,
+    date: paidMoneyDay || null,
+  });
+  // The paid amount filled in from the shift's cost (in the currency it was
+  // filled in): while it stands untouched it follows the cost and the currency.
+  const autoPaidRef = useRef("");
 
   const usersById = useMemo(() => new Map(workers.map((user) => [user.id, user])), [workers]);
 
@@ -271,6 +286,18 @@ export default function SessionEditorDialog({
       setSessionError("יש לבחור חשבון לתשלום.");
       return;
     }
+    const paidRate = isForeignCurrency(paidMoney.currency) ? paidMoney.rate : null;
+    if (willMarkPaid && isForeignCurrency(paidMoney.currency)) {
+      if (sessionSplitEnabled && isMoneySplit) {
+        setSessionError("תשלום במטבע זר לא נרשם יחד עם פיצול — אפשר לרשום אותו אחר כך ב״תשלום לעובד״.");
+        return;
+      }
+      if (paidRate === null) {
+        setSessionError(paidMoney.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+        return;
+      }
+    }
+    const paidCurrencyBody = paidMoney.body();
     runAction(async () => {
       const path =
         sessionMode === "create" ? "/api/payroll/sessions/create" : "/api/payroll/sessions/update";
@@ -376,21 +403,30 @@ export default function SessionEditorDialog({
             : laborCostInput
               ? Number(laborCostInput)
               : null;
-        const requestedPaidAmount = sessionForm.paid_amount_now.trim()
-          ? Number(sessionForm.paid_amount_now)
-          : derivedEarnedAmount;
+        // In US$ / C$ the amount is in that currency (empty: the shift's whole
+        // cost, in it), and of its shekels no more than the shift's cost is
+        // taken off it.
+        const typedPaid = sessionForm.paid_amount_now.trim() ? Number(sessionForm.paid_amount_now) : null;
+        const requestedPaidAmount = paidRate
+          ? typedPaid ?? (derivedEarnedAmount !== null ? Math.round((derivedEarnedAmount / paidRate) * 100) / 100 : null)
+          : typedPaid ?? derivedEarnedAmount;
         if (!Number.isFinite(requestedPaidAmount) || requestedPaidAmount === null || requestedPaidAmount <= 0) {
           throw new Error("יש להזין סכום ששולם עבור המשמרת.");
         }
+        const paidShekels = paidRate ? Math.round(requestedPaidAmount * paidRate * 100) / 100 : requestedPaidAmount;
+        const allocatedShekels =
+          paidRate && typedPaid === null && derivedEarnedAmount !== null ? Math.min(paidShekels, derivedEarnedAmount) : paidShekels;
         await postJson("/api/payroll/worker-payments", {
           user_id: savedSession.user_id,
-          payment_date: paymentDateSource.slice(0, 10),
+          // Priced at the day the form priced it at.
+          payment_date: paidRate && paidMoneyDay ? paidMoneyDay : paymentDateSource.slice(0, 10),
           amount: requestedPaidAmount,
+          ...paidCurrencyBody,
           payment_method: null,
           account_id: paymentAccountId || null,
           reference_number: null,
           notes: `תשלום שסומן מתוך משמרת ${formatDate(paymentDateSource)}`,
-          allocations: [{ source_type: "session", source_id: savedSession.id, amount: requestedPaidAmount }],
+          allocations: [{ source_type: "session", source_id: savedSession.id, amount: allocatedShekels }],
         });
       }
 
@@ -642,14 +678,16 @@ export default function SessionEditorDialog({
 
   useEffect(() => {
     if (!sessionForm.mark_paid_now || sessionDialogSuggestedAmount === null) return;
+    // In the payment's currency (in US$ / C$ once its rate is in).
+    const rate = isForeignCurrency(paidMoney.currency) ? paidMoney.rate : 1;
+    if (!rate) return;
+    const filled = String(Number((sessionDialogSuggestedAmount / rate).toFixed(2)));
     setSessionForm((current) => {
-      if (current.paid_amount_now.trim()) return current;
-      return {
-        ...current,
-        paid_amount_now: String(Number(sessionDialogSuggestedAmount.toFixed(2))),
-      };
+      if (current.paid_amount_now.trim() && current.paid_amount_now !== autoPaidRef.current) return current;
+      autoPaidRef.current = filled;
+      return { ...current, paid_amount_now: filled };
     });
-  }, [sessionDialogSuggestedAmount, sessionForm.mark_paid_now]);
+  }, [sessionDialogSuggestedAmount, sessionForm.mark_paid_now, paidMoney.currency, paidMoney.rate]);
 
   // Keep the single (non-split) customer charge tracking the shift's labor cost — recomputing when
   // hours/price change — until the user hand-edits it (billAmountDirty), after which their number
@@ -1279,7 +1317,8 @@ export default function SessionEditorDialog({
             <div className="mt-3 space-y-3">
               <label className="block space-y-2 text-sm">
                 <span className="font-medium">{"כמה שולם"}</span>
-                <CurrencyInput
+                <CurrencyAmountInput
+                  money={paidMoney}
                   inputMode="decimal"
                   value={sessionForm.paid_amount_now}
                   onChange={(event) =>
@@ -1305,7 +1344,15 @@ export default function SessionEditorDialog({
                       label={a.name}
                       sub={getAccountKindLabel(a.kind)}
                       selected={paymentAccountId === a.id}
-                      onClick={() => setPaymentAccountId(a.id)}
+                      onClick={() => {
+                        setPaymentAccountId(a.id);
+                        // An account kept in dollars after an amount typed in another currency.
+                        const next = a.currency ?? "ILS";
+                        const typed = sessionForm.paid_amount_now.trim();
+                        if (isForeignCurrency(next) && next !== paidMoney.currency && typed && typed !== autoPaidRef.current) {
+                          toast.info(`החשבון מתנהל ב${CURRENCY_NAME[next]} — יש לבדוק את הסכום`);
+                        }
+                      }}
                     />
                   ))}
                 </div>
@@ -1356,7 +1403,18 @@ export default function SessionEditorDialog({
               <SummaryRow label="עלות משמרת" value={formatCurrency(sessionDialogSuggestedAmount)} />
             ) : null}
             <SummaryRow label="חיוב לקוח" value={sessionForm.is_billable_to_customer ? "כן" : "לא"} />
-            {showMarkPaid ? <SummaryRow label="שולם עכשיו" value={sessionForm.mark_paid_now ? "כן" : "לא"} /> : null}
+            {showMarkPaid ? (
+              <SummaryRow
+                label="שולם עכשיו"
+                value={
+                  !sessionForm.mark_paid_now
+                    ? "לא"
+                    : isForeignCurrency(paidMoney.currency) && sessionForm.paid_amount_now.trim()
+                      ? `כן — ${formatCurrencyAmount(Number(sessionForm.paid_amount_now) || 0, paidMoney.currency)}`
+                      : "כן"
+                }
+              />
+            ) : null}
             {sessionForm.mark_paid_now && paymentAccountId ? <SummaryRow label="חשבון" value={accountName} /> : null}
             {sessionForm.notes.trim() ? <SummaryRow label="הערות" value={sessionForm.notes} /> : null}
           </SummarySection>

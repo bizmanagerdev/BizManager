@@ -1,3 +1,4 @@
+import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
 import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 import type { SectionAccess } from "@/lib/auth/sections";
 import {
@@ -126,6 +127,11 @@ export type WorkerPaymentRow = {
   account_id: string | null;
   recorded_by: string | null;
   created_at: string | null;
+  // Paid in US$ / C$ (2026-10-25): `amount` is its shekels, these its own money.
+  currency?: string | null;
+  foreign_amount?: number | string | null;
+  fx_rate?: number | string | null;
+  fx_rate_manual?: boolean | null;
 };
 
 /** The two things a payment can settle. See worker_debt_items_view. */
@@ -551,7 +557,7 @@ export async function fetchSalaryCenterProtectedPayload(
       .range(0, 1999),
     fetchAllPagedResult((lo, hi) =>
       query(supabase.from("worker_payments"))
-        .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,account_id,recorded_by,created_at")
+        .select(`id,user_id,payment_date,amount,payment_method,reference_number,notes,account_id,recorded_by,created_at,${MONEY_CURRENCY_COLUMNS}`)
         .in("user_id", safeUserIds)
         .order("payment_date", { ascending: false })
         .range(lo, hi)

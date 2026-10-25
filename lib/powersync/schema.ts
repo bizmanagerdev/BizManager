@@ -15,7 +15,7 @@ const int = column.integer;
 const real = column.real;
 
 /** A money row's currency (supabase/migrations/20261023120001_money_currency.sql):
- *  payments, expenses, loans and their repayments. */
+ *  payments, expenses, loans and their repayments — and worker payments. */
 const MONEY_CURRENCY_COLUMNS = {
   currency: text,
   foreign_amount: text,
@@ -604,6 +604,8 @@ const worker_payments = new Table(
     recorded_by: text,
     created_at: text,
     account_id: text,
+    // Paid in US$ / C$ (supabase/migrations/20261025100000_worker_payment_currency.sql).
+    ...MONEY_CURRENCY_COLUMNS,
   },
   { indexes: { by_user: ["user_id"] } }
 );

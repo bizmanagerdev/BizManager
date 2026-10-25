@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -24,6 +24,15 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import {
+  CurrencyAmountInput,
+  knowsCurrency,
+  rowCurrencyBody,
+  typedAmountOf,
+  useMoneyCurrency,
+} from "@/components/fx/MoneyCurrency";
+import { isForeignCurrency, readForeignMoney } from "@/lib/fx/currencies";
+import { formatMoneyWithForeign } from "@/lib/money";
 import AccountSelect from "@/components/financial/AccountSelect";
 import type { Account } from "@/lib/accounts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -269,6 +278,11 @@ const DEFAULT_WORKER_PRINT_FILTERS: WorkerPrintFilters = {
   year: "",
 };
 
+/** A payment's amount: "₪1,555", or "$500 (≈ ₪1,555)" for one paid in US$ / C$. */
+function workerPaymentAmountText(payment: WorkerPaymentRow): string {
+  return formatMoneyWithForeign(payment.amount, readForeignMoney(payment));
+}
+
 export default function SalaryCenterClient({
   viewerRole,
   publicUsers,
@@ -321,6 +335,18 @@ export default function SalaryCenterClient({
   } | null>(null);
   const [workerPaymentAccountsList, setWorkerPaymentAccountsList] = useState<Account[]>([]);
   const [workerPaymentError, setWorkerPaymentError] = useState("");
+  // A payment in ₪, US$ or C$ (2026-10-25) — the account's own when it's kept
+  // in dollars. Its allocations stay in shekels: what it takes off his debt.
+  const workerPaymentMoney = useMoneyCurrency({
+    open: workerPaymentDialogOpen,
+    initial: editingWorkerPaymentSnapshot?.payment ?? null,
+    known: editingWorkerPaymentSnapshot ? knowsCurrency(editingWorkerPaymentSnapshot.payment) : true,
+    accountCurrency: workerPaymentAccountsList.find((a) => a.id === workerPaymentForm.account_id)?.currency ?? null,
+    date: workerPaymentForm.payment_date,
+  });
+  // The allocations wait to be spread again once the payment's shekels are
+  // known — after its currency is changed, or an amount typed before the rate came.
+  const pendingWorkerPaymentSpreadRef = useRef(false);
   const [pendingDeletion, setPendingDeletion] = useState<PendingSalaryDeletion | null>(null);
   const [protectedData, setProtectedData] = useState<SalaryCenterProtectedPayload | null>(null);
   const [protectedError, setProtectedError] = useState("");
@@ -1601,6 +1627,7 @@ export default function SalaryCenterClient({
     const normalizedDefaultAmount = defaultAmount && defaultAmount > 0 ? String(defaultAmount) : "";
     setWorkerPaymentError("");
     setEditingWorkerPaymentSnapshot(null);
+    pendingWorkerPaymentSpreadRef.current = false;
     setWorkerPaymentForm({
       ...DEFAULT_WORKER_PAYMENT_FORM,
       user_id: userId,
@@ -1668,12 +1695,13 @@ export default function SalaryCenterClient({
       .filter((allocation): allocation is WorkerPaymentAllocationFormState => Boolean(allocation));
 
     setWorkerPaymentError("");
+    pendingWorkerPaymentSpreadRef.current = false;
     setWorkerPaymentForm({
       payment_id: payment.id,
       user_id: payment.user_id,
       payment_date: payment.payment_date ?? israelDateKey(),
-      amount:
-        typeof payment.amount === "number" || typeof payment.amount === "string" ? String(payment.amount) : "",
+      // In its own currency: a payment in dollars is edited in dollars.
+      amount: typedAmountOf(payment, payment.amount),
       payment_method: payment.payment_method ?? "",
       account_id: payment.account_id ?? "",
       reference_number: payment.reference_number ?? "",
@@ -1692,13 +1720,45 @@ export default function SalaryCenterClient({
     );
   }
 
+  /** A typed payment amount in shekels — null while its rate isn't in yet. */
+  function workerPaymentShekels(amountText: string): number | null {
+    const value = Number(amountText) || 0;
+    return isForeignCurrency(workerPaymentMoney.currency) ? workerPaymentMoney.shekels(value) : value;
+  }
+
   function setWorkerPaymentAmount(value: string) {
+    const shekels = workerPaymentShekels(value);
+    pendingWorkerPaymentSpreadRef.current = shekels === null;
     setWorkerPaymentForm((current) => ({
       ...current,
       amount: value,
-      allocations: distributePaymentAmount(value, current.allocations),
+      allocations: shekels === null ? current.allocations : distributePaymentAmount(String(shekels), current.allocations),
     }));
   }
+
+  // Spread again once the shekels are known (see pendingWorkerPaymentSpreadRef).
+  useEffect(() => {
+    if (!workerPaymentDialogOpen || !pendingWorkerPaymentSpreadRef.current) return;
+    const value = Number(workerPaymentForm.amount) || 0;
+    const shekels = isForeignCurrency(workerPaymentMoney.currency) ? workerPaymentMoney.shekels(value) : value;
+    if (shekels === null) return;
+    pendingWorkerPaymentSpreadRef.current = false;
+    setWorkerPaymentForm((current) => ({
+      ...current,
+      allocations: distributePaymentAmount(String(shekels), current.allocations),
+    }));
+    // The money's currency and rate are what it waits for; its functions change every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workerPaymentDialogOpen, workerPaymentMoney.currency, workerPaymentMoney.rate, workerPaymentForm.amount]);
+
+  // The amount's sign: a change of currency spreads the allocations again.
+  const workerPaymentMoneyField = {
+    ...workerPaymentMoney,
+    setCurrency: (next: Parameters<typeof workerPaymentMoney.setCurrency>[0]) => {
+      if (next !== workerPaymentMoney.currency) pendingWorkerPaymentSpreadRef.current = true;
+      workerPaymentMoney.setCurrency(next);
+    },
+  };
 
   function updateWorkerPaymentAllocation(sourceId: string, value: string) {
     setWorkerPaymentForm((current) => ({
@@ -1718,9 +1778,14 @@ export default function SalaryCenterClient({
   }
 
   function autoDistributeWorkerPayment() {
+    const shekels = workerPaymentShekels(workerPaymentForm.amount);
+    if (shekels === null) {
+      toast.error("אין עדיין שער לסכום — יש להמתין או להקליד שער.");
+      return;
+    }
     setWorkerPaymentForm((current) => ({
       ...current,
-      allocations: distributePaymentAmount(current.amount, current.allocations),
+      allocations: distributePaymentAmount(String(shekels), current.allocations),
     }));
   }
 
@@ -1746,10 +1811,16 @@ export default function SalaryCenterClient({
       setWorkerPaymentError("יש לבחור חשבון לתנועה.");
       return;
     }
+    // What it takes off his debt: its shekels, at its rate.
+    const amountShekels = workerPaymentShekels(workerPaymentForm.amount);
+    if (amountShekels === null) {
+      setWorkerPaymentError(workerPaymentMoney.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
     // Allocations are optional: a payment can be recorded even when the worker has
     // no open debt (an advance / general payment). Only block allocating MORE than
     // was actually paid; an unallocated remainder is allowed.
-    if (allocationTotal - amount > 0.01) {
+    if (allocationTotal - amountShekels > 0.01) {
       setWorkerPaymentError("סכום ההקצאות לא יכול לעלות על סכום התשלום.");
       return;
     }
@@ -1757,6 +1828,7 @@ export default function SalaryCenterClient({
     const editingPaymentId = workerPaymentForm.payment_id;
     const previousSnapshot = editingPaymentId ? editingWorkerPaymentSnapshot : null;
     const editedUserId = workerPaymentForm.user_id;
+    const currencyBody = workerPaymentMoney.body();
     runAction(async () => {
       const path = "/api/payroll/worker-payments";
       const response = await fetch(path, {
@@ -1771,6 +1843,7 @@ export default function SalaryCenterClient({
           account_id: workerPaymentForm.account_id || null,
           reference_number: workerPaymentForm.reference_number.trim() || null,
           notes: workerPaymentForm.notes.trim() || null,
+          ...currencyBody,
           allocations: activeAllocations.map((allocation) => ({
             source_type: allocation.source_type,
             source_id: allocation.source_id,
@@ -1807,7 +1880,9 @@ export default function SalaryCenterClient({
                 payment_id: editingPaymentId,
                 user_id: previousPayment.user_id,
                 payment_date: previousPayment.payment_date,
-                amount: toNumber(previousPayment.amount),
+                // In its own currency, as it was.
+                amount: Number(typedAmountOf(previousPayment, previousPayment.amount)) || 0,
+                ...rowCurrencyBody(previousPayment),
                 payment_method: previousPayment.payment_method,
                 account_id: previousPayment.account_id,
                 reference_number: previousPayment.reference_number,
@@ -1855,7 +1930,7 @@ export default function SalaryCenterClient({
       kind: "payment",
       paymentId: payment.id,
       userId: payment.user_id,
-      amountLabel: formatCurrency(toNumber(payment.amount) ?? 0),
+      amountLabel: workerPaymentAmountText(payment),
     });
   }
 
@@ -4206,7 +4281,7 @@ export default function SalaryCenterClient({
                           selectedWorkerPaymentsByPeriod.map((payment) => (
                             <div key={payment.id} className="rounded-xl border px-3 py-2 text-sm">
                               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                                <div className="font-medium">{formatCurrency(payment.amount)}</div>
+                                <div className="font-medium">{workerPaymentAmountText(payment)}</div>
                                 <div className="text-muted-foreground">{formatDate(payment.payment_date)}</div>
                                 <div className="text-muted-foreground">
                                   {[payment.payment_method, payment.reference_number].filter(Boolean).join(" • ") || "ללא פירוט"}
@@ -5534,7 +5609,8 @@ export default function SalaryCenterClient({
               />
             </Field>
             <Field label="סכום">
-              <CurrencyInput
+              <CurrencyAmountInput
+                money={workerPaymentMoneyField}
                 inputMode="decimal"
                 value={workerPaymentForm.amount}
                 onChange={(event) => setWorkerPaymentAmount(event.target.value)}
@@ -5552,9 +5628,15 @@ export default function SalaryCenterClient({
             <AccountSelect
               required
               value={workerPaymentForm.account_id}
-              onChange={(accountId) =>
-                setWorkerPaymentForm((current) => ({ ...current, account_id: accountId }))
-              }
+              onChange={(accountId) => {
+                // An account kept in another currency than the payment's: its
+                // shekels change with it, and the allocations follow.
+                const nextCurrency = workerPaymentAccountsList.find((a) => a.id === accountId)?.currency ?? "ILS";
+                if (isForeignCurrency(nextCurrency) && nextCurrency !== workerPaymentMoney.currency) {
+                  pendingWorkerPaymentSpreadRef.current = true;
+                }
+                setWorkerPaymentForm((current) => ({ ...current, account_id: accountId }));
+              }}
               onLoaded={setWorkerPaymentAccountsList}
             />
             <Field label="אסמכתא / רפרנס">

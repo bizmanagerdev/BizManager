@@ -1,3 +1,4 @@
+import { MONEY_CURRENCY_COLUMNS, readForeignMoney, type ForeignMoney } from "@/lib/fx/currencies";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildMonthlyHoursSummary,
@@ -43,6 +44,8 @@ export type MyPaymentRow = {
   method: string | null;
   referenceNumber: string | null;
   notes: string | null;
+  /** Paid in US$ / C$ (2026-10-25): its own money; `amount` is its shekels. */
+  foreign?: ForeignMoney | null;
 };
 
 /** One `worker_payment_allocations` row — which session/payslip a payment (or part of it) settles. */
@@ -90,7 +93,7 @@ export async function loadMyPayroll(
       .range(0, 499),
     supabase
       .from("worker_payments")
-      .select("id,payment_date,amount,payment_method,reference_number,notes")
+      .select(`id,payment_date,amount,payment_method,reference_number,notes,${MONEY_CURRENCY_COLUMNS}`)
       .eq("user_id", userId)
       .order("payment_date", { ascending: false })
       .range(0, 199),
@@ -134,6 +137,7 @@ export async function loadMyPayroll(
     method: typeof row.payment_method === "string" ? row.payment_method : null,
     referenceNumber: typeof row.reference_number === "string" ? row.reference_number : null,
     notes: typeof row.notes === "string" ? row.notes : null,
+    foreign: readForeignMoney(row),
   }));
 
   const paymentAllocations: MyPaymentAllocationRow[] = ((allocationsResult.data ?? []) as Record<string, unknown>[]).map(

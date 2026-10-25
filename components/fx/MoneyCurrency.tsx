@@ -54,6 +54,18 @@ export function knowsCurrency(row: RowCurrency | null | undefined): boolean {
   return Boolean(row && Object.prototype.hasOwnProperty.call(row, "currency"));
 }
 
+/** The save request's currency fields that put a row back as it was (an
+ *  undo): its currency, and its rate when that was typed by hand — otherwise
+ *  the day's again. Nothing for a row read without its currency. */
+export function rowCurrencyBody(row: RowCurrency | null | undefined): Record<string, unknown> {
+  if (!row || !knowsCurrency(row)) return {};
+  const foreign = readForeignMoney(row);
+  if (!foreign) return { currency: "ILS" };
+  return foreign.rateManual
+    ? { currency: foreign.currency, fx_rate: foreign.rate, fx_rate_manual: true }
+    : { currency: foreign.currency, fx_rate_manual: false };
+}
+
 export type MoneyCurrency = {
   /** The row's currency: the account's when it's kept in dollars. */
   currency: CurrencyCode;

@@ -7,6 +7,11 @@ import {
   normalizePayrollWorkerType,
   payrollWorkerTypePaymentAllocationSource,
 } from "@/lib/payroll-worker-type";
+import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
+import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
+
+/** What a save sends back: the payment, with its currency. */
+const PAYMENT_SELECT = `id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at,${MONEY_CURRENCY_COLUMNS}`;
 
 type AllocationSourceType = "session" | "payslip";
 
@@ -16,7 +21,10 @@ type WorkerPaymentAllocationInput = {
   amount?: number | string;
 };
 
-type WorkerPaymentPayload = {
+// `amount` is in the payment's currency (2026-10-25: a worker can be paid in
+// US$ / C$); its shekels — at the payment day's Bank of Israel rate, or the
+// rate typed — are what its allocations, in shekels, take off what he's owed.
+type WorkerPaymentPayload = MoneyCurrencyBody & {
   payment_id?: string;
   user_id?: string;
   payment_date?: string;
@@ -76,7 +84,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     typeof body.reference_number === "string" ? body.reference_number.trim() || null : null;
   const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
   const accountId = typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null;
-  const amount = toAmount(body.amount);
+  const typedAmount = toAmount(body.amount);
   const allocations = Array.isArray(body.allocations) ? body.allocations : [];
 
   if (mode === "update" && !paymentId) {
@@ -88,9 +96,13 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
   if (!paymentDate) {
     return NextResponse.json({ error: "payment_date is required." }, { status: 400 });
   }
-  if (!Number.isFinite(amount) || amount <= 0) {
+  if (!Number.isFinite(typedAmount) || typedAmount <= 0) {
     return NextResponse.json({ error: "Valid amount is required." }, { status: 400 });
   }
+  const pricing = await currencyPricing(supabase, body, { amount: typedAmount, date: paymentDate });
+  if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+  // In shekels from here on: the row's amount, and what the allocations may total.
+  const amount = pricing.toShekels(typedAmount);
   // Allocations are optional: a payment may be recorded with no debt to apply it to
   // (an advance / general payment). When present they're validated below.
 
@@ -241,8 +253,9 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
         notes,
         account_id: accountId,
         recorded_by: profile.id,
+        ...(pricing.columns ?? {}),
       })
-      .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at")
+      .select(PAYMENT_SELECT)
       .maybeSingle();
 
     if (paymentInsert.error) {
@@ -263,9 +276,10 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
         reference_number: referenceNumber,
         notes,
         account_id: accountId,
+        ...(pricing.columns ?? {}),
       })
       .eq("id", existingPaymentId)
-      .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at")
+      .select(PAYMENT_SELECT)
       .maybeSingle();
 
     if (paymentUpdate.error) {
@@ -313,7 +327,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
 
   const paymentResult = await supabase
     .from("worker_payments")
-    .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at")
+    .select(PAYMENT_SELECT)
     .eq("id", existingPaymentId)
     .maybeSingle();
 
@@ -359,7 +373,7 @@ export async function GET(req: Request) {
       await Promise.all([
         supabase
           .from("worker_payments")
-          .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,account_id")
+          .select(`id,user_id,payment_date,amount,payment_method,reference_number,notes,account_id,${MONEY_CURRENCY_COLUMNS}`)
           .eq("id", paymentId)
           .maybeSingle(),
         supabase

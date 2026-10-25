@@ -17,12 +17,15 @@
 // quick-action dialog onto one shared shape.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { CURRENCY_NAME, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 import { DateInput } from "@/components/ui/date-input";
 import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
 import { OptionRow, DateQuickPicks, StepHeading } from "@/components/ui/option-row";
@@ -90,6 +93,16 @@ export function WorkerPaymentDialog({
   const [debtLoading, setDebtLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // In ₪, US$ or C$ (2026-10-25) — the account's own when it's kept in
+  // dollars. Its shekels are what come off what the worker is owed.
+  const money = useMoneyCurrency({
+    open,
+    accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    date,
+  });
+  // The amount filled in from the open balance (in the currency it was filled
+  // in): while it stands untouched it follows the currency, at the day's rate.
+  const autoAmountRef = useRef("");
 
   // Admin can pay anyone payroll-tracked; office may only pay workers below them
   // (matches the protected endpoint's own scoping).
@@ -108,6 +121,25 @@ export function WorkerPaymentDialog({
   }, [payableWorkers, workerQuery]);
 
   const openOwed = useMemo(() => sumOpenOwed(debtItems), [debtItems]);
+  /** The open balance in the payment's currency; null with no rate yet. */
+  const owedInCurrency = (owed: number): number | null => {
+    if (!isForeignCurrency(money.currency)) return owed;
+    return money.rate ? Math.round((owed / money.rate) * 100) / 100 : null;
+  };
+
+  // The filled-in amount follows a change of currency (or its rate arriving).
+  useEffect(() => {
+    if (!(openOwed > 0)) return;
+    const next = owedInCurrency(openOwed);
+    if (next === null) return;
+    setAmount((current) => {
+      if (current.trim() && current !== autoAmountRef.current) return current;
+      autoAmountRef.current = String(next);
+      return String(next);
+    });
+    // owedInCurrency reads only these two.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [money.currency, money.rate, openOwed]);
 
   // Preload accounts on open so the "account" step can render one tappable
   // card per account (same technique as Income/CollectPayment/AccountTransfer).
@@ -144,6 +176,7 @@ export function WorkerPaymentDialog({
     setDebtItems([]);
     setDebtLoading(false);
     debtForUserRef.current = "";
+    autoAmountRef.current = "";
   }
 
   // The worker the latest debt request was for — a reply for anyone else (the
@@ -181,7 +214,15 @@ export function WorkerPaymentDialog({
       const owed = sumOpenOwed(openItems);
       // Default to the full open balance — the common "pay them what they're
       // owed" case — unless an amount was already typed while this loaded.
-      if (owed > 0) setAmount((current) => (current.trim() ? current : String(Math.round(owed * 100) / 100)));
+      // In the payment's currency (the effect above fills it once a rate is in).
+      const filled = owedInCurrency(Math.round(owed * 100) / 100);
+      if (owed > 0 && filled !== null) {
+        setAmount((current) => {
+          if (current.trim()) return current;
+          autoAmountRef.current = String(filled);
+          return String(filled);
+        });
+      }
     } catch (err: unknown) {
       if (!isCurrent()) return;
       setError(toHebrewError(err, "טעינת יתרת העובד נכשלה."));
@@ -194,6 +235,7 @@ export function WorkerPaymentDialog({
   function selectWorker(nextUserId: string) {
     setUserId(nextUserId);
     setAmount("");
+    autoAmountRef.current = "";
     void loadDebt(nextUserId);
     advanceTo("amount");
   }
@@ -251,6 +293,12 @@ export function WorkerPaymentDialog({
       return;
     }
     const total = Number(amount);
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      setError(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
+    // What comes off his debt: the payment's shekels, at its rate.
+    const shekels = money.shekels(total) ?? total;
 
     setSubmitting(true);
     try {
@@ -265,8 +313,9 @@ export function WorkerPaymentDialog({
           account_id: accountId || null,
           reference_number: reference.trim() || null,
           notes: notes.trim() || null,
+          ...money.body(),
           // Auto-allocate across open debts oldest-first; any remainder is an advance.
-          allocations: buildWorkerPaymentAllocations(total, debtItems),
+          allocations: buildWorkerPaymentAllocations(shekels, debtItems),
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -286,6 +335,13 @@ export function WorkerPaymentDialog({
   const workerName = payableWorkers.find((u) => u.id === userId)?.label;
   const methodLabel = PAYMENT_METHOD_OPTIONS.find((m) => m.value === method)?.label;
   const accountName = accountsList.find((a) => a.id === accountId)?.name;
+  const owedShown = owedInCurrency(openOwed);
+  const amountText = (() => {
+    const value = Number(amount) || 0;
+    if (!isForeignCurrency(money.currency)) return formatCurrency(value);
+    const shekels = money.shekels(value);
+    return `${formatCurrencyAmount(value, money.currency)}${shekels === null ? "" : ` (≈ ${formatCurrency(Math.round(shekels))})`}`;
+  })();
 
   return (
     <StepWizardDialog
@@ -331,12 +387,14 @@ export function WorkerPaymentDialog({
         <>
           <StepHeading title="על איזה סכום?" />
           <label className="space-y-2 text-sm">
-            <CurrencyInput autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <CurrencyAmountInput money={money} autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} />
             {debtLoading ? (
               <span className="block text-[0.647rem] text-muted-foreground">טוען יתרה...</span>
             ) : openOwed > 0 ? (
               <span className="block text-[0.647rem] text-muted-foreground">
-                יתרה פתוחה: {formatCurrency(openOwed)} • {debtItems.length} פריטים פתוחים
+                יתרה פתוחה: {formatCurrency(openOwed)}
+                {isForeignCurrency(money.currency) && owedShown !== null ? ` (≈ ${formatCurrencyAmount(owedShown, money.currency)})` : ""} •{" "}
+                {debtItems.length} פריטים פתוחים
               </span>
             ) : (
               <span className="block text-[0.647rem] text-muted-foreground">
@@ -385,6 +443,14 @@ export function WorkerPaymentDialog({
                 selected={accountId === a.id}
                 onClick={() => {
                   setAccountId(a.id);
+                  // An account kept in dollars after an amount typed in another
+                  // currency: back to the amount, now in the account's, to check it.
+                  const next = a.currency ?? "ILS";
+                  if (isForeignCurrency(next) && next !== money.currency && Number(amount) > 0 && amount !== autoAmountRef.current) {
+                    toast.info(`החשבון מתנהל ב${CURRENCY_NAME[next]} — יש לבדוק את הסכום`);
+                    advanceTo("amount");
+                    return;
+                  }
                   advanceTo("reference");
                 }}
               />
@@ -421,7 +487,7 @@ export function WorkerPaymentDialog({
           <StepHeading title="לאשר ולשמור?" />
           <SummarySection title="פרטי התשלום">
             <SummaryRow label="עובד" value={workerName ?? "—"} />
-            <SummaryRow label="סכום" value={formatCurrency(Number(amount) || 0)} />
+            <SummaryRow label="סכום" value={amountText} />
             <SummaryRow label="תאריך" value={normalizeDateOnly(date)} />
             <SummaryRow label={HEBREW.paymentMethod} value={methodLabel ?? "ללא ציון"} />
             {accountId ? <SummaryRow label="חשבון" value={accountName} /> : null}

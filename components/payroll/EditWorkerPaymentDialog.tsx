@@ -24,7 +24,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { DateInput } from "@/components/ui/date-input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import {
+  CurrencyAmountInput,
+  knowsCurrency,
+  rowCurrencyBody,
+  typedAmountOf,
+  useMoneyCurrency,
+  type RowCurrency,
+} from "@/components/fx/MoneyCurrency";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 import { NativeSelect } from "@/components/ui/native-select";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
@@ -63,6 +71,15 @@ export function EditWorkerPaymentDialog({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The payment's currency as loaded (2026-10-25: a worker can be paid in US$ / C$).
+  const [loadedCurrency, setLoadedCurrency] = useState<RowCurrency | null>(null);
+  const money = useMoneyCurrency({
+    open: paymentId !== null && !loading && loadedCurrency !== null,
+    initial: loadedCurrency,
+    known: knowsCurrency(loadedCurrency),
+    accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    date,
+  });
   // Pre-edit snapshot, captured once on load and never mutated by the form —
   // lets a save be undone by re-PATCHing these exact values back.
   const [original, setOriginal] = useState<{
@@ -80,6 +97,7 @@ export function EditWorkerPaymentDialog({
     setLoading(true);
     setLoadError(null);
     setError(null);
+    setLoadedCurrency(null);
     void fetch(`/api/payroll/worker-payments?payment_id=${encodeURIComponent(paymentId)}`)
       .then(async (res) => {
         const json = (await res.json().catch(() => ({}))) as {
@@ -93,7 +111,7 @@ export function EditWorkerPaymentDialog({
             reference_number: string | null;
             notes: string | null;
             account_id: string | null;
-          };
+          } & RowCurrency;
           allocations?: ExistingAllocation[];
           workerName?: string | null;
         };
@@ -106,7 +124,9 @@ export function EditWorkerPaymentDialog({
         setWorkerName(json.workerName ?? null);
         setAllocations(json.allocations ?? []);
         const loadedDate = json.payment.payment_date ?? "";
-        const loadedAmount = json.payment.amount != null ? String(json.payment.amount) : "";
+        // In its own currency: a payment in dollars is edited in dollars.
+        const loadedAmount = typedAmountOf(json.payment, json.payment.amount);
+        setLoadedCurrency(json.payment);
         const loadedMethod = json.payment.payment_method ?? "";
         const loadedAccountId = json.payment.account_id ?? "";
         const loadedReference = json.payment.reference_number ?? "";
@@ -155,6 +175,10 @@ export function EditWorkerPaymentDialog({
       setError("יש לבחור חשבון לתנועה.");
       return;
     }
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      setError(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -170,6 +194,7 @@ export function EditWorkerPaymentDialog({
           account_id: accountId || null,
           reference_number: reference.trim() || null,
           notes: notes.trim() || null,
+          ...money.body(),
           // Untouched round-trip — see the file header comment.
           allocations: allocations.map((a) => ({
             source_type: a.source_type,
@@ -191,6 +216,7 @@ export function EditWorkerPaymentDialog({
       const committedUserId = userId;
       const committedAllocations = allocations;
       const committedOriginal = original;
+      const committedCurrency = rowCurrencyBody(loadedCurrency);
       registerReversibleAction({
         key: `worker-payment:edit:${committedPaymentId}`,
         message: "התשלום עודכן.",
@@ -209,6 +235,7 @@ export function EditWorkerPaymentDialog({
                 account_id: committedOriginal.account_id || null,
                 reference_number: committedOriginal.reference_number || null,
                 notes: committedOriginal.notes || null,
+                ...committedCurrency,
                 allocations: committedAllocations.map((a) => ({
                   source_type: a.source_type,
                   source_id: a.source_type === "session" ? a.attendance_session_id : a.payslip_id,
@@ -259,7 +286,7 @@ export function EditWorkerPaymentDialog({
           <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <label className="text-sm font-medium">סכום *</label>
-              <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <CurrencyAmountInput money={money} value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">תאריך *</label>

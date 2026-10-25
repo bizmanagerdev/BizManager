@@ -1,5 +1,6 @@
 "use client";
 
+import { formatMoneyWithForeign } from "@/lib/money";
 import { useState } from "react";
 import { ShareIcon, PrintIcon, SpinnerIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
@@ -179,7 +180,12 @@ function buildReport(input: ReportInputs) {
     const details = [formatWorkerPaymentMethodLabel(payment.method), payment.referenceNumber]
       .filter(Boolean)
       .join(" • ");
-    return `<tr><td>${esc(formatDate(payment.paymentDate))}</td><td>${esc(formatCurrency(scopedAmount))}</td><td>${esc(details || "ללא פירוט")}</td><td>${esc(payment.notes || "-")}</td></tr>`;
+    // A payment in US$ / C$ wholly within the period reads in its own money.
+    const amountText =
+      payment.foreign && Math.abs(scopedAmount - payment.amount) < 0.01
+        ? formatMoneyWithForeign(scopedAmount, payment.foreign)
+        : formatCurrency(scopedAmount);
+    return `<tr><td>${esc(formatDate(payment.paymentDate))}</td><td>${esc(amountText)}</td><td>${esc(details || "ללא פירוט")}</td><td>${esc(payment.notes || "-")}</td></tr>`;
   });
   const paymentTableHeaders = `<th>תאריך תשלום</th><th>סכום</th><th>איך שולם</th><th>הערות</th>`;
 

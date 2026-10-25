@@ -431,7 +431,7 @@ function metaFor(kind: GlobalSearchKind, info: Record<string, unknown>, at: stri
     case "worker":
       return chips(str(info.phone), info.active === false && "לא פעיל");
     case "worker_payment":
-      return chips(money(info.amount), day(info.date), methodLabel(info.method));
+      return chips(foreignMoney(info.foreign_amount, info.currency), money(info.amount), day(info.date), methodLabel(info.method));
     case "shift":
     case "attendance_report": {
       const start = str(info.clock_in);
