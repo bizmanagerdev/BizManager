@@ -214,14 +214,20 @@ export async function loadCardCostsByMonth(supabase: SupabaseClient): Promise<Ca
       fetchAllPaged<Row>((lo, hi) =>
         supabase.from("card_statement_charges").select("statement_id,card_label,amount,charge_date").order("id").range(lo, hi)
       ),
-      fetchAllPaged<Row>((lo, hi) => supabase.from("card_statements").select("id,file_name").order("id").range(lo, hi)),
+      fetchAllPaged<Row>((lo, hi) => supabase.from("card_statements").select("id,file_name,card_account_id").order("id").range(lo, hi)),
     ]);
   } catch {
     return empty;
   }
 
+  // A US card kept as its own account (2026-10-25) is in dollars and has no
+  // bank charge: it stays out of this table of shekel charges — its page is its
+  // account's register. Its lines' expenses are still linked, so none of them
+  // shows as "unlisted" below.
+  const onCardAccount = new Set(statementRows.filter((s) => str(s.card_account_id)).map((s) => str(s.id)));
   const linkedExpenses = new Set<string>();
-  const lines: CardLine[] = rows.map((r) => {
+  for (const r of rows) if (onCardAccount.has(str(r.statement_id)) && str(r.expense_id)) linkedExpenses.add(str(r.expense_id));
+  const lines: CardLine[] = rows.filter((r) => !onCardAccount.has(str(r.statement_id))).map((r) => {
     // The live expense wins over the import snapshot, as on the statement page.
     const live = str(r.expense_id) ? one(r.expense) : null;
     if (str(r.expense_id)) linkedExpenses.add(str(r.expense_id));

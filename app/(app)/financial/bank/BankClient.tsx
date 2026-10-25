@@ -282,6 +282,17 @@ function AccountSummaryCard({
               {account.currentBalance < 0 ? "-" : "+"}
             </span>
             {formatAccountMoney(Math.abs(account.currentBalance), currency)}
+            {/* A card account's minus is what we owe the card — said in words. */}
+            {account.kind === "card" && account.currentBalance < 0 ? (
+              <span
+                className={cn(
+                  "block text-center text-[0.688rem] font-normal",
+                  selected ? "text-primary-foreground/75" : "text-muted-foreground"
+                )}
+              >
+                חוב לכרטיס
+              </span>
+            ) : null}
             {/* A US$ or C$ balance: its shekels at today's rate. */}
             {balanceToday !== null && (
               <span
@@ -402,12 +413,16 @@ function AccountTotalsCard({
   positive,
   negative,
   foreign,
+  cardDebt = 0,
 }: {
   total: number;
   positive: number;
   negative: number;
   /** The US$ and C$ inside the total, and the rate each was counted at. */
   foreign: Array<{ currency: ForeignCurrency; amount: number; rate: string | null }>;
+  /** What the card accounts (US cards) stand at in ₪ — negative while we owe
+   *  them. Not in the total: it's debt, not money we have. */
+  cardDebt?: number;
 }) {
   return (
     <div className="flex h-full w-48 shrink-0 flex-col items-stretch justify-center gap-1.5 rounded-lg border border-secondary/40 bg-secondary/5 p-3 text-right">
@@ -440,6 +455,11 @@ function AccountTotalsCard({
           שלילי <span dir="ltr">{formatMoneyRounded(negative)}</span>
         </span>
       </span>
+      {Math.abs(cardDebt) >= 0.5 ? (
+        <span className="text-xs tabular-nums text-muted-foreground" title="מה שחייבים לכרטיסי האשראי — לא בסך הנזילות">
+          חוב בכרטיסים <span dir="ltr">{formatMoneyRounded(cardDebt)}</span>
+        </span>
+      ) : null}
       {foreign.map((item) => (
         <span key={item.currency} className="text-[0.688rem] text-muted-foreground">
           כולל <span dir="ltr">{formatCurrencyAmount(item.amount, item.currency)}</span>
@@ -502,26 +522,30 @@ export default function BankClient({
   // In shekels: a US$ or C$ account at today's rate (one with no rate to
   // use is left out, and the card says so).
   const shekelBalance = (a: AccountWithLedger) => shekelsToday(a.currentBalance, a.currency ?? "ILS", fxRates) ?? 0;
-  const totalLiquidity = accounts.filter((a) => a.isActive).reduce((sum, a) => sum + shekelBalance(a), 0);
+  // A card account (a US card kept as its own account, 2026-10-25) holds what
+  // we owe the card, not money we have: it stays out of the liquidity, and its
+  // debt is said on its own line. An Israeli card's purchases were never in
+  // it either — they leave the bank in one charge.
+  const liquidAccounts = accounts.filter((a) => a.isActive && a.kind !== "card");
+  const cardDebt = accounts.filter((a) => a.isActive && a.kind === "card").reduce((sum, a) => sum + shekelBalance(a), 0);
+  const totalLiquidity = liquidAccounts.reduce((sum, a) => sum + shekelBalance(a), 0);
   // חיובי/שלילי split for the summary card at the end of the account strip
   // (design review, 2026-08-31: "it has room for the split I keep
   // suggesting"). Positive and negative balances summed separately —
   // together with totalLiquidity above they always foot: positive + negative
   // === totalLiquidity.
-  const positiveLiquidity = accounts
-    .filter((a) => a.isActive && a.currentBalance > 0)
+  const positiveLiquidity = liquidAccounts
+    .filter((a) => a.currentBalance > 0)
     .reduce((sum, a) => sum + shekelBalance(a), 0);
-  const negativeLiquidity = accounts
-    .filter((a) => a.isActive && a.currentBalance < 0)
+  const negativeLiquidity = liquidAccounts
+    .filter((a) => a.currentBalance < 0)
     .reduce((sum, a) => sum + shekelBalance(a), 0);
   const foreignHoldings = (["USD", "CAD"] as const)
     .map((currency) => ({
       currency,
-      amount: accounts
-        .filter((a) => a.isActive && a.currency === currency)
-        .reduce((sum, a) => sum + a.currentBalance, 0),
+      amount: liquidAccounts.filter((a) => a.currency === currency).reduce((sum, a) => sum + a.currentBalance, 0),
       rate: rateLabel(currency, fxRates),
-      held: accounts.some((a) => a.isActive && a.currency === currency),
+      held: liquidAccounts.some((a) => a.currency === currency),
     }))
     .filter((item) => item.held);
   const headerAction = useMemo(
@@ -1157,6 +1181,7 @@ export default function BankClient({
           positive={positiveLiquidity}
           negative={negativeLiquidity}
           foreign={foreignHoldings}
+          cardDebt={cardDebt}
         />
       </div>
 

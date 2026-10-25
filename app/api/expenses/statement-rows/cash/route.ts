@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { roundShekels } from "@/lib/financial/cardStatementMath";
+import { loadRowStatementCardAccount } from "@/lib/financial/cardAccountStatement";
 
 // "מול מזומן" — a card purchase swiped for someone who handed us its amount in
 // cash (owner, 2026-10-15). The line stays inside the card's bill and its bank
@@ -33,6 +34,14 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
+
+    // A US card kept as its own account (2026-10-25) moves its cash out of the
+    // card itself — statement-rows/card-transfer, a two-sided transfer.
+    const loaded = await loadRowStatementCardAccount(supabase, rowId);
+    if ("error" in loaded) return NextResponse.json({ error: toHebrewError(loaded.error) }, { status: 400 });
+    if (loaded.account) {
+      return NextResponse.json({ error: "בכרטיס שמתנהל כחשבון, מזומן נרשם כהעברה מהכרטיס." }, { status: 400 });
+    }
 
     const { data: rowData, error: rowError } = await supabase
       .from("card_statement_rows")

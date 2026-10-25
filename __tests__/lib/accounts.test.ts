@@ -44,6 +44,12 @@ describe("defaultAccountForMethod", () => {
   it("returns '' when nothing matches", () => {
     expect(defaultAccountForMethod(accounts, "credit_card")).toBe("");
   });
+  it("never picks a card account, even the only one (a Grow payment or an Israeli card purchase isn't on it)", () => {
+    const withCard = [...accounts, { id: "amex", kind: "card" as const, isActive: true }];
+    expect(defaultAccountForMethod(withCard, "credit_card")).toBe("");
+    expect(defaultAccountForMethod(withCard, "כרטיס אשראי")).toBe("");
+    expect(defaultAccountForMethod(withCard, "cash")).toBe("cash1");
+  });
   it("a bank transfer with several bank accounts goes to the business account (מזרחי עסקי) — a check doesn't", () => {
     const named = [
       { id: "home", name: "מזרחי בית", kind: "bank" as const, isActive: true },

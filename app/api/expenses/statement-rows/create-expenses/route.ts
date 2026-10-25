@@ -5,6 +5,7 @@ import { isExpenseBusinessDomain, isPropertyExpenseCategory } from "@/lib/expens
 import { norm } from "@/lib/financial/cardImport";
 import { roundShekels } from "@/lib/financial/cardStatementMath";
 import { buildPaymentInsert, CARD_REFUND_METHOD } from "@/lib/payments";
+import { loadStatementCardAccount, statementPricer } from "@/lib/financial/cardAccountStatement";
 
 // Materializes a saved statement's eligible rows. A row is eligible when include=true and
 // it has a valid business domain.
@@ -19,6 +20,10 @@ import { buildPaymentInsert, CARD_REFUND_METHOD } from "@/lib/payments";
 //    card's bank charge is already lower by the refund, so a bank account must not count
 //    it again, and it is a supplier's refund, never a customer paying. Its method
 //    (CARD_REFUND_METHOD) keeps it out of the Grow card deposits and "money in today".
+//  • A US card kept as its own account (2026-10-25): the expense, and a refund's
+//    income, are ON the card's account, in its currency at the rate of the line's
+//    day — the card's page is its statement. A payment or cash-advance line is a
+//    transfer (statement-rows/card-transfer), never an expense.
 // Admin/office.
 const FALLBACK_CATEGORY = "כרטיס אשראי";
 const PLACEHOLDER = "ללא שם";
@@ -38,6 +43,8 @@ type RowRecord = {
   notes: string | null;
   card_label: string | null;
   income_payment_id: string | null;
+  line_kind?: string | null;
+  transfer_id?: string | null;
 };
 
 export async function POST(req: Request) {
@@ -50,10 +57,15 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, profile, user } = access.value;
 
+    const loaded = await loadStatementCardAccount(supabase, statementId);
+    if ("error" in loaded) return NextResponse.json({ error: toHebrewError(loaded.error) }, { status: 400 });
+    const cardAccount = loaded.account;
+    const price = cardAccount ? statementPricer(supabase, cardAccount.currency) : null;
+
     const { data: rowData, error: rowError } = await supabase
       .from("card_statement_rows")
       .select(
-        "id,expense_id,include,expense_date,transaction_date,amount,description,category,business_domain,project_id,property_id,notes,card_label,income_payment_id"
+        "id,expense_id,include,expense_date,transaction_date,amount,description,category,business_domain,project_id,property_id,notes,card_label,income_payment_id,line_kind,transfer_id"
       )
       .eq("statement_id", statementId)
       .is("expense_id", null);
@@ -77,7 +89,10 @@ export async function POST(req: Request) {
     if (cashError) return NextResponse.json({ error: toHebrewError(cashError.message) }, { status: 400 });
     const cashRowIds = new Set(((cashData ?? []) as Array<{ card_statement_row_id: string }>).map((r) => r.card_statement_row_id));
 
-    const candidates = ((rowData ?? []) as RowRecord[]).filter((r) => !cashRowIds.has(r.id));
+    // A US card's payment and cash lines are transfers, never expenses.
+    const candidates = ((rowData ?? []) as RowRecord[]).filter(
+      (r) => !cashRowIds.has(r.id) && (!cardAccount || ((r.line_kind ?? "charge") === "charge" && !r.transfer_id))
+    );
     const errors: { id: string; message: string }[] = [];
     const eligible: { rowId: string; projectId: string | null; billed: boolean; payload: Record<string, unknown> }[] = [];
     const refunds: { rowId: string; payload: Record<string, unknown> }[] = [];
@@ -104,21 +119,30 @@ export async function POST(req: Request) {
         }
         const card = typeof row.card_label === "string" && row.card_label.trim() ? row.card_label.trim() : FALLBACK_CATEGORY;
         const merchant = typeof row.description === "string" && row.description.trim() ? row.description.trim() : PLACEHOLDER;
+        // On a US card's account the refund lowers what we owe it, in its currency.
+        const priced = price ? await price(-amount, expenseDate) : null;
+        if (priced && "error" in priced) {
+          errors.push({ id: row.id, message: `${priced.error} (${merchant})` });
+          continue;
+        }
         refunds.push({
           rowId: row.id,
-          payload: buildPaymentInsert({
-            amountTotal: roundShekels(-amount),
-            businessDomain,
-            accountId: null,
-            paymentDate: expenseDate,
-            paymentMethod: CARD_REFUND_METHOD,
-            projectId: null,
-            orderId: null,
-            propertyId: null,
-            referenceNumber: null,
-            notes: `זיכוי בכרטיס ${card}: ${merchant}`,
-            recordedBy: user.id,
-          }),
+          payload: {
+            ...buildPaymentInsert({
+              amountTotal: priced ? priced.shekels : roundShekels(-amount),
+              businessDomain,
+              accountId: cardAccount?.cardAccountId ?? null,
+              paymentDate: expenseDate,
+              paymentMethod: CARD_REFUND_METHOD,
+              projectId: null,
+              orderId: null,
+              propertyId: null,
+              referenceNumber: null,
+              notes: `זיכוי בכרטיס ${card}: ${merchant}`,
+              recordedBy: user.id,
+            }),
+            ...(priced ? priced.columns : {}),
+          },
         });
         continue;
       }
@@ -138,6 +162,12 @@ export async function POST(req: Request) {
       }
       const projectId = businessDomain === "logistics_projects" && row.project_id ? row.project_id : null;
       const propertyId = businessDomain === "property_management" && row.property_id ? row.property_id : null;
+      // On a US card's account: the dollars as the statement has them, their shekels at the day's rate.
+      const priced = price ? await price(amount, expenseDate) : null;
+      if (priced && "error" in priced) {
+        errors.push({ id: row.id, message: `${priced.error} (${row.description ?? PLACEHOLDER})` });
+        continue;
+      }
       eligible.push({
         rowId: row.id,
         projectId,
@@ -148,7 +178,7 @@ export async function POST(req: Request) {
             typeof row.transaction_date === "string" && row.transaction_date.trim()
               ? row.transaction_date.trim()
               : null,
-          amount,
+          amount: priced ? priced.shekels : amount,
           category:
             typeof row.category === "string" && row.category.trim() ? row.category.trim() : FALLBACK_CATEGORY,
           description: typeof row.description === "string" && row.description.trim() ? row.description.trim() : null,
@@ -161,6 +191,7 @@ export async function POST(req: Request) {
           payment_status: "paid",
           paid_amount: null,
           payment_method: "credit_card",
+          ...(priced ? { account_id: cardAccount!.cardAccountId, ...priced.columns } : {}),
         },
       });
     }

@@ -8,9 +8,13 @@ const isIso = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 // rows that already appear in the system (matched on amount + date proximity).
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => ({}))) as { from?: string; to?: string };
+    const body = (await req.json().catch(() => ({}))) as { from?: string; to?: string; currency?: string };
     const from = typeof body.from === "string" ? body.from.trim() : "";
     const to = typeof body.to === "string" ? body.to.trim() : "";
+    // A US card's statement (2026-10-25) is matched against expenses in its own
+    // currency, by their dollars — a purchase typed by hand on Chase, say.
+    const currency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : "";
+    const foreign = currency === "USD" || currency === "CAD" ? currency : null;
     if (!isIso(from) || !isIso(to)) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
     }
@@ -22,17 +26,21 @@ export async function POST(req: Request) {
     // Match on either date column: prior credit-card imports store the billing date in
     // expense_date and the spend date in transaction_date, so a row can fall in range by
     // either one.
-    const { data, error } = await supabase
+    let query = supabase
       .from("expenses")
-      .select("id,expense_date,transaction_date,amount,description")
+      .select("id,expense_date,transaction_date,amount,description" + (foreign ? ",foreign_amount" : ""))
       .or(
         `and(expense_date.gte.${from},expense_date.lte.${to}),and(transaction_date.gte.${from},transaction_date.lte.${to})`
-      )
-      .limit(5000);
+      );
+    if (foreign) query = query.eq("currency", foreign);
+    const { data, error } = await query.limit(5000);
 
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
 
-    return NextResponse.json({ expenses: data ?? [] });
+    const expenses = foreign
+      ? ((data ?? []) as unknown as Array<Record<string, unknown>>).map(({ foreign_amount, ...e }) => ({ ...e, amount: foreign_amount }))
+      : data ?? [];
+    return NextResponse.json({ expenses });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });

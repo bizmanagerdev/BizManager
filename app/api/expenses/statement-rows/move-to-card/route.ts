@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { loadStatementCardAccount } from "@/lib/financial/cardAccountStatement";
 
 // Moves expenses that were typed by hand with a bank account, and later matched to a
 // credit-card statement line, into that card's bank charge: the expense keeps its
@@ -23,6 +24,14 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase } = access.value;
+
+    // A US card kept as its own account (2026-10-25) has no bank charge: its
+    // expenses belong on the card's account, and taking them off would lose them.
+    const loaded = await loadStatementCardAccount(supabase, statementId);
+    if ("error" in loaded) return NextResponse.json({ error: toHebrewError(loaded.error) }, { status: 400 });
+    if (loaded.account) {
+      return NextResponse.json({ error: "בכרטיס שמתנהל כחשבון ההוצאות נשארות על חשבון הכרטיס." }, { status: 400 });
+    }
 
     const { data: linked, error: linkError } = await supabase
       .from("card_statement_rows")

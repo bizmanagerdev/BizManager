@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { norm } from "@/lib/financial/cardImport";
 
 // Saves an uploaded credit-card statement WITHOUT creating expenses: one card_statements
 // record + one card_statement_rows per parsed row. Domains are assigned later on the
@@ -22,6 +23,9 @@ type SaveRow = {
   assignment_raw?: string | null; // original שיוך text from the sheet
   include?: boolean; // whether to create an expense later (default true)
   card_label?: string | null; // stable card identity, snapshotted at import — see card_label migration
+  /** A US card's line: "charge" (a purchase, fee, interest; − a refund),
+   *  "payment" (paying the card) or "cash_advance". Israeli lines leave it out. */
+  line_kind?: string | null;
 };
 
 type StatementMeta = {
@@ -30,7 +34,20 @@ type StatementMeta = {
   document_id?: string | null;
   storage_key?: string | null;
   total_rows?: number;
+  // A US card's statement (2026-10-25): its card account and its own numbers.
+  card_account_id?: string | null;
+  currency?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  payment_due_date?: string | null;
+  previous_balance?: number | null;
+  new_balance?: number | null;
 };
+
+const LINE_KINDS = new Set(["charge", "payment", "cash_advance"]);
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const isoOrNull = (v: unknown) => (typeof v === "string" && ISO_DAY.test(v) ? v : null);
+const moneyOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
 
 export async function POST(req: Request) {
   try {
@@ -49,6 +66,30 @@ export async function POST(req: Request) {
     const { supabase, user } = access.value;
 
     const source = statementMeta?.source === "pdf" ? "pdf" : "excel";
+
+    // A US card's statement lives on the card's own account, in its currency.
+    const cardAccountId =
+      typeof statementMeta?.card_account_id === "string" && statementMeta.card_account_id.trim()
+        ? statementMeta.card_account_id.trim()
+        : null;
+    let cardAccount: { id: string; name: string; currency: string } | null = null;
+    if (cardAccountId) {
+      const { data: acc, error: accError } = await supabase
+        .from("accounts")
+        .select("id,name,kind,currency")
+        .eq("id", cardAccountId)
+        .maybeSingle();
+      if (accError) return NextResponse.json({ error: toHebrewError(accError.message) }, { status: 400 });
+      if (!acc || acc.kind !== "card") {
+        return NextResponse.json({ error: "החשבון שנבחר אינו חשבון כרטיס אשראי." }, { status: 400 });
+      }
+      const currency = String(acc.currency ?? "ILS").toUpperCase();
+      if (currency !== String(statementMeta?.currency ?? "ILS").toUpperCase()) {
+        return NextResponse.json({ error: `החשבון "${acc.name}" מתנהל ב-${currency} — גם הפירוט צריך להיות בו.` }, { status: 400 });
+      }
+      cardAccount = { id: acc.id as string, name: String(acc.name ?? ""), currency };
+    }
+
     const { data: stmt, error: stmtError } = await supabase
       .from("card_statements")
       .insert({
@@ -59,6 +100,18 @@ export async function POST(req: Request) {
         total_rows: typeof statementMeta?.total_rows === "number" ? statementMeta.total_rows : rows.length,
         created_count: 0,
         imported_by: user.id,
+        // Only a US statement names these, so an Israeli upload writes exactly what it always did.
+        ...(cardAccount
+          ? {
+              card_account_id: cardAccount.id,
+              currency: cardAccount.currency,
+              period_start: isoOrNull(statementMeta?.period_start),
+              period_end: isoOrNull(statementMeta?.period_end),
+              payment_due_date: isoOrNull(statementMeta?.payment_due_date),
+              previous_balance: moneyOrNull(statementMeta?.previous_balance),
+              new_balance: moneyOrNull(statementMeta?.new_balance),
+            }
+          : {}),
       })
       .select("id")
       .maybeSingle();
@@ -102,6 +155,9 @@ export async function POST(req: Request) {
         assignment_raw: assignmentRaw,
         include: row.include === false ? false : true,
         card_label: cardLabel,
+        ...(cardAccount
+          ? { line_kind: typeof row.line_kind === "string" && LINE_KINDS.has(row.line_kind) ? row.line_kind : "charge" }
+          : {}),
       };
     });
 
@@ -110,6 +166,25 @@ export async function POST(req: Request) {
       // Roll back the (now-empty) statement so we don't leave an orphan header.
       await supabase.from("card_statements").delete().eq("id", statementId);
       return NextResponse.json({ error: toHebrewError(rowsError.message) }, { status: 400 });
+    }
+
+    // The upload page offers the card by name next time. Best-effort.
+    if (cardAccount) {
+      const labels = [...new Set(statementRows.map((r) => r.card_label).filter((l): l is string => Boolean(l)))];
+      if (labels.length > 0) {
+        await supabase
+          .from("card_account_mappings")
+          .upsert(
+            labels.map((label) => ({
+              card_key: norm(label),
+              card_label: label,
+              account_id: cardAccount!.id,
+              updated_by: user.id,
+              updated_at: new Date().toISOString(),
+            })),
+            { onConflict: "card_key" }
+          );
+      }
     }
 
     return NextResponse.json({ statement_id: statementId, saved: statementRows.length });
