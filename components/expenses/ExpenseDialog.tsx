@@ -2599,7 +2599,8 @@ export function ExpenseDialog({
           : isRecurring
             ? [
                 ["שם", templateName.trim() || description.trim() || finalCategory || "—"],
-                ["סכום", recurVariable ? (Number(amount) > 0 ? `~${ils(Number(amount))} (משוער)` : "משתנה") : ils(Number(amount) || 0)],
+                // In the bill's currency — "$8 (≈ ₪25)" — as everywhere else in the window.
+                ["סכום", recurVariable ? (Number(amount) > 0 ? `~${amtWithShekels(Number(amount))} (משוער)` : "משתנה") : amtWithShekels(Number(amount) || 0)],
                 ...(recurAutoPaid ? [["תשלום", "הוראת קבע — יסומן כשולם אוטומטית"] as [string, string]] : []),
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
                 ...(sourceLabel ? [sourceLabel] : []),
@@ -2615,7 +2616,7 @@ export function ExpenseDialog({
               ]
             : installmentsMode
             ? [
-                ["סכום", ils(Number(amount) || 0)],
+                ["סכום", amtWithShekels(Number(amount) || 0)],
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
                 ...(sourceLabel ? [sourceLabel] : []),
                 ["קטגוריה", finalCategory || "—"],
