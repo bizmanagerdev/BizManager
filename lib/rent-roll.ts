@@ -34,6 +34,8 @@ import {
 /** What months before this one still owe, by how long past their due day. */
 export type RentDebt = {
   amount: number;
+  /** Of `amount`, what checks we hold cover — their day has passed and they aren't in (owner, 2026-10-25). */
+  withCheck: number;
   periods: number;
   upTo30: number;
   upTo60: number;
@@ -52,8 +54,11 @@ export type RentRollRow = {
   periodLabel: string;
   dueLabel: string;
   status: RentMonthStatus;
-  /** Still to come in: the rent, less what's in and the checks waiting for it. */
+  /** Still to come in: the rent, less what's in and the checks for it not due yet — one past its day and not in
+   *  is owed too (owner, 2026-10-25), though we hold it (`checkHeld`). */
   owed: number;
+  /** Of `owed`, what a check we hold covers — its day has passed and it isn't in. */
+  checkHeld: number;
   /** Of what's in, what came by check (cleared). */
   collectedByCheck: number;
   /** What pays it — the rent in, the checks waiting — oldest first. */
@@ -66,6 +71,9 @@ export type RentRollRow = {
   debt: RentDebt;
   /** The lease's post-dated checks still in hand (not cleared), and the last month they reach. */
   checksInHand: { count: number; amount: number; lastPeriod: string | null; lastLabel: string | null };
+  /** A lease that has ended, here for what its months still owe (owner, 2026-10-25: "stays as debt until paid")
+   *  — no rent this month; `period` is its last month. */
+  ended: boolean;
 };
 
 export type RentRollTotals = {
@@ -109,7 +117,13 @@ export function toRollRent(payment: RentRollPayment): RentPayment {
     periods: payment.rentPeriods,
     countsAsRent: payment.countsAsRent,
     allocation: payment.rentAllocation,
+    dueDate: payment.dueDate,
   };
+}
+
+/** A month's rent still owed: the rent, less what's in and the checks for it not due yet. */
+function leftOf(status: RentMonthStatus): number {
+  return Math.max(0, status.rent - status.collected - (status.pending - (status.pendingDue ?? 0)));
 }
 
 function isYearly(lease: LeaseAgreement): boolean {
@@ -170,6 +184,55 @@ export function rentPaymentsByLease(data: RentRollData): Map<string, RentRollPay
   return out;
 }
 
+/**
+ * What a lease's months still owe — past their due day, neither in nor a check for them not due yet — by how old;
+ * a check we hold past its day and not in is owed, and said (`withCheck`: owner, 2026-10-25).
+ * Up to today, or only the months before `before` (a row's own month apart); a lease that has ended, up to its
+ * last month (owner, 2026-10-25: "stays as debt until paid"). The one rule for "rent owed": the rent page, a
+ * tenant's page, collections and the rest ask it.
+ */
+export function rentDebtOf(lease: LeaseAgreement, rents: RentPayment[], today: string, before?: string): RentDebt {
+  const debt: RentDebt = { amount: 0, withCheck: 0, periods: 0, upTo30: 0, upTo60: 0, over60: 0, oldest: null };
+  const first = firstRentPeriod(lease);
+  if (!first || (before && first >= before)) return debt;
+  const end = lease.endDate?.slice(0, 10) ?? null;
+  const upTo = [before ? dayBefore(before) : today, end].filter((d): d is string => Boolean(d)).sort()[0];
+  for (const start of rentPeriodStarts(lease, first, upTo).slice(-DEBT_PERIODS)) {
+    // Not due yet (a month ahead of today): nothing owed for it.
+    if (start >= today) continue;
+    const status = rentPeriodStatus(lease, rents, start, today);
+    const left = leftOf(status);
+    if (left <= 0.5) continue;
+    debt.amount += left;
+    debt.withCheck += Math.min(left, status.pendingDue ?? 0);
+    debt.periods += 1;
+    debt.oldest ??= start;
+    const days = daysBetween(start, today);
+    if (days <= 30) debt.upTo30 += left;
+    else if (days <= 60) debt.upTo60 += left;
+    else debt.over60 += left;
+  }
+  return debt;
+}
+
+/** A lease's post-dated checks still in hand (not cleared), and the last month they reach. */
+function checksInHandOf(lease: LeaseAgreement, payments: RentRollPayment[]): RentRollRow["checksInHand"] {
+  const inHand = payments.filter((p) => p.method === "check" && p.paymentStatus === "pending");
+  let lastPeriod: string | null = null;
+  for (const check of inHand) {
+    const cover = rentCoverage(lease, toRollRent(check));
+    if (!cover) continue;
+    const end = cover.periods > 1 ? addRentPeriods(lease, cover.start, cover.periods - 1) : cover.start;
+    if (!lastPeriod || end > lastPeriod) lastPeriod = end;
+  }
+  return {
+    count: inHand.length,
+    amount: inHand.reduce((sum, p) => sum + p.amount, 0),
+    lastPeriod,
+    lastLabel: lastPeriod ? rentPeriodLabel(lease, lastPeriod) : null,
+  };
+}
+
 function rowFor(
   property: RentRollProperty,
   lease: LeaseAgreement,
@@ -183,34 +246,6 @@ function rowFor(
   const forPeriod = payments.filter((p) => paidTowards(lease, toRollRent(p), period) > 0).sort(byDate);
   const paying = forPeriod.filter((p) => p.paymentStatus !== "rejected");
 
-  const debt: RentDebt = { amount: 0, periods: 0, upTo30: 0, upTo60: 0, over60: 0, oldest: null };
-  const first = firstRentPeriod(lease);
-  if (first && first < period) {
-    for (const start of rentPeriodStarts(lease, first, dayBefore(period)).slice(-DEBT_PERIODS)) {
-      // Not due yet (a month ahead of today): nothing owed for it.
-      if (start >= today) continue;
-      const before = rentPeriodStatus(lease, rents, start, today);
-      const left = Math.max(0, before.rent - before.collected - before.pending);
-      if (left <= 0.5) continue;
-      debt.amount += left;
-      debt.periods += 1;
-      debt.oldest ??= start;
-      const days = daysBetween(start, today);
-      if (days <= 30) debt.upTo30 += left;
-      else if (days <= 60) debt.upTo60 += left;
-      else debt.over60 += left;
-    }
-  }
-
-  const inHand = payments.filter((p) => p.method === "check" && p.paymentStatus === "pending");
-  let lastPeriod: string | null = null;
-  for (const check of inHand) {
-    const cover = rentCoverage(lease, toRollRent(check));
-    if (!cover) continue;
-    const end = cover.periods > 1 ? addRentPeriods(lease, cover.start, cover.periods - 1) : cover.start;
-    if (!lastPeriod || end > lastPeriod) lastPeriod = end;
-  }
-
   return {
     key: lease.id,
     property,
@@ -219,20 +254,49 @@ function rowFor(
     periodLabel: rentPeriodLabel(lease, period),
     dueLabel: rentDueDateLabel(lease, period),
     status,
-    owed: Math.max(0, status.rent - status.collected - status.pending),
+    owed: leftOf(status),
+    checkHeld: Math.min(leftOf(status), status.pendingDue ?? 0),
     collectedByCheck: paying
       .filter((p) => p.method === "check" && p.paymentStatus !== "pending")
       .reduce((sum, p) => sum + paidTowards(lease, toRollRent(p), period), 0),
     payments: paying,
     returned: forPeriod.filter((p) => p.paymentStatus === "rejected" && !p.tornAt),
     torn: forPeriod.filter((p) => p.paymentStatus === "rejected" && Boolean(p.tornAt)),
+    debt: rentDebtOf(lease, rents, today, period),
+    checksInHand: checksInHandOf(lease, payments),
+    ended: false,
+  };
+}
+
+/** A lease that has ended and still owes: a row for its debt alone — no rent this month (null: owes nothing). */
+function endedRowFor(
+  property: RentRollProperty,
+  lease: LeaseAgreement,
+  payments: RentRollPayment[],
+  today: string
+): RentRollRow | null {
+  const end = lease.endDate?.slice(0, 10);
+  if (!end) return null;
+  const debt = rentDebtOf(lease, payments.map(toRollRent), today);
+  if (debt.amount <= 0.5) return null;
+  const last = rentPeriodOf(lease, end);
+  return {
+    key: lease.id,
+    property,
+    lease,
+    period: last,
+    periodLabel: rentPeriodLabel(lease, last),
+    dueLabel: rentDueDateLabel(lease, last),
+    status: { state: "none", collected: 0, pending: 0, rent: 0, periodStart: last, periodLabel: rentPeriodLabel(lease, last) },
+    owed: 0,
+    checkHeld: 0,
+    collectedByCheck: 0,
+    payments: [],
+    returned: [],
+    torn: [],
     debt,
-    checksInHand: {
-      count: inHand.length,
-      amount: inHand.reduce((sum, p) => sum + p.amount, 0),
-      lastPeriod,
-      lastLabel: lastPeriod ? rentPeriodLabel(lease, lastPeriod) : null,
-    },
+    checksInHand: checksInHandOf(lease, payments),
+    ended: true,
   };
 }
 
@@ -264,8 +328,17 @@ export function rentRollMonth(data: RentRollData, offset: number, today: string 
   for (const lease of leases) {
     const property = propertyById.get(lease.propertyId) as RentRollProperty;
     const period = isYearly(lease) ? rentPeriodStarts(lease, from, to)[0] : periodAt(lease, offset);
-    if (!period || !within(lease, period)) continue;
-    rows.push(rowFor(property, lease, period, paymentsByLease.get(lease.id) ?? [], today));
+    const payments = paymentsByLease.get(lease.id) ?? [];
+    if (period && within(lease, period)) {
+      rows.push(rowFor(property, lease, period, payments, today));
+      continue;
+    }
+    // Ended, and still owing: here, for its debt, from this month on — the months before show it as they were.
+    const endDay = lease.endDate?.slice(0, 10);
+    if (offset >= 0 && endDay && endDay < (period ?? from)) {
+      const ended = endedRowFor(property, lease, payments, today);
+      if (ended) rows.push(ended);
+    }
   }
   rows.sort(compareRows(order));
 
@@ -279,7 +352,7 @@ export function rentRollMonth(data: RentRollData, offset: number, today: string 
       ? labels.join(" · ")
       : new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" }).format(noon(from));
 
-  const rented = new Set(rows.map((r) => r.property.id));
+  const rented = new Set(rows.filter((r) => !r.ended).map((r) => r.property.id));
   // One whose rent a management company collects is never empty for us (owner, 2026-10-23).
   const vacant = data.properties.filter((p) => p.isActive && !p.rentManagedByCompany && !rented.has(p.id));
 
@@ -329,12 +402,13 @@ export function rentRollYear(data: RentRollData, offset: number, today: string =
   });
   const order = new Map(data.properties.map((p, i) => [p.id, i]));
   const byKey = new Map<string, { key: string; property: RentRollProperty; lease: LeaseAgreement }>();
-  for (const month of months) for (const row of month.rows) if (!byKey.has(row.key)) byKey.set(row.key, row);
+  // A lease's months — an ended one here for its debt isn't a month of it.
+  for (const month of months) for (const row of month.rows) if (!row.ended && !byKey.has(row.key)) byKey.set(row.key, row);
   const rows = [...byKey.values()].sort(compareRows(order)).map((row) => ({
     key: row.key,
     property: row.property,
     lease: row.lease,
-    cells: months.map((month) => month.rows.find((r) => r.key === row.key) ?? null),
+    cells: months.map((month) => month.rows.find((r) => r.key === row.key && !r.ended) ?? null),
   }));
   return { offsets, headers, rates: months.map((month) => collectionRate(month, today)), rows };
 }
@@ -494,7 +568,7 @@ export function rentRollToday(data: RentRollData, today: string = israelDateKey(
         amount: month.totals.collected,
         expected: month.totals.expected,
         paid: rows.filter((r) => r.status.state === "paid").length,
-        tenants: rows.length,
+        tenants: rows.filter((r) => !r.ended).length,
         waitingChecks: month.totals.checks,
       },
       late,

@@ -151,7 +151,8 @@ function debtAge(debt: RentDebt): { label: string; title: string } {
     debt.upTo60 > 0.5 ? `31–60 יום ${formatCurrency(debt.upTo60)}` : null,
     debt.over60 > 0.5 ? `מעל 60 יום ${formatCurrency(debt.over60)}` : null,
   ].filter(Boolean);
-  return { label, title: `${debt.periods === 1 ? "חודש אחד" : `${debt.periods} חודשים`} · ${parts.join(" · ")}` };
+  const held = debt.withCheck > 0.5 ? ` · מתוכם ${formatCurrency(debt.withCheck)} בצ׳ק שבידינו` : "";
+  return { label, title: `${debt.periods === 1 ? "חודש אחד" : `${debt.periods} חודשים`} · ${parts.join(" · ")}${held}` };
 }
 
 /** One fact in a row's details: its name small and grey above, its value — or a line per payment — under it. */
@@ -475,9 +476,12 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
 
   /** The month's state in words, beside its chip: when, how much is missing, how late. */
   function stateNote(row: RentRollRow): string | null {
+    if (row.ended) return row.lease.endDate ? `הסתיים ${formatShortDate(row.lease.endDate)}` : null;
     const late = lateThisMonth(row, today);
     if (row.returned.length > 0 && row.owed > 0.5) return `${checkName(row.returned[0])} חזר`;
     if (row.status.state === "partial") return `חסר ${formatCurrency(row.owed)}`;
+    // Owed, and we hold its check — its day passed and it isn't in (owner, 2026-10-25: "show both").
+    if (late > 0.5 && row.checkHeld > 0.5) return `${daysBetween(row.period, today)} ימים · צ׳ק ביד`;
     if (late > 0.5) return `${daysBetween(row.period, today)} ימים`;
     if (row.status.state === "check") {
       const check = row.payments.find((p) => p.method === "check" && p.paymentStatus === "pending");
@@ -492,6 +496,8 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
   }
 
   const stateChip = (row: RentRollRow) => {
+    // Ended, here for what it still owes (owner, 2026-10-25: "stays as debt until paid").
+    if (row.ended) return <Badge variant="neutral">החוזה הסתיים</Badge>;
     const late = lateThisMonth(row, today) > 0.5;
     const state = RENT_STATE[row.status.state];
     const label =
@@ -523,6 +529,10 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
     return (
       <span className="font-medium tabular-nums text-destructive" title={debtAge(row.debt).title}>
         {formatCurrency(row.debt.amount)}
+        {/* Owed, and we hold a check for it (owner, 2026-10-25: "show that it's debt, and that we have it"). */}
+        {row.debt.withCheck > 0.5 ? (
+          <span className="block text-xs font-normal text-muted-foreground">צ׳ק ביד {formatCurrency(row.debt.withCheck)}</span>
+        ) : null}
       </span>
     );
   };
@@ -843,7 +853,9 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
                             </span>
                           </td>
                           <td className={cn(CELL, "whitespace-nowrap")}>{row.lease.customerName ?? "—"}</td>
-                          <td className={cn(CELL, "whitespace-nowrap tabular-nums")}>{formatCurrency(row.status.rent)}</td>
+                          <td className={cn(CELL, "whitespace-nowrap tabular-nums")}>
+                            {row.ended ? "—" : formatCurrency(row.status.rent)}
+                          </td>
                           <td className={cn(CELL, "whitespace-nowrap")}>
                             <span className="inline-flex items-center gap-1.5">
                               {stateChip(row)}
@@ -896,7 +908,7 @@ export default function RentRollClient({ data }: { data: RentRollData }) {
                                 <span className="text-muted-foreground"> · {row.lease.customerName ?? "שוכר"}</span>
                               </div>
                               <span className="shrink-0 text-sm font-semibold tabular-nums">
-                                {formatCurrency(row.status.rent)}
+                                {row.ended ? "—" : formatCurrency(row.status.rent)}
                               </span>
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">

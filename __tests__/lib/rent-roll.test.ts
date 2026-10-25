@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LeaseAgreement, RentRollData, RentRollPayment, RentRollProperty } from "@/lib/properties";
-import { rentRollMonth, rentRollOffsetFor, rentRollToday, rentRollYear, rentRowOwes } from "@/lib/rent-roll";
+import { rentDebtOf, rentRollMonth, rentRollOffsetFor, rentRollToday, rentRollYear, rentRowOwes, toRollRent } from "@/lib/rent-roll";
 import { shiftRentPeriod, type RentPeriodLease } from "@/lib/rent-periods";
 
 // The rent roll (owner, 2026-10-21): every lease's rent for one month, each
@@ -117,10 +117,68 @@ describe("the month", () => {
       properties: [property("d5", 3), property("d6", 4), property("d7", 5)],
       leases: [future, ended, cancelled],
     });
-    expect(rentRollMonth(set, 0, TODAY).rows).toEqual([]);
-    expect(rentRollMonth(set, 2, TODAY).rows.map((r) => r.key)).toEqual(["new"]);
-    expect(rentRollMonth(set, -2, TODAY).rows.map((r) => r.key)).toEqual(["old"]);
+    // Ended with its months never paid: still here, for that debt alone (owner, 2026-10-25: "stays as debt until paid").
+    expect(rentRollMonth(set, 0, TODAY).rows.map((r) => [r.key, r.ended])).toEqual([["old", true]]);
+    expect(rentRollMonth(set, 2, TODAY).rows.map((r) => r.key)).toEqual(["new", "old"]);
+    expect(rentRollMonth(set, -2, TODAY).rows.map((r) => [r.key, r.ended])).toEqual([["old", false]]);
   });
+
+  it("an ended lease still owing: its debt, no rent this month, not a tenant — its property still empty", () => {
+    const ended = lease("old", "d6", { startDate: "2026-06-01", endDate: "2026-08-31", status: "ended" });
+    const paidJune = payment("j", "d6", { date: "2026-06-01", leaseId: "old", rentPeriodStart: "2026-06-01" });
+    const set = data({ properties: [property("d4", 1), property("yehuda", 2), property("d6", 3)], leases: [HEBREW, REGULAR, ended], payments: [paidJune] });
+    const month = rentRollMonth(set, 0, TODAY);
+    const row = month.rows.find((r) => r.key === "old");
+    expect(row).toMatchObject({ ended: true, owed: 0, period: "2026-08-01", status: { rent: 0, state: "none" } });
+    // July and August, each ₪4,000, the oldest first.
+    expect(row?.debt).toMatchObject({ amount: 8000, periods: 2, oldest: "2026-07-01" });
+    expect(month.totals.debt).toBeGreaterThanOrEqual(8000);
+    expect(month.vacant.map((p) => p.id)).toEqual(["d6"]);
+    expect(rentRollToday(set, TODAY).tiles.collected.tenants).toBe(2);
+    expect(rentRollToday(set, TODAY).todo.some((t) => t.kind === "debt" && t.row.key === "old")).toBe(true);
+    // Not a month of the year grid.
+    expect(rentRollYear(set, 0, TODAY).rows.find((r) => r.key === "old")?.cells.filter(Boolean).length).toBe(3);
+  });
+
+  it("an ended lease fully paid: gone, as before", () => {
+    const ended = lease("old", "d6", { startDate: "2026-07-01", endDate: "2026-08-31", status: "ended" });
+    const paid = [
+      payment("j", "d6", { date: "2026-07-01", leaseId: "old", rentPeriodStart: "2026-07-01" }),
+      payment("a", "d6", { date: "2026-08-01", leaseId: "old", rentPeriodStart: "2026-08-01" }),
+    ];
+    const set = data({ properties: [property("d6", 3)], leases: [ended], payments: paid });
+    expect(rentRollMonth(set, 0, TODAY).rows).toEqual([]);
+  });
+});
+
+describe("what a lease still owes (the one rule every screen asks)", () => {
+  const LEASE = lease("l", "d4", { startDate: "2026-08-01" });
+  const AUG = payment("aug", "d4", { date: "2026-08-01", leaseId: "l", rentPeriodStart: "2026-08-01" });
+  const SEP = payment("sep", "d4", { date: "2026-09-01", amount: 1500, leaseId: "l", rentPeriodStart: "2026-09-01" });
+  const octCheck = (dueDate: string) =>
+    payment("oct", "d4", { method: "check", paymentStatus: "pending", dueDate, leaseId: "l", rentPeriodStart: "2026-10-01" });
+
+  it("every month past its due day, less what's in and the checks not due yet — none of a month not due yet", () => {
+    // September is ₪2,500 short; October's check is dated ahead (5.11), so it covers October; November isn't due.
+    const rents = [AUG, SEP, octCheck("2026-11-05")].map(toRollRent);
+    expect(rentDebtOf(LEASE, rents, TODAY)).toMatchObject({ amount: 2500, withCheck: 0, periods: 1, oldest: "2026-09-01" });
+    // Only the months before October (a row's own month apart).
+    expect(rentDebtOf(LEASE, rents, TODAY, "2026-10-01").amount).toBe(2500);
+    expect(rentDebtOf(LEASE, rents, TODAY, "2026-09-01").amount).toBe(0);
+  });
+
+  it("a check we hold past its day, not deposited: owed — and said that we hold it (owner, 2026-10-25: \"show both\")", () => {
+    const rents = [AUG, SEP, octCheck("2026-10-01")].map(toRollRent);
+    expect(rentDebtOf(LEASE, rents, TODAY)).toMatchObject({ amount: 6500, withCheck: 4000, periods: 2 });
+    // On the rent page: October owed, its check in hand — and still listed to deposit.
+    const set = data({ properties: [property("d4", 1)], leases: [LEASE], payments: [AUG, SEP, octCheck("2026-10-01")] });
+    const row = rentRollMonth(set, 0, TODAY).rows[0];
+    expect(row).toMatchObject({ period: "2026-10-01", owed: 4000, checkHeld: 4000, debt: { amount: 2500 } });
+    const today = rentRollToday(set, TODAY);
+    expect(today.todo.some((t) => t.kind === "late" && t.row.key === "l")).toBe(true);
+    expect(today.todo.some((t) => t.kind === "deposit" && t.due.some((p) => p.id === "oct"))).toBe(true);
+  });
+
 
   it("leaves out a property no longer active", () => {
     const month = rentRollMonth(data({ properties: [property("d4", 1, { isActive: false }), property("yehuda", 2)] }), 0, TODAY);
@@ -204,7 +262,7 @@ describe("who paid", () => {
     expect(row.status.state).toBe("paid");
     expect(row.owed).toBe(0);
     // June 142 days, July 112, August 81, September 50 days ago.
-    expect(row.debt).toEqual({ amount: 8500 * 4 - 3000, periods: 4, upTo30: 0, upTo60: 8500, over60: 8500 * 3 - 3000, oldest: "2026-06-01" });
+    expect(row.debt).toEqual({ amount: 8500 * 4 - 3000, withCheck: 0, periods: 4, upTo30: 0, upTo60: 8500, over60: 8500 * 3 - 3000, oldest: "2026-06-01" });
     expect(month.totals.debt).toBe(8500 * 4 - 3000);
     expect(rentRowOwes(row)).toBe(true);
   });
