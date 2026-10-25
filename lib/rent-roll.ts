@@ -33,6 +33,9 @@ import {
 
 /** What months before this one still owe, by how long past their due day. */
 export type RentDebt = {
+  /** Every month past its due day (within the 36 looked at): its rent, and what's in toward it. */
+  due: number;
+  paid: number;
   amount: number;
   /** Of `amount`, what checks we hold cover — their day has passed and they aren't in (owner, 2026-10-25). */
   withCheck: number;
@@ -164,7 +167,7 @@ function gregorianMonthStart(today: string, offset: number): string {
 }
 
 /** Each lease's rent payments — a check that came back too (it pays nothing, but shows). */
-export function rentPaymentsByLease(data: RentRollData): Map<string, RentRollPayment[]> {
+export function rentPaymentsByLease(data: Pick<RentRollData, "leases" | "payments">): Map<string, RentRollPayment[]> {
   const leasesByProperty = new Map<string, LeaseAgreement[]>();
   for (const lease of data.leases) {
     const list = leasesByProperty.get(lease.propertyId) ?? [];
@@ -192,7 +195,7 @@ export function rentPaymentsByLease(data: RentRollData): Map<string, RentRollPay
  * tenant's page, collections and the rest ask it.
  */
 export function rentDebtOf(lease: LeaseAgreement, rents: RentPayment[], today: string, before?: string): RentDebt {
-  const debt: RentDebt = { amount: 0, withCheck: 0, periods: 0, upTo30: 0, upTo60: 0, over60: 0, oldest: null };
+  const debt: RentDebt = { due: 0, paid: 0, amount: 0, withCheck: 0, periods: 0, upTo30: 0, upTo60: 0, over60: 0, oldest: null };
   const first = firstRentPeriod(lease);
   if (!first || (before && first >= before)) return debt;
   const end = lease.endDate?.slice(0, 10) ?? null;
@@ -201,6 +204,8 @@ export function rentDebtOf(lease: LeaseAgreement, rents: RentPayment[], today: s
     // Not due yet (a month ahead of today): nothing owed for it.
     if (start >= today) continue;
     const status = rentPeriodStatus(lease, rents, start, today);
+    debt.due += status.rent;
+    debt.paid += Math.min(status.collected, status.rent);
     const left = leftOf(status);
     if (left <= 0.5) continue;
     debt.amount += left;
@@ -231,6 +236,17 @@ function checksInHandOf(lease: LeaseAgreement, payments: RentRollPayment[]): Ren
     lastPeriod,
     lastLabel: lastPeriod ? rentPeriodLabel(lease, lastPeriod) : null,
   };
+}
+
+/** What each lease still owes today (rentDebtOf) — a cancelled one never ran. A tenant's page asks it of theirs. */
+export function rentDebtByLease(
+  data: Pick<RentRollData, "leases" | "payments">,
+  today: string = israelDateKey()
+): Map<string, RentDebt> {
+  const byLease = rentPaymentsByLease(data);
+  return new Map(
+    data.leases.filter(counts).map((lease) => [lease.id, rentDebtOf(lease, (byLease.get(lease.id) ?? []).map(toRollRent), today)])
+  );
 }
 
 function rowFor(

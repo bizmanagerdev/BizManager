@@ -8,6 +8,7 @@ import type { PaymentPromise } from "@/lib/promises";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { DeliveryPin } from "@/lib/delivery-location";
 import type { AuditFeedItem } from "@/lib/audit";
+import { israelDateKey } from "@/lib/timezone";
 
 // A customer's page as data: what the server reads for it (loadCustomerPage.ts)
 // and the plain helpers both sides use — the money summary (the same figures
@@ -143,13 +144,39 @@ export type CustomerTaskItem = {
 
 export type TaskUserOption = { id: string; label: string; color: string | null };
 
+/**
+ * A tenant's rent, over their leases (owner, 2026-10-25: "for sure should be in the customer's open debt"): the
+ * months past their due day — what was due, what's in, what's still owed (lib/rent-roll.ts rentDebtOf: a check
+ * not due yet covers its month; one past its day and not in is owed, `withCheck` of it), the oldest month owing.
+ */
+export type CustomerRent = { due: number; paid: number; owed: number; withCheck: number; oldest: string | null };
+
+/** The tenant's leases' debts summed — null with none. */
+export function customerRentOf(debts: Array<Pick<CustomerRent, "due" | "paid" | "withCheck" | "oldest"> & { amount: number }>): CustomerRent | null {
+  if (debts.length === 0) return null;
+  const rent: CustomerRent = { due: 0, paid: 0, owed: 0, withCheck: 0, oldest: null };
+  for (const debt of debts) {
+    rent.due += debt.due;
+    rent.paid += debt.paid;
+    rent.owed += debt.amount;
+    rent.withCheck += debt.withCheck;
+    if (debt.oldest && (!rent.oldest || debt.oldest < rent.oldest)) rent.oldest = debt.oldest;
+  }
+  return rent;
+}
+
 export type CustomerMoney = {
+  /** Orders + projects — sales; rent is apart (`rent`). */
   totalSales: number;
   totalPaid: number;
   /** Still due on future-dated / uncleared payments (not yet collected). */
   totalExpected: number;
   totalOverdueExpected: number;
+  /** What's owed: orders and projects (`salesOpenBalance`) and rent (`rent.owed`). */
   openBalance: number;
+  salesOpenBalance: number;
+  /** As a tenant — null when they never rented. */
+  rent: CustomerRent | null;
   paidPct: number;
   /** Worst lateness across the receivables, its payment terms, the earliest due date. */
   maxDaysLate: number;
@@ -302,10 +329,14 @@ export function summarizeCustomerMoney({
   orders,
   projects,
   receivables,
+  rent = null,
+  today = israelDateKey(),
 }: {
   orders: CustomerOrderRow[];
   projects: CustomerProjectRow[];
   receivables: CustomerReceivable[];
+  rent?: CustomerRent | null;
+  today?: string;
 }): CustomerMoney {
   let ordersSales = 0;
   let ordersCollected = 0;
@@ -328,18 +359,26 @@ export function summarizeCustomerMoney({
   const totalPaid = ordersCollected + projectsCollected;
   const totalExpected = ordersPending + projectsPending;
   const totalOverdueExpected = ordersOverdue + projectsOverdue;
-  const openBalance = Math.max(totalSales - totalPaid, 0);
+  const salesOpenBalance = Math.max(totalSales - totalPaid, 0);
+  const rentOwed = rent && rent.owed > 0.5 ? rent.owed : 0;
+  const openBalance = salesOpenBalance + rentOwed;
 
   let maxDaysLate = 0;
   let terms: string | null = null;
   let dueDate: string | null = null;
+  // Rent's lateness is the rent rule's (its oldest month owing), not collections' rent row.
   for (const receivable of receivables) {
+    if (receivable.source_type === "property") continue;
     if (receivable.days_late >= maxDaysLate) {
       maxDaysLate = receivable.days_late;
       terms = receivable.payment_terms ?? terms;
     }
     const due = receivable.due_date ?? receivable.next_due_date;
     if (due && (!dueDate || due < dueDate)) dueDate = due;
+  }
+  if (rentOwed > 0 && rent?.oldest) {
+    const rentDaysLate = Math.max(0, Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${rent.oldest}T12:00:00Z`)) / 86_400_000));
+    maxDaysLate = Math.max(maxDaysLate, rentDaysLate);
   }
   const paidPct = totalSales > 0 ? Math.min((totalPaid / totalSales) * 100, 100) : 0;
 
@@ -349,6 +388,8 @@ export function summarizeCustomerMoney({
     totalExpected,
     totalOverdueExpected,
     openBalance,
+    salesOpenBalance,
+    rent,
     paidPct,
     maxDaysLate,
     terms,

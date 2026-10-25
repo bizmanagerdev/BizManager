@@ -1707,3 +1707,66 @@ describe("a money row's currency on the device (2026-10-23)", () => {
     expect(coerceRow("tasks", { id: "t1" })).toEqual({ id: "t1" });
   });
 });
+
+describe("a tenant's page on the device (2026-10-25)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  // Their rent owed, by the rent page's own rule (owner: "for sure should be in the customer's open debt"): every
+  // lease on their property read, so a payment counts for the lease it was for — an earlier tenant's isn't theirs.
+  it("their rent owed by the rent page's rule — a check past its day and not in is owed, and held", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T10:00:00.000Z"));
+    const payment = (row: Row) =>
+      fullRow(`${PAYMENT_COLS},property_id,order_id,project_id,net_amount,business_domain`, {
+        property_id: "prop1",
+        payment_method: "bank_transfer",
+        payment_status: "cleared",
+        requires_split: 0,
+        rent_periods: 1,
+        counts_as_rent: 1,
+        ...row,
+      });
+    const db = createLocalSupabase(
+      fakeReader({
+        customers: [
+          {
+            id: "c1", name: "דנה", active: 1, name_for_invoice: null, registration_number: null, email: null, phone: null,
+            address: null, notes: null, whatsapp: null, morning_client_id: null, requires_prepayment: 0, delivery_lat: null,
+            delivery_lng: null, addr_place_id: null, addr_city: null, addr_street: null, addr_house_number: null, addr_lat: null,
+            addr_lng: null, linked_user_id: null, delivery_instructions: null, morning_synced_at: null, morning_match_status: null,
+            morning_last_sync_error: null,
+          },
+          { id: "c9", name: "שוכר קודם", phone: null },
+        ],
+        orders: [],
+        order_items: [],
+        products: [],
+        projects: [],
+        contacts: [],
+        tags: [],
+        entity_tags: [],
+        tasks: [],
+        reminders: [],
+        users: [{ id: "u1", full_name: "רחל", email: "r@b", avatar_color: null, active: 1, role: "admin" }],
+        properties: [property({ id: "prop1", name: "D4", address: "הגפן 3" })],
+        lease_agreements: [
+          lease({ id: "l1", property_id: "prop1", customer_id: "c1", start_date: "2026-08-01", monthly_rent_amount: "4000" }),
+          lease({ id: "l0", property_id: "prop1", customer_id: "c9", start_date: "2026-01-01", end_date: "2026-07-31", status: "ended", monthly_rent_amount: "3500" }),
+        ],
+        payments: [
+          payment({ id: "aug", payment_date: "2026-08-01T00:00:00", amount_total: "4000", lease_id: "l1", rent_period_start: "2026-08-01" }),
+          payment({ id: "oct", payment_date: "2026-08-01T00:00:00", due_date: "2026-10-01", amount_total: "4000", payment_method: "check", payment_status: "pending", lease_id: "l1", rent_period_start: "2026-10-01" }),
+          payment({ id: "old", payment_date: "2026-03-01T00:00:00", amount_total: "3500", lease_id: "l0", rent_period_start: "2026-03-01" }),
+        ],
+      })
+    );
+    const reads = startCustomerCoreReads(db, "c1", { role: Promise.resolve("admin"), viewerId: Promise.resolve("u1") });
+    const [core, payments] = await Promise.all([reads.core, reads.payments]);
+    // August in; September not; October's check past its day and not deposited — owed, and we hold it.
+    expect(core!.money.rent).toEqual({ due: 12000, paid: 4000, owed: 8000, withCheck: 4000, oldest: "2026-09-01" });
+    expect(core!.money).toMatchObject({ openBalance: 8000, salesOpenBalance: 0, maxDaysLate: 50 });
+    // Their payments only — not the earlier tenant's.
+    expect(payments.payments.map((p) => p.id).sort()).toEqual(["aug", "oct"]);
+    expect(mergeCustomerPage(core!, null).balance).toEqual(expect.objectContaining({ salesOwedToUs: 0, rentOwedToUs: 8000, net: 8000 }));
+  });
+});

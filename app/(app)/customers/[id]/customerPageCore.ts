@@ -7,6 +7,8 @@ import type { CustomerActivity } from "@/lib/communications";
 import type { PaymentPromise } from "@/lib/promises";
 import { withLinkColumn } from "@/lib/customers/workerLink";
 import { buildCounterpartyBalance, getCustomerLoanPositions, hasAnyPosition } from "@/lib/customers/counterpartyBalance";
+import { loadRentFor } from "@/lib/properties";
+import { rentDebtByLease, rentPaymentsByLease } from "@/lib/rent-roll";
 import { pinFrom } from "@/lib/delivery-location";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import { addressNotFound, addressPoint } from "@/lib/address/columns";
@@ -14,6 +16,7 @@ import {
   buildOrderRows,
   buildProjectRows,
   comparePaymentsNewestFirst,
+  customerRentOf,
   lastClearedPaymentAt,
   num,
   str,
@@ -107,7 +110,8 @@ export function mergeCustomerPage(core: CustomerPageCore, server: CustomerServer
   // accrues daily and clears on payday, so netting it would make the figure
   // mean something different depending on where in the month you look.
   const counterparty = buildCounterpartyBalance({
-    salesOwedToUs: core.money.openBalance,
+    salesOwedToUs: core.money.salesOpenBalance,
+    rentOwedToUs: core.money.rent?.owed ?? 0,
     loansOwedToUs: loans.owedToUs,
     loansOwedByUs: loans.owedByUs,
     payrollOwed: core.linkedWorker ? parts.payrollOwed ?? 0 : null,
@@ -213,6 +217,12 @@ export function startCustomerCoreReads(
   )
     .then((rows) => rows.map(toLease))
     .catch(() => [] as CustomerLeaseRow[]);
+
+  // A tenant's rent, by the rent page's own rule (owner, 2026-10-25): every lease on their properties and every
+  // payment, so a payment counts for the lease it was for — theirs then summed. A failed read: no rent line.
+  const rent = leases
+    .then((rows) => (rows.length === 0 ? null : loadRentFor(supabase, rows.map((lease) => lease.propertyId))))
+    .catch(() => null);
 
   // Term-aware days-late for the money card — the same source the גבייה panel
   // uses, so the two never disagree. Handed to the panel as its first data.
@@ -326,6 +336,7 @@ export function startCustomerCoreReads(
     users,
     canManage,
     viewer.viewerId,
+    rent,
   ]).then(
     ([
       customerRow,
@@ -345,12 +356,22 @@ export function startCustomerCoreReads(
       userRows,
       manages,
       viewerId,
+      rentData,
     ]) => {
       if (!customerRow) return null;
 
       const orderRows = buildOrderRows(orderResult.rows);
       const projectRows = buildProjectRows(projectResult.rows, financialRows, projectPaymentRows);
-      const money = summarizeCustomerMoney({ orders: orderRows, projects: projectRows, receivables: receivableRows });
+      const debts = rentData ? rentDebtByLease(rentData) : null;
+      const rentOwed = debts
+        ? customerRentOf(leaseRows.map((lease) => debts.get(lease.id)).filter((debt) => debt !== undefined))
+        : null;
+      const money = summarizeCustomerMoney({
+        orders: orderRows,
+        projects: projectRows,
+        receivables: receivableRows,
+        rent: rentOwed,
+      });
       const linkedUserIdValue = str(customerRow, "linked_user_id");
 
       return {
@@ -455,10 +476,16 @@ export function startCustomerCoreReads(
     propertyPayments,
     projects,
     leases,
+    rent,
   ])
-    .then(([orderRows, projectRows, propertyRows, projectResult, leaseRows]) => {
+    .then(([orderRows, projectRows, allPropertyRows, projectResult, leaseRows, rentData]) => {
       const projectNameById = new Map(projectResult.rows.map((row) => [str(row, "id"), str(row, "name") || "פרויקט"]));
       const propertyNameById = new Map(leaseRows.map((lease) => [lease.propertyId, lease.label]));
+      // Their rent only — not another tenant's, or a storage renter's, on the same property (each payment counts
+      // for the lease it was for, as on the rent page; owner, 2026-10-25). The rent unread: as before.
+      const byLease = rentData ? rentPaymentsByLease(rentData) : null;
+      const theirs = byLease ? new Set(leaseRows.flatMap((lease) => (byLease.get(lease.id) ?? []).map((p) => p.id))) : null;
+      const propertyRows = theirs ? allPropertyRows.filter((row) => theirs.has(str(row, "id"))) : allPropertyRows;
       const all = [...orderRows, ...projectRows, ...propertyRows].map((row): CustomerPaymentRow => {
         const orderId = str(row, "order_id");
         const projectId = str(row, "project_id");
