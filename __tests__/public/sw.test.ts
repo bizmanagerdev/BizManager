@@ -140,7 +140,11 @@ function loadWorkerWithCaches(network: () => Response | Promise<Response>, saved
   };
   const fetchMock = vi.fn(async (..._args: unknown[]) => network());
   // The app's open pages, as the worker sees them.
-  const clients = { claim: vi.fn(async () => {}), matchAll: vi.fn(async (): Promise<unknown[]> => []) };
+  const clients = {
+    claim: vi.fn(async () => {}),
+    matchAll: vi.fn(async (): Promise<unknown[]> => []),
+    get: vi.fn(async (_id: string): Promise<unknown> => undefined),
+  };
   const self = {
     location: new URL("https://biz-h.com/sw.js?v=test"),
     addEventListener: (type: string, handler: (event: unknown) => void) => {
@@ -640,6 +644,16 @@ describe("service worker: saving the pages the app asks for", () => {
     expect(worker.fetchMock).not.toHaveBeenCalled();
   });
 
+  it("its code is saved with it — a page never opened here couldn't start with no connection", async () => {
+    const page =
+      '<html><head><meta name="bizh-build" content="test"/><script src="/_next/static/chunks/tasks-page.js?dpl=d1" async></script></head>' +
+      '<body><span hidden data-device-page="tasks"></span></body></html>';
+    const worker = loadWorkerWithCaches(() => new Response(page, { status: 200 }));
+    await ask(worker, ["https://biz-h.com/tasks"]);
+    expect(worker.frames().has("https://biz-h.com/tasks")).toBe(true);
+    expect(worker.stores.get("bizh-static-test")?.has("https://biz-h.com/_next/static/chunks/tasks-page.js")).toBe(true);
+  });
+
   it("a page that comes back as its server version (the device's copy not ready) isn't saved", async () => {
     const worker = loadWorkerWithCaches(() => new Response("<html><body>the server's list</body></html>", { status: 200 }));
     await ask(worker, ["https://biz-h.com/customers"]);
@@ -711,18 +725,23 @@ describe("service worker: a page with no saved copy, with no connection", () => 
     return res;
   }
 
+  /** The app's open tabs: the customers list in front, the sales page behind it. */
   function withPage(worker: ReturnType<typeof loadWorkerWithCaches>) {
-    const page = { postMessage: vi.fn() };
-    worker.clients.matchAll.mockResolvedValue([page]);
-    return page;
+    const page = { id: "tab-1", url: "https://biz-h.com/customers", focused: true, postMessage: vi.fn() };
+    const other = { id: "tab-2", url: "https://biz-h.com/sales", focused: false, postMessage: vi.fn() };
+    worker.clients.matchAll.mockResolvedValue([other, page]);
+    worker.clients.get.mockImplementation(async (id: string) => [page, other].find((tab) => tab.id === id));
+    return Object.assign(page, { other });
   }
 
-  it("moved to inside the app: stays where it is, and the page hears which one wasn't saved", async () => {
+  it("moved to inside the app: stays where it is, and that tab — only that one — hears which page wasn't saved", async () => {
     const worker = loadWorkerWithCaches(offline, { "bizh-static-test": { "/dashboard": "<html>board</html>" } });
     const page = withPage(worker);
     const res = await answer(worker, { url: customerUrl, mode: "navigate", referrer: "https://biz-h.com/customers" });
     expect(res.status).toBe(204);
     expect(page.postMessage).toHaveBeenCalledWith({ type: "PAGE_NOT_SAVED", url: customerUrl });
+    // A tab behind it isn't told (it said so on the page in front, 2026-10-25).
+    expect(page.other.postMessage).not.toHaveBeenCalled();
   });
 
   it("typed in, or the app opening (no page it came from): somewhere to land, as before", async () => {
@@ -747,12 +766,21 @@ describe("service worker: a page with no saved copy, with no connection", () => 
     expect(page.postMessage).not.toHaveBeenCalled();
   });
 
-  it("the page's data asked for first (a second try never gets further): the pages hear it at once", async () => {
+  it("the page's data asked for first (a second try never gets further): the tab that asked hears it at once", async () => {
     const worker = loadWorkerWithCaches(offline);
     const page = withPage(worker);
-    const res = await answer(worker, { url: `${customerUrl}?_rsc=abc12`, mode: "cors", headers: new Headers({ RSC: "1" }) });
-    expect(res.status).toBe(503);
-    expect(page.postMessage).toHaveBeenCalledWith({ type: "PAGE_NOT_SAVED", url: customerUrl });
+    let responded: Promise<Response> | undefined;
+    const background: Promise<unknown>[] = [];
+    worker.handlers.fetch({
+      request: { method: "GET", url: `${customerUrl}?_rsc=abc12`, mode: "cors", headers: new Headers({ RSC: "1" }) },
+      clientId: "tab-2",
+      respondWith: (promise: Promise<Response>) => (responded = promise),
+      waitUntil: (promise: Promise<unknown>) => void background.push(promise),
+    });
+    expect((await responded!).status).toBe(503);
+    await Promise.all(background);
+    expect(page.other.postMessage).toHaveBeenCalledWith({ type: "PAGE_NOT_SAVED", url: customerUrl });
+    expect(page.postMessage).not.toHaveBeenCalled();
   });
 
   it("…but not for a page that is saved (it loads whole from the frame next), nor for a prefetch", async () => {

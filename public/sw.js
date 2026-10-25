@@ -563,6 +563,10 @@ const framesSaving = new Map();
 // `response` must be a copy nobody else reads. `ahead`: a page of a newer build
 // than this worker's (a deploy since) has its code fetched now (fetchAhead) —
 // only from the background refresh, never while the page itself is loading it.
+// `withCode`: its code is fetched now whatever its build — a page saved without
+// ever being opened here (SAVE_FRAMES) has none on the device, and opened with
+// no connection it couldn't start (owner's test, 2026-10-25: the tasks page's
+// saved copy, then "אירעה תקלה בטעינת הדף").
 function saveFrame(request, response, options) {
   const href = hrefOf(request);
   const saving = saveFrameNow(href, response, options).finally(() => {
@@ -572,7 +576,7 @@ function saveFrame(request, response, options) {
   return saving;
 }
 
-async function saveFrameNow(href, response, { ahead = false } = {}) {
+async function saveFrameNow(href, response, { ahead = false, withCode = false } = {}) {
   try {
     const cache = await caches.open(FRAMES_CACHE);
     if (!response || !response.ok || response.redirected || response.type === "opaqueredirect") {
@@ -592,7 +596,7 @@ async function saveFrameNow(href, response, { ahead = false } = {}) {
     if (build) headers["X-Bizh-Build"] = build;
     await cache.put(href, new Response(html, { headers }));
     if (isTrimmedFrame(href)) await trimDetailFrames(cache);
-    if (ahead && build && build !== V) await fetchAhead(html);
+    if (withCode || (ahead && build && build !== V)) await fetchAhead(html);
   } catch {
     // Not saved — the next open just waits for the server, as before.
   }
@@ -632,7 +636,7 @@ async function saveFramesAskedFor(hrefs) {
         cache: "no-store",
         headers: { Accept: "text/html", [FRAME_SAVE_HEADER]: "1" },
       });
-      await saveFrame(href, res);
+      await saveFrame(href, res, { withCode: true });
     } catch {
       // No connection, or refused: asked for again the next time it's opened.
     }
@@ -662,14 +666,25 @@ function isInAppMove(request) {
   return typeof from === "string" && from.startsWith(`${self.location.origin}/`);
 }
 
-/** Tell the open pages `href` isn't saved on the device. */
-function tellNotSaved(href) {
-  return self.clients
-    .matchAll({ type: "window" })
-    .then((clients) => {
-      for (const client of clients) client.postMessage({ type: "PAGE_NOT_SAVED", url: href });
-    })
-    .catch(() => {});
+/**
+ * Tell the tab that moved that `href` isn't saved on the device — that tab
+ * only: told to every open tab, the one on screen said so for another tab's
+ * move (owner's test, 2026-10-25: the sales tab in the background, the notice
+ * on the customers page). Its data request names its tab (clientId); a
+ * whole-page load doesn't, so it's the tab still showing the page it came
+ * from (the one in front, if several do).
+ */
+async function tellNotSaved(href, { clientId, from } = {}) {
+  try {
+    let client = clientId ? await self.clients.get(clientId) : undefined;
+    if (!client && from) {
+      const tabs = (await self.clients.matchAll({ type: "window" })).filter((tab) => tab.url === from);
+      client = tabs.find((tab) => tab.focused) ?? tabs[0];
+    }
+    if (client) client.postMessage({ type: "PAGE_NOT_SAVED", url: href });
+  } catch {
+    // Not told: the page still stays where it is.
+  }
 }
 
 function isPrefetch(request) {
@@ -767,7 +782,7 @@ self.addEventListener("fetch", (event) => {
           page.searchParams.delete("_rsc");
           if (!(await savedCopyOf(page.href))) {
             try {
-              event.waitUntil(tellNotSaved(page.href));
+              event.waitUntil(tellNotSaved(page.href, { clientId: event.clientId }));
             } catch {
               // Still sent; the worker may just not wait for it.
             }
@@ -877,7 +892,7 @@ self.addEventListener("fetch", (event) => {
         // a 204 leaves it as it is — and say why (see tellNotSaved).
         if (!saved && isInAppMove(request)) {
           try {
-            event.waitUntil(tellNotSaved(url.href));
+            event.waitUntil(tellNotSaved(url.href, { from: request.referrer }));
           } catch {
             // Still sent; the worker may just not wait for it.
           }

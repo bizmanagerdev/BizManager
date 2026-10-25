@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { processQueue } from "@/lib/offline-queue";
 import { processUploadQueue } from "@/lib/offline-upload";
 import { dropDeviceFrame } from "@/lib/powersync/device-frames";
+import { emitNavigationContentShown } from "@/components/layout/TopNavigationProgress";
+import { noteOffline, savedPagesNow, sendOfflineReport } from "@/lib/pwa/offline-report";
 import { RUNNING_BUILD, isNewerBuild, liveBuild, mayReloadFrom, noteReloadFrom, swBuildOf } from "@/lib/pwa/app-version";
 
 // A resumed PWA/installed-app instance (tapping the home-screen icon, not a
@@ -41,8 +43,19 @@ function pageNotSaved(href: unknown) {
   // The page on screen itself (refreshed): nothing moved.
   if (target.pathname + target.search === window.location.pathname + window.location.search) return;
   toast.info("הדף הזה לא שמור במכשיר — ייפתח כשיחזור החיבור", { id: "page-not-saved" });
+  // The loading bar was waiting for the move: it's over.
+  emitNavigationContentShown();
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => window.history.replaceState(null, "", window.location.href), SETTLE_AFTER_MS);
+  // What the device had saved at that moment, for the report sent once the
+  // connection is back (lib/pwa/offline-report.ts).
+  void savedPagesNow().then((saved) =>
+    noteOffline("page not saved", {
+      url: target.pathname + target.search,
+      worker: navigator.serviceWorker?.controller?.scriptURL ?? null,
+      ...saved,
+    })
+  );
 }
 
 export default function PwaRegistration() {
@@ -174,6 +187,10 @@ export default function PwaRegistration() {
     };
     navigator.serviceWorker.addEventListener("message", handleMessage);
 
+    // What went wrong with no connection, sent once it's back (lib/pwa/offline-report.ts).
+    sendOfflineReport();
+    window.addEventListener("online", sendOfflineReport);
+
     // Re-validate when the app comes back to the foreground after sitting
     // backgrounded — a resumed instance otherwise never re-checks anything
     // (see RESUME_REVALIDATE_MS above). Checks the SW build AND re-runs
@@ -217,6 +234,7 @@ export default function PwaRegistration() {
 
     return () => {
       navigator.serviceWorker.removeEventListener("message", handleMessage);
+      window.removeEventListener("online", sendOfflineReport);
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };

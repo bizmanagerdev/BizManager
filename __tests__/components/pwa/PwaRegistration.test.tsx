@@ -14,7 +14,13 @@ import { act, cleanup, render } from "@testing-library/react";
 
 const hoisted = vi.hoisted(() => {
   process.env.NEXT_PUBLIC_BUILD_ID = "old1";
-  return { dropDeviceFrame: vi.fn(async (_href: string) => {}), toastInfo: vi.fn() };
+  return {
+    dropDeviceFrame: vi.fn(async (_href: string) => {}),
+    toastInfo: vi.fn(),
+    contentShown: vi.fn(),
+    noteOffline: vi.fn(),
+    sendOfflineReport: vi.fn(),
+  };
 });
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
@@ -22,6 +28,12 @@ vi.mock("@/lib/offline-queue", () => ({ processQueue: vi.fn() }));
 vi.mock("@/lib/offline-upload", () => ({ processUploadQueue: vi.fn() }));
 vi.mock("@/lib/powersync/device-frames", () => ({ dropDeviceFrame: hoisted.dropDeviceFrame }));
 vi.mock("sonner", () => ({ toast: { info: hoisted.toastInfo } }));
+vi.mock("@/components/layout/TopNavigationProgress", () => ({ emitNavigationContentShown: hoisted.contentShown }));
+vi.mock("@/lib/pwa/offline-report", () => ({
+  noteOffline: hoisted.noteOffline,
+  sendOfflineReport: hoisted.sendOfflineReport,
+  savedPagesNow: async () => ({ frames: ["80d44d44 /customers"], pages: [] }),
+}));
 
 import PwaRegistration from "@/components/pwa/PwaRegistration";
 import { UPDATE_RETRY_MS } from "@/lib/pwa/app-version";
@@ -172,6 +184,9 @@ describe("a page moved to with no connection that isn't saved", () => {
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "production");
     hoisted.toastInfo.mockClear();
+    hoisted.contentShown.mockClear();
+    hoisted.noteOffline.mockClear();
+    hoisted.sendOfflineReport.mockClear();
     replaceState.mockReset();
     visibility = "visible";
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
@@ -205,9 +220,25 @@ describe("a page moved to with no connection that isn't saved", () => {
     expect(hoisted.toastInfo).toHaveBeenCalledWith("הדף הזה לא שמור במכשיר — ייפתח כשיחזור החיבור", {
       id: "page-not-saved",
     });
+    // The loading bar that was waiting for the move ends now.
+    expect(hoisted.contentShown).toHaveBeenCalledTimes(1);
     expect(replaceState).not.toHaveBeenCalled();
     vi.advanceTimersByTime(300);
     expect(replaceState).toHaveBeenCalledWith(null, "", "https://www.biz-h.com/customers");
+    // A note for the report sent once the connection is back: which page, and what was saved.
+    await settle();
+    expect(hoisted.noteOffline).toHaveBeenCalledWith(
+      "page not saved",
+      expect.objectContaining({ url: "/customers/c1", frames: ["80d44d44 /customers"] })
+    );
+  });
+
+  it("what went wrong offline is sent when the app opens, and when the connection comes back", async () => {
+    render(<PwaRegistration />);
+    await settle();
+    expect(hoisted.sendOfflineReport).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event("online"));
+    expect(hoisted.sendOfflineReport).toHaveBeenCalledTimes(2);
   });
 
   it("the page on screen itself (refreshed with no connection): nothing to say", async () => {
