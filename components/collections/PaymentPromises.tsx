@@ -4,14 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 import { DateInput } from "@/components/ui/date-input";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { WaitingBadge } from "@/components/ui/waiting-badge";
 import { MetaRow } from "@/components/ui/meta-row";
 import { toHebrewError } from "@/lib/error-messages";
-import { formatMoney } from "@/lib/money";
+import { formatMoneyWithForeign } from "@/lib/money";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { offlineFetch } from "@/lib/offline-queue";
 import { updatePaymentPromise } from "@/lib/collections/paymentPromises";
@@ -81,6 +82,8 @@ export default function PaymentPromises({
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const showForm = formOpen ?? true;
+  // Promised in ₪, US$ or C$ (2026-10-25): its shekels at the newest rate up to the promised date.
+  const money = useMoneyCurrency({ open: showForm, date: date || null });
 
   const pendingCount = promises.filter((p) => p.status === "pending").length;
   useEffect(() => {
@@ -105,9 +108,24 @@ export default function PaymentPromises({
       toast.error("יש לבחור תאריך הבטחה.");
       return;
     }
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      toast.error(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
+    const shekels = money.shekels(value) ?? value;
+    const foreign =
+      isForeignCurrency(money.currency) && money.rate
+        ? { currency: money.currency, amount: value, rate: money.rate, rateManual: money.manual }
+        : null;
     setBusy(true);
     try {
-      const body = { customer_id: customerId, amount: value, promised_date: date, notes: notes.trim() || undefined };
+      const body = {
+        customer_id: customerId,
+        amount: value,
+        ...money.body(),
+        promised_date: date,
+        notes: notes.trim() || undefined,
+      };
       const result = await offlineFetch("/api/payment-promises/create", body, "הבטחת תשלום", { idempotent: true });
       if (!result.queued && !result.ok) {
         toast.error(toHebrewError(result.error, "שמירה נכשלה."));
@@ -119,7 +137,8 @@ export default function PaymentPromises({
         customer_id: customerId,
         order_id: null,
         project_id: null,
-        amount: value,
+        amount: shekels,
+        foreign,
         promised_date: date,
         status: "pending",
         notes: notes.trim() || null,
@@ -168,7 +187,7 @@ export default function PaymentPromises({
       {showForm ? (
         <div className="space-y-2 rounded-xl border border-border/70 bg-background/60 p-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_2fr]">
-            <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="סכום" aria-label="סכום" />
+            <CurrencyAmountInput money={money} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="סכום" aria-label="סכום" />
             <DateInput value={date} onChange={(e) => setDate(e.target.value)} aria-label="תאריך הבטחה" />
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="הערה (אופציונלי)" />
           </div>
@@ -193,7 +212,7 @@ export default function PaymentPromises({
             <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 p-3">
               <div className="min-w-0 space-y-0.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold tabular-nums">{formatMoney(p.amount)}</span>
+                  <span className="font-semibold tabular-nums">{formatMoneyWithForeign(p.amount, p.foreign)}</span>
                   <span className="text-sm text-muted-foreground">עד {formatShortDate(p.promised_date, "—")}</span>
                   {p.waiting ? <WaitingBadge /> : <Badge variant={statusVariant(p.status)}>{promiseStatusLabel(p.status)}</Badge>}
                 </div>

@@ -135,6 +135,8 @@ export function toIncomeCalendarItems(
         direction: "in" as const,
         date: entry.flowDate,
         amount: entry.amount,
+        // A payment in US$ / C$: its own money beside the shekels ("$1,000 (≈ ₪3,112)").
+        foreign: entry.foreign ?? null,
         label: who ?? entry.description,
         sourceLabel: who ? [entry.description, where].filter(Boolean).join(" · ") : entry.sourceLabel,
         sourceHref: incomeSourceHref(entry),

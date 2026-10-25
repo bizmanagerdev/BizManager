@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { toHebrewError } from "@/lib/error-messages";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { fmtIls } from "./calendar.helpers";
+import { amountLabel } from "./calendar.helpers";
 
 // ── "סמן כנגבה" — the incoming mirror of MarkPaidDialog ────────────────────────
 // The outgoing side asks for a method, an account and a pay date, because
@@ -62,7 +62,7 @@ export default function MarkCollectedDialog({
         if (!o) onClose();
       }}
       title="סימון תקבול כנגבה"
-      description={item ? `${item.label} — ${fmtIls(item.amount)}` : undefined}
+      description={item ? `${item.label} — ${amountLabel(item)}` : undefined}
       size="formSm"
       onSubmit={() => void submit()}
       submitLabel="סמן כנגבה"

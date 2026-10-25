@@ -104,7 +104,8 @@ describe("PaymentPromises", () => {
     expect(within(row).queryByRole("button", { name: "קוימה" })).toBeNull();
     expect(h.offlineFetch).toHaveBeenCalledWith(
       "/api/payment-promises/create",
-      { customer_id: "c1", amount: 500, promised_date: "2026-10-25", notes: undefined },
+      // Its currency goes with it (2026-10-25): shekels unless the sign was changed.
+      { customer_id: "c1", amount: 500, currency: "ILS", promised_date: "2026-10-25", notes: undefined },
       "הבטחת תשלום",
       { idempotent: true }
     );

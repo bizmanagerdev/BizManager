@@ -477,7 +477,7 @@ function metaFor(kind: GlobalSearchKind, info: Record<string, unknown>, at: stri
     case "card_row":
     case "card_charge":
     case "promise":
-      return chips(money(info.amount), day(info.date));
+      return chips(foreignMoney(info.foreign_amount, info.currency), money(info.amount), day(info.date));
     case "account":
       return chips(str(info.number), info.inactive === true && "לא פעיל");
     case "card_statement":

@@ -2,8 +2,11 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
+import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
 
-// Record a payment promise (הבטחת תשלום) — "customer promised ₪X by date Y".
+// Record a payment promise (הבטחת תשלום) — "customer promised ₪X by date Y" —
+// or $X / C$X (2026-10-25): the amount in its currency, its shekels at the
+// newest Bank of Israel rate up to the promised date (or the rate typed).
 export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
@@ -11,7 +14,7 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "payment-promises/create", async () => {
-      const body = (await req.json()) as {
+      const body = (await req.json()) as MoneyCurrencyBody & {
         customer_id?: string | null;
         order_id?: string | null;
         project_id?: string | null;
@@ -30,6 +33,8 @@ export async function POST(req: Request) {
       }
 
       const nullable = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+      const pricing = await currencyPricing(supabase, body, { amount, date: promisedDate });
+      if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
 
       const { data, error } = await supabase
         .from("payment_promises")
@@ -37,7 +42,8 @@ export async function POST(req: Request) {
           customer_id: nullable(body.customer_id),
           order_id: nullable(body.order_id),
           project_id: nullable(body.project_id),
-          amount,
+          amount: pricing.toShekels(amount),
+          ...(pricing.columns ?? {}),
           promised_date: promisedDate,
           notes: nullable(body.notes),
           created_by: profile.id,

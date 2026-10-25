@@ -371,3 +371,45 @@ describe("POST /api/payroll/sessions/split — atomic mark-paid (money mode)", (
     expect(database.calls.paymentInsert).toHaveLength(0);
   });
 });
+
+// Paid in US$ / C$ (2026-10-25): one payment in its currency, its shekels at the
+// shift day's rate spread over the parts, never more than each part's cost.
+describe("POST /api/payroll/sessions/split — mark-paid in dollars", () => {
+  const withRate = (database: ReturnType<typeof sb>, rate: unknown) => ({
+    ...database,
+    rpc: vi.fn(async () => ({ data: rate, error: null })),
+  });
+
+  it("$50 at 3.1: ₪155 — part 1 (₪150) filled, ₪5 on part 2; the payment in dollars", async () => {
+    const database = withRate(sb({ worker: CONTRACTOR_WORKER }), 3.1);
+    grant(database);
+    const res = await post({ ...TWO_MONEY_PARTS, payment: { mark_paid: true, amount: 50, currency: "USD" } });
+    expect(res.status).toBe(200);
+    expect(database.rpc).toHaveBeenCalledWith("fx_rate_on", { p_currency: "USD", p_date: "2026-05-15" });
+    expect(database.calls.paymentInsert[0]).toMatchObject({ amount: 155, currency: "USD", foreign_amount: 50, fx_rate: 3.1 });
+    expect(database.calls.allocationInsert[0]).toEqual([
+      expect.objectContaining({ attendance_session_id: "sess-1", amount: 150 }),
+      expect.objectContaining({ attendance_session_id: "sess-2", amount: 5 }),
+    ]);
+  });
+
+  it("no amount: the whole cost in dollars, its shekels never more than the parts", async () => {
+    const database = withRate(sb({ worker: CONTRACTOR_WORKER }), 3.1);
+    grant(database);
+    await post({ ...TWO_MONEY_PARTS, payment: { mark_paid: true, currency: "USD" } });
+    // ₪400 ÷ 3.1 = $129.03 → ₪399.99
+    expect(database.calls.paymentInsert[0]).toMatchObject({ currency: "USD", foreign_amount: 129.03, amount: 399.99 });
+    const allocated = (database.calls.allocationInsert[0] as Array<{ amount: number }>).reduce((s, a) => s + a.amount, 0);
+    expect(Math.round(allocated * 100) / 100).toBe(399.99);
+  });
+
+  it("no rate for the shift's day: refused before anything is split", async () => {
+    const database = withRate(sb({ worker: CONTRACTOR_WORKER }), null);
+    grant(database);
+    const res = await post({ ...TWO_MONEY_PARTS, payment: { mark_paid: true, amount: 50, currency: "USD" } });
+    expect(res.status).toBe(400);
+    expect(database.calls.sessionUpdates).toHaveLength(0);
+    expect(database.calls.sessionInserts).toHaveLength(0);
+    expect(database.calls.paymentInsert).toHaveLength(0);
+  });
+});

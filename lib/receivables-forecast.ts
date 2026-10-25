@@ -11,6 +11,7 @@
 //   • Rent beyond the generated schedule doesn't exist as rows: the office
 //     pre-creates N months from a lease, and the months past that are invisible.
 import type { PaymentCalendarItem } from "@/lib/payables";
+import type { ForeignMoney } from "@/lib/fx/currencies";
 import { NO_CONFIRMATIONS, isSettlementArrived, type SettlementConfirmations, type SettlementPayment } from "@/lib/card-settlements";
 import { leaseForPayment, paidTowards, type RentLease, type RentPayment } from "@/lib/property-rent";
 import { isHebrewLease, rentPeriodStarts } from "@/lib/rent-periods";
@@ -65,9 +66,12 @@ export type PaymentPromise = {
   customerId: string | null;
   orderId: string | null;
   projectId: string | null;
+  /** Shekels — for a promise in US$ / C$, at its rate. */
   amount: number;
   promisedDate: string;
   notes: string | null;
+  /** Promised in US$ / C$: its own money. */
+  foreign?: ForeignMoney | null;
 };
 
 /**
@@ -90,6 +94,7 @@ export function toPromiseItems(
         id: `promise:${p.id}`,
         date,
         amount: p.amount,
+        foreign: p.foreign ?? null,
         label: customerName ? `הבטחת תשלום — ${customerName}` : "הבטחת תשלום",
         sourceLabel: customerName ?? "",
         // The promise was made and is chased on the customer's collection page.

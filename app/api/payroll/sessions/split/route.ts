@@ -10,6 +10,8 @@ import {
   payrollWorkerTypeGeneratesPayslips,
 } from "@/lib/payroll-worker-type";
 import { addMinutes, type PayrollPeriodRow, WORK_SESSIONS_TABLE } from "@/lib/payroll";
+import { isForeignCurrency } from "@/lib/fx/currencies";
+import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
 
 type SplitPartPayload = {
   // Time mode (hourly workers): how long this part lasted.
@@ -30,7 +32,9 @@ type SplitSessionPayload = {
   // Optional: pay the (contractor) split shift in the SAME request. Done atomically — if the
   // payment fails, the split is rolled back so you never end up split-but-unpaid.
   // account_id records which bank/cash account the money left from (see accounts layer).
-  payment?: { mark_paid?: boolean; amount?: number | string | null; account_id?: string | null };
+  // In US$ / C$ (2026-10-25): its amount is in that currency, its shekels at the shift day's
+  // rate (or the rate typed) are what go onto the parts.
+  payment?: { mark_paid?: boolean; amount?: number | string | null; account_id?: string | null } & MoneyCurrencyBody;
 };
 
 type NormalizedPart = {
@@ -103,6 +107,15 @@ export async function POST(req: Request) {
     }
 
     const originalSession = sessionResult.data;
+    const paymentDate = formatDateOnly(originalSession.clock_out || originalSession.clock_in);
+
+    // A payment in US$ / C$: its rate, before anything is written — no rate, no split.
+    let paymentRate: number | null = null;
+    if (body.payment?.mark_paid === true && isForeignCurrency(String(body.payment.currency ?? "").toUpperCase())) {
+      const pricing = await currencyPricing(supabase, body.payment, { amount: 0, date: paymentDate });
+      if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+      paymentRate = pricing.columns?.fx_rate ?? null;
+    }
 
     // Mode is decided by the worker type, not the client: contract/session workers split by
     // money (explicit cost per part); hourly workers split by time (minutes per part).
@@ -343,7 +356,18 @@ export async function POST(req: Request) {
     if (splitMode === "money" && body.payment?.mark_paid === true) {
       const partsTotal = resultSessions.reduce((sum, part) => sum + (part.labor_cost ?? 0), 0);
       const requestedRaw = toOptionalNonNegativeNumber(body.payment.amount ?? null);
-      const requested = requestedRaw && requestedRaw > 0 ? Math.min(requestedRaw, partsTotal) : partsTotal;
+      const round2 = (value: number) => Math.round(value * 100) / 100;
+      // In shekels: an amount typed in US$ / C$ at its rate (none typed: the whole cost).
+      const requestedShekels =
+        requestedRaw && requestedRaw > 0 ? (paymentRate ? round2(requestedRaw * paymentRate) : requestedRaw) : partsTotal;
+      // Its own money: what was typed — or, paying the whole cost, what the cost comes to.
+      const foreignAmount = paymentRate
+        ? requestedRaw && requestedRaw > 0 && requestedShekels <= partsTotal
+          ? requestedRaw
+          : round2(partsTotal / paymentRate)
+        : null;
+      const paidShekels = foreignAmount !== null && paymentRate ? round2(foreignAmount * paymentRate) : null;
+      const requested = Math.min(requestedShekels, partsTotal, paidShekels ?? Infinity);
 
       let remaining = requested;
       const allocationRows: Array<{ source_id: string; amount: number }> = [];
@@ -359,7 +383,6 @@ export async function POST(req: Request) {
 
       const total = allocationRows.reduce((sum, allocation) => sum + allocation.amount, 0);
       if (total > 0.009) {
-        const paymentDateSource = originalSession.clock_out || originalSession.clock_in;
         const paymentAccountId =
           typeof body.payment.account_id === "string" && body.payment.account_id.trim()
             ? body.payment.account_id.trim()
@@ -368,8 +391,16 @@ export async function POST(req: Request) {
           .from("worker_payments")
           .insert({
             user_id: originalSession.user_id,
-            payment_date: formatDateOnly(paymentDateSource),
-            amount: total,
+            payment_date: paymentDate,
+            amount: paidShekels ?? total,
+            ...(foreignAmount !== null && paymentRate
+              ? {
+                  currency: String(body.payment.currency).toUpperCase(),
+                  foreign_amount: foreignAmount,
+                  fx_rate: paymentRate,
+                  fx_rate_manual: body.payment.fx_rate_manual === true,
+                }
+              : {}),
             payment_method: null,
             reference_number: null,
             notes: "תשלום שסומן מתוך פיצול משמרת",

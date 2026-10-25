@@ -3,6 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FinancialEntry } from "@/lib/financial/types";
 import type { PaymentCalendarItem } from "@/lib/payables";
+import { MONEY_CURRENCY_COLUMNS, readForeignMoney } from "@/lib/fx/currencies";
 import { receivableSourceIds, toIncomeCalendarItems, type ReceivableTerms } from "@/lib/receivables";
 import {
   dropSettledCardPayments,
@@ -109,7 +110,7 @@ export async function loadOpenPromises(
 ): Promise<PaymentPromise[]> {
   const { data, error } = await supabase
     .from("payment_promises")
-    .select("id,customer_id,order_id,project_id,amount,promised_date,notes")
+    .select(`id,customer_id,order_id,project_id,amount,promised_date,notes,${MONEY_CURRENCY_COLUMNS}`)
     .eq("status", "pending")
     .gte("promised_date", fromIso);
   if (error) return [];
@@ -122,6 +123,7 @@ export async function loadOpenPromises(
       amount: num(r, "amount"),
       promisedDate: str(r, "promised_date") ?? "",
       notes: str(r, "notes"),
+      foreign: readForeignMoney(r),
     }))
     .filter((p) => p.id && p.promisedDate);
 }

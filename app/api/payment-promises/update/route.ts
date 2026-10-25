@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
 
 // Update a payment promise: mark kept/broken/cancelled, or edit amount/date/notes.
 //
@@ -10,7 +11,9 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 // undo engine then put the old status back — the tap undid itself.
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => ({}))) as {
+    // An amount with its currency (2026-10-25) is in that currency; without one,
+    // shekels — a promise in US$ / C$ then keeps its rate, its dollars following.
+    const body = (await req.json().catch(() => ({}))) as MoneyCurrencyBody & {
       id?: string;
       status?: string;
       amount?: number | string;
@@ -28,12 +31,18 @@ export async function POST(req: Request) {
     if (typeof body.status === "string" && ["pending", "kept", "broken", "cancelled"].includes(body.status)) {
       updates.status = body.status;
     }
-    if (body.amount !== undefined) {
-      const amount = typeof body.amount === "number" ? body.amount : Number(body.amount);
-      if (Number.isFinite(amount) && amount > 0) updates.amount = amount;
-    }
     if (typeof body.promised_date === "string" && body.promised_date.trim()) {
       updates.promised_date = body.promised_date.trim();
+    }
+    if (body.amount !== undefined) {
+      const amount = typeof body.amount === "number" ? body.amount : Number(body.amount);
+      if (Number.isFinite(amount) && amount > 0) {
+        const day = typeof updates.promised_date === "string" ? updates.promised_date : null;
+        const pricing = await currencyPricing(supabase, body, { amount, date: day });
+        if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+        updates.amount = pricing.toShekels(amount);
+        Object.assign(updates, pricing.columns ?? {});
+      }
     }
     if (typeof body.notes === "string") {
       updates.notes = body.notes.trim() || null;

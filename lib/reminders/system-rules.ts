@@ -15,7 +15,7 @@ import { loadOutflowSources } from "@/lib/outflow-sources";
 import { fetchDocumentCategories } from "@/lib/documents/categories";
 import { supersededDocumentIds } from "@/lib/documents/expiry";
 import { UNLINKED_MONEY_GRACE_DAYS } from "@/lib/documents/moneyLink";
-import { isForeignCurrency } from "@/lib/fx/currencies";
+import { isForeignCurrency, readForeignMoney } from "@/lib/fx/currencies";
 import { formatCurrencyAmount } from "@/lib/money";
 import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
 import { israelDateKey } from "@/lib/timezone";
@@ -809,7 +809,7 @@ const promiseBrokenRule: SystemRule = {
     // A promise still pending past its date → the customer didn't pay as promised.
     const { data, error } = await supabase
       .from("payment_promises")
-      .select("id,customer_id,amount,promised_date,order_id,project_id")
+      .select("id,customer_id,amount,promised_date,order_id,project_id,currency,foreign_amount,fx_rate,fx_rate_manual")
       .eq("status", "pending")
       .lt("promised_date", ctx.todayIso)
       .range(0, 999);
@@ -832,7 +832,11 @@ const promiseBrokenRule: SystemRule = {
       return {
         key: id,
         title: who ? `הבטחת תשלום הופרה: ${who}` : "הבטחת תשלום הופרה",
-        content: `הובטחו ${ils(amount)} עד ${date} — טרם שולם.`,
+        // Promised in US$ / C$: its own money ("$1,000").
+        content: `הובטחו ${(() => {
+          const foreign = readForeignMoney(r as Record<string, unknown>);
+          return foreign ? formatCurrencyAmount(foreign.amount, foreign.currency) : ils(amount);
+        })()} עד ${date} — טרם שולם.`,
         url: buildFocusHref("/collections", getString(r, "customer_id")),
         severity: "danger" as Severity,
         behavior: "ping_once" as Behavior,

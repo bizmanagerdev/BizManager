@@ -287,15 +287,9 @@ export default function SessionEditorDialog({
       return;
     }
     const paidRate = isForeignCurrency(paidMoney.currency) ? paidMoney.rate : null;
-    if (willMarkPaid && isForeignCurrency(paidMoney.currency)) {
-      if (sessionSplitEnabled && isMoneySplit) {
-        setSessionError("תשלום במטבע זר לא נרשם יחד עם פיצול — אפשר לרשום אותו אחר כך ב״תשלום לעובד״.");
-        return;
-      }
-      if (paidRate === null) {
-        setSessionError(paidMoney.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
-        return;
-      }
+    if (willMarkPaid && isForeignCurrency(paidMoney.currency) && paidRate === null) {
+      setSessionError(paidMoney.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
     }
     const paidCurrencyBody = paidMoney.body();
     runAction(async () => {
@@ -387,8 +381,10 @@ export default function SessionEditorDialog({
             markPaid && isMoneySplit
               ? {
                   mark_paid: true,
+                  // In its currency (empty: the whole cost) — the server prices it at the shift's day.
                   amount: sessionForm.paid_amount_now.trim() ? Number(sessionForm.paid_amount_now) : null,
                   account_id: paymentAccountId || null,
+                  ...paidCurrencyBody,
                 }
               : undefined,
         });
