@@ -37,8 +37,13 @@ export default function AppError({
     // promise callbacks run, and the browser already has the SDK loaded, so
     // the lazily loaded report still goes out first (lib/sentry-lazy.ts).
     withSentry((Sentry) => Sentry.captureException(error));
-    // With no connection that report is lost: kept for when it's back.
-    if (!navigator.onLine) noteOffline("page error", { name: error.name, message: error.message.slice(0, 300) });
+    // With no connection that report is lost: kept for when it's back. On a saved copy too — the server
+    // isn't answering, while the device may still say it's online (owner's test, 2026-10-25: a property's
+    // saved copy, "אירעה תקלה בטעינת הדף", and nothing in Sentry).
+    const savedCopy = document.documentElement.dataset.bizhSaved !== undefined;
+    if (!navigator.onLine || savedCopy) {
+      noteOffline("page error", { name: error.name, message: error.message.slice(0, 300), savedCopy });
+    }
     // A stale/mismatched build gets one automatic hard reload instead of
     // making the user notice and press "נסה שוב" — reset() alone can't fix
     // this class of error since it re-renders against the same broken

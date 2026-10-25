@@ -55,7 +55,9 @@ export async function savedPagesNow(): Promise<{ frames: string[]; pages: string
 
 /** Send the notes kept offline (one report), once there's a connection. */
 export function sendOfflineReport(): void {
-  if (!navigator.onLine) return;
+  // A saved copy on screen: the server isn't answering, whatever the device says — sent from the page
+  // that loads once it does.
+  if (!navigator.onLine || document.documentElement.dataset.bizhSaved !== undefined) return;
   const notes = readNotes();
   if (notes.length === 0) return;
   try {

@@ -1,4 +1,5 @@
-import { isDeleteUrl, offlineFetch } from "@/lib/offline-queue";
+import { getQueueLength, isDeleteUrl, offlineFetch } from "@/lib/offline-queue";
+import { getUploadQueueLength } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 
 export type SendResult =
@@ -21,4 +22,15 @@ export async function sendChange(
   if (result.status === 404 && isDeleteUrl(url))
     return { ok: true, queued: false, data: null };
   return { ok: false, error: toHebrewError(result.error, failText) };
+}
+
+/** A save or a file still waiting on this device for the connection — or no connection at all. */
+export async function savesWaiting(): Promise<boolean> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
+  if (getQueueLength() > 0) return true;
+  try {
+    return (await getUploadQueueLength()) > 0;
+  } catch {
+    return false;
+  }
 }

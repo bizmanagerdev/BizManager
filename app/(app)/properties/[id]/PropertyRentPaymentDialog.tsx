@@ -22,6 +22,7 @@ import { defaultAccountForMethod, getAccountKindLabel, type Account } from "@/li
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { offlineFetch } from "@/lib/offline-queue";
 import { sendChange } from "@/lib/offline-send";
+import { useOfflineSafeRefresh } from "@/hooks/useOfflineSafeRefresh";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { uploadTogether } from "@/lib/upload-together";
 import { queueFinancialAttachmentsAfter } from "@/lib/payments/uploadCheckPhotos";
@@ -168,6 +169,8 @@ export default function PropertyRentPaymentDialog({
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+  // The page it's on reads itself again once waiting saves go out.
+  const refresh = useOfflineSafeRefresh({ whenSent: false });
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [busy, setBusy] = useState(false);
   const [today, setToday] = useState(() => israelDateKey());
@@ -457,7 +460,8 @@ export default function PropertyRentPaymentDialog({
         else toast.error(toHebrewError(result.error, `התשלום נרשם, אבל ${checkName(check)} לא נקרע.`));
       }
       onOpenChange(false);
-      startTransition(() => router.refresh());
+      // Not while one waits for the connection (the page reads itself again once they go out).
+      refresh();
 
       const tornWords =
         tornIds.length === 0

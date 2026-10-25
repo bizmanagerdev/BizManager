@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
 import { formatCurrencyAmount } from "@/lib/money";
 import { useRateTable } from "@/components/fx/useRateTable";
@@ -61,6 +61,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload, queueUploadsAfter } from "@/lib/offline-upload";
 import { offlineFetch } from "@/lib/offline-queue";
 import { sendChange } from "@/lib/offline-send";
+import { useOfflineSafeRefresh } from "@/hooks/useOfflineSafeRefresh";
 import { leaseFromForm, withSavedLeases } from "./savedLeases";
 import { deleteProperty, setLeaseDocument, type LeaseInput } from "../actions";
 import { EditButton } from "@/components/ui/icon-button";
@@ -247,8 +248,8 @@ export default function PropertyDetailClient({
   serverPartsReady = true,
 }: Props) {
   const router = useRouter();
-  const [, startTransition] = useTransition();
-  const refresh = () => startTransition(() => { router.refresh(); });
+  // Not while a save waits for the connection — and again once they go out.
+  const refresh = useOfflineSafeRefresh();
   // Leases saved with no signal (owner, 2026-10-24): kept on the device, sent with the connection — here at once.
   const [savedLeases, setSavedLeases] = useState<LeaseAgreement[]>([]);
   const pageLeases = useMemo(() => withSavedLeases(property.leases, savedLeases), [property.leases, savedLeases]);
@@ -860,7 +861,7 @@ export default function PropertyDetailClient({
           property={property}
           photoUrl={coverPhoto?.url ?? null}
           photoReady={serverPartsReady}
-          onPhotoChanged={() => startTransition(() => router.refresh())}
+          onPhotoChanged={refresh}
           onPhotoDelete={coverPhoto ? () => setDel({ kind: "document", id: coverPhoto.id, label: "התמונה" }) : undefined}
           editOpen={detailsEditOpen}
           onEditOpenChange={setDetailsEditOpen}

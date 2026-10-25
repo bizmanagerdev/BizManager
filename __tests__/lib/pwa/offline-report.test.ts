@@ -49,6 +49,20 @@ describe("the offline report", () => {
     expect(notes[0].n).toBe(6);
   });
 
+  it("a saved copy on screen: the server isn't answering, whatever the device says — sent from the next page", () => {
+    noteOffline("page error", { message: "x", savedCopy: true });
+    setOnline(true);
+    document.documentElement.dataset.bizhSaved = String(Date.now());
+    try {
+      sendOfflineReport();
+      expect(sentry.captureMessage).not.toHaveBeenCalled();
+    } finally {
+      delete document.documentElement.dataset.bizhSaved;
+    }
+    sendOfflineReport();
+    expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("nothing kept: nothing sent", () => {
     setOnline(true);
     sendOfflineReport();
