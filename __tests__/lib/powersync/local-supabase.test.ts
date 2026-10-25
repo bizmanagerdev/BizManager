@@ -1673,7 +1673,9 @@ describe("the rent roll on the device", () => {
       ["l2", "ווגשל", "2026-10-01", "paid"],
       ["l1", "רוזנפלד", "2026-10-12", "check"],
     ]);
-    expect(month.totals).toMatchObject({ expected: 12500, collected: 8500, collectedByCheck: 0, checks: 4000, owed: 0 });
+    // l1's check was due on 12.10 and isn't in: owed, though we hold it (owner, 2026-10-25: "show both").
+    expect(month.totals).toMatchObject({ expected: 12500, collected: 8500, collectedByCheck: 0, checks: 4000, owed: 4000 });
+    expect(month.rows[1]).toMatchObject({ owed: 4000, checkHeld: 4000 });
   });
 });
 
