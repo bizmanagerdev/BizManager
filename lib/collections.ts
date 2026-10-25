@@ -3,6 +3,8 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { getCollectionActivityByCustomer } from "@/lib/communications";
 import { fetchLoans, overdueInstallments } from "@/lib/loans";
 import { israelDateKey } from "@/lib/timezone";
+import { loadRentRoll, propertyDisplayName, type RentRollPayment } from "@/lib/properties";
+import { daysBetween, rentDebtByLease, rentPaymentsByLease } from "@/lib/rent-roll";
 
 // Data for the גבייה (collections) worklist. Reads collections_view — one row per
 // open receivable source (order / project) that still has money not yet collected
@@ -483,139 +485,61 @@ async function buildLoanSourceRows(
   });
 }
 
-type RentLeaseCandidate = {
-  customerId: string | null;
-  customerName: string | null;
-  customerPhone: string | null;
-  startDate: string | null;
-  endDate: string | null;
-  status: string | null;
-};
-
-/** Same "which lease is current" rule as lib/properties.ts's pickCurrentLease,
- *  reimplemented locally on raw rows to avoid pulling in that module's full
- *  normalization/type surface for a handful of fields. */
-function pickCurrentLeaseCandidate(candidates: RentLeaseCandidate[], today: string): RentLeaseCandidate | null {
-  if (candidates.length === 0) return null;
-  const sorted = [...candidates].sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
-  return sorted.find((l) => l.status === "active" && (!l.endDate || l.endDate >= today)) ?? sorted[0];
+/** A rent check's day — its פירעון, else its date. */
+function checkDay(payment: RentRollPayment): string {
+  return (payment.dueDate ?? payment.date ?? "").slice(0, 10);
 }
 
 /**
- * Pending/overdue rent (property_management payments, pre-scheduled per-lease
- * checks) folded into the חייבים worklist as one row per property — coarse,
- * like loans (no per-check inline "mark collected" here; that lives on the
- * property's own page). Best-effort — returns [] if nothing owed or on error.
+ * Rent in the חייבים worklist (owner, 2026-10-25): one row per lease — its tenant — by the rent page's own rule
+ * (lib/rent-roll.ts rentDebtOf). Late: every month past its due day that isn't in — a check we hold past its day
+ * and not deposited counts as owed ("I want to show that it's debt, and I want to show that we have it"). The
+ * checks for months not due yet are expected (צפוי), never owed. Each payment counts for the lease it was for, so
+ * an earlier tenant's rent isn't the one renting now; a lease that has ended still owing stays. Coarse, like loans
+ * (marking a check in lives on the rent page). Best-effort — [] on error.
  */
-async function buildRentSourceRows(supabase: SupabaseClient, today: string): Promise<CollectionSourceRow[]> {
-  // Paged: every rent payment ever is summed here, and past the database's
-  // 1000-row answer cap the totals were silently short (scale study, 2026-10-11).
-  const rows = await fetchAllPaged<Row>((from, to) =>
-    supabase
-      .from("payments")
-      .select("property_id,amount_total,due_date,payment_status")
-      .eq("business_domain", "property_management")
-      .not("property_id", "is", null)
-      .order("id")
-      .range(from, to)
-  ).catch(() => [] as Row[]);
-  if (rows.length === 0) return [];
-
-  type Agg = { collected: number; pending: number; overdue: number; nextDueDate: string | null };
-  const byProperty = new Map<string, Agg>();
-  for (const row of rows) {
-    const propertyId = str(row, "property_id");
-    if (!propertyId) continue;
-    const agg = byProperty.get(propertyId) ?? { collected: 0, pending: 0, overdue: 0, nextDueDate: null };
-    const amount = toNum(row.amount_total);
-    const status = str(row, "payment_status");
-    const dueDate = str(row, "due_date");
-    if (status === "cleared") {
-      agg.collected += amount;
-    } else if (status === "pending") {
-      if (dueDate && dueDate.slice(0, 10) < today) agg.overdue += amount;
-      else agg.pending += amount;
-      if (dueDate && (!agg.nextDueDate || dueDate < agg.nextDueDate)) agg.nextDueDate = dueDate;
-    }
-    byProperty.set(propertyId, agg);
-  }
-
-  const propertyIds = Array.from(byProperty.keys());
-  if (propertyIds.length === 0) return [];
-
-  const [{ data: propertyRows }, { data: leaseRows }] = await Promise.all([
-    supabase.from("properties").select("id,name,address").in("id", propertyIds),
-    supabase
-      .from("lease_agreements")
-      .select("property_id,customer_id,start_date,end_date,status,customer:customers(name,phone)")
-      .in("property_id", propertyIds),
-  ]);
-
-  const addressByProperty = new Map<string, string>();
-  for (const row of (propertyRows ?? []) as Row[]) {
-    const id = str(row, "id");
-    if (id) addressByProperty.set(id, str(row, "name") ?? str(row, "address") ?? "נכס");
-  }
-
-  const leasesByProperty = new Map<string, RentLeaseCandidate[]>();
-  for (const row of (leaseRows ?? []) as Row[]) {
-    const propertyId = str(row, "property_id");
-    if (!propertyId) continue;
-    const customer = (row.customer ?? {}) as Row | Row[];
-    const customerRow = Array.isArray(customer) ? customer[0] : customer;
-    const list = leasesByProperty.get(propertyId) ?? [];
-    list.push({
-      customerId: str(row, "customer_id"),
-      customerName: customerRow ? str(customerRow, "name") : null,
-      customerPhone: customerRow ? str(customerRow, "phone") : null,
-      startDate: str(row, "start_date"),
-      endDate: str(row, "end_date"),
-      status: str(row, "status"),
-    });
-    leasesByProperty.set(propertyId, list);
-  }
-
+export async function buildRentSourceRows(supabase: SupabaseClient, today: string): Promise<CollectionSourceRow[]> {
+  const data = await loadRentRoll(supabase);
+  const byLease = rentPaymentsByLease(data);
+  const propertyById = new Map(data.properties.map((p) => [p.id, p]));
   const out: CollectionSourceRow[] = [];
-  for (const [propertyId, agg] of byProperty) {
-    const outstanding = agg.pending + agg.overdue;
-    if (outstanding <= 0.009) continue;
-    const total = agg.collected + outstanding;
-    const lease = pickCurrentLeaseCandidate(leasesByProperty.get(propertyId) ?? [], today);
-    const sm = computeSourceCollection({
-      total,
-      collected: agg.collected,
-      pending: outstanding,
-      overdue: agg.overdue,
-      outstanding,
-      nextDueDate: agg.nextDueDate,
-      referenceDate: null,
-      dueDate: agg.nextDueDate,
-      today,
-    });
+  for (const [leaseId, debt] of rentDebtByLease(data, today)) {
+    const lease = data.leases.find((l) => l.id === leaseId);
+    if (!lease) continue;
+    const ahead = (byLease.get(leaseId) ?? [])
+      .filter((p) => p.method === "check" && p.paymentStatus === "pending" && checkDay(p) >= today)
+      .sort((a, b) => checkDay(a).localeCompare(checkDay(b)) || a.id.localeCompare(b.id));
+    const expected = ahead.reduce((sum, p) => sum + p.amount, 0);
+    if (debt.amount <= 0.009 && expected <= 0.009) continue;
+    const late = debt.amount > 0.009 ? debt.amount : 0;
+    const nextDueDate = ahead[0] ? checkDay(ahead[0]) : null;
+    const property = propertyById.get(lease.propertyId);
+    const place = property ? propertyDisplayName(property) : "נכס";
     out.push({
       source_type: "property",
-      source_id: propertyId,
-      collection_key: `property:${propertyId}`,
-      customer_id: lease?.customerId ?? null,
-      customer_name: lease?.customerName || "שוכר",
-      customer_phone: lease?.customerPhone ?? null,
+      source_id: lease.propertyId,
+      collection_key: `property:${lease.propertyId}:${lease.id}`,
+      customer_id: lease.customerId || null,
+      customer_name: lease.customerName || "שוכר",
+      customer_phone: lease.customerPhone ?? null,
       customer_whatsapp: null,
       business_domain: "property_management",
-      reference_date: lease?.startDate ?? null,
-      total_amount: total,
-      collected_amount: agg.collected,
-      pending_amount: sm.expected,
-      overdue_amount: sm.late,
-      outstanding_amount: outstanding,
-      actionable_amount: Math.max(outstanding - sm.expected, 0),
-      next_due_date: agg.nextDueDate,
+      reference_date: lease.startDate ?? null,
+      total_amount: debt.due + expected,
+      collected_amount: debt.paid,
+      pending_amount: expected,
+      overdue_amount: late,
+      // What's owed — not the checks still to come (owner, 2026-10-25: not debt until their day).
+      outstanding_amount: late,
+      actionable_amount: late,
+      next_due_date: nextDueDate,
       last_payment_date: null,
-      due_date: agg.nextDueDate,
+      due_date: debt.oldest ?? nextDueDate,
       payment_terms: null,
-      collection_status: sm.status,
-      days_late: sm.daysLate,
+      collection_status: late > 0.009 ? "overdue" : "awaiting",
+      days_late: late > 0.009 && debt.oldest ? daysBetween(debt.oldest, today) : 0,
       pending_payments: [],
-      title: addressByProperty.get(propertyId) ?? "נכס",
+      title: lease.unitLabel ? `${place} · ${lease.unitLabel}` : place,
       items: [],
     });
   }
