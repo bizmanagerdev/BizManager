@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { processQueue } from "@/lib/offline-queue";
 import { processUploadQueue } from "@/lib/offline-upload";
-import { clearDeviceFrames } from "@/lib/powersync/device-frames";
+import { dropDeviceFrame } from "@/lib/powersync/device-frames";
 import { RUNNING_BUILD, isNewerBuild, liveBuild, mayReloadFrom, noteReloadFrom, swBuildOf } from "@/lib/pwa/app-version";
 
 // A resumed PWA/installed-app instance (tapping the home-screen icon, not a
@@ -19,6 +20,30 @@ import { RUNNING_BUILD, isNewerBuild, liveBuild, mayReloadFrom, noteReloadFrom, 
 // re-checks both the SW build and re-runs Server Components via
 // router.refresh() (soft — keeps client state, unlike a full reload).
 const RESUME_REVALIDATE_MS = 5 * 60 * 1000;
+
+// Moving inside the app to a page with no saved copy, with no connection: the
+// service worker keeps this page on screen and says which page it was
+// (public/sw.js, tellNotSaved). Next.js gave up on the move by then and waits
+// for a whole-page load that isn't coming — the same address in the history
+// again settles it, so the page carries on (owner, 2026-10-24: "the whole app
+// basically crashed").
+const SETTLE_AFTER_MS = 300;
+let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+function pageNotSaved(href: unknown) {
+  if (typeof href !== "string" || document.visibilityState !== "visible") return;
+  let target: URL;
+  try {
+    target = new URL(href, window.location.href);
+  } catch {
+    return;
+  }
+  // The page on screen itself (refreshed): nothing moved.
+  if (target.pathname + target.search === window.location.pathname + window.location.search) return;
+  toast.info("הדף הזה לא שמור במכשיר — ייפתח כשיחזור החיבור", { id: "page-not-saved" });
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => window.history.replaceState(null, "", window.location.href), SETTLE_AFTER_MS);
+}
 
 export default function PwaRegistration() {
   const router = useRouter();
@@ -102,9 +127,11 @@ export default function PwaRegistration() {
     // resumed, and nothing told the running page a new one existed). Each time the app
     // comes back to the screen (and once when it opens) it asks which build the server
     // runs (lib/pwa/app-version.ts); a newer one is loaded the same way — the next time
-    // the app is left. Before that reload the saved page copies go (they are this old
-    // build's pages, and the service worker would answer the reload with them), so it
-    // lands on the new version — and they're saved again from it.
+    // the app is left. Before that reload this page's saved copy goes (it is this old
+    // build's page, and the service worker would answer the reload with it), so it lands
+    // on the new version. The other pages' copies stay: they're what opens with no
+    // connection, and the new version saves its own (2026-10-24 — every update used to
+    // wipe them all, in every open tab).
     const hadController = Boolean(navigator.serviceWorker.controller);
     let reloadWhenHidden = false;
     // Once per build (a reload that lands on the same build again doesn't loop), and
@@ -113,7 +140,7 @@ export default function PwaRegistration() {
     const reloadOntoNewVersion = async () => {
       if (!mayReloadFrom()) return;
       noteReloadFrom();
-      await clearDeviceFrames();
+      await dropDeviceFrame(window.location.href);
       window.location.reload();
     };
     const reloadWhenLeft = () => {
@@ -134,11 +161,15 @@ export default function PwaRegistration() {
     };
     checkForNewVersion();
 
-    // Listen for the SW telling us to drain the queue (Background Sync fallback path)
+    // Listen for the SW telling us to drain the queue (Background Sync fallback path),
+    // or that a page moved to with no connection isn't saved (pageNotSaved above).
     const handleMessage = (event: MessageEvent) => {
-      if ((event.data as { type?: string })?.type === "PROCESS_OFFLINE_QUEUE") {
+      const data = event.data as { type?: string; url?: unknown } | null;
+      if (data?.type === "PROCESS_OFFLINE_QUEUE") {
         void processQueue();
         void processUploadQueue();
+      } else if (data?.type === "PAGE_NOT_SAVED") {
+        pageNotSaved(data.url);
       }
     };
     navigator.serviceWorker.addEventListener("message", handleMessage);

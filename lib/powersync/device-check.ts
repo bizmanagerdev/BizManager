@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { israelDateKey } from "@/lib/timezone";
 import { localDataPageOn } from "./config";
 import { DEVICE_COPY_PENDING_COOKIE } from "./device-pending";
@@ -53,8 +53,15 @@ export function deviceCheckCookie(page: DeviceCheckPage): string {
   return `bizh-shadow-${page}`;
 }
 
+/**
+ * Sent by the service worker when it saves a page's frame in the background
+ * (public/sw.js, SAVE_FRAMES) — nobody is looking at it, so no comparison.
+ */
+export const FRAME_SAVE_HEADER = "x-bizh-frame-save";
+
 /** Does this device still have to compare `page` today? */
 export async function deviceCheckDue(page: DeviceCheckPage): Promise<boolean> {
+  if ((await headers()).get(FRAME_SAVE_HEADER) === "1") return false;
   const jar = await cookies();
   return jar.get(deviceCheckCookie(page))?.value !== israelDateKey();
 }

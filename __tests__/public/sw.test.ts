@@ -100,6 +100,13 @@ function loadWorkerWithCaches(network: () => Response | Promise<Response>, saved
     stores.set(name, new Map(Object.entries(pages).map(([url, html]) => [url, new Response(html, { status: 200 })])));
   }
   const keyOf = (request: { url: string } | string) => (typeof request === "string" ? request : request.url);
+  const withoutSearch = (url: string) => url.split("?")[0];
+  // As the browser's Cache: `ignoreSearch` matches the address whatever its query.
+  const find = (store: Map<string, Response>, request: { url: string } | string, options?: { ignoreSearch?: boolean }) => {
+    const key = keyOf(request);
+    if (!options?.ignoreSearch) return store.has(key) ? key : undefined;
+    return [...store.keys()].find((url) => withoutSearch(url) === withoutSearch(key));
+  };
   const caches = {
     open: async (name: string) => {
       if (!stores.has(name)) stores.set(name, new Map());
@@ -110,7 +117,10 @@ function loadWorkerWithCaches(network: () => Response | Promise<Response>, saved
           store.delete(keyOf(request));
           store.set(keyOf(request), response);
         },
-        match: async (request: { url: string }) => store.get(keyOf(request))?.clone(),
+        match: async (request: { url: string }, options?: { ignoreSearch?: boolean }) => {
+          const key = find(store, request, options);
+          return key === undefined ? undefined : store.get(key)?.clone();
+        },
         delete: async (request: { url: string }) => store.delete(keyOf(request)),
         keys: async () => [...store.keys()].map((url) => ({ url })),
         add: async () => {},
@@ -128,14 +138,16 @@ function loadWorkerWithCaches(network: () => Response | Promise<Response>, saved
       return undefined;
     },
   };
-  const fetchMock = vi.fn(async () => network());
+  const fetchMock = vi.fn(async (..._args: unknown[]) => network());
+  // The app's open pages, as the worker sees them.
+  const clients = { claim: vi.fn(async () => {}), matchAll: vi.fn(async (): Promise<unknown[]> => []) };
   const self = {
     location: new URL("https://biz-h.com/sw.js?v=test"),
     addEventListener: (type: string, handler: (event: unknown) => void) => {
       handlers[type] = handler;
     },
     registration: { navigationPreload: { enable: vi.fn(async () => {}) } },
-    clients: { claim: vi.fn(async () => {}), matchAll: vi.fn(async () => []) },
+    clients,
     skipWaiting: vi.fn(async () => {}),
   };
   vm.runInContext(
@@ -143,7 +155,7 @@ function loadWorkerWithCaches(network: () => Response | Promise<Response>, saved
     vm.createContext({ self, caches, fetch: fetchMock, Response, Headers, URL, Date, setTimeout, clearTimeout, Promise })
   );
   const frames = () => stores.get("bizh-frames-test") ?? new Map<string, Response>();
-  return { handlers, fetchMock, frames, stores };
+  return { handlers, fetchMock, frames, stores, clients };
 }
 
 async function open(worker: { handlers: Record<string, (event: unknown) => void> }, url: string) {
@@ -567,5 +579,192 @@ describe("service worker: code files and saved pages across deploys", () => {
     worker.handlers.activate({ waitUntil: (promise: Promise<unknown>) => (activated = promise) });
     await activated;
     expect([...worker.frames().keys()]).toEqual(["https://biz-h.com/dashboard"]);
+  });
+});
+
+// A page reached by moving inside the app is never loaded whole, so the
+// worker never saw it, and it didn't open with no connection (owner's offline
+// test, 2026-10-24). The page asks for it to be saved (SAVE_FRAMES), and the
+// app asks for the menu's pages after each update: each one not saved yet is
+// fetched in the background, one after another, asking the server to leave
+// out its once-a-day comparison.
+
+describe("service worker: saving the pages the app asks for", () => {
+  const customerUrl = "https://biz-h.com/customers/00000000-0000-4000-8000-000000000001";
+
+  async function ask(worker: ReturnType<typeof loadWorkerWithCaches>, urls: unknown[]) {
+    const background: Promise<unknown>[] = [];
+    worker.handlers.message({
+      data: { type: "SAVE_FRAMES", urls },
+      waitUntil: (promise: Promise<unknown>) => void background.push(promise),
+    });
+    await Promise.all(background);
+  }
+
+  it("saves a page moved to inside the app, fetched with the server's comparison left out", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await ask(worker, [customerUrl]);
+    expect(worker.frames().has(customerUrl)).toBe(true);
+    const [href, init] = worker.fetchMock.mock.calls[0] as [string, { headers: Record<string, string>; credentials: string }];
+    expect(href).toBe(customerUrl);
+    expect(init.headers["X-Bizh-Frame-Save"]).toBe("1");
+    expect(init.credentials).toBe("same-origin");
+  });
+
+  it("a page already saved isn't fetched again", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, customerUrl);
+    worker.fetchMock.mockClear();
+    await ask(worker, [customerUrl]);
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("the customers list with a filter: saved once, as the list (its one frame serves every filter)", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await ask(worker, ["https://biz-h.com/customers?withDebt=yes"]);
+    expect([...worker.frames().keys()]).toEqual(["https://biz-h.com/customers"]);
+    worker.fetchMock.mockClear();
+    await ask(worker, ["https://biz-h.com/customers?withOrders=yes"]);
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves alone pages without a device version, the server version, searches and other sites", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await ask(worker, [
+      "https://biz-h.com/financial/bank",
+      "https://biz-h.com/tasks?data=server",
+      "https://biz-h.com/projects?q=דנה",
+      "https://example.com/tasks",
+      42,
+    ]);
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a page that comes back as its server version (the device's copy not ready) isn't saved", async () => {
+    const worker = loadWorkerWithCaches(() => new Response("<html><body>the server's list</body></html>", { status: 200 }));
+    await ask(worker, ["https://biz-h.com/customers"]);
+    expect(worker.frames().size).toBe(0);
+  });
+
+  it("the menu's pages: one after another, with a pause between — never all at once", async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+      let done = false;
+      void ask(worker, ["/dashboard", "/tasks", "/projects"]).then(() => (done = true));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(worker.fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(worker.fetchMock).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(worker.fetchMock).toHaveBeenCalledTimes(3);
+      expect(done).toBe(true);
+      expect([...worker.frames().keys()]).toEqual([
+        "https://biz-h.com/dashboard",
+        "https://biz-h.com/tasks",
+        "https://biz-h.com/projects",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a list page saved with its own address counts with the records' 40 — the menu's pages stay", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, "https://biz-h.com/sales");
+    for (let n = 1; n <= 45; n++) await open(worker, `https://biz-h.com/sales?customerId=c${n}`);
+    const saved = [...worker.frames().keys()];
+    expect(saved).toContain("https://biz-h.com/sales");
+    expect(saved.filter((url) => url.includes("?"))).toHaveLength(40);
+    expect(saved).not.toContain("https://biz-h.com/sales?customerId=c5");
+    expect(saved).toContain("https://biz-h.com/sales?customerId=c45");
+  });
+});
+
+// Moving inside the app, with no connection, to a page with no saved copy:
+// the page on screen stays (a 204 leaves it as it is) and the open pages are
+// told which page it was — instead of landing on another page or the offline
+// page (owner, 2026-10-24: "the whole app basically crashed"). Next.js asks
+// for the page's data first, then loads it whole; a second try at the same
+// page stops at the first step, so that one tells the pages too.
+
+describe("service worker: a page with no saved copy, with no connection", () => {
+  const customerUrl = "https://biz-h.com/customers/00000000-0000-4000-8000-000000000002";
+  const offline = () => {
+    throw new TypeError("Failed to fetch");
+  };
+
+  async function answer(
+    worker: ReturnType<typeof loadWorkerWithCaches>,
+    request: { url: string; mode: string; headers?: Headers; referrer?: string }
+  ) {
+    let responded: Promise<Response> | undefined;
+    const background: Promise<unknown>[] = [];
+    worker.handlers.fetch({
+      request: { method: "GET", headers: new Headers(), ...request },
+      preloadResponse: Promise.resolve(undefined),
+      respondWith: (promise: Promise<Response>) => (responded = promise),
+      waitUntil: (promise: Promise<unknown>) => void background.push(promise),
+    });
+    const res = await responded!;
+    await Promise.all(background);
+    return res;
+  }
+
+  function withPage(worker: ReturnType<typeof loadWorkerWithCaches>) {
+    const page = { postMessage: vi.fn() };
+    worker.clients.matchAll.mockResolvedValue([page]);
+    return page;
+  }
+
+  it("moved to inside the app: stays where it is, and the page hears which one wasn't saved", async () => {
+    const worker = loadWorkerWithCaches(offline, { "bizh-static-test": { "/dashboard": "<html>board</html>" } });
+    const page = withPage(worker);
+    const res = await answer(worker, { url: customerUrl, mode: "navigate", referrer: "https://biz-h.com/customers" });
+    expect(res.status).toBe(204);
+    expect(page.postMessage).toHaveBeenCalledWith({ type: "PAGE_NOT_SAVED", url: customerUrl });
+  });
+
+  it("typed in, or the app opening (no page it came from): somewhere to land, as before", async () => {
+    const worker = loadWorkerWithCaches(offline, { "bizh-static-test": { "/dashboard": "<html>board</html>" } });
+    const page = withPage(worker);
+    const res = await answer(worker, { url: customerUrl, mode: "navigate", referrer: "" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("board");
+    expect(page.postMessage).not.toHaveBeenCalled();
+  });
+
+  it("a page with a saved frame opens from it — the list's frame for any filter", async () => {
+    const worker = loadWorkerWithCaches(offline, { "bizh-frames-test": { "https://biz-h.com/customers": FRAME } });
+    const page = withPage(worker);
+    const res = await answer(worker, {
+      url: "https://biz-h.com/customers?withDebt=yes",
+      mode: "navigate",
+      referrer: "https://biz-h.com/dashboard",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('data-device-page="tasks"');
+    expect(page.postMessage).not.toHaveBeenCalled();
+  });
+
+  it("the page's data asked for first (a second try never gets further): the pages hear it at once", async () => {
+    const worker = loadWorkerWithCaches(offline);
+    const page = withPage(worker);
+    const res = await answer(worker, { url: `${customerUrl}?_rsc=abc12`, mode: "cors", headers: new Headers({ RSC: "1" }) });
+    expect(res.status).toBe(503);
+    expect(page.postMessage).toHaveBeenCalledWith({ type: "PAGE_NOT_SAVED", url: customerUrl });
+  });
+
+  it("…but not for a page that is saved (it loads whole from the frame next), nor for a prefetch", async () => {
+    const worker = loadWorkerWithCaches(offline, { "bizh-frames-test": { [customerUrl]: FRAME } });
+    const page = withPage(worker);
+    await answer(worker, { url: `${customerUrl}?_rsc=abc12`, mode: "cors", headers: new Headers({ RSC: "1" }) });
+    const other = "https://biz-h.com/customers/00000000-0000-4000-8000-000000000003";
+    await answer(worker, {
+      url: `${other}?_rsc=abc12`,
+      mode: "cors",
+      headers: new Headers({ RSC: "1", "Next-Router-Prefetch": "1" }),
+    });
+    expect(page.postMessage).not.toHaveBeenCalled();
   });
 });

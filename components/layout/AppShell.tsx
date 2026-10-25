@@ -122,6 +122,7 @@ export default function AppShell({
         <NativeShortcuts role={viewerRole} locale={viewerLocale} access={viewerSectionAccess} />
         {localDataEnabledFor(viewerRole) ? (
           <LocalDataHost
+            access={viewerSectionAccess}
             viewer={
               viewerId
                 ? { userId: viewerId, role: viewerRole ?? "", locale: viewerLocale === "ar" ? "ar" : "he", name: userName ?? null }

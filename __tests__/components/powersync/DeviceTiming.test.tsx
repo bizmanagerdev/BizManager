@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 
 // The device pages' timing report and frame marker: a report says where the
@@ -92,5 +92,39 @@ describe("DeviceFrameMark", () => {
     render(<DeviceFrameMark page="sales" renderedAt={Date.now() - 60 * 60 * 1000} />);
     expect(router.refresh).not.toHaveBeenCalled();
     online.mockRestore();
+  });
+
+  // A page reached by moving inside the app was never loaded whole, so the
+  // service worker never saw it: it's asked to save it, to open with no
+  // connection (owner's offline test, 2026-10-24).
+  describe("saving the page to open with no connection", () => {
+    const postMessage = vi.fn();
+    beforeEach(() => {
+      postMessage.mockReset();
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { controller: { postMessage } } });
+    });
+    afterEach(() => {
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: undefined });
+      vi.restoreAllMocks();
+    });
+
+    it("a page moved to inside the app: the service worker is asked to save it", () => {
+      vi.spyOn(performance, "getEntriesByType").mockReturnValue([{ name: "https://www.biz-h.com/dashboard" } as PerformanceEntry]);
+      render(<DeviceFrameMark page="customers" renderedAt={Date.now()} />);
+      expect(postMessage).toHaveBeenCalledWith({ type: "SAVE_FRAMES", urls: [window.location.href] });
+    });
+
+    it("the page the app loaded whole: the service worker saved it already — not asked", () => {
+      vi.spyOn(performance, "getEntriesByType").mockReturnValue([{ name: window.location.href } as PerformanceEntry]);
+      render(<DeviceFrameMark page="customers" renderedAt={Date.now()} />);
+      expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it("no connection: not asked (it couldn't be fetched)", () => {
+      vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+      vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+      render(<DeviceFrameMark page="customers" renderedAt={Date.now()} />);
+      expect(postMessage).not.toHaveBeenCalled();
+    });
   });
 });

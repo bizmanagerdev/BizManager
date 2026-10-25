@@ -496,6 +496,9 @@ const DETAIL_FRAME_PATHS = [
   /^\/customers\/[0-9a-f-]{36}$/i,
   /^\/properties\/[0-9a-f-]{36}$/i,
 ];
+// Kept with them in that count: a list page saved with its own address
+// (/sales?customerId=…), since a page moved to inside the app is saved too
+// (SAVE_FRAMES, below) and those addresses have no end.
 const DETAIL_FRAMES_MAX = 40;
 // Frames that read their filters from the address themselves (the drivers'
 // /deliveries reads its region on the phone, the customers list its filters):
@@ -523,9 +526,20 @@ function isFrameRequest(url) {
   );
 }
 
+/** A frame counted in DETAIL_FRAMES_MAX: a record's page, or a list page with its own address. */
+function isTrimmedFrame(href) {
+  const url = new URL(href);
+  return isDetailFramePath(url.pathname) || url.search !== "";
+}
+
+/** The address a request or a URL string stands for. */
+function hrefOf(request) {
+  return typeof request === "string" ? request : request.url;
+}
+
 // keys() lists the oldest saved first — saving a page again moves it to the end.
 async function trimDetailFrames(cache) {
-  const detail = (await cache.keys()).filter((request) => isDetailFramePath(new URL(request.url).pathname));
+  const detail = (await cache.keys()).filter((request) => isTrimmedFrame(request.url));
   const extra = detail.length - DETAIL_FRAMES_MAX;
   if (extra > 0) await Promise.all(detail.slice(0, extra).map((request) => cache.delete(request)));
 }
@@ -535,26 +549,39 @@ async function matchFrame(request) {
     const cache = await caches.open(FRAMES_CACHE);
     const exact = await cache.match(request);
     if (exact) return exact;
-    const url = new URL(request.url);
+    const url = new URL(hrefOf(request));
     return ANY_QUERY_FRAME_PATHS.has(url.pathname) ? ((await cache.match(request, { ignoreSearch: true })) ?? null) : null;
   } catch {
     return null;
   }
 }
 
+// Frames being saved right now — by a page's own load, or in the background
+// (SAVE_FRAMES) — so the same one isn't fetched twice at once.
+const framesSaving = new Map();
+
 // `response` must be a copy nobody else reads. `ahead`: a page of a newer build
 // than this worker's (a deploy since) has its code fetched now (fetchAhead) —
 // only from the background refresh, never while the page itself is loading it.
-async function saveFrame(request, response, { ahead = false } = {}) {
+function saveFrame(request, response, options) {
+  const href = hrefOf(request);
+  const saving = saveFrameNow(href, response, options).finally(() => {
+    if (framesSaving.get(href) === saving) framesSaving.delete(href);
+  });
+  framesSaving.set(href, saving);
+  return saving;
+}
+
+async function saveFrameNow(href, response, { ahead = false } = {}) {
   try {
     const cache = await caches.open(FRAMES_CACHE);
     if (!response || !response.ok || response.redirected || response.type === "opaqueredirect") {
-      await cache.delete(request);
+      await cache.delete(href);
       return;
     }
     const html = await response.text();
     if (!html.includes(FRAME_MARK)) {
-      await cache.delete(request);
+      await cache.delete(href);
       return;
     }
     const build = buildOf(html);
@@ -563,12 +590,92 @@ async function saveFrame(request, response, { ahead = false } = {}) {
       "X-Bizh-Frame-Saved": String(Date.now()),
     };
     if (build) headers["X-Bizh-Build"] = build;
-    await cache.put(request, new Response(html, { headers }));
-    if (isDetailFramePath(new URL(request.url).pathname)) await trimDetailFrames(cache);
+    await cache.put(href, new Response(html, { headers }));
+    if (isTrimmedFrame(href)) await trimDetailFrames(cache);
     if (ahead && build && build !== V) await fetchAhead(html);
   } catch {
     // Not saved — the next open just waits for the server, as before.
   }
+}
+
+// ── Saving frames the page asks for ──────────────────────────────────────────
+// A page reached by moving inside the app is never loaded whole, so the fetch
+// handler below never sees it — and it didn't open with no connection (owner's
+// offline test, 2026-10-24). The page asks for it instead (DeviceFrameMark),
+// and the app asks for the menu's pages after each update (OfflineMenuFrames);
+// each one not saved yet is fetched in the background, one after another.
+// Asked for with FRAME_SAVE_HEADER: the server then leaves out the page's
+// once-a-day comparison with its own version (lib/powersync/device-check.ts).
+const FRAME_SAVE_HEADER = "X-Bizh-Frame-Save";
+const FRAME_SAVE_GAP_MS = 1500;
+const FRAME_SAVE_MAX = 12;
+
+async function saveFramesAskedFor(hrefs) {
+  let fetched = 0;
+  for (const raw of hrefs.slice(0, FRAME_SAVE_MAX)) {
+    let url;
+    try {
+      url = new URL(raw, self.location.origin);
+    } catch {
+      continue;
+    }
+    url.hash = "";
+    if (url.origin !== self.location.origin || !isFrameRequest(url)) continue;
+    // One frame for every filter of these (see ANY_QUERY_FRAME_PATHS).
+    const href = ANY_QUERY_FRAME_PATHS.has(url.pathname) ? url.origin + url.pathname : url.href;
+    if (framesSaving.has(href) || (await matchFrame(href))) continue;
+    if (fetched > 0) await new Promise((resolve) => setTimeout(resolve, FRAME_SAVE_GAP_MS));
+    fetched += 1;
+    try {
+      const res = await fetch(href, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "text/html", [FRAME_SAVE_HEADER]: "1" },
+      });
+      await saveFrame(href, res);
+    } catch {
+      // No connection, or refused: asked for again the next time it's opened.
+    }
+  }
+}
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || data.type !== "SAVE_FRAMES" || !Array.isArray(data.urls)) return;
+  event.waitUntil(saveFramesAskedFor(data.urls.filter((u) => typeof u === "string")));
+});
+
+// ── A page with no saved copy, with no connection ───────────────────────────
+// Moving inside the app to such a page: the page stays where it is and says
+// why (components/pwa/PwaRegistration), instead of landing on another page or
+// the offline page (owner, 2026-10-24: "the whole app basically crashed").
+
+/** This page's saved copy, if any (its frame — any filter's, for the lists in ANY_QUERY_FRAME_PATHS — then the saved page). */
+async function savedCopyOf(request) {
+  const frame = isFrameRequest(new URL(hrefOf(request)));
+  return (frame ? await matchFrame(request) : null) ?? (await savedCopyFor(request, frame));
+}
+
+/** Moved to from one of the app's own pages (not typed, not the app opening, not a notification). */
+function isInAppMove(request) {
+  const from = request.referrer;
+  return typeof from === "string" && from.startsWith(`${self.location.origin}/`);
+}
+
+/** Tell the open pages `href` isn't saved on the device. */
+function tellNotSaved(href) {
+  return self.clients
+    .matchAll({ type: "window" })
+    .then((clients) => {
+      for (const client of clients) client.postMessage({ type: "PAGE_NOT_SAVED", url: href });
+    })
+    .catch(() => {});
+}
+
+function isPrefetch(request) {
+  return (
+    request.headers.get("Next-Router-Prefetch") === "1" || request.headers.get("Next-Router-Segment-Prefetch") !== null
+  );
 }
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
@@ -649,7 +756,24 @@ self.addEventListener("fetch", (event) => {
         })
         // This version's copy only — another version's payload doesn't fit
         // the code that's running.
-        .catch(() => matchIn(PAGES_CACHE, request))
+        .catch(async () => {
+          const cached = await matchIn(PAGES_CACHE, request);
+          if (cached || isPrefetch(request)) return cached;
+          // Next.js now loads the page whole, and the navigation below stays
+          // put if it isn't saved — but a second try at the same page never
+          // reaches it (Next.js won't load the same address whole twice), so
+          // the page hears it from here too.
+          const page = new URL(url);
+          page.searchParams.delete("_rsc");
+          if (!(await savedCopyOf(page.href))) {
+            try {
+              event.waitUntil(tellNotSaved(page.href));
+            } catch {
+              // Still sent; the worker may just not wait for it.
+            }
+          }
+          return null;
+        })
         .then((res) => res ?? new Response("Offline", { status: 503 }))
     );
     return;
@@ -724,7 +848,7 @@ self.addEventListener("fetch", (event) => {
 
         // With a saved copy to fall back on, a hanging connection is given
         // less time before the copy shows (SAVED_COPY_AFTER_MS).
-        const saved = await savedCopyFor(request, frame);
+        const saved = await savedCopyOf(request);
         const patient = Date.now() < slowServerUntil;
         let res = null;
         try {
@@ -748,6 +872,17 @@ self.addEventListener("fetch", (event) => {
             if (late && late.ok) slowServerUntil = Date.now() + SLOW_SERVER_PATIENCE_MS;
           })
           .catch(() => {});
+
+        // Moved to inside the app, and not saved: stay on the page you're on —
+        // a 204 leaves it as it is — and say why (see tellNotSaved).
+        if (!saved && isInAppMove(request)) {
+          try {
+            event.waitUntil(tellNotSaved(url.href));
+          } catch {
+            // Still sent; the worker may just not wait for it.
+          }
+          return new Response(null, { status: 204 });
+        }
 
         // This page's saved copy (a device page's frame first — the phone fills
         // it from its own copy), else somewhere to land; marked as a saved copy.
