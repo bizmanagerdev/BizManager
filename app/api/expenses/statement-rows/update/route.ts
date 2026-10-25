@@ -5,6 +5,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { roundShekels } from "@/lib/financial/cardStatementMath";
 import { CARD_REFUND_METHOD } from "@/lib/payments";
+import { loadStatementCardAccount, statementPricer } from "@/lib/financial/cardAccountStatement";
 
 // Edits a saved statement row.
 //  • If the row already created an expense → update the live expense (and its project link),
@@ -46,11 +47,17 @@ export async function POST(req: Request) {
 
     const { data: row, error: rowError } = await supabase
       .from("card_statement_rows")
-      .select("id,expense_id,income_payment_id,amount")
+      .select("id,expense_id,income_payment_id,amount,statement_id")
       .eq("id", rowId)
       .maybeSingle();
     if (rowError) return NextResponse.json({ error: toHebrewError(rowError.message) }, { status: 400 });
     if (!row?.id) return NextResponse.json({ error: "השורה לא נמצאה." }, { status: 404 });
+
+    // A US card's line (2026-10-25) is in the card's currency: its expense and
+    // refund keep their dollars, their shekels at the rate of the line's day.
+    const loaded = await loadStatementCardAccount(supabase, String(row.statement_id ?? ""));
+    if ("error" in loaded) return NextResponse.json({ error: toHebrewError(loaded.error) }, { status: 400 });
+    const price = loaded.account ? statementPricer(supabase, loaded.account.currency) : null;
     const expenseId = typeof row.expense_id === "string" ? row.expense_id : "";
     const incomePaymentId = typeof row.income_payment_id === "string" ? row.income_payment_id : "";
 
@@ -92,9 +99,18 @@ export async function POST(req: Request) {
         .maybeSingle();
       if (payment?.payment_method === CARD_REFUND_METHOD) {
         const refund = roundShekels(-amount);
+        const priced = price ? await price(refund, expenseDate) : null;
+        if (priced && "error" in priced) return NextResponse.json({ error: priced.error }, { status: 400 });
+        const shekels = priced ? priced.shekels : refund;
         const { error: paymentError } = await supabase
           .from("payments")
-          .update({ amount_total: refund, net_amount: refund, business_domain: businessDomain, payment_date: expenseDate })
+          .update({
+            amount_total: shekels,
+            net_amount: shekels,
+            business_domain: businessDomain,
+            payment_date: expenseDate,
+            ...(priced ? priced.columns : {}),
+          })
           .eq("id", incomePaymentId);
         if (paymentError) return NextResponse.json({ error: toHebrewError(paymentError.message) }, { status: 400 });
       }
@@ -143,10 +159,14 @@ export async function POST(req: Request) {
     if (!Number.isFinite(amount)) return NextResponse.json({ error: "סכום לא תקין." }, { status: 400 });
     if (!expenseDate) return NextResponse.json({ error: "חסר תאריך." }, { status: 400 });
 
+    const priced = price ? await price(amount, expenseDate) : null;
+    if (priced && "error" in priced) return NextResponse.json({ error: priced.error }, { status: 400 });
+
     const { error: expenseError } = await supabase
       .from("expenses")
       .update({
-        amount,
+        amount: priced ? priced.shekels : amount,
+        ...(priced ? priced.columns : {}),
         category,
         description,
         notes,

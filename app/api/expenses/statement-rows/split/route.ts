@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { validateSplitParts, type SplitPart } from "@/lib/financial/statementSplit";
+import { loadStatementCardAccount, statementPricer } from "@/lib/financial/cardAccountStatement";
 
 // Splits one card-statement line across business domains (₪1,000 → ₪500 בית,
 // ₪340 מכירות, ₪160 שוטף). The first part stays on the line itself; every other
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
     const { data: rowData, error: rowError } = await supabase
       .from("card_statement_rows")
       .select(
-        "id,statement_id,expense_id,include,expense_date,transaction_date,amount,description,category,notes,card_label,assignment_raw,row_index"
+        "id,statement_id,expense_id,include,expense_date,transaction_date,amount,description,category,notes,card_label,assignment_raw,row_index,line_kind"
       )
       .eq("id", rowId)
       .maybeSingle();
@@ -72,6 +73,10 @@ export async function POST(req: Request) {
 
     const total = Number(row.amount);
     if (!(total > 0)) return NextResponse.json({ error: "אפשר לפצל רק שורת חיוב בסכום חיובי." }, { status: 400 });
+    // A US card's payment or cash advance is a transfer, never split across domains.
+    if (row.line_kind && row.line_kind !== "charge") {
+      return NextResponse.json({ error: "אפשר לפצל רק קנייה." }, { status: 400 });
+    }
     const invalid = validateSplitParts(total, parts);
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
@@ -86,17 +91,32 @@ export async function POST(req: Request) {
     const expenseDate = str(row.expense_date);
     const category = str(row.category) ?? FALLBACK_CATEGORY;
 
+    // A US card's line (2026-10-25): every part is in the card's currency, on
+    // the card's account, its shekels at the rate of the line's day.
+    const loaded = await loadStatementCardAccount(supabase, String(row.statement_id ?? ""));
+    if ("error" in loaded) return NextResponse.json({ error: toHebrewError(loaded.error) }, { status: 400 });
+    const card = loaded.account;
+    const price = card ? statementPricer(supabase, card.currency) : null;
+    const priceOf = async (amount: number) => {
+      if (!price || !expenseDate) return { amount, extra: {} as Record<string, unknown> };
+      const priced = await price(amount, expenseDate);
+      if ("error" in priced) throw new Error(priced.error);
+      return { amount: priced.shekels, extra: { account_id: card!.cardAccountId, ...priced.columns } as Record<string, unknown> };
+    };
+
     // ── The other parts' expenses (only when the line already has one) ─────────
     let newExpenseIds: Array<string | null> = rest.map(() => null);
     if (expenseId) {
       if (!expenseDate) return NextResponse.json({ error: "חסר תאריך בשורה." }, { status: 400 });
+      const pricedRest = await Promise.all(rest.map((p) => priceOf(p.amount)));
       const { data: inserted, error: insertError } = await supabase
         .from("expenses")
         .insert(
-          rest.map((p) => ({
+          rest.map((p, i) => ({
+            ...pricedRest[i].extra,
             expense_date: expenseDate,
             transaction_date: str(row.transaction_date),
-            amount: p.amount,
+            amount: pricedRest[i].amount,
             category,
             description: str(row.description),
             business_domain: p.domain,
@@ -126,10 +146,12 @@ export async function POST(req: Request) {
       if (links.length > 0) await supabase.from("project_expenses").insert(links);
 
       // The line's own expense becomes the first part.
+      const pricedFirst = await priceOf(first.amount);
       const { error: updateError } = await supabase
         .from("expenses")
         .update({
-          amount: first.amount,
+          ...pricedFirst.extra,
+          amount: pricedFirst.amount,
           business_domain: first.domain,
           project_id: first.projectId,
           property_id: first.propertyId,

@@ -31,7 +31,9 @@ import {
   type KnownCard,
 } from "@/lib/financial/cardImport";
 import { extractPdfLines } from "@/lib/financial/pdfStatement";
+import { parseUsCardCsv, parseUsCardStatementLines, type UsStatement } from "@/lib/financial/usCardStatement";
 import ImportNotes from "./ImportNotes";
+import UsStatementReview, { type CardAccountOption, type ExistingUsStatement, type UsSaveLine } from "./UsStatementReview";
 import { formatShortDate } from "@/lib/date";
 
 type Option = { id: string; name: string };
@@ -187,15 +189,24 @@ export default function CardImportClient({
   smartExtractEnabled,
   merchantMemory,
   knownCards,
+  cardAccounts = [],
+  usStatements = [],
 }: {
   projects: Option[];
   properties: Option[];
   smartExtractEnabled: boolean;
   merchantMemory: MerchantMemory;
   knownCards: KnownCard[];
+  /** The card accounts (US cards kept as their own account) a US statement goes on. */
+  cardAccounts?: CardAccountOption[];
+  /** US statements already uploaded, so the same one isn't saved twice. */
+  usStatements?: ExistingUsStatement[];
 }) {
   const router = useRouter();
   const [step, setStep] = useState<ImportStep>("upload");
+  // A US card's statement (Chase, Capital One), read by its own reader: it has
+  // its own review — no columns, no bank date (owner, 2026-10-25).
+  const [usStatement, setUsStatement] = useState<UsStatement | null>(null);
   const [source, setSource] = useState<"excel" | "pdf">("excel");
   const [fileName, setFileName] = useState<string>("");
   const [fileError, setFileError] = useState<string | null>(null);
@@ -374,6 +385,12 @@ export default function CardImportClient({
       }
       setSource("excel");
       setFileName(file.name);
+      const us = parsed.map((s) => parseUsCardCsv(s.rows)).find((s) => s !== null) ?? null;
+      if (us) {
+        setUsStatement(us);
+        setStep("review");
+        return;
+      }
       setSheets(parsed);
       setSheetIndex(0);
       applyAutoDetect(parsed[0]);
@@ -394,6 +411,12 @@ export default function CardImportClient({
     try {
       const { lines, hasText } = await extractPdfLines(file);
       if (hasText) {
+        const us = parseUsCardStatementLines(lines);
+        if (us) {
+          setUsStatement(us);
+          setStep("review");
+          return;
+        }
         const { txns, confidence } = parseStatementLines(lines);
         if (confidence >= LOCAL_MIN_TXNS) {
           loadTxns(txns);
@@ -575,22 +598,9 @@ export default function CardImportClient({
     setSaving(true);
     let documentId: string | null = null;
     try {
-      // Save the original file as an attachment (best-effort — the save proceeds regardless).
-      let storageKey: string | null = null;
-      if (sourceFile) {
-        try {
-          const fd = new FormData();
-          fd.append("file", sourceFile);
-          const upRes = await fetch("/api/expenses/statement-file", { method: "POST", body: fd });
-          if (upRes.ok) {
-            const up = (await upRes.json().catch(() => ({}))) as { document_id?: string; storage_key?: string };
-            documentId = up.document_id ?? null;
-            storageKey = up.storage_key ?? null;
-          }
-        } catch {
-          /* keep saving even if the file upload fails */
-        }
-      }
+      const uploaded = await uploadSourceFile();
+      documentId = uploaded.documentId;
+      const storageKey = uploaded.storageKey;
 
       const payload = {
         rows: rows.map((r) => ({
@@ -639,6 +649,89 @@ export default function CardImportClient({
     }
   }
 
+  /** Saves the original file as an attachment — best-effort: the save goes on
+   *  without it. */
+  async function uploadSourceFile(): Promise<{ documentId: string | null; storageKey: string | null }> {
+    if (!sourceFile) return { documentId: null, storageKey: null };
+    try {
+      const fd = new FormData();
+      fd.append("file", sourceFile);
+      const upRes = await fetch("/api/expenses/statement-file", { method: "POST", body: fd });
+      if (upRes.ok) {
+        const up = (await upRes.json().catch(() => ({}))) as { document_id?: string; storage_key?: string };
+        return { documentId: up.document_id ?? null, storageKey: up.storage_key ?? null };
+      }
+    } catch {
+      /* keep saving even if the file upload fails */
+    }
+    return { documentId: null, storageKey: null };
+  }
+
+  // A US card's statement: its lines in dollars on the card's own account, its
+  // own numbers (period, balances, due date) kept with it. A payment line is
+  // saved as one — the statement page links it to its transfer.
+  async function saveUsStatement(input: { cardAccountId: string; cardLabel: string; lines: UsSaveLine[] }) {
+    if (saving || !usStatement) return;
+    setSaveError(null);
+    setSaving(true);
+    let documentId: string | null = null;
+    try {
+      const uploaded = await uploadSourceFile();
+      documentId = uploaded.documentId;
+      const payload = {
+        rows: input.lines.map((l) => {
+          // A purchase or refund gets its remembered domain as a head-start.
+          const memory = l.kind === "charge" ? merchantMemory[norm(l.description)] : undefined;
+          return {
+            expense_date: l.postDate,
+            transaction_date: l.txnDate || null,
+            amount: l.amount,
+            description: l.description,
+            category: input.cardLabel,
+            card_label: input.cardLabel,
+            business_domain: memory?.businessDomain || null,
+            project_id: memory?.businessDomain === "logistics_projects" ? memory.projectId || null : null,
+            property_id: memory?.businessDomain === "property_management" ? memory.propertyId || null : null,
+            notes: l.notes,
+            include: true,
+            line_kind: l.kind,
+          };
+        }),
+        statement: {
+          file_name: fileName,
+          source: usStatement.source === "pdf" ? "pdf" : "excel",
+          document_id: documentId,
+          storage_key: uploaded.storageKey,
+          total_rows: input.lines.length,
+          card_account_id: input.cardAccountId,
+          currency: "USD",
+          period_start: usStatement.periodStart,
+          period_end: usStatement.periodEnd,
+          payment_due_date: usStatement.dueDate,
+          previous_balance: usStatement.previousBalance,
+          new_balance: usStatement.newBalance,
+        },
+      };
+      const res = await fetch("/api/expenses/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json().catch(() => ({}))) as { statement_id?: string; error?: string };
+      if (!res.ok || !data.statement_id) {
+        await discardUploadedStatementFile(documentId);
+        setSaveError(toHebrewError(data.error, "שמירת הדף נכשלה."));
+        setSaving(false);
+        return;
+      }
+      router.push(`/financial/statements/${data.statement_id}`);
+    } catch {
+      await discardUploadedStatementFile(documentId);
+      setSaveError("שמירת הדף נכשלה.");
+      setSaving(false);
+    }
+  }
+
   /** Best-effort cleanup of the statement file when the import that was meant
    *  to claim it never completed. Failing here is not worth surfacing — the
    *  user already has a save error, and the worst case is one stray document. */
@@ -657,6 +750,7 @@ export default function CardImportClient({
 
   function reset() {
     setStep("upload");
+    setUsStatement(null);
     setSource("excel");
     setSourceFile(null);
     setPresetApplied(false);
@@ -675,13 +769,15 @@ export default function CardImportClient({
   // Built like the statement page it leads to: a header with the file's name, then
   // one card with the step bar and the panel of the step on screen (one main button
   // each), and the lines under it. A PDF has no columns step.
-  const stepIds: ImportStep[] = source === "pdf" ? ["upload", "review"] : ["upload", "map", "review"];
+  // A US statement has no columns step either, whatever its file.
+  const stepIds: ImportStep[] = source === "pdf" || usStatement ? ["upload", "review"] : ["upload", "map", "review"];
   const stepDefs: WizardStepDef<ImportStep>[] = stepIds.map((n) => ({ n, label: STEP_LABELS[n] }));
-  const fileLoaded = sheets.length > 0 || rows.length > 0;
+  const fileLoaded = sheets.length > 0 || rows.length > 0 || usStatement !== null;
   const stepDone = (n: ImportStep) =>
     n === "upload" ? fileLoaded : n === "map" ? source === "excel" && step === "review" && rows.length > 0 : false;
   const canOpenStep = (n: ImportStep) =>
-    !saving && (n === "upload" || (n === "map" ? source === "excel" && sheets.length > 0 : rows.length > 0));
+    !saving &&
+    (n === "upload" || (n === "map" ? source === "excel" && sheets.length > 0 : rows.length > 0 || usStatement !== null));
   const excludedCount = rows.filter((r) => !r.include).length;
   const purchasesToRecord = rows.filter((r) => r.include && r.amount > 0).length;
   const totalMatches = statementTotal !== null && Math.round(statementTotal * 100) === linesAgorot;
@@ -722,6 +818,7 @@ export default function CardImportClient({
   const headerLine = fileName
     ? [
         source === "pdf" ? "PDF" : "Excel/CSV",
+        usStatement ? `${usStatement.lines.length} שורות · בדולרים` : null,
         rows.length > 0 ? `${rows.length} שורות` : null,
         rows.length > 0 ? (cardGroups.length === 1 ? "כרטיס אחד" : `${cardGroups.length} כרטיסים`) : null,
       ]
@@ -880,6 +977,15 @@ export default function CardImportClient({
                 </Button>
               </div>
             </div>
+          ) : usStatement ? (
+            <UsStatementReview
+              statement={usStatement}
+              cardAccounts={cardAccounts}
+              existing={usStatements}
+              saving={saving}
+              saveError={saveError}
+              onSave={(input) => void saveUsStatement(input)}
+            />
           ) : (
             <div className="space-y-3">
               <PanelTitle

@@ -33,9 +33,19 @@ export type StatementMathRow = {
   expenseAccountId: string | null;
   incomePaymentId: string | null;
   incomeExists: boolean;
-  /** "מול מזומן": the cash entry this purchase put in the cash box. */
+  /** "מול מזומן": the cash entry this purchase put in the cash box. On a US
+   *  card's statement, also a cash advance's transfer into the cash box. */
   cashTransferId?: string | null;
+  /** A US card's line (card_statement_rows.line_kind): "charge" (every Israeli
+   *  line), "payment" (paying the card) or "cash_advance". */
+  lineKind?: "charge" | "payment" | "cash_advance";
+  /** A payment line's transfer from the bank into the card, once linked. */
+  paymentTransferId?: string | null;
 };
+
+/** A statement kept on a US card's own account (2026-10-25): its lines are
+ *  expenses on that account, its payments transfers — no lump bank charge. */
+export type StatementMathOptions = { cardAccountId?: string | null };
 
 export type StatementMathCharge = {
   id: string;
@@ -77,9 +87,15 @@ export type CardSummary = {
   needsCharge: boolean;
   /** Refunds at least as big as the purchases: nothing to charge this month. */
   creditBalance: boolean;
+  /** A US card's payments on this statement (as a positive sum) — never in the bill. */
+  payments: number;
+  paymentCount: number;
 };
 
 export type StatementSteps = {
+  /** "bank_charge": an Israeli card, one charge a month from a bank.
+   *  "card_account": a US card kept as its own account. */
+  mode: "bank_charge" | "card_account";
   cards: CardSummary[];
   assign: {
     done: boolean;
@@ -92,6 +108,8 @@ export type StatementSteps = {
     cash: number;
   };
   bank: { done: boolean; missingCards: string[] };
+  /** A US card's payments and cash advances: linked to their transfer, or waiting. */
+  transfers: { done: boolean; paymentsLinked: number; paymentsWaiting: number; advancesWaiting: number };
   canFinish: boolean;
   /** What still stops "סיום", in the words the page shows. */
   missing: string[];
@@ -107,12 +125,19 @@ export function cardKeyOf(label: string | null | undefined): string {
   return (label ?? "").trim() || GENERIC_CARD_LABEL;
 }
 
-export type RowMode = "draft" | "created" | "deleted" | "cash";
+/** payment = a US card's payment line not yet linked to its transfer, paid =
+ *  linked; advance = a cash advance not yet in the cash box. */
+export type RowMode = "draft" | "created" | "deleted" | "cash" | "payment" | "paid" | "advance";
 
 /** A purchase is done once it has an expense, or once it is "מול מזומן"; a refund once it has its income. */
 export function statementRowMode(
-  row: Pick<StatementMathRow, "amount" | "expenseId" | "expenseExists" | "incomePaymentId" | "incomeExists" | "cashTransferId">
+  row: Pick<
+    StatementMathRow,
+    "amount" | "expenseId" | "expenseExists" | "incomePaymentId" | "incomeExists" | "cashTransferId" | "lineKind" | "paymentTransferId"
+  >
 ): RowMode {
+  if (row.lineKind === "payment") return row.paymentTransferId ? "paid" : "payment";
+  if (row.lineKind === "cash_advance") return row.cashTransferId ? "cash" : "advance";
   if (row.amount < 0) {
     if (row.incomeExists) return "created";
     if (row.incomePaymentId) return "deleted";
@@ -124,7 +149,18 @@ export function statementRowMode(
   return "draft";
 }
 
-export function summarizeStatement(rows: StatementMathRow[], charges: StatementMathCharge[]): StatementSteps {
+export function summarizeStatement(
+  rows: StatementMathRow[],
+  charges: StatementMathCharge[],
+  options: StatementMathOptions = {}
+): StatementSteps {
+  // A US card's own account: its lines are expenses on it (never "counted
+  // twice"), its payments are transfers, and no bank charge is recorded.
+  const cardAccountId = options.cardAccountId ?? null;
+  const cardMode = Boolean(cardAccountId);
+  let paymentsLinked = 0;
+  let paymentsWaiting = 0;
+  let advancesWaiting = 0;
   type Acc = {
     lineCount: number;
     purchases: number;
@@ -140,6 +176,8 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
     countedTwice: number;
     countedTwiceIds: string[];
     dates: Map<string, { amount: number; count: number }>;
+    payments: number;
+    paymentCount: number;
   };
   const byCard = new Map<string, Acc>();
   let created = 0;
@@ -169,10 +207,20 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
         countedTwice: 0,
         countedTwiceIds: [] as string[],
         dates: new Map(),
+        payments: 0,
+        paymentCount: 0,
       } satisfies Acc);
     byCard.set(label, acc);
     const ag = toAgorot(row.amount);
     acc.lineCount += 1;
+    // Paying the card: a transfer from the bank, never a purchase or a refund.
+    if (row.lineKind === "payment") {
+      acc.payments += -ag;
+      acc.paymentCount += 1;
+      if (statementRowMode(row) === "paid") paymentsLinked += 1;
+      else paymentsWaiting += 1;
+      continue;
+    }
     if (ag > 0) {
       acc.purchases += ag;
       acc.purchaseCount += 1;
@@ -189,9 +237,13 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
     }
 
     const mode = statementRowMode(row);
-    if (ag > 0 && mode === "created" && row.expenseAccountId && row.expenseId) {
+    if (ag > 0 && mode === "created" && row.expenseAccountId && row.expenseId && row.expenseAccountId !== cardAccountId) {
       acc.countedTwice += ag;
       acc.countedTwiceIds.push(row.expenseId);
+    }
+    if (mode === "advance") {
+      advancesWaiting += 1;
+      continue;
     }
     if (ag === 0 || mode === "deleted") continue;
     if (mode === "created") {
@@ -259,8 +311,10 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
       usualDate,
       charge,
       difference: charge ? fromAgorot(toAgorot(charge.amount) - billAg) : null,
-      needsCharge: !charge && billAg > 0,
+      needsCharge: !cardMode && !charge && billAg > 0,
       creditBalance: billAg <= 0,
+      payments: fromAgorot(acc.payments),
+      paymentCount: acc.paymentCount,
     };
   });
   // A card charged on this statement whose lines all moved to another card still shows,
@@ -290,6 +344,8 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
       difference: roundShekels(charge.amount),
       needsCharge: false,
       creditBalance: false,
+      payments: 0,
+      paymentCount: 0,
     });
   }
   cards.sort((a, b) => a.label.localeCompare(b.label, "he"));
@@ -300,15 +356,25 @@ export function summarizeStatement(rows: StatementMathRow[], charges: StatementM
   if (needsDomain > 0) missing.push(`${needsDomain} שורות בלי תחום`);
   if (ready > 0) missing.push(`${ready} שורות שעוד לא נרשמו`);
   for (const label of missingCards) missing.push(`חיוב בנק: ${label}`);
+  if (paymentsWaiting > 0) {
+    missing.push(paymentsWaiting === 1 ? "תשלום לכרטיס שלא קושר להעברה" : `${paymentsWaiting} תשלומים לכרטיס שלא קושרו להעברה`);
+  }
+  if (advancesWaiting > 0) {
+    missing.push(advancesWaiting === 1 ? "משיכת מזומן שלא נרשמה" : `${advancesWaiting} משיכות מזומן שלא נרשמו`);
+  }
+  const transfersDone = paymentsWaiting === 0 && advancesWaiting === 0;
 
   const sum = (pick: (c: CardSummary) => number) => fromAgorot(cards.reduce((s, c) => s + toAgorot(pick(c)), 0));
   const charged = cards.filter((c) => c.charge);
   const allCharged = cards.length > 0 && cards.every((c) => c.charge || !c.needsCharge);
   return {
+    mode: cardMode ? "card_account" : "bank_charge",
     cards,
     assign: { done: assignDone, created, ready, needsDomain, leftOut: leftOutRows, refundsLeftOut: refundsLeftOutRows, refundsWaiting, cash: cashRows },
-    bank: { done: missingCards.length === 0, missingCards },
-    canFinish: assignDone && missingCards.length === 0,
+    // On a US card the middle step is its payments, not a bank charge.
+    bank: { done: cardMode ? transfersDone : missingCards.length === 0, missingCards },
+    transfers: { done: transfersDone, paymentsLinked, paymentsWaiting, advancesWaiting },
+    canFinish: assignDone && missingCards.length === 0 && transfersDone,
     missing,
     totals: {
       bill: sum((c) => c.bill),

@@ -1337,11 +1337,13 @@ const unprocessedItemsRule: SystemRule = {
     const [statementsRes, pendingRowsRes, unclassifiedRes] = await Promise.all([
       supabase.from("card_statements").select("id,marked_done").range(0, 999).then((r) => r, () => ({ data: [] as Row[], error: null })),
       // A ticked line still waiting: a purchase without its expense, or a refund without
-      // its income (a refund never gets an expense — it is recorded as income).
+      // its income (a refund never gets an expense — it is recorded as income). A US
+      // card's payment or cash advance is a transfer, never one of these.
       supabase
         .from("card_statement_rows")
         .select("statement_id")
         .eq("include", true)
+        .eq("line_kind", "charge")
         .is("expense_id", null)
         .or("amount.gt.0,income_payment_id.is.null")
         .range(0, 9999)
@@ -1392,10 +1394,13 @@ const cardChargeMissingRule: SystemRule = {
   async evaluate(supabase) {
     const { data: statementData, error: statementError } = await supabase
       .from("card_statements")
-      .select("id,file_name,marked_done")
+      .select("id,file_name,marked_done,card_account_id")
       .range(0, 999);
     if (statementError) throw new Error(`card_statements: ${statementError.message}`);
-    const open = ((statementData ?? []) as Row[]).filter((s) => getBoolean(s, "marked_done") !== true);
+    // A US card kept as its own account (2026-10-25) is never charged to a bank.
+    const open = ((statementData ?? []) as Row[]).filter(
+      (s) => getBoolean(s, "marked_done") !== true && !getString(s, "card_account_id")
+    );
     const openIds = open.map((s) => getString(s, "id")).filter((id): id is string => Boolean(id));
     if (openIds.length === 0) return [];
 

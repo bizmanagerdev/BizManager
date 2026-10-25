@@ -148,3 +148,57 @@ describe("POST /api/expenses/statement-rows/create-expenses", () => {
     expect(supabase.calls.insert.payments).toBeUndefined();
   });
 });
+
+describe("POST create-expenses — a US card kept as its own account (2026-10-25)", () => {
+  it("puts the expenses and refunds on the card's account in dollars; payments and cash advances aren't expenses", async () => {
+    const base = makeSupabase({
+      card_statements: { data: { card_account_id: "venture-x", currency: "USD" }, error: null },
+      card_statement_rows: {
+        data: [
+          line({ id: "r1", amount: 23.43, description: "TRIPLETEL", card_label: "Venture X 9738", category: "Venture X 9738", line_kind: "charge" }),
+          line({ id: "r2", amount: -4.5, description: "EL AL", card_label: "Venture X 9738", line_kind: "charge" }),
+          line({ id: "r3", amount: -3100, description: "CAPITAL ONE MOBILE PYMT", line_kind: "payment" }),
+          line({ id: "r4", amount: 602.95, description: "BANK ATM", line_kind: "cash_advance" }),
+          // "מול מזומן" on a US card: a transfer out of the card, never an expense.
+          line({ id: "r5", amount: 50, description: "SHOP", line_kind: "charge", transfer_id: "t5" }),
+        ],
+        error: null,
+      },
+      payments: { read: { data: null, error: null }, write: { data: [{ id: "p2" }], error: null } },
+      expenses: { read: { data: null, error: null }, write: { data: [{ id: "e1" }], error: null } },
+    });
+    // The Bank of Israel rate of the line's day (fx_rate_on).
+    const rpc = vi.fn(async () => ({ data: 3, error: null }));
+    const supabase = { ...base, rpc };
+    grant(supabase);
+
+    const res = await post();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ created: 1, refunds: 1 });
+    expect(rpc).toHaveBeenCalledWith("fx_rate_on", { p_currency: "USD", p_date: "2026-10-02" });
+
+    const [expenses] = base.calls.insert.expenses as Array<Array<Record<string, unknown>>>;
+    expect(expenses).toHaveLength(1);
+    expect(expenses[0]).toMatchObject({
+      amount: 70.29,
+      account_id: "venture-x",
+      currency: "USD",
+      foreign_amount: 23.43,
+      fx_rate: 3,
+      fx_rate_manual: false,
+      payment_method: "credit_card",
+      payment_status: "paid",
+    });
+
+    const [refunds] = base.calls.insert.payments as Array<Array<Record<string, unknown>>>;
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]).toMatchObject({
+      amount_total: 13.5,
+      net_amount: 13.5,
+      account_id: "venture-x",
+      currency: "USD",
+      foreign_amount: 4.5,
+      payment_method: "card_refund",
+    });
+  });
+});

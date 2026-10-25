@@ -48,6 +48,8 @@ import { StatementSteps, StatusChip, firstOpenStep, type StatementStepId } from 
 import { israelDateKey } from "@/lib/timezone";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { Painted, SearchReasons, SearchTermsProvider } from "@/components/search/Painted";
+import { formatStatementAmount } from "@/components/financial/statement-ui";
+import type { CurrencyCode } from "@/lib/fx/currencies";
 import { searchList, type SearchRecord } from "@/lib/search/listSearch";
 
 // The lines' search (owner, 2026-10-19: "credit-card statement lines … no
@@ -106,6 +108,30 @@ export type StatementRowView = {
   cashTransferId: string | null;
   cashAccountId: string | null;
   cashDate: string;
+  /** A US card's line (2026-10-25): "payment" (paying the card) and
+   *  "cash_advance" are transfers, not expenses. Every Israeli line: "charge". */
+  lineKind?: "charge" | "payment" | "cash_advance";
+  /** A payment line's transfer from the bank, once linked — and where it came from. */
+  paymentTransferId?: string | null;
+  paymentFromAccountId?: string | null;
+  paymentDate?: string;
+};
+
+/** A payment into the card entered already (from the bank's side), not yet a line's. */
+export type PaymentCandidate = { id: string; fromAccountId: string; date: string; amount: number };
+
+/** A statement kept on a US card's own account (null for an Israeli one). */
+export type StatementCardAccount = {
+  id: string;
+  name: string;
+  currency: CurrencyCode;
+  periodStart: string | null;
+  periodEnd: string | null;
+  dueDate: string | null;
+  previousBalance: number | null;
+  newBalance: number | null;
+  /** The card account's balance at the end of the closing day (negative = we owe). */
+  balanceOnClose: number | null;
 };
 
 // Payment methods offered for statement income (no check flow here — use the financial page for that).
@@ -137,6 +163,7 @@ type Statement = {
   totalRows: number;
   createdAt: string;
   markedDone: boolean;
+  cardAccount?: StatementCardAccount | null;
 };
 
 // This statement's card → lump bank charge, if one's been recorded (see the
@@ -163,8 +190,17 @@ type ChargeForm = {
 // Fixed dedup window (days) — matches the importer's default.
 const DUP_WINDOW = 3;
 
-function formatCurrency(value: number): string {
+function formatCurrency(value: number, currency: CurrencyCode = "ILS"): string {
+  // A US card's statement is in its own currency: "$1,234.56".
+  if (currency !== "ILS") return formatStatementAmount(value, currency);
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
+}
+
+/** The shekels a cash advance became, as the card prints them under it:
+ *  "1,839.00 X 0.327868406 (EXCHG RATE)". Null when the note has none. */
+function shekelsFromNote(notes: string): number | null {
+  const m = notes.match(/(\d[\d,]*\.\d{2}) X \d+\.\d+ \(EXCHG RATE\)/);
+  return m ? Number(m[1].replace(/,/g, "")) : null;
 }
 
 // A day ("2026-10-14", or an expense's midnight-UTC timestamptz) — lib/date reads
@@ -196,8 +232,11 @@ export default function StatementDetailClient({
   accounts,
   cashAccountId,
   billToCustomerAvailable,
+  paymentCandidates = [],
 }: {
   statement: Statement;
+  /** A US card's statement: the payments into the card already entered and not yet a line's. */
+  paymentCandidates?: PaymentCandidate[];
   rows: StatementRowView[];
   projects: Option[];
   properties: Option[];
@@ -208,8 +247,9 @@ export default function StatementDetailClient({
   /** Remembered card → account choice (card_key → account_id), for a card
    *  that hasn't been charged in THIS statement yet. */
   cardAccountDefaults: Record<string, string>;
-  /** Account names, for the bank step's "02/10/26 · מזרחי בית". */
-  accounts: Option[];
+  /** Account names, for the bank step's "02/10/26 · מזרחי בית"; kind and
+   *  currency pick a US card payment's bank. */
+  accounts: Array<Option & { kind?: string | null; currency?: string | null; is_active?: boolean | null }>;
   /** The cash box ("מזומן") — where a "מול מזומן" line's cash goes unless another account is picked. */
   cashAccountId: string | null;
   /** False until card_statement_rows.bill_to_customer exists in the database. */
@@ -286,7 +326,12 @@ export default function StatementDetailClient({
   // "מול מזומן" — a line swiped for someone who paid us its amount in cash (owner,
   // 2026-10-15). Recording it puts the cash in the cash box; undoing takes it out.
   const [cashRow, setCashRow] = useState<StatementRowView | null>(null);
-  const [cashForm, setCashForm] = useState<{ accountId: string; date: string }>({ accountId: "", date: "" });
+  // `shekels`: on a US card, what the cash came to in ₪ (empty: the day's rate).
+  const [cashForm, setCashForm] = useState<{ accountId: string; date: string; shekels: string }>({
+    accountId: "",
+    date: "",
+    shekels: "",
+  });
   const [cashSaving, setCashSaving] = useState(false);
   const [cashError, setCashError] = useState<string | null>(null);
   const [undoCashRow, setUndoCashRow] = useState<StatementRowView | null>(null);
@@ -305,6 +350,24 @@ export default function StatementDetailClient({
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name ?? "";
 
   const todayIso = israelDateKey();
+
+  // A US card kept as its own account (2026-10-25): its money is in the card's
+  // currency, its payments and cash are transfers, and it has no bank charge.
+  const cardAccount = statement.cardAccount ?? null;
+  const currency: CurrencyCode = cardAccount?.currency ?? "ILS";
+  const money = (value: number) => formatCurrency(value, currency);
+
+  // Linking a payment line to its transfer from the bank (or making one), and
+  // a cash advance's transfer into the cash box.
+  const [transferRow, setTransferRow] = useState<StatementRowView | null>(null);
+  const [transferForm, setTransferForm] = useState<{ transferId: string; accountId: string; date: string }>({
+    transferId: "",
+    accountId: "",
+    date: "",
+  });
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [linkedCandidateIds, setLinkedCandidateIds] = useState<Set<string>>(() => new Set());
 
   // Cards (by stable card identity, NOT the freely-editable category — see
   // the card_label migration) whose income total is built from the rows
@@ -330,7 +393,10 @@ export default function StatementDetailClient({
   // lib/financial/cardStatementMath.ts). Cards are grouped by the stable card
   // identity, never the editable category, and from EVERY line: the bank takes
   // refunds and "לא לתיעוד" lines with the rest.
-  const steps = useMemo(() => summarizeStatement(rows, cardCharges), [rows, cardCharges]);
+  const steps = useMemo(
+    () => summarizeStatement(rows, cardCharges, { cardAccountId: cardAccount?.id ?? null }),
+    [rows, cardCharges, cardAccount?.id]
+  );
   const cardGroups = steps.cards;
   const activeStep = chosenStep ?? firstOpenStep(steps, markedDone);
   const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? "";
@@ -385,7 +451,12 @@ export default function StatementDetailClient({
   // Dated on the purchase day — when the person handed over the cash.
   function openCash(row: StatementRowView) {
     setCashRow(row);
-    setCashForm({ accountId: cashAccountId ?? "", date: row.transactionDate || row.expenseDate || todayIso });
+    const fromNote = cardAccount ? shekelsFromNote(row.notes) : null;
+    setCashForm({
+      accountId: cashAccountId ?? "",
+      date: row.transactionDate || row.expenseDate || todayIso,
+      shekels: fromNote ? String(fromNote) : "",
+    });
     setCashError(null);
   }
 
@@ -402,18 +473,37 @@ export default function StatementDetailClient({
     setCashSaving(true);
     setCashError(null);
     try {
-      const res = await fetch("/api/expenses/statement-rows/cash", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ row_id: cashRow.id, account_id: cashForm.accountId, date: cashForm.date }),
-      });
+      // A US card: a two-sided transfer out of the card (statement-rows/card-transfer).
+      const shekels = Number(cashForm.shekels);
+      const res = cardAccount
+        ? await fetch("/api/expenses/statement-rows/card-transfer", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              row_id: cashRow.id,
+              account_id: cashForm.accountId,
+              date: cashForm.date,
+              ...(cashForm.shekels.trim() && Number.isFinite(shekels) && shekels > 0 ? { shekels } : null),
+            }),
+          })
+        : await fetch("/api/expenses/statement-rows/cash", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ row_id: cashRow.id, account_id: cashForm.accountId, date: cashForm.date }),
+          });
       const data = (await res.json().catch(() => ({}))) as { error?: string; transfer_id?: string };
       if (!res.ok || !data.transfer_id) {
         setCashError(toHebrewError(data.error, "הרישום מול מזומן נכשל."));
         return;
       }
       const rowId = cashRow.id;
-      const marked = { include: false, cashTransferId: data.transfer_id, cashAccountId: cashForm.accountId, cashDate: cashForm.date };
+      // A cash advance stays "ticked" — it was never a purchase to leave out.
+      const marked = {
+        include: cashRow.lineKind === "cash_advance" ? cashRow.include : false,
+        cashTransferId: data.transfer_id,
+        cashAccountId: cashForm.accountId,
+        cashDate: cashForm.date,
+      };
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...marked } : r)));
       setCashRow(null);
       startTransition(() => {
@@ -431,18 +521,30 @@ export default function StatementDetailClient({
     setUndoingCash(true);
     setUndoCashError(null);
     try {
-      const res = await fetch("/api/expenses/statement-rows/cash", {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ row_id: undoCashRow.id }),
-      });
+      // A US card's cash is a transfer of its own: undoing deletes it from both accounts.
+      const res = cardAccount
+        ? await fetch("/api/expenses/statement-rows/card-transfer", {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ row_id: undoCashRow.id, delete_transfer: true }),
+          })
+        : await fetch("/api/expenses/statement-rows/cash", {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ row_id: undoCashRow.id }),
+          });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setUndoCashError(toHebrewError(data.error, "ביטול הרישום מול מזומן נכשל."));
         return;
       }
       const rowId = undoCashRow.id;
-      const cleared = { include: true, cashTransferId: null, cashAccountId: null, cashDate: "" };
+      const cleared = {
+        include: undoCashRow.lineKind === "cash_advance" ? undoCashRow.include : true,
+        cashTransferId: null,
+        cashAccountId: null,
+        cashDate: "",
+      };
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...cleared } : r)));
       setUndoCashRow(null);
       startTransition(() => {
@@ -452,6 +554,122 @@ export default function StatementDetailClient({
       setUndoCashError("ביטול הרישום מול מזומן נכשל.");
     } finally {
       setUndoingCash(false);
+    }
+  }
+
+  // ── A US card's payment lines: the transfer from the bank each one is ───────
+  // The bank accounts a US card is paid from: the banks in the card's currency.
+  const payingAccounts = accounts.filter(
+    (a) => a.kind === "bank" && a.is_active !== false && String(a.currency ?? "ILS").toUpperCase() === currency
+  );
+
+  /** The payments into the card already entered (from the bank's side) that
+   *  can be this line: the same dollars, within 10 days — nearest first. */
+  function candidatesFor(row: StatementRowView): PaymentCandidate[] {
+    const cents = Math.round(Math.abs(row.amount) * 100);
+    const day = Date.parse(row.expenseDate || row.transactionDate);
+    return paymentCandidates
+      .filter((c) => !linkedCandidateIds.has(c.id) && Math.round(c.amount * 100) === cents)
+      .map((c) => ({ c, gap: Math.abs(Date.parse(c.date) - day) / 86_400_000 }))
+      .filter((x) => Number.isFinite(x.gap) && x.gap <= 10)
+      .sort((a, b) => a.gap - b.gap)
+      .map((x) => x.c);
+  }
+
+  function openTransfer(row: StatementRowView) {
+    if (row.lineKind === "cash_advance") {
+      if (row.cashTransferId) {
+        setUndoCashError(null);
+        setUndoCashRow(row);
+      } else openCash(row);
+      return;
+    }
+    const found = candidatesFor(row);
+    setTransferRow(row);
+    setTransferForm({
+      transferId: row.paymentTransferId ? "" : found[0]?.id ?? "",
+      accountId: payingAccounts.length === 1 ? payingAccounts[0].id : "",
+      date: row.expenseDate || row.transactionDate || todayIso,
+    });
+    setTransferError(null);
+  }
+
+  async function submitTransfer() {
+    if (!transferRow || transferSaving) return;
+    const linking = Boolean(transferForm.transferId);
+    if (!linking && !transferForm.accountId) {
+      setTransferError("יש לבחור מאיזה חשבון שולם הכרטיס.");
+      return;
+    }
+    if (!linking && !transferForm.date) {
+      setTransferError("יש לבחור תאריך.");
+      return;
+    }
+    setTransferSaving(true);
+    setTransferError(null);
+    try {
+      const res = await fetch("/api/expenses/statement-rows/card-transfer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          linking
+            ? { row_id: transferRow.id, transfer_id: transferForm.transferId }
+            : { row_id: transferRow.id, account_id: transferForm.accountId, date: transferForm.date }
+        ),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; transfer_id?: string };
+      if (!res.ok || !data.transfer_id) {
+        setTransferError(toHebrewError(data.error, "הקישור נכשל."));
+        return;
+      }
+      const chosen = linking ? paymentCandidates.find((c) => c.id === transferForm.transferId) : null;
+      const rowId = transferRow.id;
+      const patch = {
+        paymentTransferId: data.transfer_id,
+        paymentFromAccountId: chosen?.fromAccountId ?? transferForm.accountId,
+        paymentDate: chosen?.date ?? transferForm.date,
+      };
+      if (chosen) setLinkedCandidateIds((prev) => new Set(prev).add(chosen.id));
+      setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...patch } : r)));
+      setTransferRow(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch {
+      setTransferError("הקישור נכשל.");
+    } finally {
+      setTransferSaving(false);
+    }
+  }
+
+  // Unlink a payment line; `deleteTransfer` also takes the transfer out of both accounts.
+  async function unlinkTransfer(deleteTransfer: boolean) {
+    if (!transferRow || transferSaving) return;
+    setTransferSaving(true);
+    setTransferError(null);
+    try {
+      const res = await fetch("/api/expenses/statement-rows/card-transfer", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ row_id: transferRow.id, delete_transfer: deleteTransfer }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setTransferError(toHebrewError(data.error, "הביטול נכשל."));
+        return;
+      }
+      const rowId = transferRow.id;
+      setRows((prev) =>
+        prev.map((r) => (r.id === rowId ? { ...r, paymentTransferId: null, paymentFromAccountId: null, paymentDate: "" } : r))
+      );
+      setTransferRow(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch {
+      setTransferError("הביטול נכשל.");
+    } finally {
+      setTransferSaving(false);
     }
   }
 
@@ -682,8 +900,11 @@ export default function StatementDetailClient({
 
   // Flag not-yet-created rows that look like an existing expense (so they're not duplicated).
   async function checkDuplicates(list: StatementRowView[]) {
-    // Purchases only: a refund becomes income, never an expense to double.
-    const candidates = list.filter((r) => r.amount > 0 && !r.expenseExists && !r.expenseId);
+    // Purchases only: a refund becomes income, never an expense to double. A US
+    // card's payment or cash line is a transfer, never an expense either.
+    const candidates = list.filter(
+      (r) => r.amount > 0 && !r.expenseExists && !r.expenseId && (r.lineKind ?? "charge") === "charge"
+    );
     const dates = candidates
       .flatMap((r) => [r.transactionDate, r.expenseDate])
       .filter(Boolean)
@@ -698,7 +919,8 @@ export default function StatementDetailClient({
       const res = await fetch("/api/expenses/check-duplicates", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ from, to }),
+        // A US card's lines are matched by their dollars, against expenses in dollars.
+        body: JSON.stringify({ from, to, ...(currency !== "ILS" ? { currency } : null) }),
       });
       if (!res.ok) return;
       const data = (await res.json().catch(() => ({}))) as { expenses?: ExistingExpense[] };
@@ -1246,7 +1468,7 @@ export default function StatementDetailClient({
                 </DropdownMenuLabel>
                 {incomeCards.map((card) => (
                   <DropdownMenuItem key={card.label} onSelect={() => openCardIncome(card)}>
-                    {card.label} · {formatCurrency(card.sum)} ({card.rowIds.length})
+                    {card.label} · {money(card.sum)} ({card.rowIds.length})
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -1267,7 +1489,8 @@ export default function StatementDetailClient({
             <p className="font-medium text-destructive">מחיקת הפירוט</p>
             <p className="mt-1 text-muted-foreground">
               הפירוט ו-{rows.length} שורותיו יימחקו. ההוצאות שכבר נוצרו <strong>לא יימחקו</strong> — הן נשארות במערכת.
-              {steps.assign.cash > 0 ? (
+              {/* A US card's cash is a transfer of its own — it stays. */}
+              {steps.assign.cash > 0 && !cardAccount ? (
                 <>
                   {" "}
                   {steps.assign.cash === 1 ? "רישום המזומן" : `${steps.assign.cash} רישומי המזומן`} של השורות “מול מזומן”{" "}
@@ -1314,7 +1537,7 @@ export default function StatementDetailClient({
           onRecord: openCharge,
           onDelete: (card) => {
             const existing = chargeFor(card.label);
-            if (existing) setChargeToDelete({ id: existing.id, label: `${card.label} · ${formatCurrency(existing.amount)}` });
+            if (existing) setChargeToDelete({ id: existing.id, label: `${card.label} · ${money(existing.amount)}` });
           },
           onMerge: openMerge,
           onFixCountedTwice: (card) => {
@@ -1323,6 +1546,39 @@ export default function StatementDetailClient({
           },
         }}
         finish={{ busy: markingDone, onFinish: () => void toggleDone(), onReopen: () => void toggleDone() }}
+        card={
+          cardAccount
+            ? {
+                currency,
+                accountName: cardAccount.name,
+                periodEnd: cardAccount.periodEnd,
+                dueDate: cardAccount.dueDate,
+                newBalance: cardAccount.newBalance,
+                balanceOnClose: cardAccount.balanceOnClose,
+                lines: rows
+                  .filter((r) => r.lineKind === "payment" || r.lineKind === "cash_advance")
+                  .map((r) => ({
+                    id: r.id,
+                    date: r.expenseDate,
+                    description: r.description,
+                    amount: r.amount,
+                    kind: r.lineKind === "cash_advance" ? ("cash_advance" as const) : ("payment" as const),
+                    linkedLabel:
+                      r.lineKind === "payment"
+                        ? r.paymentTransferId
+                          ? `מ${accountName(r.paymentFromAccountId ?? "") || "הבנק"} · ${formatIsoDisplay(r.paymentDate)}`
+                          : null
+                        : r.cashTransferId
+                          ? `ל${accountName(r.cashAccountId ?? "") || "קופה"} · ${formatIsoDisplay(r.cashDate)}`
+                          : null,
+                  })),
+                onOpenLine: (rowId) => {
+                  const row = rows.find((r) => r.id === rowId);
+                  if (row) openTransfer(row);
+                },
+              }
+            : null
+        }
       />
       {createNotice ? <p className="text-sm text-success-soft-foreground">{createNotice}</p> : null}
       {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
@@ -1399,14 +1655,18 @@ export default function StatementDetailClient({
               <tbody className="divide-y">
                 {(foundLines ? foundLines.items : rows).map((row) => {
                   const mode = rowMode(row);
-                  const isRefund = row.amount < 0;
+                  // A US card's payment / cash advance: a transfer, not our expense or income.
+                  const isTransferLine = mode === "payment" || mode === "paid" || mode === "advance";
+                  const isRefund = row.amount < 0 && !isTransferLine;
                   const dup = mode === "draft" && !isRefund ? dupByRowId[row.id] : null;
+                  const noDomain = mode === "cash" || isTransferLine;
 
                   // Row background: dup check overrides domain-readiness colors.
                   let rowBg = "";
-                  if (mode === "created") rowBg = "bg-success-soft/20";
+                  if (mode === "created" || mode === "paid") rowBg = "bg-success-soft/20";
                   else if (mode === "deleted") rowBg = "opacity-50";
                   else if (mode === "cash") rowBg = "bg-muted/40";
+                  else if (mode === "payment" || mode === "advance") rowBg = "bg-info-soft/20";
                   else if (!row.include) rowBg = "opacity-50";
                   else if (dup) rowBg = "bg-warning-soft/25";
                   else if (row.businessDomain) rowBg = "bg-info-soft/20";
@@ -1416,7 +1676,42 @@ export default function StatementDetailClient({
                     <tr key={row.id} className={`align-top ${rowBg}`}>
                       {/* Status / include */}
                       <td className="px-3 py-2">
-                        {mode === "created" && isRefund ? (
+                        {mode === "paid" ? (
+                          <div className="space-y-0.5">
+                            <Link
+                              href={
+                                row.paymentFromAccountId
+                                  ? `/financial/bank?account=${encodeURIComponent(row.paymentFromAccountId)}`
+                                  : "/financial/bank"
+                              }
+                              title="תשלום לכרטיס — העברה מהבנק, לא הוצאה"
+                              className="whitespace-nowrap rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-soft-foreground hover:underline"
+                            >
+                              תשלום לכרטיס
+                            </Link>
+                            <div className="whitespace-nowrap text-[0.647rem] text-muted-foreground">
+                              מ{accountName(row.paymentFromAccountId ?? "") || "הבנק"} · {formatIsoDisplay(row.paymentDate)}
+                            </div>
+                          </div>
+                        ) : mode === "payment" ? (
+                          <button
+                            type="button"
+                            onClick={() => openTransfer(row)}
+                            title="תשלום לכרטיס — לקשר להעברה מהבנק"
+                            className="whitespace-nowrap rounded border border-info-soft-foreground/40 bg-info-soft px-1.5 py-0.5 text-xs text-info-soft-foreground hover:underline"
+                          >
+                            תשלום · לקישור
+                          </button>
+                        ) : mode === "advance" ? (
+                          <button
+                            type="button"
+                            onClick={() => openTransfer(row)}
+                            title="משיכת מזומן מהכרטיס — לרשום לקופה"
+                            className="whitespace-nowrap rounded border border-info-soft-foreground/40 bg-info-soft px-1.5 py-0.5 text-xs text-info-soft-foreground hover:underline"
+                          >
+                            משיכת מזומן · לקופה
+                          </button>
+                        ) : mode === "created" && isRefund ? (
                           <Link
                             href={`/financial?focus=${encodeURIComponent(`payment:${row.incomePaymentId}`)}`}
                             title="הזיכוי נרשם כהכנסה בתחום שלו"
@@ -1443,10 +1738,14 @@ export default function StatementDetailClient({
                           <div className="space-y-0.5">
                             <Link
                               href={row.cashAccountId ? `/financial/bank?account=${encodeURIComponent(row.cashAccountId)}` : "/financial/bank"}
-                              title="שולם לנו במזומן — הסכום נכנס לחשבון, ולא נרשם כהוצאה"
+                              title={
+                                row.lineKind === "cash_advance"
+                                  ? "משיכת מזומן מהכרטיס — הסכום נכנס לקופה"
+                                  : "שולם לנו במזומן — הסכום נכנס לחשבון, ולא נרשם כהוצאה"
+                              }
                               className="whitespace-nowrap rounded bg-info-soft px-1.5 py-0.5 text-xs text-info-soft-foreground hover:underline"
                             >
-                              מול מזומן
+                              {row.lineKind === "cash_advance" ? "משיכת מזומן" : "מול מזומן"}
                             </Link>
                             <div className="whitespace-nowrap text-[0.647rem] text-muted-foreground">
                               {accountName(row.cashAccountId ?? "") || "מזומן"} · {formatIsoDisplay(row.cashDate)}
@@ -1480,7 +1779,7 @@ export default function StatementDetailClient({
                         <SearchReasons reasons={foundLines?.reasons.get(row)} className="mt-0.5" />
                       </td>
                       <td className={`whitespace-nowrap px-3 py-2 font-medium ${isRefund ? "text-success-soft-foreground" : ""}`}>
-                        <Painted text={formatCurrency(row.amount)} />
+                        <Painted text={money(row.amount)} />
                       </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{row.category ? <Painted text={row.category} /> : "—"}</td>
                       {showAssignmentRef ? (
@@ -1496,7 +1795,7 @@ export default function StatementDetailClient({
                             placeholder="— בחר —"
                             className="h-8 min-w-[8rem]"
                           />
-                        ) : mode === "cash" ? (
+                        ) : noDomain ? (
                           // Not our expense — no domain.
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : (
@@ -1505,7 +1804,7 @@ export default function StatementDetailClient({
                       </td>
                       {/* Project / property */}
                       <td className="px-3 py-2">
-                        {isRefund || mode === "cash" ? (
+                        {isRefund || noDomain ? (
                           // A refund is income on its domain only — never a customer's payment.
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : mode === "draft" && row.businessDomain === "logistics_projects" ? (
@@ -1540,7 +1839,7 @@ export default function StatementDetailClient({
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
-                        {row.billToCustomer && row.projectId && !isRefund && mode !== "cash" ? (
+                        {row.billToCustomer && row.projectId && !isRefund && !noDomain ? (
                           <span
                             title="הפרויקט מחייב את הלקוח על השורה הזו"
                             className="mt-1 block w-fit rounded bg-warning-soft px-1.5 py-0.5 text-[0.647rem] font-medium text-warning-soft-foreground"
@@ -1559,7 +1858,7 @@ export default function StatementDetailClient({
                               <div className="rounded border border-warning-soft/50 bg-warning-soft/10 px-2 py-1 text-[0.647rem] leading-snug">
                                 <div className="font-medium text-foreground">{dup.description || "—"}</div>
                                 <div className="text-muted-foreground">
-                                  {formatIsoDisplay(dup.transaction_date || dup.expense_date)} · {formatCurrency(dup.amount)}
+                                  {formatIsoDisplay(dup.transaction_date || dup.expense_date)} · {money(dup.amount)}
                                 </div>
                               </div>
                               {dup.id ? (
@@ -1587,11 +1886,11 @@ export default function StatementDetailClient({
                       ) : null}
                       {/* Income */}
                       <td className="px-3 py-2">
-                        {isRefund || mode === "cash" ? (
+                        {isRefund || noDomain ? (
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : row.incomeExists ? (
                           <span
-                            title={`נרשמה הכנסה: ${formatCurrency(row.incomeAmount)}`}
+                            title={`נרשמה הכנסה: ${money(row.incomeAmount)}`}
                             className="inline-block rounded bg-info-soft px-1.5 py-0.5 text-xs font-medium text-info-soft-foreground"
                           >
                             הכנסה <CheckIcon className="inline h-3 w-3 align-text-bottom" />
@@ -1613,6 +1912,14 @@ export default function StatementDetailClient({
                       <td className="px-3 py-2 text-left">
                         {mode === "deleted" ? (
                           <span className="text-xs text-muted-foreground">—</span>
+                        ) : isTransferLine ? (
+                          // A US card's payment / cash line: link or unlink its transfer.
+                          <div className="flex items-center justify-end gap-1">
+                            <EditButton
+                              onClick={() => openTransfer(row)}
+                              label={mode === "paid" ? "הקישור להעברה" : mode === "advance" ? "רישום לקופה" : "קישור להעברה"}
+                            />
+                          </div>
                         ) : (
                           <div className="flex items-center justify-end gap-1">
                             {mode !== "cash" ? <EditButton onClick={() => startEdit(row)} label="עריכה" /> : null}
@@ -1808,7 +2115,7 @@ export default function StatementDetailClient({
                         onChange={(e) => patchDraft({ billToCustomer: e.target.checked })}
                       />
                       <span>
-                        לחיוב לקוח — המחיר של הפרויקט יגדל ב־{formatCurrency(Number.isFinite(draft.amount) ? draft.amount : 0)}
+                        לחיוב לקוח — המחיר של הפרויקט יגדל ב־{money(Number.isFinite(draft.amount) ? draft.amount : 0)}
                       </span>
                     </label>
                   ) : null}
@@ -2046,7 +2353,7 @@ export default function StatementDetailClient({
                     {r.description || "—"}
                     <span className="text-xs text-muted-foreground"> · {accountName(r.expenseAccountId ?? "") || "חשבון"}</span>
                   </span>
-                  <span className="shrink-0 tabular-nums">{formatCurrency(r.amount)}</span>
+                  <span className="shrink-0 tabular-nums">{money(r.amount)}</span>
                 </li>
               ))}
           </ul>
@@ -2059,8 +2366,14 @@ export default function StatementDetailClient({
         onOpenChange={(open) => {
           if (!open) setCashRow(null);
         }}
-        title="מול מזומן"
-        description="קנייה בכרטיס שמישהו שילם לנו עליה במזומן. השורה נשארת בחיוב הכרטיס, כמו בבנק, ולא נרשמת כהוצאה. הסכום נכנס לחשבון המזומן כהעברה בין חשבונות."
+        title={cashRow?.lineKind === "cash_advance" ? "משיכת מזומן מהכרטיס" : "מול מזומן"}
+        description={
+          cardAccount
+            ? cashRow?.lineKind === "cash_advance"
+              ? `מזומן שנמשך בכרטיס: העברה מ${cardAccount.name} לקופה — לא הוצאה. החוב לכרטיס גדל, והמזומן נכנס לחשבון שנבחר.`
+              : `קנייה בכרטיס שמישהו שילם לנו עליה במזומן: העברה מ${cardAccount.name} לחשבון המזומן, ולא הוצאה.`
+            : "קנייה בכרטיס שמישהו שילם לנו עליה במזומן. השורה נשארת בחיוב הכרטיס, כמו בבנק, ולא נרשמת כהוצאה. הסכום נכנס לחשבון המזומן כהעברה בין חשבונות."
+        }
         onSubmit={() => void submitCash()}
         submitLabel="רישום"
         busyLabel="רושם..."
@@ -2074,7 +2387,7 @@ export default function StatementDetailClient({
                 {cashRow.description || "—"}
                 <span className="text-xs text-muted-foreground"> · {cashRow.cardLabel || "כרטיס אשראי"}</span>
               </span>
-              <span className="shrink-0 font-medium tabular-nums">{formatCurrency(cashRow.amount)}</span>
+              <span className="shrink-0 font-medium tabular-nums">{money(cashRow.amount)}</span>
             </div>
             <AccountSelect required value={cashForm.accountId} onChange={(accountId) => setCashForm((f) => ({ ...f, accountId }))} />
             <Field size="xs" label="תאריך קבלת המזומן *">
@@ -2085,6 +2398,123 @@ export default function StatementDetailClient({
                 className="h-9"
               />
             </Field>
+            {cardAccount &&
+            String(accounts.find((a) => a.id === cashForm.accountId)?.currency ?? "ILS").toUpperCase() === "ILS" ? (
+              // Dollars off the card, shekels into the box: as the card printed them, or the day's rate.
+              <Field size="xs" label="כמה שקלים התקבלו">
+                <Input
+                  inputMode="decimal"
+                  value={cashForm.shekels}
+                  onChange={(e) => setCashForm((f) => ({ ...f, shekels: e.target.value }))}
+                  placeholder="ריק = לפי השער היציג של היום"
+                  className="h-9"
+                />
+              </Field>
+            ) : null}
+          </div>
+        ) : null}
+      </FormDialog>
+
+      {/* A US card's payment line: link it to the transfer from the bank, or make one */}
+      <FormDialog
+        open={transferRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setTransferRow(null);
+        }}
+        title={transferRow?.paymentTransferId ? "תשלום לכרטיס — מקושר" : "תשלום לכרטיס"}
+        description={
+          transferRow?.paymentTransferId
+            ? "התשלום מקושר להעברה מהבנק. אפשר לבטל רק את הקישור (ההעברה נשארת בבנק), או למחוק גם את ההעברה."
+            : "תשלום לכרטיס הוא העברה מהבנק לכרטיס — לא הוצאה. אם כבר נרשם מצד הבנק, בוחרים אותו; אחרת נרשם כאן."
+        }
+        onSubmit={() => (transferRow?.paymentTransferId ? setTransferRow(null) : void submitTransfer())}
+        submitLabel={transferRow?.paymentTransferId ? "סגירה" : transferForm.transferId ? "קישור" : "רישום התשלום"}
+        busyLabel="שומר..."
+        busy={transferSaving}
+        error={transferError || undefined}
+      >
+        {transferRow ? (
+          <div className="space-y-3">
+            <div className="flex justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+              <span className="min-w-0 truncate" dir="auto">
+                {transferRow.description || "—"}
+                <span className="text-xs text-muted-foreground"> · {formatIsoDisplay(transferRow.expenseDate)}</span>
+              </span>
+              <span className="shrink-0 font-medium tabular-nums">{money(Math.abs(transferRow.amount))}</span>
+            </div>
+            {transferRow.paymentTransferId ? (
+              <div className="space-y-2">
+                <p className="text-sm">
+                  מ{accountName(transferRow.paymentFromAccountId ?? "") || "הבנק"} · {formatIsoDisplay(transferRow.paymentDate)}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" disabled={transferSaving} onClick={() => void unlinkTransfer(false)}>
+                    ביטול הקישור
+                  </Button>
+                  <Button size="sm" variant="destructive" disabled={transferSaving} onClick={() => void unlinkTransfer(true)}>
+                    מחיקת ההעברה
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {candidatesFor(transferRow).length > 0 ? (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">כבר רשום מצד הבנק:</p>
+                    {candidatesFor(transferRow).map((c) => (
+                      <label key={c.id} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                        <input
+                          type="radio"
+                          name="payment-transfer"
+                          checked={transferForm.transferId === c.id}
+                          onChange={() => setTransferForm((f) => ({ ...f, transferId: c.id }))}
+                        />
+                        <span className="min-w-0 flex-1">
+                          מ{accountName(c.fromAccountId) || "חשבון"} · {formatIsoDisplay(c.date)}
+                        </span>
+                        <span className="tabular-nums">{money(c.amount)}</span>
+                      </label>
+                    ))}
+                    <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                      <input
+                        type="radio"
+                        name="payment-transfer"
+                        checked={!transferForm.transferId}
+                        onChange={() => setTransferForm((f) => ({ ...f, transferId: "" }))}
+                      />
+                      <span>לא מופיע — לרשום תשלום חדש</span>
+                    </label>
+                  </div>
+                ) : null}
+                {!transferForm.transferId ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field size="xs" label="שולם מחשבון *">
+                      <NativeSelect
+                        dense
+                        value={transferForm.accountId}
+                        onChange={(e) => setTransferForm((f) => ({ ...f, accountId: e.target.value }))}
+                        aria-label="שולם מחשבון"
+                      >
+                        <option value="">— בחר/י —</option>
+                        {payingAccounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                    <Field size="xs" label="תאריך התשלום *">
+                      <Input
+                        type="date"
+                        value={transferForm.date}
+                        onChange={(e) => setTransferForm((f) => ({ ...f, date: e.target.value }))}
+                        className="h-9"
+                      />
+                    </Field>
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         ) : null}
       </FormDialog>
@@ -2110,7 +2540,7 @@ export default function StatementDetailClient({
         {undoCashRow ? (
           <div className="flex justify-between gap-3 text-sm">
             <span className="min-w-0 truncate font-medium">{undoCashRow.description || "—"}</span>
-            <span className="shrink-0 tabular-nums">{formatCurrency(undoCashRow.amount)}</span>
+            <span className="shrink-0 tabular-nums">{money(undoCashRow.amount)}</span>
           </div>
         ) : null}
       </ConfirmDialog>

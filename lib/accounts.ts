@@ -112,13 +112,17 @@ function isBankTransfer(method: string | null | undefined): boolean {
  * id. A bank transfer with several bank accounts goes to the business account
  * (BUSINESS_BANK_ACCOUNT_NAME — owner, 2026-10-09). Otherwise "" (ambiguous or
  * unknown → let the user pick). Pure, client-safe.
+ *
+ * A card account (a US card kept as its own account, 2026-10-25) is never
+ * picked by itself: "credit card" is also how a customer pays us through Grow
+ * and how an Israeli card purchase is typed, and neither belongs on it.
  */
 export function defaultAccountForMethod(
   accounts: Array<Pick<Account, "id" | "kind" | "isActive"> & { name?: string }>,
   method: string | null | undefined
 ): string {
   const kind = accountKindForMethod(method);
-  if (!kind) return "";
+  if (!kind || kind === "card") return "";
   const matches = accounts.filter((a) => a.isActive && a.kind === kind);
   if (matches.length === 1) return matches[0].id;
   if (isBankTransfer(method)) {
@@ -1464,6 +1468,31 @@ export async function loadAccountBalances(
     };
   });
   return withScanCompleteness(result, failedTables);
+}
+
+/**
+ * One account's posted balance at the end of a day, in its own currency — a
+ * US card's balance on its statement's closing day, to check against the
+ * statement's "New Balance" (2026-10-25). Null when the account isn't there or
+ * a money table couldn't be read (a partial sum would look like a real gap).
+ */
+export async function loadAccountBalanceOn(
+  supabase: SupabaseClient,
+  accountId: string,
+  day: string
+): Promise<number | null> {
+  const account = (await loadAccounts(supabase)).find((a) => a.id === accountId);
+  if (!account) return null;
+  const { buckets, failedTables } = await scanAccountActivity(supabase, [account]);
+  if (failedTables.length > 0) return null;
+  const end = day.slice(0, 10);
+  let balance = account.openingBalance;
+  for (const row of buckets.get(account.id)?.rows ?? []) {
+    if (!row.posted || ledgerDay(row.date) > end) continue;
+    const value = amountInAccount(account, row);
+    balance += row.type === "in" ? value : -value;
+  }
+  return Math.round(balance * 100) / 100;
 }
 
 /**

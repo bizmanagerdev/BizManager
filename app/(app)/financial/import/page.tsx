@@ -8,6 +8,7 @@ import { isOpenAIConfigured } from "@/lib/openai/config";
 import { buildKnownCards, type MerchantMemory } from "@/lib/financial/cardImport";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { propertyDisplayName } from "@/lib/properties";
+import { isForeignCurrency, type CurrencyCode } from "@/lib/fx/currencies";
 import ImportSkeleton from "./ImportSkeleton";
 
 // The same placeholder as loading.tsx while the client's code loads.
@@ -33,6 +34,8 @@ export default async function ImportExpensesPage() {
     { data: cardMappingRows },
     chargeRows,
     statementRowCards,
+    { data: cardAccountRows },
+    { data: usStatementRows },
   ] = await Promise.all([
     supabase.from("projects").select("id,name").order("name", { ascending: true }),
     supabase.from("properties").select("id,name,address").order("address", { ascending: true }),
@@ -50,6 +53,10 @@ export default async function ImportExpensesPage() {
     fetchAllPaged<{ card_label: string | null }>((from, to) =>
       supabase.from("card_statement_rows").select("card_label").order("id").range(from, to)
     ).catch(() => []),
+    // The US cards kept as their own account (2026-10-25), for a US statement.
+    supabase.from("accounts").select("id,name,currency,account_number").eq("kind", "card").eq("is_active", true).order("name"),
+    // The US statements already uploaded — tolerated before their migration runs.
+    supabase.from("card_statements").select("id,card_account_id,period_end,file_name").not("card_account_id", "is", null),
   ]);
 
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
@@ -85,6 +92,21 @@ export default async function ImportExpensesPage() {
     rowLabels: statementRowCards.map((r) => r.card_label),
   });
 
+  type CardAccountRow = { id: string; name: string | null; currency: string | null; account_number: string | null };
+  const cardAccounts = ((cardAccountRows ?? []) as CardAccountRow[]).map((a) => ({
+    id: a.id,
+    name: a.name?.trim() || "כרטיס",
+    currency: (isForeignCurrency(a.currency) ? a.currency : "ILS") as CurrencyCode,
+    accountNumber: a.account_number?.trim() || null,
+  }));
+  type UsStatementRow = { id: string; card_account_id: string; period_end: string | null; file_name: string | null };
+  const usStatements = ((usStatementRows ?? []) as UsStatementRow[]).map((s) => ({
+    id: s.id,
+    cardAccountId: s.card_account_id,
+    periodEnd: s.period_end,
+    fileName: s.file_name ?? "",
+  }));
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <CardImportClient
@@ -93,6 +115,8 @@ export default async function ImportExpensesPage() {
         smartExtractEnabled={isOpenAIConfigured()}
         merchantMemory={merchantMemory}
         knownCards={knownCards}
+        cardAccounts={cardAccounts}
+        usStatements={usStatements}
       />
     </AppShell>
   );

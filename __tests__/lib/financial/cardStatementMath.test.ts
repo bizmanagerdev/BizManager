@@ -172,3 +172,72 @@ describe("statementRowMode", () => {
     expect(statementRowMode({ amount: 5, expenseId: "e", expenseExists: false, incomePaymentId: null, incomeExists: false })).toBe("deleted");
   });
 });
+
+describe("summarizeStatement — a US card kept as its own account (2026-10-25)", () => {
+  // The shape of the Venture X statement for 25/07–24/08: three payments from
+  // Capital One, purchases and a refund, all in dollars on the card's account.
+  const card = "Venture X 9738";
+  const opts = { cardAccountId: "venture-x" };
+  const lines = () => [
+    row({ cardLabel: card, amount: 1705, expenseId: "e1", expenseExists: true, expenseAccountId: "venture-x" }),
+    row({ cardLabel: card, amount: 23.43 }),
+    row({ cardLabel: card, amount: -4.5 }),
+    row({ cardLabel: card, amount: -3100, lineKind: "payment", paymentTransferId: "t1" }),
+    row({ cardLabel: card, amount: -46, lineKind: "payment" }),
+  ];
+
+  it("payments are kept apart from the bill, and no bank charge is asked for", () => {
+    const steps = summarizeStatement(lines(), [], opts);
+    expect(steps.mode).toBe("card_account");
+    const [c] = steps.cards;
+    expect(c.purchases).toBe(1728.43);
+    expect(c.refunds).toBe(4.5);
+    expect(c.bill).toBe(1723.93);
+    expect([c.payments, c.paymentCount]).toEqual([3146, 2]);
+    expect(c.needsCharge).toBe(false);
+    expect(steps.bank.missingCards).toEqual([]);
+  });
+
+  it("an expense on the card's own account isn't counted twice", () => {
+    const [c] = summarizeStatement(lines(), [], opts).cards;
+    expect(c.countedTwice).toBe(0);
+    // The same line on an Israeli statement (no card account) still is.
+    const [israeli] = summarizeStatement(lines().filter((l) => l.lineKind !== "payment"), []).cards;
+    expect(israeli.countedTwice).toBe(1705);
+  });
+
+  it("the middle step is the payments: each linked to its transfer before the statement can finish", () => {
+    const steps = summarizeStatement(lines(), [], opts);
+    expect(steps.transfers).toEqual({ done: false, paymentsLinked: 1, paymentsWaiting: 1, advancesWaiting: 0 });
+    expect(steps.bank.done).toBe(false);
+    expect(steps.missing).toContain("תשלום לכרטיס שלא קושר להעברה");
+    // Payments never wait in the assign step.
+    expect(steps.assign).toMatchObject({ created: 1, ready: 2, refundsWaiting: 1 });
+
+    const linked = lines().map((l) => (l.lineKind === "payment" ? { ...l, paymentTransferId: "t" } : l));
+    expect(summarizeStatement(linked, [], opts).transfers.done).toBe(true);
+  });
+
+  it("a cash advance waits until it is in the cash box", () => {
+    const advance = row({ cardLabel: card, amount: 602.95, lineKind: "cash_advance" });
+    const waiting = summarizeStatement([advance], [], opts);
+    expect(waiting.transfers.advancesWaiting).toBe(1);
+    expect(waiting.missing).toContain("משיכת מזומן שלא נרשמה");
+    expect(waiting.cards[0].purchases).toBe(602.95);
+    const done = summarizeStatement([{ ...advance, cashTransferId: "t" }], [], opts);
+    expect(done.transfers.done).toBe(true);
+    expect(done.assign.cash).toBe(1);
+  });
+});
+
+describe("statementRowMode — a US card's payment and cash lines", () => {
+  const base = { amount: -100, expenseId: null, expenseExists: false, incomePaymentId: null, incomeExists: false };
+  it("a payment is waiting until linked, then paid — never a refund", () => {
+    expect(statementRowMode({ ...base, lineKind: "payment" })).toBe("payment");
+    expect(statementRowMode({ ...base, lineKind: "payment", paymentTransferId: "t" })).toBe("paid");
+  });
+  it("a cash advance is an advance until its cash is in", () => {
+    expect(statementRowMode({ ...base, amount: 50, lineKind: "cash_advance" })).toBe("advance");
+    expect(statementRowMode({ ...base, amount: 50, lineKind: "cash_advance", cashTransferId: "t" })).toBe("cash");
+  });
+});

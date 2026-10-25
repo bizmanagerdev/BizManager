@@ -217,8 +217,18 @@ export default function QuickEntryRow({
 
     setBusy(kind);
     try {
-      // A cash box moves cash; everything else moves through the bank.
-      const paymentMethod = account.kind === "cash" ? "cash" : "bank_transfer";
+      // A cash box moves cash; a card account (a US card, 2026-10-25) takes
+      // card purchases and gives back refunds — a refund is never "credit
+      // card", which would read as a customer's payment through Grow;
+      // everything else moves through the bank.
+      const paymentMethod =
+        account.kind === "cash"
+          ? "cash"
+          : account.kind === "card"
+            ? kind === "expense"
+              ? "credit_card"
+              : "card_refund"
+            : "bank_transfer";
       // In US$ / C$: the amount as typed, at the day's rate (or the one typed).
       const currency = money.body();
       const res =
