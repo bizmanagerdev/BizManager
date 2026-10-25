@@ -281,6 +281,17 @@ export function formatFileSize(bytes: number | null | undefined): string | null 
 }
 
 /**
+ * The name typed for an upload, as each file's title (owner, 2026-10-25: "I put a document name, then the
+ * category … because I want to know what it is"): the name itself for one file, "<name> (2)" and on for
+ * several. Nothing typed — null, and the file keeps its own name.
+ */
+export function uploadTitle(name: string, index: number, count: number): string | null {
+  const typed = name.trim();
+  if (!typed) return null;
+  return count > 1 ? `${typed} (${index + 1})` : typed;
+}
+
+/**
  * What to show as a document's name in a list. Falls back from the stored title
  * to "<what it is> · <who it belongs to>" when the title is just a filename.
  */

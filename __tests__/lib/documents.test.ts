@@ -11,6 +11,7 @@ import {
   buildDocumentDisplayName,
   stripFileExtension,
   isFilenameLikeName,
+  uploadTitle,
 } from "@/lib/documents";
 
 describe("isDocumentCategory", () => {
@@ -267,5 +268,13 @@ describe("formatFileSize", () => {
     expect(formatFileSize(null)).toBeNull();
     expect(formatFileSize(Number.NaN)).toBeNull();
     expect(formatFileSize(-1)).toBeNull();
+  });
+});
+
+describe("uploadTitle", () => {
+  it("the typed name for one file; numbered for several; nothing typed — the file's own name", () => {
+    expect(uploadTitle("  חוזה שכירות  ", 0, 1)).toBe("חוזה שכירות");
+    expect([0, 1].map((i) => uploadTitle("קבלות ועד", i, 2))).toEqual(["קבלות ועד (1)", "קבלות ועד (2)"]);
+    expect(uploadTitle("   ", 0, 1)).toBeNull();
   });
 });

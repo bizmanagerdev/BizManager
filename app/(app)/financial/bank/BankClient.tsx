@@ -1,6 +1,21 @@
 "use client";
 
-import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  Fragment,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { DndContext, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -49,6 +64,9 @@ import type { Loan } from "@/lib/loans";
 import { formatCurrencyAmount, formatMoneyRounded, formatShekelNote } from "@/lib/money";
 import { CURRENCY_SYMBOL, shekelsToday, type CurrencyCode, type ForeignCurrency, type TodayFxRates } from "@/lib/fx/currencies";
 import { formatEnteredLabel, formatShortDate } from "@/lib/date";
+import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { saveAccountOrderDirect } from "@/lib/accounts/accountsClient";
+import { invalidateAccountsCache } from "@/components/financial/AccountSelect";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 const ExpenseDialog = dynamic(
@@ -106,6 +124,16 @@ const CHECK_FILTERS: Array<{ value: CheckFilter; label: string }> = [
   { value: "checked", label: "נבדקו" },
 ];
 
+// How the money moved, beside each line, as the bank's statement has it (owner,
+// 2026-10-25: "if a row was a cash deposit it says cash, if it is a check it
+// says check … so when I compare with the bank I have an easier time"). A
+// check with its number — the bank lists checks by it.
+function methodText(row: Pick<AccountLedgerEntry, "method" | "checkNumber">): string | null {
+  if (!row.method) return null;
+  const label = paymentMethodLabel(row.method);
+  return row.method === "check" && row.checkNumber ? `${label} ${row.checkNumber}` : label;
+}
+
 // The register's search (owner, 2026-10-19: "the bank page … needs search by
 // amount, date and description"), by the global search's rules
 // (lib/search/listSearch): what the row shows — its label, detail line, day,
@@ -117,6 +145,7 @@ function bankRowRecord(row: AccountLedgerEntry): SearchRecord {
   return {
     text: [
       [null, row.label],
+      [null, methodText(row)],
       [null, row.sublabel],
       [null, row.enteredByName],
       [null, hourOf(row.enteredAt)],
@@ -159,7 +188,9 @@ function AccountSummaryCard({
   /** While a search is on: how many of its rows match (null = no search). */
   searchCount: number | null;
 }) {
-  const kindLabel = getAccountKindLabel(account.kind);
+  // "אשראי", not "כרטיס אשראי": the full name squeezed the card's own name
+  // into its corner (owner, 2026-10-25: "this is shmooshed").
+  const kindLabel = account.kind === "card" ? "אשראי" : getAccountKindLabel(account.kind);
   const hasRows = account.ledger.some((row) => row.posted);
   const currency = account.currency ?? "ILS";
   const balanceToday = currency === "ILS" ? null : shekelsToday(account.currentBalance, currency, fxRates);
@@ -314,6 +345,47 @@ function AccountSummaryCard({
             הכל נבדק
           </span>
         ))}
+    </div>
+  );
+}
+
+// One card in the account strip, dragged into the owner's order. The whole card
+// is the handle — by mouse past a few pixels, on a phone after holding it — so
+// a plain click or tap still opens the account.
+function SortableAccountCard({
+  id,
+  cardRef,
+  clickBlocked,
+  children,
+}: {
+  id: string;
+  /** The selected card's, for centering it in the strip. */
+  cardRef?: RefObject<HTMLDivElement | null>;
+  /** True right after a drag: its closing click opens nothing. */
+  clickBlocked: () => boolean;
+  children: ReactNode;
+}) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id });
+  const ref = useCallback(
+    (el: HTMLDivElement | null) => {
+      setNodeRef(el);
+      if (cardRef) cardRef.current = el;
+    },
+    [setNodeRef, cardRef]
+  );
+  return (
+    <div
+      ref={ref}
+      {...listeners}
+      onClickCapture={(event) => {
+        if (!clickBlocked()) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={cn("w-36 shrink-0 select-none", isDragging && "relative z-10 opacity-90 shadow-lg")}
+    >
+      {children}
     </div>
   );
 }
@@ -542,6 +614,53 @@ export default function BankClient({
     observer.observe(strip);
     return () => observer.disconnect();
   }, []);
+
+  // The strip in the owner's own order, dragged into place (owner, 2026-10-25:
+  // "right now it's alphabetical, I want custom order") and saved on the
+  // accounts for everyone. As dragged here until a save fails; an account the
+  // drag didn't know (added since) keeps the server's place after them.
+  const [accountOrder, setAccountOrder] = useState<string[] | null>(null);
+  const orderedAccounts = useMemo(() => {
+    if (!accountOrder) return accounts;
+    const place = new Map(accountOrder.map((id, index) => [id, index]));
+    return [...accounts].sort((a, b) => (place.get(a.id) ?? Infinity) - (place.get(b.id) ?? Infinity));
+  }, [accounts, accountOrder]);
+  // By mouse at once; on a phone by holding the card a moment, so a swipe
+  // still scrolls the strip.
+  const accountDragSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } })
+  );
+  // A drag ends with a click on the card it dropped — that click doesn't also
+  // open the account.
+  const accountDragging = useRef(false);
+  const accountClickBlockedUntil = useRef(0);
+  // One save at a time, in drag order: two quick drags never write over each
+  // other's places.
+  const accountOrderSaves = useRef<Promise<unknown>>(Promise.resolve());
+  function dragAccountEnd(event: DragEndEvent) {
+    accountDragging.current = false;
+    accountClickBlockedUntil.current = Date.now() + 400;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = orderedAccounts.map((a) => a.id);
+    const next = arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)));
+    const before = accountOrder;
+    setAccountOrder(next);
+    accountOrderSaves.current = accountOrderSaves.current
+      .then(() => saveAccountOrderDirect(next))
+      .then((result) => {
+        // The account pickers in the payment/expense windows follow it too.
+        if (result.ok) return invalidateAccountsCache();
+        toast.error(toHebrewError(result.error, "שמירת סדר החשבונות נכשלה."));
+        setAccountOrder(before);
+      })
+      .catch(() => {
+        // It never reached the server (no signal): back as it was.
+        toast.error("שמירת סדר החשבונות נכשלה — בדקו את החיבור.");
+        setAccountOrder(before);
+      });
+  }
 
   // THIS month should be the first thing on screen when you land here or
   // switch accounts — not something you scroll past a year of future-dated
@@ -994,11 +1113,30 @@ export default function BankClient({
         ) : null}
       </div>
       <div ref={stripRef} className="flex gap-2 overflow-x-auto pb-1">
-        {accounts.map((account) => (
-          <div
+        <DndContext
+          id="bank-accounts-order-dnd"
+          sensors={accountDragSensors}
+          collisionDetection={closestCenter}
+          onDragStart={() => {
+            accountDragging.current = true;
+          }}
+          onDragEnd={dragAccountEnd}
+          onDragCancel={() => {
+            accountDragging.current = false;
+            accountClickBlockedUntil.current = Date.now() + 400;
+          }}
+        >
+        <SortableContext
+          items={orderedAccounts.map((a) => a.id)}
+          strategy={horizontalListSortingStrategy}
+          disabled={orderedAccounts.length < 2}
+        >
+        {orderedAccounts.map((account) => (
+          <SortableAccountCard
             key={account.id}
-            ref={account.id === selected.id ? selectedCardRef : undefined}
-            className="w-36 shrink-0"
+            id={account.id}
+            cardRef={account.id === selected.id ? selectedCardRef : undefined}
+            clickBlocked={() => accountDragging.current || Date.now() < accountClickBlockedUntil.current}
           >
             <AccountSummaryCard
               account={account}
@@ -1010,8 +1148,10 @@ export default function BankClient({
               searchCount={searchByAccount ? (searchByAccount.get(account.id)?.items.length ?? 0) : null}
               fxRates={fxRates}
             />
-          </div>
+          </SortableAccountCard>
         ))}
+        </SortableContext>
+        </DndContext>
         <AccountTotalsCard
           total={totalLiquidity}
           positive={positiveLiquidity}
@@ -1225,6 +1365,8 @@ export default function BankClient({
                     const hasBreakdown = Boolean(row.breakdown && row.breakdown.length > 0);
                     const breakdownOpen = expandedBreakdownIds.has(row.id);
                     const enteredLabel = formatEnteredLabel(row.enteredByName, row.enteredAt);
+                    // In the cash box every line is cash — said only when it isn't.
+                    const method = selected.kind === "cash" && row.method === "cash" ? null : methodText(row);
                     const inner = (
                       <>
                         {/* flex-1 so the amount (and the delete button on a
@@ -1232,6 +1374,11 @@ export default function BankClient({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{paint(row.label)}</span>
+                            {method && (
+                              <span className="shrink-0 whitespace-nowrap rounded-full border px-1.5 py-px text-[0.688rem] text-muted-foreground">
+                                {paint(method)}
+                              </span>
+                            )}
                             {hasBreakdown && (
                               <ChevronDownIcon
                                 className={cn(

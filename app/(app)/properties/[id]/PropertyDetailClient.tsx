@@ -37,7 +37,7 @@ import {
 import { IncomeDialog } from "@/components/financial/IncomeDialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/customers/CustomerPicker";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
-import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
+import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory, uploadTitle } from "@/lib/documents";
 import { type SalaryAgreementRow } from "@/lib/payroll";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { appendDictatedText } from "@/lib/dictation";
@@ -372,6 +372,7 @@ export default function PropertyDetailClient({
   // document
   const [docOpen, setDocOpen] = useState(false);
   const [docFiles, setDocFiles] = useState<File[]>([]);
+  const [docTitle, setDocTitle] = useState("");
   const [docCategory, setDocCategory] = useState("");
   const [checklistKey, setChecklistKey] = useState(0);
   const [docBusy, setDocBusy] = useState(false);
@@ -580,21 +581,25 @@ export default function PropertyDetailClient({
   }
   function openAddDoc() {
     setDocFiles([]);
+    setDocTitle("");
     setDocCategory("");
     setDocOpen(true);
   }
   function openAddDocWithCategory(categoryCode: string) {
     setDocFiles([]);
+    setDocTitle("");
     setDocCategory(categoryCode);
     setDocOpen(true);
   }
   function openAddPurchaseDoc() {
     setDocFiles([]);
+    setDocTitle("");
     setDocCategory("מסמכי רכישה");
     setDocOpen(true);
   }
   function openAddPhotos() {
     setDocFiles([]);
+    setDocTitle("");
     setDocCategory("צילום");
     setDocOpen(true);
   }
@@ -739,16 +744,19 @@ export default function PropertyDetailClient({
       // so a retry after a partial failure never re-submits (and duplicates)
       // a file that already uploaded successfully.
       const remaining = [...docFiles];
-      for (const file of docFiles) {
+      for (const [index, file] of docFiles.entries()) {
         const fields: Record<string, string> = {
           business_domain: "property_management",
           property_id: propertyId,
         };
+        // The name typed for it (owner, 2026-10-25: "because I want to know what it is").
+        const title = uploadTitle(docTitle, index, docFiles.length);
+        if (title) fields.title = title;
         if (docCategory.trim()) fields.category = docCategory.trim();
         const result = await offlineUpload("/api/documents/upload", {
           fields,
           file,
-          label: file.name,
+          label: title ?? file.name,
         });
         if (result.queued) {
           done += 1;
@@ -1588,6 +1596,30 @@ export default function PropertyDetailClient({
         busy={docBusy}
       >
         <div className="mt-4 space-y-4">
+          {/* Its name first, then its category, then the file (owner, 2026-10-25). */}
+          <div className="space-y-1">
+            <div className="text-sm font-medium">שם המסמך</div>
+            <Input
+              value={docTitle}
+              onChange={(e) => setDocTitle(e.target.value)}
+              placeholder={docFiles.length === 1 ? docFiles[0].name : "למשל: חוזה שכירות 2026"}
+              disabled={docBusy}
+            />
+            <div className="text-xs text-muted-foreground">
+              {docFiles.length > 1 ? "לכמה קבצים: כל אחד בשם הזה עם מספר. " : ""}לא חובה — בלי שם נשתמש בשם הקובץ.
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-sm font-medium">קטגוריה</div>
+            <NativeSelect value={docCategory} onChange={(e) => setDocCategory(e.target.value)} disabled={docBusy}>
+              <option value="">ללא קטגוריה</option>
+              {DOCUMENT_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
           <FileUploadActions
             files={docFiles}
             onFilesSelected={(files) => {
@@ -1602,17 +1634,6 @@ export default function PropertyDetailClient({
             disabled={docBusy}
             chooseLabel="בחירת קבצים"
           />
-          <div className="space-y-1">
-            <div className="text-sm font-medium">קטגוריה</div>
-            <NativeSelect value={docCategory} onChange={(e) => setDocCategory(e.target.value)} disabled={docBusy}>
-              <option value="">ללא קטגוריה</option>
-              {DOCUMENT_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
         </div>
       </FormDialog>
 

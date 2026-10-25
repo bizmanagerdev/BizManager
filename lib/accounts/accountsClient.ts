@@ -76,7 +76,9 @@ export async function saveAccountDirect(
         opening_balance: input.opening_balance,
         opening_date: input.opening_date,
         is_active: input.is_active !== false,
-        sort_order: input.sort_order ?? 0,
+        // Its place in the owner's order is the strip's to change, not the
+        // edit form's — an edit that doesn't name one keeps it.
+        ...(input.sort_order !== undefined ? { sort_order: input.sort_order } : {}),
         notes: input.notes?.trim() || null,
         account_number: input.account_number?.trim() || null,
         updated_at: new Date().toISOString(),
@@ -86,6 +88,17 @@ export async function saveAccountDirect(
     return { ok: true };
   }
 
+  // A new account joins the end of the owner's order.
+  let sortOrder = input.sort_order;
+  if (sortOrder === undefined) {
+    const { data: last } = await supabase
+      .from("accounts")
+      .select("sort_order")
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    sortOrder = (Number((last as { sort_order?: unknown } | null)?.sort_order) || 0) + 1;
+  }
   const { data, error } = await supabase
     .from("accounts")
     .insert({
@@ -96,12 +109,34 @@ export async function saveAccountDirect(
       opening_date: input.opening_date,
       notes: input.notes?.trim() || null,
       account_number: input.account_number?.trim() || null,
-      sort_order: input.sort_order ?? 0,
+      sort_order: sortOrder,
     })
     .select("id")
     .single();
   if (error) return { ok: false, error: error.message };
   return { ok: true, id: (data as { id: string } | null)?.id };
+}
+
+/**
+ * The accounts in the owner's own order (owner, 2026-10-25: "dragging accounts
+ * to the order I want … right now it's alphabetical, I want custom order"):
+ * each one's place, 1 on, as dragged on the חשבונות page. Kept on the account
+ * itself, so every computer and phone — and every account picker — shows the
+ * same order. Only the ones whose place changed are written.
+ */
+export async function saveAccountOrderDirect(ids: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (ids.length === 0 || new Set(ids).size !== ids.length) return { ok: false, error: "סדר לא תקין." };
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase.from("accounts").select("id,sort_order").in("id", ids);
+  if (error) return { ok: false, error: error.message };
+  const placeNow = new Map(((data ?? []) as Array<{ id: string; sort_order: number | null }>).map((r) => [r.id, r.sort_order]));
+  const moved = ids.map((id, index) => ({ id, place: index + 1 })).filter(({ id, place }) => placeNow.get(id) !== place);
+  const results = await Promise.all(
+    moved.map(({ id, place }) => supabase.from("accounts").update({ sort_order: place }).eq("id", id))
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) return { ok: false, error: failed.error.message };
+  return { ok: true };
 }
 
 export async function deleteAccountDirect(id: string): Promise<{ ok: true } | { ok: false; error: string }> {

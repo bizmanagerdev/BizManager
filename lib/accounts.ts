@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isCollectedPayment } from "@/lib/orders/paymentStatus";
+import { isCollectedPayment, normalizePaymentMethodValue } from "@/lib/orders/paymentStatus";
 import {
   cardScanSince,
   cardSettlementDate,
@@ -153,6 +153,15 @@ export type AccountLedgerEntry = {
    *  tick are in it, as on the bank's statement. */
   accountAmount: number;
   posted: boolean; // false = still expected (uncleared check / unpaid expense)
+  /** How the money moved — "cash", "check", "bank_transfer", "credit_card",
+   *  "bit"… (normalizePaymentMethodValue), said beside the line so it can be
+   *  matched against the bank's statement (owner, 2026-10-25: "if a row was a
+   *  cash deposit it says cash, if it is a check it says check"). A transfer
+   *  with the cash box on either side is cash. Null or absent when the row was
+   *  saved without one. */
+  method?: string | null;
+  /** A check's number, when it was typed in — the bank lists checks by it. */
+  checkNumber?: string | null;
   /**
    * When the paperwork happened, if that's NOT the day the money moved — a
    * check handed over on 24/05 against a 29/07 פירעון has date=29/07 and
@@ -303,6 +312,12 @@ function absForeign(foreign: ForeignMoney | null): ForeignMoney | null {
   return foreign && { ...foreign, amount: Math.abs(foreign.amount) };
 }
 
+/** A row's payment method as the app's code ("cash", "check", "bank_transfer"…),
+ *  or null when it was saved without one. */
+function methodOf(value: unknown): string | null {
+  return normalizePaymentMethodValue(str(value)) || null;
+}
+
 function intOrNull(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
@@ -379,6 +394,8 @@ type RawLedgerEntry = {
   amount: number;
   foreign?: ForeignMoney | null;
   posted: boolean;
+  method?: string | null;
+  checkNumber?: string | null;
   transfer?: AccountTransferRef;
   deleteRef?: AccountDeleteRef;
   editRef?: AccountEditRef;
@@ -438,7 +455,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("payments", (from, to) =>
         supabase
           .from("payments")
-          .select(`id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
+          .select(`id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,check_number,notes,project_id,order_id,property_id,business_domain,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           // Either date may be the one inside the window: a check handed over
           // in May and cashed in July is May-dated but July money. And card
@@ -468,7 +485,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("worker_payments", (from, to) =>
         supabase
           .from("worker_payments")
-          .select(`id,account_id,payment_date,amount,notes,user_id,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
+          .select(`id,account_id,payment_date,amount,payment_method,notes,user_id,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           .gte("payment_date", earliestOpening)
           .range(from, to)
@@ -477,7 +494,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("loans", (from, to) =>
         supabase
           .from("loans")
-          .select(`id,account_id,direction,loan_date,amount,lender,borrower,business_domain,created_at,created_by,${MONEY_CURRENCY_COLUMNS}`)
+          .select(`id,account_id,direction,loan_date,amount,loan_method,lender,borrower,business_domain,created_at,created_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           .gte("loan_date", earliestOpening)
           .range(from, to)
@@ -905,6 +922,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       amount,
       foreign: absForeign(readForeignMoney(row)),
       posted,
+      method: methodOf(row.payment_method),
+      checkNumber: str(row.check_number)?.trim() || null,
       deleteRef: {
         kind: "payment",
         id: str(row.id) ?? "",
@@ -941,6 +960,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       type: "in",
       amount: g.amount,
       posted,
+      method: "credit_card",
       // Expand-in-place, right on this row — every payment that fed into it,
       // newest first (see LedgerBreakdownItem/BankClient's row expansion).
       breakdown: [...g.payments].sort((a, b2) => b2.date.localeCompare(a.date) || b2.id.localeCompare(a.id)),
@@ -958,6 +978,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const total = Math.abs(num(row.amount));
     const paid = Math.abs(num(row.paid_amount));
     const foreign = absForeign(readForeignMoney(row));
+    const method = methodOf(row.payment_method);
     const label = str(row.description)?.trim() || str(row.category)?.trim() || "תשלום";
     const sublabel = composeSublabel({
       domain: str(row.business_domain),
@@ -1046,6 +1067,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         amount: postedAmount,
         foreign: foreign && foreignShare(foreign, postedAmount, total),
         posted: true,
+        method,
         deleteRef,
         editRef,
       });
@@ -1062,6 +1084,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         amount: pendingAmount,
         foreign: foreign && foreignShare(foreign, pendingAmount, total),
         posted: false,
+        method,
         deleteRef,
         editRef,
       });
@@ -1090,6 +1113,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       // Paid in US$ / C$ (2026-10-25): its own money beside the shekels.
       foreign: absForeign(readForeignMoney(row)),
       posted: true,
+      method: methodOf(row.payment_method),
       deleteRef: { kind: "worker_payment", id: str(row.id) ?? "", userId: str(row.user_id) },
       editRef: { kind: "worker_payment", id: str(row.id) ?? "" },
     });
@@ -1160,6 +1184,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       amount,
       foreign: absForeign(readForeignMoney(row)),
       posted: true,
+      method: methodOf(row.loan_method),
       deleteRef: { kind: "loan", id: str(row.id) ?? "" },
       editRef: { kind: "loan", loanId: str(row.id) ?? "" },
     });
@@ -1190,6 +1215,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       amount,
       foreign: absForeign(readForeignMoney(row)),
       posted: true,
+      method: methodOf(row.method),
       deleteRef: { kind: "loan_repayment", id: repaymentId, loanId },
       editRef: {
         kind: "loan_repayment",
@@ -1250,9 +1276,14 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         amount,
         foreign: transferSide(to, toAmount, amount),
         posted: true,
+        method: "cash",
       });
       continue;
     }
+
+    // Money into or out of the cash box is cash on the bank's side too — a
+    // cash deposit, an ATM withdrawal; between two banks it's a transfer.
+    const method = from?.kind === "cash" || to?.kind === "cash" ? "cash" : "bank_transfer";
 
     const ref: AccountTransferRef = {
       id,
@@ -1278,6 +1309,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         amount,
         foreign: transferSide(from, fromAmount, amount),
         posted: true,
+        method,
         transfer: ref,
       });
     }
@@ -1294,6 +1326,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         amount,
         foreign: transferSide(to, toAmount, amount),
         posted: true,
+        method,
         transfer: ref,
       });
     }
@@ -1319,6 +1352,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       type: "out",
       amount,
       posted: true,
+      method: "credit_card",
       deleteRef: { kind: "card_charge", id: str(row.id) ?? "" },
     });
   }
