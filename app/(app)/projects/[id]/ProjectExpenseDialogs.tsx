@@ -437,6 +437,7 @@ export function AddIncomeDialog({
             />
             {paymentMethod === "credit_card" ? (
               <CardInstallmentsField
+                currency={money.currency}
                 value={installments}
                 onChange={setInstallments}
                 amount={Number.isFinite(amountNumber) ? amountNumber : 0}

@@ -10,7 +10,8 @@ import { AddIcon } from "@/components/ui/icons";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
@@ -86,12 +87,22 @@ export default function OrderPaymentDialog({
   // A card payment in installments is saved as that many payments, a month apart.
   const [installments, setInstallments] = useState("1");
 
+  // In ₪, US$ or C$ (2026-10-24) — the account's own when it's kept in dollars.
+  const money = useMoneyCurrency({
+    open,
+    accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    date: paymentDate,
+  });
+  const foreignPayment = isForeignCurrency(money.currency);
+
   const remainingBefore = Math.max(totalAmount - paidAmount, 0);
   const refundBefore = Math.max(paidAmount - totalAmount, 0);
   const amountNumber = Number(amount);
+  // What the order counts: its shekels.
+  const amountShekels = foreignPayment ? (money.shekels(amountNumber) ?? 0) : amountNumber;
 
   const preview = useMemo(() => {
-    const safeAmount = Number.isFinite(amountNumber) && amountNumber > 0 ? amountNumber : 0;
+    const safeAmount = Number.isFinite(amountShekels) && amountShekels > 0 ? amountShekels : 0;
     const signedAmount = entryType === "refund" ? safeAmount * -1 : safeAmount;
     const nextPaid = paidAmount + signedAmount;
 
@@ -101,7 +112,7 @@ export default function OrderPaymentDialog({
       nextRefund: Math.max(nextPaid - totalAmount, 0),
       nextStatus: derivePaymentStatus(totalAmount, nextPaid),
     };
-  }, [amountNumber, entryType, paidAmount, totalAmount]);
+  }, [amountShekels, entryType, paidAmount, totalAmount]);
 
   async function submitPayment() {
     if (submitting) return;
@@ -133,6 +144,11 @@ export default function OrderPaymentDialog({
       setError("מספר התשלומים צריך להיות בין 1 ל-36.");
       return;
     }
+    if (foreignPayment && money.rate === null) {
+      setError(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
+    const currencyBody = money.body();
 
     function resetForm() {
       setAmount("");
@@ -159,6 +175,7 @@ export default function OrderPaymentDialog({
       order_id: orderId,
       entry_type: entryType,
       amount_total: part.amount,
+      ...currencyBody,
       payment_date: part.paymentDate,
       payment_method: paymentMethod,
       account_id: accountId || undefined,
@@ -175,8 +192,9 @@ export default function OrderPaymentDialog({
       // Saved on the phone first (lib/payments/device-payment-saves.ts): the
       // order's paid status and balance show it at once, offline too; it goes
       // to the server in the background, where the Morning receipt is issued.
-      // A check's photos need the server.
-      const device = devicePage && checkPhotoFiles.length === 0 ? devicePaymentSaves(devicePage) : null;
+      // A check's photos need the server; so does a payment in US$ / C$ (its
+      // shekels are worked out there, at the day's rate).
+      const device = devicePage && checkPhotoFiles.length === 0 && !foreignPayment ? devicePaymentSaves(devicePage) : null;
       if (device) {
         const [first, ...rest] = parts;
         if (await device.addOrderPayment(bodyFor(first))) {
@@ -328,7 +346,8 @@ export default function OrderPaymentDialog({
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label={entryType === "refund" ? "סכום החזר" : "סכום תשלום"} required>
-                <CurrencyInput
+                <CurrencyAmountInput
+                  money={money}
                   type="number"
                   min="0"
                   step="0.01"
@@ -372,6 +391,7 @@ export default function OrderPaymentDialog({
 
             {paymentMethod === "credit_card" && entryType !== "refund" ? (
               <CardInstallmentsField
+                currency={money.currency}
                 value={installments}
                 onChange={setInstallments}
                 amount={Number.isFinite(amountNumber) ? amountNumber : 0}

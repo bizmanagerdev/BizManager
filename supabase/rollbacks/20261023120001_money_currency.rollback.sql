@@ -1,4 +1,4 @@
--- Rollback for 20261023120000_money_currency.sql.
+-- Rollback for 20261023120001_money_currency.sql.
 -- Takes the currency off accounts and money rows, with the triggers that keep
 -- it in step. While every row is still in shekels (as the migration left them)
 -- nothing is lost: the shekel amounts were always the real columns.

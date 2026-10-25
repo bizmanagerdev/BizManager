@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, typedAmountOf, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 import { DateInput } from "@/components/ui/date-input";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { toast } from "sonner";
@@ -48,7 +50,7 @@ function checkSearchRecord(c: CheckRow): SearchRecord {
       ["הערה", c.notes],
       ["אסמכתא", c.reference_number],
     ],
-    amounts: [[null, c.amount]],
+    amounts: [[null, c.amount], ...(c.foreign ? [[null, c.foreign.amount, c.foreign.currency] as const] : [])],
     dates: [
       [null, c.due_date],
       [null, c.payment_date],
@@ -600,7 +602,7 @@ function CheckRowDesktop({
         <SearchReasons reasons={reasons} className="mt-0.5" />
       </td>
       <td className="px-3 py-2 font-mono text-xs">{c.check_number ? <Painted text={c.check_number} /> : "—"}</td>
-      <td className="px-3 py-2 text-center font-semibold"><Painted text={formatCurrency(c.amount)} /></td>
+      <td className="px-3 py-2 text-center font-semibold"><Painted text={checkAmountText(c)} /></td>
       <td className="px-3 py-2">
         <DueCell c={c} today={today} />
         <ReceivedLine c={c} />
@@ -656,7 +658,7 @@ function CheckCard({
           ) : null}
           <SearchReasons reasons={reasons} className="mt-0.5" />
         </div>
-        <div className="shrink-0 text-lg font-semibold"><Painted text={formatCurrency(c.amount)} /></div>
+        <div className="shrink-0 text-lg font-semibold"><Painted text={checkAmountText(c)} /></div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <Badge className={checkStatusClasses(c.status)}>{checkStatusLabel(c.status)}</Badge>
@@ -739,6 +741,12 @@ function DepositCheckDialog({
   );
 }
 
+/** A check's amount: "$1,000 (≈ ₪3,107)" in US$ / C$, else its shekels. */
+function checkAmountText(check: CheckRow): string {
+  if (!check.foreign) return formatCurrency(check.amount);
+  return `${formatCurrencyAmount(check.foreign.amount, check.foreign.currency)} (≈ ${formatCurrency(Math.round(check.amount))})`;
+}
+
 function EditCheckDialog({
   check,
   onClose,
@@ -750,7 +758,9 @@ function EditCheckDialog({
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [amount, setAmount] = useState(String(check.amount));
+  // In its currency (2026-10-24): a check in dollars shows and saves its dollars.
+  const currencyRow = check.foreign === undefined ? null : currencyFieldsFrom(check.foreign);
+  const [amount, setAmount] = useState(typedAmountOf(currencyRow, check.amount));
   const [dueDate, setDueDate] = useState(check.due_date ?? "");
   const [checkNumber, setCheckNumber] = useState(check.check_number ?? "");
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
@@ -758,6 +768,13 @@ function EditCheckDialog({
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [notes, setNotes] = useState(check.notes ?? "");
   const [error, setError] = useState<string | null>(null);
+  const money = useMoneyCurrency({
+    open: true,
+    initial: currencyRow,
+    known: currencyRow !== null,
+    accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    date: check.payment_date,
+  });
 
   function handleSubmit() {
     setError(null);
@@ -775,6 +792,22 @@ function EditCheckDialog({
       setError("יש לבחור חשבון לתנועה.");
       return;
     }
+    const foreignCurrency = money.known && isForeignCurrency(money.currency) ? money.currency : null;
+    if (foreignCurrency && money.rate === null) {
+      setError(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
+    // On screen meanwhile: its shekels at the rate, and its own amount.
+    const currencyBody = money.body();
+    const shekels = foreignCurrency ? (money.shekels(amountNumber) ?? check.amount) : amountNumber;
+    const foreignPatch = money.known
+      ? {
+          foreign:
+            foreignCurrency && money.rate
+              ? { currency: foreignCurrency, amount: amountNumber, rate: money.rate, rateManual: money.manual }
+              : null,
+        }
+      : {};
 
     const filesToUpload = photoFiles;
     onSaved();
@@ -783,7 +816,8 @@ function EditCheckDialog({
       id: check.payment_id,
       message: "הצ׳ק עודכן",
       patch: {
-        amount: amountNumber,
+        amount: shekels,
+        ...foreignPatch,
         due_date: dueDate,
         check_number: checkNumber.trim() || null,
         notes: notes.trim() || null,
@@ -796,6 +830,7 @@ function EditCheckDialog({
           payment_date: check.payment_date,
           payment_method: "check",
           amount_total: amountNumber,
+          ...currencyBody,
           due_date: dueDate,
           check_number: checkNumber.trim() || undefined,
           reference_number: check.reference_number ?? undefined,
@@ -838,7 +873,8 @@ function EditCheckDialog({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <label className="text-sm font-medium">סכום *</label>
-            <CurrencyInput
+            <CurrencyAmountInput
+              money={money}
               type="number"
               min="0"
               step="0.01"

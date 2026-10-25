@@ -22,7 +22,9 @@ import { OptionRow, DateQuickPicks, StepHeading } from "@/components/ui/option-r
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { CURRENCY_NAME, isForeignCurrency } from "@/lib/fx/currencies";
+import { formatCurrencyAmount } from "@/lib/money";
 import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
@@ -121,6 +123,12 @@ export function CollectPaymentDialog({
   const [installments, setInstallments] = useState("1");
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
+  // In ₪, US$ or C$ (2026-10-24) — the account's own when it's kept in dollars.
+  const money = useMoneyCurrency({
+    open,
+    accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    date,
+  });
   const [reference, setReference] = useState("");
   const [checkNumber, setCheckNumber] = useState("");
   const [checkPhotoFiles, setCheckPhotoFiles] = useState<File[]>([]);
@@ -371,6 +379,11 @@ export function CollectPaymentDialog({
       setError("יש לבחור חשבון.");
       return;
     }
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      setError(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
+    const currencyBody = money.body();
     const installmentCount = method === "credit_card" ? parseInstallments(installments) : 1;
     if (installmentCount === null) {
       setError("מספר התשלומים צריך להיות בין 1 ל-36.");
@@ -399,6 +412,8 @@ export function CollectPaymentDialog({
               order_id: selectedReceivable.source_type === "order" ? selectedReceivable.source_id : null,
               property_id: null,
               amount_total: part.amount,
+              // In US$ / C$: the amount as typed; the server works out its shekels.
+              ...currencyBody,
               payment_date: part.paymentDate,
               // A card payment is stored with its deposit day, so every reader sees it.
               due_date:
@@ -619,7 +634,7 @@ export function CollectPaymentDialog({
         <>
           <StepHeading title="כמה התקבל?" />
           <label className="space-y-2 text-sm">
-          <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+          <CurrencyAmountInput money={money} value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
           {selectedReceivable ? (
             <span className="block text-[0.647rem] text-muted-foreground">
               החוב הפתוח: {formatCurrency(selectedReceivable.outstanding_amount)}
@@ -654,6 +669,14 @@ export function CollectPaymentDialog({
               selected={accountId === a.id}
               onClick={() => {
                 setAccountId(a.id);
+                // An account kept in dollars after an amount typed in another
+                // currency: back to the amount, now in the account's, to check it.
+                const next = a.currency ?? "ILS";
+                if (isForeignCurrency(next) && next !== money.currency && amountValid) {
+                  toast.info(`החשבון מתנהל ב${CURRENCY_NAME[next]} — יש לבדוק את הסכום`);
+                  advanceTo("amount");
+                  return;
+                }
                 advanceTo("date");
               }}
             />
@@ -684,6 +707,7 @@ export function CollectPaymentDialog({
             amount={amountValid ? Number(amount) : 0}
             paymentDate={date}
             disabled={submitting}
+            currency={money.currency}
           />
         </>
       ) : stepId === "check" ? (
@@ -736,7 +760,14 @@ export function CollectPaymentDialog({
           <SummarySection title="פרטי התשלום">
             <SummaryRow label="לקוח" value={debtorName} />
             {selectedReceivable ? <SummaryRow label="חוב" value={receivableTitle(selectedReceivable)} /> : null}
-            <SummaryRow label="סכום" value={formatCurrency(Number(amount) || 0)} />
+            <SummaryRow
+              label="סכום"
+              value={
+                isForeignCurrency(money.currency)
+                  ? `${formatCurrencyAmount(Number(amount) || 0, money.currency)} (≈ ${formatCurrency(Math.round(money.shekels(Number(amount) || 0) ?? 0))})`
+                  : formatCurrency(Number(amount) || 0)
+              }
+            />
             <SummaryRow label="אמצעי תשלום" value={summaryMethodLabel} />
             <SummaryRow label="חשבון" value={summaryAccountName} />
             <SummaryRow label="תאריך" value={date} />

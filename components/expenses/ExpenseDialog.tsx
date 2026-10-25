@@ -77,7 +77,7 @@ import { israelDateKey } from "@/lib/timezone";
 import { formatEnteredLabel, formatShortDate, toDateKey } from "@/lib/date";
 import {
   CurrencyAmountInput,
-  CurrencySelect,
+  CurrencySymbolMenu,
   FxRateLine,
   knowsCurrency,
   typedAmountOf,
@@ -212,6 +212,8 @@ export type EditingRecurringTemplateData = {
   template_name: string | null;
   category: string | null;
   amount: number | string | null;
+  /** The currency its amount is in (2026-10-24); absent: a caller that didn't read it. */
+  currency?: string | null;
   is_variable_amount: boolean;
   auto_paid?: boolean;
   reminder_work_days_before?: number | null;
@@ -501,14 +503,18 @@ export function ExpenseDialog({
   }, [open]);
 
   // In ₪, US$ or C$ (2026-10-23) — the account's own when it's kept in
-  // dollars. A one-off expense only: a recurring bill, a split into payments
-  // and a worker's pay stay in shekels.
+  // dollars. A worker's pay stays in shekels. A recurring bill (2026-10-24)
+  // keeps its currency; each of its bills is priced at its own day's rate.
   const money = useMoneyCurrency({
     open,
     initial: editingExpense,
-    known: !editingExpense || knowsCurrency(editingExpense),
+    known: editingRecurringTemplate
+      ? knowsCurrency(editingRecurringTemplate)
+      : !editingExpense || knowsCurrency(editingExpense),
     accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
-    preferred: defaultCurrency,
+    preferred: editingRecurringTemplate
+      ? isForeignCurrency(editingRecurringTemplate.currency) ? editingRecurringTemplate.currency : "ILS"
+      : defaultCurrency,
     date: expenseDate,
   });
 
@@ -1126,10 +1132,16 @@ export function ExpenseDialog({
   }
 
   async function submitInstallments(totalAmount: number) {
-    const validationError = validateInstallments(installmentRows, totalAmount);
+    const validationError = validateInstallments(installmentRows, totalAmount, money.currency);
     if (validationError) {
       setErrorMessage(validationError);
       toast.error(validationError);
+      return;
+    }
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      const msg = money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.";
+      setErrorMessage(msg);
+      toast.error(msg);
       return;
     }
     // Any installment marked "already paid" is a real outflow now → it must land in
@@ -1156,6 +1168,8 @@ export function ExpenseDialog({
           account_id: accountId || null,
           payment_method: paymentMethod || null,
           installments: installmentRows.map((r) => ({ expense_date: r.date, amount: Number(r.amount), paid: !!r.paid })),
+          // In US$ / C$: the installments' amounts are in it, each at its own day's rate.
+          ...money.body(),
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1198,8 +1212,9 @@ export function ExpenseDialog({
           template_name: templateName.trim() || finalCategory,
           category: finalCategory,
           // For a variable bill this is the ESTIMATE (base) used for planning; the
-          // real amount is captured when it's paid.
+          // real amount is captured when it's paid. In the bill's currency.
           amount: amountNumber,
+          ...(money.known ? { currency: money.currency } : {}),
           is_variable_amount: recurVariable,
           auto_paid: recurAutoPaid && !recurVariable,
           reminder_work_days_before: recurReminderDays ? Number(recurReminderDays) : null,
@@ -1652,7 +1667,8 @@ export function ExpenseDialog({
   }
   const ils = (n: number) => "₪" + Number(n || 0).toLocaleString("en-US");
   // The expense's amounts in its own currency, and its shekels beside them.
-  const inCurrency = !isRecurring && !installmentsMode && !isWorkerPayment;
+  // An expense split into payments, and a recurring bill, too (2026-10-24).
+  const inCurrency = !isWorkerPayment;
   const amt = (n: number) =>
     inCurrency && isForeignCurrency(money.currency) ? formatCurrencyAmount(Number(n || 0), money.currency) : ils(n);
   const amtWithShekels = (n: number) => {
@@ -1754,7 +1770,12 @@ export function ExpenseDialog({
           n > 0 && filledTone ? "border-success" : "border-input"
         )}
       >
-        <span className="text-3xl font-bold text-muted-foreground">{inCurrency ? money.symbol : "₪"}</span>
+        {/* ₪ / $ / C$: a click on the sign (owner, 2026-10-24). */}
+        {inCurrency ? (
+          <CurrencySymbolMenu money={money} className="text-3xl font-bold text-muted-foreground" />
+        ) : (
+          <span className="text-3xl font-bold text-muted-foreground">₪</span>
+        )}
         <span className="text-center text-4xl font-bold leading-none tabular-nums">
           {n > 0 ? n.toLocaleString("en-US") : "0"}
         </span>
@@ -1801,12 +1822,7 @@ export function ExpenseDialog({
           <>
             {expTitle("כמה עלתה ההוצאה?", "אפשר להשאיר 0 ולקבוע אחר כך")}
             {expAmountHero(amount)}
-            {/* ₪ / $ / C$, and for dollars the day's rate and its shekels. */}
-            {inCurrency && money.known ? (
-              <div className="mt-2 flex justify-center">
-                <CurrencySelect money={money} className="w-28" />
-              </div>
-            ) : null}
+            {/* For dollars: the day's rate and its shekels (the sign above picks the currency). */}
             {inCurrency ? (
               <div className="mt-1 flex justify-center text-center">
                 <FxRateLine money={money} amount={Number(amount) || 0} />
@@ -2199,6 +2215,7 @@ export function ExpenseDialog({
           <>
             {expTitle("לכמה תשלומים לפרוס?")}
             <InstallmentFields
+              currency={money.currency}
               total={Number(amount) || 0}
               startDate={expenseDate || israelDateKey()}
               rows={installmentRows}
@@ -3364,6 +3381,7 @@ export function ExpenseDialog({
 
               {installmentsMode ? (
                 <InstallmentFields
+                  currency={money.currency}
                   total={Number(amount) || 0}
                   startDate={expenseDate || israelDateKey()}
                   rows={installmentRows}

@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { israelDateKey } from "@/lib/timezone";
+import { isForeignCurrency } from "@/lib/fx/currencies";
+import { currencyPricing } from "@/lib/fx/money-input";
 
 // Mark an UPCOMING recurring occurrence (a calendar forecast that has no expense
 // row yet) as paid. It materializes the concrete expense for that period from the
@@ -50,7 +52,7 @@ export async function POST(req: Request) {
     // Load the template.
     const { data: tpl, error: tplErr } = await supabase
       .from("recurring_expense_templates")
-      .select("id,template_name,category,amount,is_variable_amount,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template")
+      .select("id,template_name,category,amount,currency,is_variable_amount,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template")
       .eq("id", templateId)
       .maybeSingle();
     if (tplErr) return NextResponse.json({ error: toHebrewError(tplErr.message) }, { status: 400 });
@@ -78,25 +80,35 @@ export async function POST(req: Request) {
     // If the generator already created this period's row, just flip it to paid.
     const { data: existing } = await supabase
       .from("expenses")
-      .select("id")
+      .select("id,currency,fx_rate")
       .eq("recurring_expense_template_id", templateId)
       .eq("recurrence_key", recurrenceKey)
-      .maybeSingle();
+      .maybeSingle<{ id: string; currency: string | null; fx_rate: number | string | null }>();
 
-    let expenseId = (existing as { id?: string } | null)?.id ?? "";
+    let expenseId = existing?.id ?? "";
 
-    if (expenseId) {
+    if (existing && expenseId) {
+      // The amount is in the bill's own currency: in US$ / C$ at its rate.
+      const rate = Number(existing.fx_rate);
+      const amountPatch = isForeignCurrency(existing.currency) && rate > 0
+        ? { foreign_amount: effectiveAmount, amount: Math.round(effectiveAmount * rate * 100) / 100, paid_amount: Math.round(effectiveAmount * rate * 100) / 100 }
+        : { amount: effectiveAmount };
       const { error } = await supabase
         .from("expenses")
-        .update({ amount: effectiveAmount, payment_status: "paid", payment_method: paymentMethod, account_id: accountId, paid_date: paidDate })
+        .update({ ...amountPatch, payment_status: "paid", payment_method: paymentMethod, account_id: accountId, paid_date: paidDate })
         .eq("id", expenseId);
       if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     } else {
+      // A template in US$ / C$: the bill is in it, at its day's Bank of Israel rate.
+      const templateCurrency = isForeignCurrency(t.currency) ? t.currency : "ILS";
+      const pricing = await currencyPricing(supabase, { currency: templateCurrency }, { amount: effectiveAmount, date: expenseDate });
+      if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
       const { data: inserted, error } = await supabase
         .from("expenses")
         .insert({
           expense_date: expenseDate,
-          amount: effectiveAmount,
+          amount: pricing.toShekels(effectiveAmount),
+          ...(pricing.columns ?? {}),
           category: t.category,
           description: applyTokens(t.description_template as string | null, recurrenceKey, expenseDate),
           business_domain: t.business_domain,

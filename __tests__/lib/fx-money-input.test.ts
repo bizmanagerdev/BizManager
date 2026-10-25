@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { currencyPricing, rowDay } from "@/lib/fx/money-input";
+import { currencyPricing, priceMoneyLines, rowDay, signedColumns } from "@/lib/fx/money-input";
 import { currencyFieldsFrom, rowCurrencyFields } from "@/lib/fx/currencies";
 
 // How an entry form's typed amount in US$ or C$ becomes the row's columns
@@ -75,5 +75,40 @@ describe("an edit form's currency fields", () => {
       currency: "CAD",
       foreign_amount: 500,
     });
+  });
+});
+
+describe("an order's payment lines", () => {
+  it("each line priced by its position in what the form sent; a line it said nothing for stays as it is", async () => {
+    const supabase = rpcAnswering(3.1);
+    const priced = await priceMoneyLines(
+      supabase,
+      [{ currency: "USD" }, {}, { currency: "ILS" }],
+      [
+        { amount_total: 100, payment_date: "2026-10-22" },
+        { amount_total: 500, payment_date: "2026-10-22" },
+        { amount_total: -40, payment_date: null },
+      ]
+    );
+    if ("error" in priced) throw new Error(priced.error);
+    expect(priced.map((p) => p.shekels)).toEqual([310, 500, 40]);
+    expect(priced[0].columns).toMatchObject({ currency: "USD", foreign_amount: 100, fx_rate: 3.1 });
+    expect(priced[1].columns).toBeNull();
+    expect(priced[2].columns).toMatchObject({ currency: "ILS", foreign_amount: null });
+  });
+
+  it("one line without a rate stops them all, saying why", async () => {
+    await expect(
+      priceMoneyLines(rpcAnswering(null), [{ currency: "CAD" }], [{ amount_total: 10, payment_date: "2014-01-01" }])
+    ).resolves.toEqual({ error: "אין שער יציג לדולר קנדי ליום 01/01/2014 — יש להקליד את השער." });
+  });
+
+  it("a refund's foreign amount is negative too; shekels and a positive line are left as they are", () => {
+    const usd = { currency: "USD" as const, foreign_amount: 50, fx_rate: 3.1, fx_rate_manual: false };
+    expect(signedColumns(usd, true)).toEqual({ ...usd, foreign_amount: -50 });
+    expect(signedColumns(usd, false)).toBe(usd);
+    expect(signedColumns(null, true)).toBeNull();
+    const ils = { currency: "ILS" as const, foreign_amount: null, fx_rate: null, fx_rate_manual: false };
+    expect(signedColumns(ils, true)).toBe(ils);
   });
 });

@@ -5,12 +5,19 @@ import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { currencyPricing, type MoneyCurrencyBody, type MoneyCurrencyColumns } from "@/lib/fx/money-input";
+import { MONEY_CURRENCY_COLUMNS, readForeignMoney } from "@/lib/fx/currencies";
 
 // Split one obligation into N separate dated payments. Each becomes its own
 // `expenses` row (payment_status 'not_paid') sharing an `installment_group_id`,
 // so it lands on its own day in the payments calendar and is marked paid
 // individually. Optionally replaces an existing unpaid expense (source_expense_id)
 // with its installments.
+//
+// In US$ or C$ (2026-10-24): with a currency sent, each installment's amount is
+// in it, at its own day's rate (or the rate typed). With none sent but the
+// expense split is in dollars (a screen that splits its shekels), the
+// installments keep its currency and its rate — never turned into shekels.
 
 type InstallmentInput = { expense_date?: string | null; amount?: number | string | null; paid?: boolean | null };
 
@@ -23,7 +30,7 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "expenses/split", async () => {
-      const body = (await req.json().catch(() => ({}))) as {
+      const body = (await req.json().catch(() => ({}))) as MoneyCurrencyBody & {
         source_expense_id?: string | null;
         business_domain?: string;
         category?: string;
@@ -82,10 +89,11 @@ export async function POST(req: Request) {
       }
 
       // If splitting an existing expense, it must exist and not already be paid.
+      let sourceForeign: ReturnType<typeof readForeignMoney> = null;
       if (sourceExpenseId) {
         const { data: existing, error: findError } = await supabase
           .from("expenses")
-          .select("id,payment_status")
+          .select(`id,payment_status,${MONEY_CURRENCY_COLUMNS}`)
           .eq("id", sourceExpenseId)
           .maybeSingle();
         if (findError) {
@@ -97,13 +105,37 @@ export async function POST(req: Request) {
         if (existing.payment_status === "paid") {
           return NextResponse.json({ error: "לא ניתן לפצל תשלום ששולם." }, { status: 400 });
         }
+        sourceForeign = readForeignMoney(existing as Record<string, unknown>);
+      }
+
+      // Each installment's shekels and currency columns.
+      const priced: { shekels: number; columns: MoneyCurrencyColumns | null }[] = [];
+      for (const row of installments) {
+        if (body.currency !== undefined && body.currency !== null && body.currency !== "") {
+          const pricing = await currencyPricing(supabase, body, { amount: row.amount, date: row.date });
+          if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+          priced.push({ shekels: pricing.toShekels(row.amount), columns: pricing.columns });
+        } else if (sourceForeign) {
+          // Shekels sent for an expense in dollars: its dollars at its own rate.
+          priced.push({
+            shekels: row.amount,
+            columns: {
+              currency: sourceForeign.currency,
+              foreign_amount: Math.round((row.amount / sourceForeign.rate) * 100) / 100,
+              fx_rate: sourceForeign.rate,
+              fx_rate_manual: true,
+            },
+          });
+        } else {
+          priced.push({ shekels: row.amount, columns: null });
+        }
       }
 
       const groupId = randomUUID();
       const count = installments.length;
       const rows = installments.map((row, index) => ({
         expense_date: row.date,
-        amount: row.amount,
+        amount: priced[index].shekels,
         category,
         description,
         business_domain: businessDomain,
@@ -115,12 +147,13 @@ export async function POST(req: Request) {
         // Installments already paid are recorded as paid-in-full (so they count as
         // real outflow now); the rest stay pending on their due date.
         payment_status: row.paid ? "paid" : "not_paid",
-        paid_amount: row.paid ? row.amount : null,
+        paid_amount: row.paid ? priced[index].shekels : null,
         payment_method: row.paid ? paymentMethod : null,
         account_id: accountId,
         installment_group_id: groupId,
         installment_index: index + 1,
         installment_count: count,
+        ...(priced[index].columns ?? {}),
       }));
 
       const { data: inserted, error: insertError } = await supabase

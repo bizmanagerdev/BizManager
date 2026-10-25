@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { isForeignCurrency } from "@/lib/fx/currencies";
 import { DateInput } from "@/components/ui/date-input";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
@@ -59,6 +60,12 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  // In ₪, US$ or C$ like every expense (2026-10-24) — the account's own when it's kept in dollars.
+  const money = useMoneyCurrency({
+    open,
+    accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    date,
+  });
 
   const ratePct = Math.round(data.vatRate * 10000) / 100;
 
@@ -85,6 +92,10 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
       toast.error("יש לבחור חשבון לתנועה.");
       return;
     }
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      toast.error(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/expenses/create", {
@@ -100,6 +111,7 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
           payment_status: "paid",
           payment_method: method,
           account_id: accountId || null,
+          ...money.body(),
         }),
       });
       const json = (await res.json().catch(() => null)) as { error?: string; expense?: { id?: string } } | null;
@@ -224,7 +236,7 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-sm font-medium">סכום</label>
-                <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+                <CurrencyAmountInput money={money} value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך</label>

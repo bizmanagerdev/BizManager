@@ -7,6 +7,7 @@ import {
   tryAutoIssueReceiptForPayment,
 } from "@/lib/morning/service";
 import { buildPaymentInsert } from "@/lib/payments";
+import { priceMoneyLines } from "@/lib/fx/money-input";
 import { notifyNewEntity } from "@/lib/notifications/new-entity";
 import { runAfterResponse } from "@/lib/after-response";
 import {
@@ -112,9 +113,13 @@ export async function POST(req: Request) {
     // Pay-ahead customers (customers.requires_prepayment) are intentionally NOT
     // blocked here — the order is flagged red in the UI until paid rather than
     // refused (which lost sales). See lib/orders/prepayment.
-    const paymentInserts = payments.map((payment) =>
-      buildPaymentInsert({
-        amountTotal: payment.amount_total,
+    // A line in US$ or C$ (2026-10-24): its shekels at the day's rate (or the
+    // rate typed) — what the order counts — and its own amount beside them.
+    const pricedPayments = await priceMoneyLines(supabase, body.payments, payments);
+    if ("error" in pricedPayments) return NextResponse.json({ error: pricedPayments.error }, { status: 400 });
+    const paymentInserts = payments.map((payment, index) => ({
+      ...buildPaymentInsert({
+        amountTotal: pricedPayments[index].shekels,
         businessDomain: "sales",
         paymentDate: payment.payment_date!,
         paymentMethod: payment.payment_method!,
@@ -124,8 +129,9 @@ export async function POST(req: Request) {
         notes: payment.notes,
         recordedBy: user.id,
         accountId: payment.account_id,
-      })
-    );
+      }),
+      ...(pricedPayments[index].columns ?? {}),
+    }));
     const { collected: totalPaid } = splitPaymentAmounts(paymentInserts);
     const paymentStatus = derivePaymentStatus(totalAmount, totalPaid);
 

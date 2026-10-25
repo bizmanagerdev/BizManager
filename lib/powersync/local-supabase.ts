@@ -101,13 +101,15 @@ const JSON_COLUMNS: Record<string, readonly string[]> = {
 // the device fills it in, and a page reads the same either way.
 const MONEY_CURRENCY_DEFAULTS = { currency: "ILS", foreign_amount: null, fx_rate: null, fx_rate_manual: false };
 const COLUMN_DEFAULTS: Record<string, Row> = {
-  // supabase/migrations/20261023120000_money_currency.sql
+  // supabase/migrations/20261023120001_money_currency.sql
   payments: MONEY_CURRENCY_DEFAULTS,
   expenses: MONEY_CURRENCY_DEFAULTS,
   loans: MONEY_CURRENCY_DEFAULTS,
   loan_repayments: MONEY_CURRENCY_DEFAULTS,
   // supabase/migrations/20261023170000_property_currency.sql
   properties: { currency: "ILS" },
+  // supabase/migrations/20261024120000_recurring_and_order_currencies.sql
+  recurring_expense_templates: { currency: "ILS" },
 };
 
 /** Tables synced to the device (lib/powersync/schema.ts). */

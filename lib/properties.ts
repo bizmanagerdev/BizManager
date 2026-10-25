@@ -775,7 +775,9 @@ export type PropertyRecurringTemplate = {
   id: string;
   templateName: string | null;
   category: string | null;
+  /** In its currency (2026-10-24): ILS | USD | CAD. */
   amount: number | null;
+  currency: CurrencyCode;
   isVariableAmount: boolean;
   autoPaid: boolean;
   reminderWorkDaysBefore: number | null;
@@ -805,6 +807,7 @@ function normalizeRecurringTemplate(row: Row): PropertyRecurringTemplate {
     templateName: str(row.template_name),
     category: str(row.category),
     amount: numOrNull(row.amount),
+    currency: isForeignCurrency(row.currency) ? row.currency : "ILS",
     isVariableAmount: row.is_variable_amount === true,
     autoPaid: row.auto_paid === true,
     reminderWorkDaysBefore: numOrNull(row.reminder_work_days_before),
@@ -823,7 +826,7 @@ function normalizeRecurringTemplate(row: Row): PropertyRecurringTemplate {
 }
 
 const RECURRING_TEMPLATE_SELECT =
-  "id,template_name,category,amount,is_variable_amount,auto_paid,reminder_work_days_before,description_template,notes_template,business_domain,account_id,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,end_date,is_active";
+  "id,template_name,category,amount,currency,is_variable_amount,auto_paid,reminder_work_days_before,description_template,notes_template,business_domain,account_id,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,end_date,is_active";
 
 export type PropertyActivity = {
   expenses: PropertyExpense[];

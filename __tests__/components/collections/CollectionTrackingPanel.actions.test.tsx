@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // The גבייה panel's actions, each with its undo: a payment marked collected
@@ -147,6 +147,10 @@ function renderPanel(onChanged = vi.fn()) {
 }
 
 beforeEach(() => {
+  // The day these fixtures are drawn for: the reminder of 20/10 not yet late,
+  // the check due 10/10 already late — whatever day the tests run on.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-19T09:00:00Z"));
   h.offlineFetch.mockReset().mockResolvedValue({ queued: false, ok: true, data: {} });
   h.scheduleDeferredAction.mockReset();
   h.scheduleDeferredDelete.mockReset();
@@ -154,6 +158,10 @@ beforeEach(() => {
   h.toast.success.mockClear();
   fetchMock = vi.fn(async () => new Response(JSON.stringify({ logs: DATA.logs, reminders: DATA.reminders, receivables: [] }), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("CollectionTrackingPanel's actions", () => {

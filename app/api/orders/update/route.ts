@@ -7,6 +7,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { buildPaymentInsert } from "@/lib/payments";
+import { priceMoneyLines, signedColumns } from "@/lib/fx/money-input";
 import {
   derivePaymentStatus,
   hasInvalidPaymentEntry,
@@ -199,9 +200,16 @@ export async function POST(req: Request) {
     // Pay-ahead customers (customers.requires_prepayment) are intentionally NOT
     // blocked here — the order is flagged red in the UI until paid rather than
     // refused (which lost sales). See lib/orders/prepayment.
-    const paymentInserts = payments.map((payment) =>
-      buildPaymentInsert({
-        amountTotal: payment.amount_total,
+    // A line in US$ or C$ (2026-10-24): its shekels at the day's rate (or the
+    // rate typed) — what the order counts — and its own amount beside them
+    // (update_sales_order saves them with the row).
+    const pricedPayments = await priceMoneyLines(supabase, body.payments, payments);
+    if ("error" in pricedPayments) return NextResponse.json({ error: pricedPayments.error }, { status: 400 });
+    const pricedRefunds = await priceMoneyLines(supabase, body.refunds, refunds);
+    if ("error" in pricedRefunds) return NextResponse.json({ error: pricedRefunds.error }, { status: 400 });
+    const paymentInserts = payments.map((payment, index) => ({
+      ...buildPaymentInsert({
+        amountTotal: pricedPayments[index].shekels,
         businessDomain: "sales",
         orderId,
         paymentDate: payment.payment_date!,
@@ -212,11 +220,12 @@ export async function POST(req: Request) {
         notes: payment.notes,
         recordedBy: profile.id,
         accountId: payment.account_id,
-      })
-    );
-    const refundInserts = refunds.map((refund) =>
-      buildPaymentInsert({
-        amountTotal: refund.amount_total * -1,
+      }),
+      ...(pricedPayments[index].columns ?? {}),
+    }));
+    const refundInserts = refunds.map((refund, index) => ({
+      ...buildPaymentInsert({
+        amountTotal: pricedRefunds[index].shekels * -1,
         businessDomain: "sales",
         orderId,
         paymentDate: refund.payment_date!,
@@ -227,8 +236,9 @@ export async function POST(req: Request) {
         notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",
         recordedBy: profile.id,
         accountId: refund.account_id,
-      })
-    );
+      }),
+      ...(signedColumns(pricedRefunds[index].columns, true) ?? {}),
+    }));
     const totalPaidAfterSave = splitPaymentAmounts([
       ...(existingPayments ?? []),
       ...paymentInserts,

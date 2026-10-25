@@ -66,7 +66,8 @@ describe("MorningCustomerCard", () => {
     expect(screen.getByText("mc-77")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "יצירת לקוח ב-Morning" })).toBeNull();
     expect(screen.getByRole("button", { name: "סנכרון פרטי חיוב" })).toBeInTheDocument();
-    expect(onStatusChange).toHaveBeenLastCalledWith({ matchStatus: "matched", hasError: false });
+    // Told from an effect, a moment after the card shows it (a slow CI runner caught it early).
+    await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({ matchStatus: "matched", hasError: false }));
   });
 
   it("a link from the found candidates makes it linked too", async () => {

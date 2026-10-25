@@ -282,3 +282,62 @@ describe("POST /api/recurring-expenses/save — error mapping", () => {
     expect((await res.json()).error).toBeTruthy();
   });
 });
+
+// A recurring bill in US$ / C$ (2026-10-24): its amount is in its currency,
+// its bills' shekels are each at its own day's rate (the database's trigger).
+describe("POST /api/recurring-expenses/save — in US$ / C$", () => {
+  function foreignDb(opts: { account?: unknown; existing?: unknown; repriceRows?: unknown[] } = {}) {
+    const database = makeSupabase({
+      accounts: { data: opts.account ?? null, error: null },
+      recurring_expense_templates: {
+        read: { data: opts.existing ?? null, error: null },
+        write: { data: { id: "tpl-1" }, error: null },
+      },
+      expenses: { data: opts.repriceRows ?? [], error: null },
+    });
+    return { ...database, rpc: vi.fn(async () => ({ data: 0, error: null })) };
+  }
+
+  it("saves the currency the form sends, and leaves it alone when it sends none", async () => {
+    const withCurrency = foreignDb();
+    grant(withCurrency);
+    await post({ ...VALID_NEW, amount: 300, currency: "cad" });
+    expect(withCurrency.calls.insert.recurring_expense_templates[0]).toMatchObject({ currency: "CAD", amount: 300 });
+
+    const without = foreignDb({ existing: { amount: 300, currency: "CAD" } });
+    grant(without);
+    await post({ ...VALID_NEW, id: "tpl-1", amount: 300 });
+    expect(without.calls.update.recurring_expense_templates[0]).not.toHaveProperty("currency");
+  });
+
+  it("refuses a bill in another currency on an account kept in dollars", async () => {
+    const database = foreignDb({ account: { name: "Chase", currency: "USD" } });
+    grant(database);
+    const res = await post({ ...VALID_NEW, currency: "ILS", account_id: "acc-chase" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("Chase");
+    expect(database.calls.insert.recurring_expense_templates ?? []).toHaveLength(0);
+
+    const same = foreignDb({ account: { name: "Chase", currency: "USD" } });
+    grant(same);
+    expect((await post({ ...VALID_NEW, currency: "USD", account_id: "acc-chase" })).status).toBe(200);
+  });
+
+  it("a changed amount re-prices its bills' dollars — never their shekels — and only the bills in its currency", async () => {
+    const database = foreignDb({
+      existing: { amount: 25, currency: "USD" },
+      repriceRows: [
+        { id: "e1", amount: 93.21, paid_amount: 0, payment_status: "not_paid" },
+        { id: "e2", amount: 93.0, paid_amount: 77.5, payment_status: "paid" },
+      ],
+    });
+    grant(database);
+    const res = await post({ ...VALID_NEW, id: "tpl-1", amount: 30, amount_propagation: "all", start_date: "2026-01-01" });
+    expect((await res.json()).repricedCount).toBe(2);
+    const [reprice, paidFix] = database.calls.update.expenses as Array<Record<string, unknown>>;
+    expect(reprice).toMatchObject({ foreign_amount: 30 });
+    expect(reprice).not.toHaveProperty("amount");
+    // The bill paid in full stays paid in full at its new shekels.
+    expect(paidFix).toEqual({ paid_amount: 93 });
+  });
+});

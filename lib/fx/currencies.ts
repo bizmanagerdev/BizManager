@@ -6,7 +6,7 @@
  *
  * A money row keeps its shekel amount in its usual column, and beside it the
  * amount as typed and its day's rate (supabase/migrations/
- * 20261023120000_money_currency.sql). `readForeignMoney` reads those.
+ * 20261023120001_money_currency.sql). `readForeignMoney` reads those.
  */
 
 export const FOREIGN_CURRENCIES = ["USD", "CAD"] as const;

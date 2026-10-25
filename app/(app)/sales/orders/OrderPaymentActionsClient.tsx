@@ -13,7 +13,7 @@ import { isImageDocument } from "@/lib/documents";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { CurrencyAmountInput, knowsCurrency, typedAmountOf, useMoneyCurrency, type RowCurrency } from "@/components/fx/MoneyCurrency";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
@@ -39,9 +39,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { formatShortDate, toDateKey } from "@/lib/date";
-import { formatMoney } from "@/lib/money";
+import { formatCurrencyAmount, formatMoney } from "@/lib/money";
+import { isForeignCurrency, readForeignMoney } from "@/lib/fx/currencies";
 
-export type PaymentItem = {
+export type PaymentItem = RowCurrency & {
   id: string;
   payment_date: string | null;
   amount_total: number;
@@ -133,6 +134,14 @@ function PaymentFilesLine({ payment, checksLink }: { payment: PaymentItem; check
   );
 }
 
+/** A payment's amount as the list shows it: "$1,000 (≈ ₪3,107)" in US$ / C$. */
+function paymentAmountText(payment: PaymentItem, shekels: number): string {
+  const foreign = readForeignMoney(payment);
+  if (!foreign) return formatCurrency(shekels);
+  const sign = shekels < 0 ? -1 : 1;
+  return `${formatCurrencyAmount(sign * Math.abs(foreign.amount), foreign.currency)} (≈ ${formatCurrency(Math.round(shekels))})`;
+}
+
 // Exported so the account register (app/(app)/financial/bank/BankClient.tsx)
 // can reuse it directly for an order-tied `p:` ledger row's inline edit — same
 // form, same /api/orders/payments/update endpoint (which keeps the order's
@@ -158,7 +167,11 @@ export function EditPaymentDialog({
   const [entryType, setEntryType] = useState<"payment" | "refund">(
     originalAmount < 0 ? "refund" : "payment"
   );
-  const [amount, setAmount] = useState(String(Math.abs(originalAmount)));
+  // In its currency (2026-10-24): a payment in dollars shows and saves its dollars.
+  const [amount, setAmount] = useState(() => {
+    const typed = typedAmountOf(payment, originalAmount);
+    return typed.startsWith("-") ? typed.slice(1) : typed;
+  });
   // As a "YYYY-MM-DD" day: payment_date comes back as a full timestamp, and
   // the installments / next-month-10th math below only reads a plain day.
   const [paymentDate, setPaymentDate] = useState(toDateKey(payment.payment_date));
@@ -175,21 +188,30 @@ export function EditPaymentDialog({
   const [installments, setInstallments] = useState("1");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const money = useMoneyCurrency({
+    open: true,
+    initial: payment,
+    known: knowsCurrency(payment),
+    accountCurrency: accountsList.find((a) => a.id === accountId)?.currency ?? null,
+    date: paymentDate,
+  });
 
   const amountNumber = Number(amount);
   const signedAmount =
     entryType === "refund" ? -Math.abs(amountNumber) : Math.abs(amountNumber);
+  // What the order counts: shekels.
+  const signedShekels = isForeignCurrency(money.currency) ? (money.shekels(signedAmount) ?? originalAmount) : signedAmount;
 
   const preview = useMemo(() => {
     const safeNew =
-      Number.isFinite(amountNumber) && amountNumber > 0 ? signedAmount : originalAmount;
+      Number.isFinite(amountNumber) && amountNumber > 0 ? signedShekels : originalAmount;
     const nextPaid = totalPaid - originalAmount + safeNew;
     return {
       nextPaid,
       nextRemaining: Math.max(totalAmount - nextPaid, 0),
       nextStatus: derivePaymentStatus(totalAmount, nextPaid),
     };
-  }, [amountNumber, signedAmount, totalAmount, totalPaid, originalAmount]);
+  }, [amountNumber, signedShekels, totalAmount, totalPaid, originalAmount]);
 
   async function handleSubmit() {
     if (submitting) return;
@@ -215,6 +237,11 @@ export function EditPaymentDialog({
       setError("יש להזין תאריך פירעון לצ'ק.");
       return;
     }
+    if (isForeignCurrency(money.currency) && money.rate === null) {
+      setError(money.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
+      return;
+    }
+    const currencyBody = money.body();
     const isCardIncome = paymentMethod === "credit_card" && signedAmount > 0;
     const installmentCount = isCardIncome ? parseInstallments(installments) : 1;
     if (installmentCount === null) {
@@ -233,6 +260,7 @@ export function EditPaymentDialog({
           id: payment.id,
           order_id: orderId,
           amount_total: firstPart.amount,
+          ...currencyBody,
           payment_date: firstPart.paymentDate,
           payment_method: paymentMethod,
           account_id: accountId || undefined,
@@ -258,6 +286,7 @@ export function EditPaymentDialog({
             order_id: orderId,
             entry_type: "payment",
             amount_total: part.amount,
+            ...currencyBody,
             payment_date: part.paymentDate,
             payment_method: paymentMethod,
             account_id: accountId || undefined,
@@ -319,7 +348,8 @@ export function EditPaymentDialog({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="סכום" required>
-              <CurrencyInput
+              <CurrencyAmountInput
+                money={money}
                 type="number"
                 min="0"
                 step="0.01"
@@ -360,6 +390,7 @@ export function EditPaymentDialog({
 
           {paymentMethod === "credit_card" && signedAmount > 0 ? (
             <CardInstallmentsField
+              currency={money.currency}
               value={installments}
               onChange={setInstallments}
               amount={Number.isFinite(amountNumber) ? amountNumber : 0}
@@ -542,8 +573,8 @@ export function OrderPaymentActionsClient({
                 <div className="flex min-h-8 min-w-0 flex-1 flex-wrap items-center gap-2">
                   <span className={`font-medium ${isRefund ? "text-warning-soft-foreground" : ""}`}>
                     {isRefund
-                      ? `החזר ${formatCurrency(Math.abs(payment.amount_total))}`
-                      : formatCurrency(payment.amount_total)}
+                      ? `החזר ${paymentAmountText(payment, Math.abs(payment.amount_total))}`
+                      : paymentAmountText(payment, payment.amount_total)}
                   </span>
                   <span className="text-muted-foreground">{formatDate(payment.payment_date)}</span>
                   {collectionChip ? (
