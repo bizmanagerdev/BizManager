@@ -205,6 +205,9 @@ export type FinancialEntryOrigin =
   | "worker_owed"
   | "project_receivable"
   | "order_receivable"
+  // A month's rent still owed by a tenant (lib/rent-roll.ts rentDebtOf — owner, 2026-10-25): open debt like an
+  // order's, less what a check we hold for it already stands for (that check is its own payment entry).
+  | "rent_receivable"
   // Loan principal cash movement (loan received / repaid). Carries cash but NOT
   // P&L — aggregateProfitLoss only counts payment/expense/receivable origins, so
   // loan principal is excluded from profit by construction. Interest is emitted

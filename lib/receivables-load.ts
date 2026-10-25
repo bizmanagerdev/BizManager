@@ -273,7 +273,8 @@ export async function loadIncomeCalendarItems(
     toIso,
   }: { entries: FinancialEntry[]; referenceDate: string; fromIso: string; toIso: string }
 ): Promise<PaymentCalendarItem[]> {
-  const inflows = entries.filter((e) => e.type === "inflow");
+  // Rent still owed is shown month by month by projectRent below — the ledger's rent debt rows would double it.
+  const inflows = entries.filter((e) => e.type === "inflow" && e.origin !== "rent_receivable");
 
   // Each forecast source is independent and best-effort: one unreadable table
   // costs its own rows, never the board.

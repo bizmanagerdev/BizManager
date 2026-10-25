@@ -262,7 +262,10 @@ describe("who paid", () => {
     expect(row.status.state).toBe("paid");
     expect(row.owed).toBe(0);
     // June 142 days, July 112, August 81, September 50 days ago.
-    expect(row.debt).toEqual({ due: 8500 * 4, paid: 3000, amount: 8500 * 4 - 3000, withCheck: 0, periods: 4, upTo30: 0, upTo60: 8500, over60: 8500 * 3 - 3000, oldest: "2026-06-01" });
+    // Its months owing, oldest first, adding up to the debt.
+    expect(row.debt.months.map((m) => m.period)).toEqual(["2026-06-01", "2026-07-01", "2026-08-01", "2026-09-01"]);
+    expect(row.debt.months.reduce((sum, m) => sum + m.owed, 0)).toBe(8500 * 4 - 3000);
+    expect(row.debt).toMatchObject({ due: 8500 * 4, paid: 3000, amount: 8500 * 4 - 3000, withCheck: 0, periods: 4, upTo30: 0, upTo60: 8500, over60: 8500 * 3 - 3000, oldest: "2026-06-01" });
     expect(month.totals.debt).toBe(8500 * 4 - 3000);
     expect(rentRowOwes(row)).toBe(true);
   });

@@ -3,6 +3,8 @@ import { getBusinessDomainLabel } from "@/lib/expenses";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { loadEarnedLaborItems } from "@/lib/financial/laborSplit";
 import { israelDateKey } from "@/lib/timezone";
+import { loadRentRoll } from "@/lib/properties";
+import { rentDueMonths, rentPaymentsByLease } from "@/lib/rent-roll";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Earned (booked) revenue, expenses and net per month, per business domain.
@@ -255,7 +257,7 @@ export async function loadEarnedRevenueByMonth(
   supabase: SupabaseClient,
   { from, to }: { from?: string | null; to?: string | null } = {}
 ): Promise<EarnedRevenueReport> {
-  const [orderRows, projectRows, financialRows, expenseRows, paymentRows, laborItems] = await Promise.all([
+  const [orderRows, projectRows, financialRows, expenseRows, paymentRows, laborItems, rentData] = await Promise.all([
     fetchAllPaged<Row>((lo, hi) =>
       supabase.from("order_overview_view").select("order_id,order_date,total_amount,status").range(lo, hi)
     ),
@@ -272,7 +274,7 @@ export async function loadEarnedRevenueByMonth(
         .range(lo, hi)
     ),
     fetchAllPaged<Row>((lo, hi) =>
-      supabase.from("payments").select("payment_date,amount_total,business_domain,payment_status,order_id,project_id").range(lo, hi)
+      supabase.from("payments").select("id,payment_date,amount_total,business_domain,payment_status,order_id,project_id").range(lo, hi)
     ),
     // Worker payroll — EARNED/incurred basis: each worker's cost lands in the month
     // the work BELONGS to (period_month), not the month it was paid. So a June salary
@@ -280,6 +282,9 @@ export async function loadEarnedRevenueByMonth(
     // for (an hourly payslip split by its shifts; see lib/financial/laborSplit). The
     // cash tab keeps counting wages when PAID.
     loadEarnedLaborItems(supabase),
+    // Rent, by the lease (owner, 2026-10-13): earned in the month it falls due, paid or not. Best-effort — without
+    // it, rent counts by its payments, as before.
+    loadRentRoll(supabase).catch(() => null),
   ]);
 
   const priceById = new Map<string, number>();
@@ -333,11 +338,15 @@ export async function loadEarnedRevenueByMonth(
   // out). Payments on an order or project are already inside its total. Expected
   // money for a month still to come (next months' post-dated rent) waits for it.
   const thisMonth = israelDateKey().slice(0, 7);
+  // A rent payment is in its lease's months below — not again by its own date.
+  const rentPaymentIds = new Set<string>();
+  if (rentData) for (const list of rentPaymentsByLease(rentData).values()) for (const p of list) rentPaymentIds.add(p.id);
   const otherIncome: EarnedIncomeInput[] = paymentRows
     .filter((row) => {
       const domain = str(row.business_domain) ?? "";
       if (!OTHER_INCOME_DOMAINS.has(domain)) return false;
       if (str(row.order_id) || str(row.project_id)) return false;
+      if (rentPaymentIds.has(str(row.id) ?? "")) return false;
       const status = (str(row.payment_status) ?? "").trim().toLowerCase();
       if (status === "rejected") return false;
       return status !== "pending" || (str(row.payment_date) ?? "").slice(0, 7) <= thisMonth;
@@ -347,6 +356,15 @@ export async function loadEarnedRevenueByMonth(
       amount: toNum(row.amount_total),
       domain: str(row.business_domain) ?? "",
     }));
+
+  // Each lease's rent in its month, up to this one — earned whether it was paid or not.
+  if (rentData) {
+    const [y, m] = thisMonth.split("-").map(Number);
+    const monthEnd = `${thisMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+    for (const month of rentDueMonths(rentData, monthEnd)) {
+      otherIncome.push({ date: month.period, amount: month.amount, domain: "property_management" });
+    }
+  }
 
   return buildEarnedRevenueByMonth(orders, projects, expenses, otherIncome, { from, to });
 }

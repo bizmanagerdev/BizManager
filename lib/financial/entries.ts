@@ -507,7 +507,7 @@ export function aggregateProfitLoss(
         row.cashRevenue += amount;
         row.accrualRevenue += amount;
       } else if (
-        (origin === "project_receivable" || origin === "order_receivable") &&
+        (origin === "project_receivable" || origin === "order_receivable" || origin === "rent_receivable") &&
         stage === "pending"
       ) {
         // Earned but not yet collected — accrual only.
@@ -644,7 +644,10 @@ export function aggregateProfitLossProof(
         if (card.accrual) push(key, { date: entry.recordedDate ?? date, label, kind: "income", cash: 0, accrual: amount });
       } else if (origin === "payment" && stage === "posted") {
         push(key, { date, label, kind: "income", cash: amount, accrual: amount });
-      } else if ((origin === "project_receivable" || origin === "order_receivable") && stage === "pending") {
+      } else if (
+        (origin === "project_receivable" || origin === "order_receivable" || origin === "rent_receivable") &&
+        stage === "pending"
+      ) {
         push(key, { date, label, kind: "income", cash: 0, accrual: amount });
       }
     } else if (type === "outflow") {
@@ -870,8 +873,11 @@ export function buildPaymentEntries(args: {
   referenceDate: string;
   /** Which card deposits have been confirmed as landed. */
   settlementConfirmations?: SettlementConfirmations;
+  /** A rent payment's tenant — the lease it was for (lib/rent-roll.ts rentPaymentsByLease; owner, 2026-10-25). */
+  tenantByPaymentId?: Map<string, string>;
 }): FinancialEntry[] {
   const { paymentRows, projectsById, ordersById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
+  const tenantByPaymentId = args.tenantByPaymentId ?? new Map<string, string>();
   const confirmations = args.settlementConfirmations ?? NO_CONFIRMATIONS;
 
   return paymentRows.flatMap((row) => {
@@ -883,7 +889,13 @@ export function buildPaymentEntries(args: {
     const linkedProject = links.projectId ? projectsById.get(links.projectId) ?? null : null;
     const linkedOrder = links.orderId ? ordersById.get(links.orderId) ?? null : null;
     const linkedProperty = links.propertyId ? propertiesById.get(links.propertyId) ?? null : null;
-    const propertyCustomers = links.propertyId ? propertyCustomersById.get(links.propertyId) ?? null : null;
+    // A rent payment is its tenant's alone — not everyone who ever rented the property.
+    const tenant = tenantByPaymentId.get(row.id) ?? null;
+    const propertyCustomers = links.propertyId
+      ? tenant
+        ? new Set([tenant])
+        : propertyCustomersById.get(links.propertyId) ?? null
+      : null;
 
     if (!matchesCustomerFilter({
       customerId, customerProjectIds: customerProjectSet,
@@ -929,7 +941,7 @@ export function buildPaymentEntries(args: {
       paymentStatus: flowMeta.status,
       recordedByName: typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
       createdAt: row.created_at ?? null,
-      customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? null,
+      customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? tenant,
       notes: row.notes?.trim() || null,
       searchText: [description, source.label, reference ?? "", row.notes ?? "", row.payment_method ?? "",
         row.payment_status ?? "", getBusinessDomainLabel(businessDomain),
@@ -1555,6 +1567,63 @@ export function buildProjectReceivableEntries(args: {
       customerId: linkedProject.customer_id ?? null,
       searchText: [description, source.label, getBusinessDomainLabel("logistics_projects")].join(" ").toLowerCase(),
     }];
+  });
+}
+
+/**
+ * Rent still owed, one entry per tenant's month (owner, 2026-10-25: "rent comes in as part of the big cycle every
+ * month of money coming in and going out. It for sure should be in the customer's open debt"): the rent page's rule
+ * (lib/rent-roll.ts rentDebtOf), less what a check we hold for that month stands for — the check is its own
+ * payment entry, so the money isn't counted twice. Open debt in the month it was due.
+ */
+export function buildRentReceivableEntries(args: {
+  leases: Array<{ id: string; propertyId: string; customerId: string | null; customerName: string | null; unitLabel: string | null }>;
+  debts: Map<string, { months: Array<{ period: string; owed: number; withCheck: number }> }>;
+  propertyNameById: Map<string, string>;
+  periodLabel: (leaseId: string, period: string) => string;
+  customerId: string | null;
+  referenceDate: string;
+}): FinancialEntry[] {
+  const { leases, debts, propertyNameById, periodLabel, customerId, referenceDate } = args;
+  return leases.flatMap((lease) => {
+    if (customerId && lease.customerId !== customerId) return [];
+    const place = propertyNameById.get(lease.propertyId) ?? "נכס";
+    const label = lease.unitLabel ? `${place} · ${lease.unitLabel}` : place;
+    return (debts.get(lease.id)?.months ?? []).flatMap((month) => {
+      const amount = Math.round((month.owed - month.withCheck) * 100) / 100;
+      if (!(amount > 0.5)) return [];
+      const flowMeta = buildReceivableFlowMeta(month.period, referenceDate);
+      const source = buildSource({
+        businessDomain: "property_management", projectId: null, orderId: null, propertyId: lease.propertyId,
+        projectName: null, propertyAddress: label,
+      });
+      const description = `שכירות ${periodLabel(lease.id, month.period)} שלא שולמה${lease.customerName ? ` — ${lease.customerName}` : ""}`;
+      return [{
+        id: `rent-receivable:${lease.id}:${month.period}`,
+        type: "inflow" as const,
+        amount,
+        signedAmount: amount,
+        businessDomain: "property_management" as const,
+        domainName: getBusinessDomainLabel("property_management"),
+        flowDate: flowMeta.flowDate,
+        recordedDate: flowMeta.recordedDate,
+        dueDate: flowMeta.dueDate,
+        stage: flowMeta.stage,
+        sourceKind: source.kind,
+        sourceId: source.id,
+        sourceLabel: source.label,
+        sourceHref: source.href,
+        description,
+        origin: "rent_receivable" as const,
+        reference: null,
+        paymentMethod: null,
+        paymentMethodLabel: null,
+        paymentStatus: "pending",
+        recordedByName: null,
+        customerId: lease.customerId,
+        searchText: [description, source.label, getBusinessDomainLabel("property_management")].join(" ").toLowerCase(),
+      }];
+    });
   });
 }
 

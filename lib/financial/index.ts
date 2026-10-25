@@ -36,6 +36,7 @@ import {
   buildOrderReceivableEntries,
   buildPaymentEntries,
   buildProjectReceivableEntries,
+  buildRentReceivableEntries,
   buildWorkerOwedEntries,
   buildWorkerPaymentEntries,
   matchesEntryFilters,
@@ -44,6 +45,9 @@ import {
   summarizeEntries,
 } from "./entries";
 import { fetchLoans, summarizeLoans, type Loan, type LoansSummary } from "@/lib/loans";
+import { loadRentRoll, propertyDisplayName, type RentRollData } from "@/lib/properties";
+import { rentDebtByLease, rentPaymentsByLease } from "@/lib/rent-roll";
+import { rentPeriodLabel } from "@/lib/rent-periods";
 import { openLiabilityEntries, withOpenAmount } from "@/lib/financial/expenseOpen";
 import { ledgerSearchRecord } from "@/lib/financial/search";
 import { listVocabulary, prepareListSearch } from "@/lib/search/listSearch";
@@ -174,6 +178,9 @@ export async function loadFinancialEntries(
     fetchRecurringTemplateMeta(supabase),
     loadSettlementConfirmations(supabase),
   ]);
+  // Rent, by the rent page's own rule (owner, 2026-10-25): each lease's months still owed and whose each rent
+  // payment is. Best-effort — without it, rent is counted as before (its payments alone).
+  const rentData: RentRollData | null = await loadRentRoll(supabase).catch(() => null);
 
   const paymentLinks = paymentRows.map(resolvePaymentLinks);
   const { rows: expenseRows, projectLinks: projectExpenseLinksByExpenseId } = expenseScan;
@@ -283,7 +290,17 @@ export async function loadFinancialEntries(
 
   const sharedArgs = { customerId, customerProjectSet, referenceDate, projectsById, propertiesById, propertyCustomersById, recordedByNames };
 
-  const payments = buildPaymentEntries({ paymentRows, ordersById, settlementConfirmations, ...sharedArgs });
+  // A rent payment's tenant: the lease it was for.
+  const tenantByPaymentId = new Map<string, string>();
+  if (rentData) {
+    const leaseById = new Map(rentData.leases.map((lease) => [lease.id, lease]));
+    for (const [leaseId, leasePayments] of rentPaymentsByLease(rentData)) {
+      const tenant = leaseById.get(leaseId)?.customerId;
+      if (tenant) for (const payment of leasePayments) tenantByPaymentId.set(payment.id, tenant);
+    }
+  }
+
+  const payments = buildPaymentEntries({ paymentRows, ordersById, settlementConfirmations, tenantByPaymentId, ...sharedArgs });
   const expenses = buildExpenseEntries({ expenseRows, ordersById, projectExpenseLinksByExpenseId, templateMetaById, ...sharedArgs });
   const workerPaymentEntries = buildWorkerPaymentEntries({
     allocations: workerPaymentsResult.allocations,
@@ -305,6 +322,22 @@ export async function loadFinancialEntries(
   const orderReceivableEntries = buildOrderReceivableEntries({
     orderRows, ordersById, orderFinancialsById, paidByOrderId, pendingByOrderId, customerId, customerProjectSet, referenceDate,
   });
+  const rentReceivableEntries = rentData
+    ? (() => {
+        const leaseById = new Map(rentData.leases.map((lease) => [lease.id, lease]));
+        return buildRentReceivableEntries({
+          leases: rentData.leases,
+          debts: rentDebtByLease(rentData, referenceDate),
+          propertyNameById: new Map(rentData.properties.map((p) => [p.id, propertyDisplayName(p)])),
+          periodLabel: (leaseId, period) => {
+            const lease = leaseById.get(leaseId);
+            return lease ? rentPeriodLabel(lease, period) : period;
+          },
+          customerId,
+          referenceDate,
+        });
+      })()
+    : [];
 
   const loans = await loansPromise;
   const loanEntries = buildLoanEntries(loans, referenceDate);
@@ -316,6 +349,7 @@ export async function loadFinancialEntries(
     ...workerOwedEntries,
     ...projectReceivableEntries,
     ...orderReceivableEntries,
+    ...rentReceivableEntries,
     ...loanEntries,
   ]);
 
@@ -481,7 +515,7 @@ export async function getFinancialPageData(
   ];
   const openReceivableEntries = filteredEntries.filter(
     (entry) => entry.type === "inflow" && entry.stage === "pending" &&
-      (entry.origin === "project_receivable" || entry.origin === "order_receivable")
+      (entry.origin === "project_receivable" || entry.origin === "order_receivable" || entry.origin === "rent_receivable")
   );
   const plannedReceivableEntries = filteredEntries.filter(
     (entry) =>

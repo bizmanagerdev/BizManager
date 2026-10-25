@@ -45,6 +45,8 @@ export type RentDebt = {
   over60: number;
   /** The oldest month still owing (its due date) — where a payment for it starts. */
   oldest: string | null;
+  /** Each month still owing, oldest first: what's owed, and of it what a check we hold covers — the ledger's rows. */
+  months: Array<{ period: string; owed: number; withCheck: number }>;
 };
 
 export type RentRollRow = {
@@ -196,7 +198,7 @@ export function rentPaymentsByLease(data: Pick<RentRollData, "leases" | "payment
  * tenant's page, collections and the rest ask it.
  */
 export function rentDebtOf(lease: LeaseAgreement, rents: RentPayment[], today: string, before?: string): RentDebt {
-  const debt: RentDebt = { due: 0, paid: 0, amount: 0, withCheck: 0, periods: 0, upTo30: 0, upTo60: 0, over60: 0, oldest: null };
+  const debt: RentDebt = { due: 0, paid: 0, amount: 0, withCheck: 0, periods: 0, upTo30: 0, upTo60: 0, over60: 0, oldest: null, months: [] };
   const first = firstRentPeriod(lease);
   if (!first || (before && first >= before)) return debt;
   const end = lease.endDate?.slice(0, 10) ?? null;
@@ -209,8 +211,10 @@ export function rentDebtOf(lease: LeaseAgreement, rents: RentPayment[], today: s
     debt.paid += Math.min(status.collected, status.rent);
     const left = rentLeftOf(status);
     if (left <= 0.5) continue;
+    const held = Math.min(left, status.pendingDue ?? 0);
     debt.amount += left;
-    debt.withCheck += Math.min(left, status.pendingDue ?? 0);
+    debt.withCheck += held;
+    debt.months.push({ period: start, owed: left, withCheck: held });
     debt.periods += 1;
     debt.oldest ??= start;
     const days = daysBetween(start, today);
@@ -237,6 +241,29 @@ function checksInHandOf(lease: LeaseAgreement, payments: RentRollPayment[]): Ren
     lastPeriod,
     lastLabel: lastPeriod ? rentPeriodLabel(lease, lastPeriod) : null,
   };
+}
+
+/**
+ * Each lease's rent in the month it falls due, up to `upTo` — earned whether paid or not (the books' "הרווחתי";
+ * owner, 2026-10-13: rent counted in its month even if unpaid). From its first month to its end; a cancelled one
+ * never ran.
+ */
+export function rentDueMonths(
+  data: Pick<RentRollData, "leases">,
+  upTo: string
+): Array<{ leaseId: string; propertyId: string; period: string; amount: number }> {
+  const out: Array<{ leaseId: string; propertyId: string; period: string; amount: number }> = [];
+  for (const lease of data.leases.filter(counts)) {
+    const first = firstRentPeriod(lease);
+    if (!first || !(lease.monthlyRentAmount > 0)) continue;
+    const end = lease.endDate?.slice(0, 10) ?? null;
+    const last = end && end < upTo ? end : upTo;
+    if (first > last) continue;
+    for (const period of rentPeriodStarts(lease, first, last)) {
+      out.push({ leaseId: lease.id, propertyId: lease.propertyId, period, amount: lease.monthlyRentAmount });
+    }
+  }
+  return out;
 }
 
 /** What each lease still owes today (rentDebtOf) — a cancelled one never ran. A tenant's page asks it of theirs. */
