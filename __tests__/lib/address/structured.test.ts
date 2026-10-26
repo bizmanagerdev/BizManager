@@ -124,6 +124,113 @@ describe("a broken Google entry (owner, 2026-10-18: \"why isn't all … only in 
   });
 });
 
+describe("Google's parts in English (2026-10-26: new picks lost their street and city)", () => {
+  // What Google Places (New) sent for these on 2026-10-26, asked with languageCode=he.
+  const BEIT_HADEFUS = {
+    id: "ChIJ-beit-hadefus",
+    shortFormattedAddress: "בית הדפוס 12, ירושלים",
+    addressComponents: [
+      { longText: "12", types: ["street_number"] },
+      { longText: "Beit Ha-Defus Street", shortText: "Beit Ha-Defus St", types: ["route"] },
+      { longText: "Jerusalem", types: ["locality", "political"] },
+      { longText: "Jerusalem District", types: ["administrative_area_level_1", "political"] },
+      { longText: "Israel", shortText: "IL", types: ["country", "political"] },
+    ],
+    location: { latitude: 31.7849, longitude: 35.1857 },
+  };
+  const HAHAGANA_STREET = {
+    shortFormattedAddress: "ההגנה, רחובות",
+    addressComponents: [
+      { longText: "Ha-Hagana Street", shortText: "Ha-Hagana St", types: ["route"] },
+      { longText: "Rehovot", types: ["locality", "political"] },
+      { longText: "Israel", shortText: "IL", types: ["country", "political"] },
+    ],
+  };
+
+  it("street, number and city from Google's Hebrew line", () => {
+    expect(addressFromGooglePlace(BEIT_HADEFUS)).toEqual({
+      city: "ירושלים",
+      street: "בית הדפוס",
+      houseNumber: "12",
+      unit: "",
+      lat: 31.7849,
+      lng: 35.1857,
+      placeId: "ChIJ-beit-hadefus",
+      formatted: "בית הדפוס 12, ירושלים",
+    });
+    expect(isFullAddress(addressFromGooglePlace(BEIT_HADEFUS))).toBe(true);
+  });
+
+  it("a street with no number: street and city, the number still to ask", () => {
+    expect(addressFromGooglePlace(HAHAGANA_STREET)).toMatchObject({ city: "רחובות", street: "ההגנה", houseNumber: "" });
+  });
+
+  it("a settlement on its own", () => {
+    const a = addressFromGooglePlace({
+      shortFormattedAddress: "אלומה",
+      addressComponents: [
+        { longText: "Aluma", types: ["locality", "political"] },
+        { longText: "Israel", shortText: "IL", types: ["country", "political"] },
+      ],
+    });
+    expect(a).toMatchObject({ city: "אלומה", street: "", houseNumber: "", formatted: "אלומה" });
+  });
+
+  it("no 'רח'' in front and no vowel marks, and the line built from the parts", () => {
+    const a = addressFromGooglePlace({
+      shortFormattedAddress: "רח' אַבְרָהָם רֵיקָנָטי 60, ירושלים",
+      addressComponents: [
+        { longText: "60", types: ["street_number"] },
+        { longText: "Avraham Rekanati Street", types: ["route"] },
+        { longText: "Jerusalem", types: ["locality", "political"] },
+      ],
+    });
+    expect(a).toMatchObject({ street: "אברהם ריקנטי", houseNumber: "60", city: "ירושלים", formatted: "אברהם ריקנטי 60, ירושלים" });
+  });
+
+  it("a number with a letter after a space, as Google writes some", () => {
+    const a = addressFromGooglePlace({
+      shortFormattedAddress: "שמגר 14 ב, ירושלים",
+      addressComponents: [
+        { longText: "14 ב", types: ["street_number"] },
+        { longText: "Shamgar Street", types: ["route"] },
+        { longText: "Jerusalem", types: ["locality", "political"] },
+      ],
+    });
+    expect(a).toMatchObject({ street: "שמגר", houseNumber: "14 ב", city: "ירושלים" });
+  });
+
+  it("with no parts at all, the number is the end of the street", () => {
+    expect(addressFromGooglePlace({ shortFormattedAddress: "בית הדפוס 12, ירושלים" })).toMatchObject({
+      street: "בית הדפוס",
+      houseNumber: "12",
+      city: "ירושלים",
+    });
+  });
+
+  it("Hebrew parts, when Google sends them, still win over the line", () => {
+    const a = addressFromGooglePlace({ ...YECHEZKEL, shortFormattedAddress: "יחזקאל 27, רמת בית שמש" });
+    expect(a).toMatchObject({ street: "יחזקאל הנביא", houseNumber: "27", city: "בית שמש" });
+  });
+
+  it("only the missing one comes from the line", () => {
+    const a = addressFromGooglePlace({
+      shortFormattedAddress: "ההגנה 29, רחובות",
+      addressComponents: [
+        { longText: "29", types: ["street_number"] },
+        { longText: "Ha-Hagana Street", types: ["route"] },
+        { longText: "רחובות", types: ["locality", "political"] },
+      ],
+    });
+    expect(a).toMatchObject({ street: "ההגנה", houseNumber: "29", city: "רחובות" });
+  });
+
+  it("an English line too: no names made up", () => {
+    const a = addressFromGooglePlace({ ...BEIT_HADEFUS, shortFormattedAddress: "Beit Ha-Defus St 12, Jerusalem" });
+    expect(a).toMatchObject({ city: "", street: "" });
+  });
+});
+
 describe("Google's names, tidied", () => {
   it("no vowel marks, no 'רח'' in front, and the line built from the parts", () => {
     const a = addressFromGooglePlace({

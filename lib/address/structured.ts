@@ -123,6 +123,31 @@ function component(components: GoogleComponent[], ...types: string[]): string {
   return "";
 }
 
+// "רח' יוסף שכטמן" is "יוסף שכטמן": the word for street isn't part of its name.
+const STREET_WORD = /^(רחוב|רח['׳]|רח\.)\s+/;
+
+/**
+ * The street, house number and town from Google's own short line. Since
+ * 2026-10-25 Google sends the parts in English even when asked for Hebrew
+ * ("Beit Ha-Defus Street", "Jerusalem") while that line stays Hebrew ("בית
+ * הדפוס 12, ירושלים"): "<street> <number>, <town>", "<street>, <town>", or a
+ * settlement on its own. Google's parts, in any language, still say whether
+ * the place has a street.
+ */
+function fromHebrewLine(line: string, components: GoogleComponent[]): { city: string; street: string; houseNumber: string } {
+  const [first = "", ...rest] = line.split(",");
+  const hasStreet = components.length > 0 ? components.some((c) => c.types?.includes("route")) : rest.length > 0;
+  if (!hasStreet) return { city: hebrewPlaceName(line), street: "", houseNumber: "" };
+  // The number is at the end: "בית הדפוס 12", "שמגר 14 ב".
+  const name = hebrewPlaceName(first);
+  const numbered = /^(.+?)\s+(\d\S*(?:\s[א-ת])?)$/.exec(name);
+  return {
+    city: hebrewPlaceName(rest.join(",")),
+    street: (numbered?.[1] ?? name).replace(STREET_WORD, ""),
+    houseNumber: numbered?.[2] ?? "",
+  };
+}
+
 /**
  * Google's place → our shape. The town is the locality; a settlement Google
  * files under a council comes as administrative_area_level_2 or a sublocality.
@@ -132,12 +157,20 @@ export function addressFromGooglePlace(place: GooglePlaceDetails): StructuredAdd
   const components = place.addressComponents ?? [];
   const lat = place.location?.latitude;
   const lng = place.location?.longitude;
-  const city = component(components, "locality", "postal_town", "sublocality", "administrative_area_level_2");
-  // "רח' יוסף שכטמן" is "יוסף שכטמן": the word for street isn't part of its name.
-  const street = component(components, "route").replace(/^(רחוב|רח['׳]|רח\.)\s+/, "");
-  const houseNumber = (components.find((c) => c.types?.includes("street_number"))?.longText ?? "").trim().slice(0, 20);
-  // Google's own line only when it's all Hebrew; else built from the parts.
+  let city = component(components, "locality", "postal_town", "sublocality", "administrative_area_level_2");
+  let street = component(components, "route").replace(STREET_WORD, "");
+  let houseNumber = (components.find((c) => c.types?.includes("street_number"))?.longText ?? "").trim().slice(0, 20);
   const short = (place.shortFormattedAddress ?? "").trim();
+  if (!city || !street) {
+    // The parts came in English: their Hebrew names are in Google's own line.
+    const line = fromHebrewLine(short, components);
+    city ||= line.city;
+    if (!street && line.street) {
+      street = line.street;
+      houseNumber ||= line.houseNumber.slice(0, 20);
+    }
+  }
+  // Google's own line only when it's all Hebrew; else built from the parts.
   const ownLine =
     short && !/[֑-ׇ‎‏]|^(רחוב|רח['׳])\s/.test(short) && short.split(",").every((part) => HEBREW_NAME.test(part.trim()))
       ? short
