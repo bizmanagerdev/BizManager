@@ -17,6 +17,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import CancelRecurringMonthDialog from "@/components/financial/CancelRecurringMonthDialog";
+import { canCancelRecurringMonth, isCancelledRecurringMonth } from "@/lib/recurring/cancelMonth";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
@@ -190,6 +192,28 @@ function ShekelNote({ shekels, paint }: { shekels: number; paint: (text: string)
 
 function isEditableExpenseEntry(entry: FinancialEntry): entry is EditableExpenseEntry {
   return entry.origin === "expense" && typeof entry.expenseId === "string" && entry.expenseId.length > 0;
+}
+
+// A deleted month of a recurring bill comes back (the generator walks every
+// period), so an open one is cancelled instead — "ביטול החודש", which keeps
+// its row at ₪0 (lib/recurring/cancelMonth.ts). A paid month still deletes.
+function isCancellableRecurringMonth(entry: FinancialEntry): boolean {
+  return !entry.expenseInstallmentGroupId && canCancelRecurringMonth({
+    recurringTemplateId: entry.expenseRecurringTemplateId,
+    paymentStatus: entry.paymentStatus,
+    paidAmount: entry.expensePaidAmount,
+  });
+}
+
+// The status chip on an expense row; a cancelled month reads בוטל, not ₪0 שולם.
+function expenseStatusChip(entry: FinancialEntry): { label: string; tone: string } {
+  const status = entry.paymentStatus ?? "not_paid";
+  if (isCancelledRecurringMonth({ recurringTemplateId: entry.expenseRecurringTemplateId, paymentStatus: status, amount: entry.amount })) {
+    return { label: "בוטל", tone: "border-border bg-muted text-muted-foreground" };
+  }
+  if (status === "paid") return { label: "שולם", tone: "border-success/40 bg-success/10 text-success" };
+  if (status === "partial") return { label: "חלקית", tone: "border-warning/40 bg-warning/15 text-warning-strong" };
+  return { label: "לא שולם", tone: "border-destructive/40 bg-destructive/10 text-destructive" };
 }
 
 function createIncomeFormState(): IncomeCreateFormState {
@@ -1904,13 +1928,8 @@ export default function FinancialPageClient({
                           </div>
                           {entry.origin === "expense" ? (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span className={cn(
-                                "inline-block rounded-full border px-2 py-0.5 text-[0.588rem] font-medium",
-                                (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
-                                (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
-                                "border-destructive/40 bg-destructive/10 text-destructive"
-                              )}>
-                                {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולם"}
+                              <span className={cn("inline-block rounded-full border px-2 py-0.5 text-[0.588rem] font-medium", expenseStatusChip(entry).tone)}>
+                                {expenseStatusChip(entry).label}
                               </span>
                               {(() => {
                                 const st = entry.paymentStatus ?? "not_paid";
@@ -2091,13 +2110,8 @@ export default function FinancialPageClient({
                         {recordedByLabel(entry) ? <span>{paintLedger(recordedByLabel(entry))}</span> : null}
                         {entry.origin === "expense" ? (
                           <>
-                            <span className={cn(
-                              "rounded-full border px-2 py-0.5 font-medium",
-                              (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
-                              (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
-                              "border-destructive/40 bg-destructive/10 text-destructive"
-                            )}>
-                              {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולם"}
+                            <span className={cn("rounded-full border px-2 py-0.5 font-medium", expenseStatusChip(entry).tone)}>
+                              {expenseStatusChip(entry).label}
                             </span>
                             {(() => {
                               const st = entry.paymentStatus ?? "not_paid";
@@ -2226,13 +2240,8 @@ export default function FinancialPageClient({
                           </div>
                           {entry.origin === "expense" ? (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span className={cn(
-                                "inline-block rounded-full border px-2 py-0.5 text-[0.588rem] font-medium",
-                                (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
-                                (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
-                                "border-destructive/40 bg-destructive/10 text-destructive"
-                              )}>
-                                {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולם"}
+                              <span className={cn("inline-block rounded-full border px-2 py-0.5 text-[0.588rem] font-medium", expenseStatusChip(entry).tone)}>
+                                {expenseStatusChip(entry).label}
                               </span>
                               {(() => {
                                 const st = entry.paymentStatus ?? "not_paid";
@@ -2613,8 +2622,29 @@ export default function FinancialPageClient({
         }}
       />
 
+      {/* An open month of a recurring bill isn't deleted (it would come back) — it's cancelled */}
+      <CancelRecurringMonthDialog
+        target={
+          deletingExpense && isCancellableRecurringMonth(deletingExpense)
+            ? {
+                expenseId: deletingExpense.expenseId,
+                recurringTemplateId: deletingExpense.expenseRecurringTemplateId ?? null,
+                recurrenceKey: null,
+                date: deletingExpense.recordedDate ?? deletingExpense.flowDate,
+                label: deletingExpense.description,
+              }
+            : null
+        }
+        intro="חודש של הוצאה קבועה לא נמחק — המערכת הייתה יוצרת אותו שוב כ״לא שולם״. אם לא היה חיוב החודש, מבטלים אותו."
+        onClose={() => setDeletingExpense(null)}
+        onSaved={async () => {
+          await refreshAndWait();
+          setDeletingExpense(null);
+        }}
+      />
+
       <ConfirmDialog
-        open={Boolean(deletingExpense)}
+        open={Boolean(deletingExpense) && !(deletingExpense && isCancellableRecurringMonth(deletingExpense))}
         onOpenChange={(open) => {
           if (!open) setDeletingExpense(null);
         }}

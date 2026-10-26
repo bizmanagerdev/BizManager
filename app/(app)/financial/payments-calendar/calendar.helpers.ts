@@ -5,6 +5,7 @@
 import { isoLocal, toDateOnly } from "@/components/ui/month-calendar";
 import { formatCurrencyAmount } from "@/lib/money";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { canCancelRecurringMonth } from "@/lib/recurring/cancelMonth";
 import type { CalendarDirection, PaymentCalendarItem } from "@/lib/payables";
 
 export type Option = { id: string; label: string };
@@ -77,6 +78,10 @@ export type ItemActions = {
   onDelete?: () => void;
   onEdit?: () => void;
   editLabel?: string;
+  /** "ביטול החודש" — a month of a recurring bill that didn't happen. */
+  onCancelMonth?: () => void;
+  /** "החזרת החודש" — undo it. */
+  onRestoreMonth?: () => void;
 };
 
 export function fmtIls(value: number) {
@@ -174,6 +179,10 @@ export type ItemCapabilities = {
   canDelete: boolean;
   /** The forecast's template, when "edit" means editing the rule instead of a row. */
   editsTemplateId: string | null;
+  /** An open month of a live recurring bill — instead of a delete that wouldn't stick. */
+  canCancelMonth: boolean;
+  /** A month cancelled that way, which can be put back. */
+  canRestoreMonth: boolean;
 };
 
 export function itemCapabilities(
@@ -189,6 +198,8 @@ export function itemCapabilities(
       canSplit: false,
       canDelete: false,
       editsTemplateId: null,
+      canCancelMonth: false,
+      canRestoreMonth: false,
     };
   }
   if (item.direction === "in") {
@@ -197,7 +208,10 @@ export function itemCapabilities(
     // collect against until money is actually recorded. Nothing incoming is an
     // expense row, so there is no split and no delete.
     const hasRow = Boolean(item.paymentId);
-    return { canMark: hasRow, canEdit: hasRow, canSplit: false, canDelete: false, editsTemplateId: null };
+    return {
+      canMark: hasRow, canEdit: hasRow, canSplit: false, canDelete: false, editsTemplateId: null,
+      canCancelMonth: false, canRestoreMonth: false,
+    };
   }
   const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
   // Auto-paid (הוראת קבע) needs no approval once the row exists, but a forecast
@@ -209,12 +223,27 @@ export function itemCapabilities(
   // bill isn't something to delete one month of. An orphan — its template
   // already deleted — still gets מחיקה, since nothing will recreate it.
   const fromLiveTemplate = Boolean(item.recurringTemplateId && liveTemplateIds.has(item.recurringTemplateId));
+  // What it gets instead is "ביטול החודש" (a month that didn't happen keeps its
+  // row at ₪0 — lib/recurring/cancelMonth.ts): an open month with nothing paid
+  // toward it, or one still to come. A paid month is corrected by editing it;
+  // one split into payments, through its payments.
+  const canCancelMonth =
+    fromLiveTemplate &&
+    !item.cancelledMonth &&
+    !item.installmentGroupId &&
+    (isForecast || (Boolean(item.expenseId) && canCancelRecurringMonth({
+      recurringTemplateId: item.recurringTemplateId,
+      paymentStatus: item.paymentStatus,
+      paidAmount: item.paidAmount,
+    })));
   return {
     canMark,
     canEdit: Boolean(item.expenseId) || (isForecast && fromLiveTemplate),
     canSplit: Boolean(item.expenseId),
     canDelete: Boolean(item.expenseId) && !fromLiveTemplate,
     editsTemplateId: !item.expenseId && isForecast && fromLiveTemplate ? item.recurringTemplateId : null,
+    canCancelMonth,
+    canRestoreMonth: fromLiveTemplate && Boolean(item.cancelledMonth && item.expenseId),
   };
 }
 

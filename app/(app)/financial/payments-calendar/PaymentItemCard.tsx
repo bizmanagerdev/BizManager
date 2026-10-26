@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AddReminderIcon, CheckIcon, DeleteIcon, EditIcon, ExternalLinkIcon, MoreIcon, SplitIcon } from "@/components/ui/icons";
+import { AddReminderIcon, CancelDateIcon, CheckIcon, DeleteIcon, EditIcon, ExternalLinkIcon, MoreIcon, SplitIcon, UndoIcon } from "@/components/ui/icons";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,8 @@ export default function PaymentItemCard({
   onDelete,
   onEdit,
   editLabel = "עריכה",
+  onCancelMonth,
+  onRestoreMonth,
   compact = false,
   accountName,
 }: {
@@ -31,10 +33,16 @@ export default function PaymentItemCard({
   // Absent on items that have no editable record here (wages, loans, card charges).
   onEdit?: () => void;
   editLabel?: string;
+  // A month of a live recurring bill: cancelled instead of deleted, and put back.
+  onCancelMonth?: () => void;
+  onRestoreMonth?: () => void;
   compact?: boolean;
   accountName?: string;
 }) {
   const stage = itemStageKey(item);
+  // A cancelled month is paid at ₪0 underneath; it reads as בוטל, in gray.
+  const cancelled = Boolean(item.cancelledMonth);
+  const dotClass = cancelled ? "bg-muted-foreground/40" : STAGE_DOT[stage];
   const words = DIRECTION_WORDS[item.direction];
   const incoming = item.direction === "in";
   const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
@@ -78,15 +86,16 @@ export default function PaymentItemCard({
       <div className="rounded-lg border bg-background px-3 py-2.5" data-focus-id={item.id}>
         {/* Row 1: name (wraps) + amount. Badges get their own row so nothing crams. */}
         <div className="flex items-start gap-2">
-          <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
+          <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
           <span className="min-w-0 flex-1 break-words text-sm font-medium leading-snug">{item.label}</span>
           <span className="shrink-0 text-sm font-semibold tabular-nums">
             <span className={`${MONEY_SIGN} ${incoming ? "text-success" : "text-destructive"}`}>{incoming ? "+" : "−"}</span>
             {amountText}
           </span>
         </div>
-        {item.autoPaid || isForecast || item.variableAmount ? (
+        {item.autoPaid || isForecast || item.variableAmount || cancelled ? (
           <div className="mt-1.5 flex flex-wrap gap-1">
+            {cancelled ? <Badge variant="neutral">בוטל</Badge> : null}
             {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
             {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
           </div>
@@ -150,6 +159,18 @@ export default function PaymentItemCard({
                 <AddReminderIcon className="me-2 h-4 w-4" />
                 תזכורת
               </DropdownMenuItem>
+              {onCancelMonth ? (
+                <DropdownMenuItem onClick={onCancelMonth}>
+                  <CancelDateIcon className="me-2 h-4 w-4" />
+                  ביטול החודש
+                </DropdownMenuItem>
+              ) : null}
+              {onRestoreMonth ? (
+                <DropdownMenuItem onClick={onRestoreMonth}>
+                  <UndoIcon className="me-2 h-4 w-4" />
+                  החזרת החודש
+                </DropdownMenuItem>
+              ) : null}
               {canDelete ? (
                 <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
                   <DeleteIcon className="me-2 h-4 w-4" />
@@ -168,7 +189,7 @@ export default function PaymentItemCard({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{item.label}</span>
         <span className="font-semibold">{amountText}</span>
-        <Badge variant={STAGE_BADGE[stage]}>{stageLabelFor(item, stage)}</Badge>
+        {cancelled ? <Badge variant="neutral">בוטל</Badge> : <Badge variant={STAGE_BADGE[stage]}>{stageLabelFor(item, stage)}</Badge>}
         {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">הוצאה קבועה</Badge> : null}
         {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
         {item.installmentGroupId && item.installmentIndex && item.installmentCount ? (
@@ -215,6 +236,18 @@ export default function PaymentItemCard({
           <AddReminderIcon className="h-3.5 w-3.5" />
           תזכורת
         </Button>
+        {onCancelMonth ? (
+          <Button type="button" size="sm" variant="secondary" onClick={onCancelMonth}>
+            <CancelDateIcon className="h-3.5 w-3.5" />
+            ביטול החודש
+          </Button>
+        ) : null}
+        {onRestoreMonth ? (
+          <Button type="button" size="sm" variant="secondary" onClick={onRestoreMonth}>
+            <UndoIcon className="h-3.5 w-3.5" />
+            החזרת החודש
+          </Button>
+        ) : null}
         {canDelete ? (
           <DeleteButton onClick={onDelete} />
         ) : null}

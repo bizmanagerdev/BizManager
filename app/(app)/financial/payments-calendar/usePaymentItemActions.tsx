@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toHebrewError } from "@/lib/error-messages";
@@ -13,6 +14,8 @@ import MarkPaidDialog from "./MarkPaidDialog";
 import MarkCollectedDialog from "./MarkCollectedDialog";
 import ConfirmSettlementDialog from "./ConfirmSettlementDialog";
 import { PaymentEditDialog } from "@/components/financial/PaymentEditDialog";
+import CancelRecurringMonthDialog from "@/components/financial/CancelRecurringMonthDialog";
+import { recurrenceKeyLabel } from "@/lib/recurring/cancelMonth";
 import { incomeReminderNoteFor, itemCapabilities, reminderNoteFor, type ItemActions, type MutateFn, type Option } from "./calendar.helpers";
 
 // Delete an expense-origin payment row (e.g. an orphaned recurring bill left
@@ -80,6 +83,37 @@ export default function usePaymentItemActions({
   const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
   const [editItem, setEditItem] = useState<PaymentCalendarItem | null>(null);
   const [editTemplate, setEditTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
+  const [cancelItem, setCancelItem] = useState<PaymentCalendarItem | null>(null);
+  const [restoreItem, setRestoreItem] = useState<PaymentCalendarItem | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState("");
+
+  // "החזרת החודש": the cancelled row goes and the month comes back as the
+  // generator makes it. Stays busy until the board shows it.
+  async function restoreMonth() {
+    if (!restoreItem?.expenseId) return;
+    setRestoring(true);
+    setRestoreError("");
+    try {
+      const res = await fetch("/api/recurring-expenses/cancel-month", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expense_id: restoreItem.expenseId, restore: true }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; id?: string | null };
+      if (!res.ok) {
+        setRestoreError(toHebrewError(json.error, "החזרת החודש נכשלה."));
+        return;
+      }
+      toast.success("החודש הוחזר");
+      await onMutate(json.id ? { expenseId: json.id } : undefined);
+      setRestoreItem(null);
+    } catch (err) {
+      setRestoreError(toHebrewError(err, "החזרת החודש נכשלה."));
+    } finally {
+      setRestoring(false);
+    }
+  }
 
   // What each row allows is decided once, purely, in calendar.helpers; this
   // only hands those decisions their dialogs.
@@ -114,6 +148,8 @@ export default function usePaymentItemActions({
       onSplit: () => setSplitItem(item),
       onRemind: () => setRemindItem(item),
       ...(can.canDelete ? { onDelete: () => setDeleteItem(item) } : {}),
+      ...(can.canCancelMonth ? { onCancelMonth: () => setCancelItem(item) } : {}),
+      ...(can.canRestoreMonth ? { onRestoreMonth: () => { setRestoreError(""); setRestoreItem(item); } } : {}),
       // A real expense row edits in place (the shared dialog, same as the
       // ledger). A forecast has no row yet, so "edit" is the recurring rule it
       // came from. Wages / loans / card charges edit on their own pages (למקור).
@@ -257,6 +293,43 @@ export default function usePaymentItemActions({
             : undefined
         }
         onSaved={() => setRemindItem(null)}
+      />
+
+      {/* A month of a recurring bill that didn't happen */}
+      <CancelRecurringMonthDialog
+        target={
+          cancelItem
+            ? {
+                expenseId: cancelItem.expenseId,
+                recurringTemplateId: cancelItem.recurringTemplateId,
+                recurrenceKey: cancelItem.recurrenceKey,
+                date: cancelItem.expenseId ? cancelItem.dueDate : cancelItem.date,
+                label: cancelItem.label,
+              }
+            : null
+        }
+        onClose={() => setCancelItem(null)}
+        onSaved={async ({ expenseId }) => {
+          await onMutate(expenseId ? { expenseId } : undefined);
+          setCancelItem(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(restoreItem)}
+        onOpenChange={(o) => {
+          if (!o && !restoring) setRestoreItem(null);
+        }}
+        title="החזרת החודש"
+        description={
+          restoreItem
+            ? `להחזיר את "${restoreItem.label}" ל${recurrenceKeyLabel(restoreItem.dueDate.slice(0, 7))}? הוא יחזור להיות לתשלום לפי ההוצאה הקבועה.`
+            : ""
+        }
+        confirmLabel="החזרת החודש"
+        loading={restoring}
+        error={restoreError || undefined}
+        onConfirm={() => void restoreMonth()}
       />
 
       {/* Delete this expense (e.g. an orphaned recurring bill) — deferred with undo */}

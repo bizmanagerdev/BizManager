@@ -26,6 +26,7 @@ describe("itemCapabilities \u2014 money going out", () => {
   it("a one-off bill can be paid, split, edited and deleted", () => {
     expect(itemCapabilities(item({ id: "expense:e1", expenseId: "e1" }), live)).toEqual({
       canMark: true, canEdit: true, canSplit: true, canDelete: true, editsTemplateId: null,
+      canCancelMonth: false, canRestoreMonth: false,
     });
   });
 
@@ -42,12 +43,45 @@ describe("itemCapabilities \u2014 money going out", () => {
 
   it("a forecast has no row: it can be recorded, and \"edit\" means its rule", () => {
     const can = itemCapabilities(item({ id: "recur_proj:tpl-live:2026-10", recurringTemplateId: "tpl-live", recurrenceKey: "2026-10" }), live);
-    expect(can).toEqual({ canMark: true, canEdit: true, canSplit: false, canDelete: false, editsTemplateId: "tpl-live" });
+    expect(can).toEqual({
+      canMark: true, canEdit: true, canSplit: false, canDelete: false, editsTemplateId: "tpl-live",
+      canCancelMonth: true, canRestoreMonth: false,
+    });
   });
 
   it("a wage or loan forecast offers nothing but a reminder and its own page", () => {
     const can = itemCapabilities(item({ id: "salary_proj:u1:2026-09", origin: "worker_owed" }), live);
-    expect(can).toEqual({ canMark: false, canEdit: false, canSplit: false, canDelete: false, editsTemplateId: null });
+    expect(can).toEqual({
+      canMark: false, canEdit: false, canSplit: false, canDelete: false, editsTemplateId: null,
+      canCancelMonth: false, canRestoreMonth: false,
+    });
+  });
+});
+
+describe("itemCapabilities — ביטול החודש", () => {
+  // A month of a live recurring bill can't be deleted (it comes back), so a
+  // month that didn't happen is cancelled: kept at ₪0, paid, and put back at will.
+  const month = (over: Partial<PaymentCalendarItem>) =>
+    item({ id: "expense:m1", expenseId: "m1", recurringTemplateId: "tpl-live", paymentStatus: "not_paid", paidAmount: 0, ...over });
+
+  it("an open month can be cancelled", () => {
+    expect(itemCapabilities(month({}), live)).toMatchObject({ canCancelMonth: true, canRestoreMonth: false, canDelete: false });
+  });
+
+  it("a paid, partly paid or split month cannot — it is corrected through its payment", () => {
+    expect(itemCapabilities(month({ paymentStatus: "paid", paidAmount: 310.28, stage: "posted" }), live).canCancelMonth).toBe(false);
+    expect(itemCapabilities(month({ paymentStatus: "partial", paidAmount: 50 }), live).canCancelMonth).toBe(false);
+    expect(itemCapabilities(month({ installmentGroupId: "grp-1" }), live).canCancelMonth).toBe(false);
+  });
+
+  it("a cancelled month can be put back, not cancelled again", () => {
+    const can = itemCapabilities(month({ paymentStatus: "paid", amount: 0, stage: "posted", cancelledMonth: true }), live);
+    expect(can).toMatchObject({ canCancelMonth: false, canRestoreMonth: true });
+  });
+
+  it("an orphan (its template gone) or a one-off bill is deleted, not cancelled", () => {
+    expect(itemCapabilities(month({ recurringTemplateId: "tpl-deleted" }), live)).toMatchObject({ canCancelMonth: false, canDelete: true });
+    expect(itemCapabilities(month({ recurringTemplateId: null }), live)).toMatchObject({ canCancelMonth: false, canDelete: true });
   });
 });
 
@@ -55,6 +89,7 @@ describe("itemCapabilities \u2014 money coming in", () => {
   it("a real payments row can be marked collected and corrected, never split or deleted", () => {
     expect(itemCapabilities(item({ id: "payment:p1", direction: "in", origin: "payment", paymentId: "p1" }), live)).toEqual({
       canMark: true, canEdit: true, canSplit: false, canDelete: false, editsTemplateId: null,
+      canCancelMonth: false, canRestoreMonth: false,
     });
   });
 
@@ -62,6 +97,7 @@ describe("itemCapabilities \u2014 money coming in", () => {
     // It changes by invoicing or by recording money against it \u2014 not here.
     expect(itemCapabilities(item({ id: "order-receivable:o1", direction: "in", origin: "order_receivable" }), live)).toEqual({
       canMark: false, canEdit: false, canSplit: false, canDelete: false, editsTemplateId: null,
+      canCancelMonth: false, canRestoreMonth: false,
     });
   });
 });

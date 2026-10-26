@@ -12,6 +12,7 @@ import { loadOutflowSourceSettings } from "@/lib/outflow-sources";
 import { sourceSettingKey, type OutflowSourceSettings, type OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 import { foreignShare, isForeignCurrency, shekelsToday, type ForeignMoney, type TodayFxRates } from "@/lib/fx/currencies";
 import { loadTodayFxRates } from "@/lib/fx/rates";
+import { isCancelledRecurringMonth } from "@/lib/recurring/cancelMonth";
 
 // ── Payments calendar item ─────────────────────────────────────────────────────
 // One outgoing obligation placed on a calendar day. Sourced from the single
@@ -84,6 +85,9 @@ export type PaymentCalendarItem = {
   // on its date, so it's shown for cash flow but is NOT something "to pay" (no
   // manual action / no due-payment alert).
   autoPaid: boolean;
+  // A recurring month cancelled with "ביטול החודש" — its row kept, paid at ₪0
+  // (lib/recurring/cancelMonth.ts). Shown as בוטל, never as a ₪0 payment.
+  cancelledMonth?: boolean;
   // ── Incoming-only (see lib/receivables.ts). Absent on outgoing items. ──
   /** The `payments` row behind this item — present ⇒ it can be collected/edited. */
   paymentId?: string | null;
@@ -177,6 +181,11 @@ export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: stri
       recurrenceKey: null,
       variableAmount: false,
       autoPaid: false,
+      cancelledMonth: isCancelledRecurringMonth({
+        recurringTemplateId: entry.expenseRecurringTemplateId,
+        paymentStatus: entry.paymentStatus,
+        amount: entry.amount,
+      }),
     }));
 }
 
