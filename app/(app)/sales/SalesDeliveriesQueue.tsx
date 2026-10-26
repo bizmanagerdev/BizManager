@@ -7,7 +7,8 @@ import { useCallback, useDeferredValue, useMemo, useState, useTransition } from 
 import { Input } from "@/components/ui/input";
 import { Painted, SearchTermsProvider } from "@/components/search/Painted";
 import { searchList, type SearchRecord } from "@/lib/search/listSearch";
-import { CashIcon, ChevronDownIcon, CommentIcon, LocationIcon, SearchIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
+import { CashIcon, ChevronDownIcon, CommentIcon, LocationIcon, RouteIcon, SearchIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
+import { Button } from "@/components/ui/button";
 import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { formatMoney } from "@/lib/money";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
@@ -395,6 +396,16 @@ export default function SalesDeliveriesQueue({
                 }
               />
             </div>
+            {/* The route planner (deliveries/route), icon only here like the picking list. */}
+            <Link
+              href="/deliveries/route"
+              onClick={() => emitNavigationStart()}
+              aria-label="תכנון מסלול"
+              title="תכנון מסלול"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-secondary/10"
+            >
+              <RouteIcon className="h-4 w-4" />
+            </Link>
           </div>
         </PageHeaderToolbar>
       ) : null}
@@ -415,6 +426,14 @@ export default function SalesDeliveriesQueue({
           </Link>
         ))}
         <PickingListDialog />
+        {/* The best order for the run, on Google's traffic (deliveries/route) —
+            a helper beside the list, so the soft style like the picking list. */}
+        <Button asChild variant="soft" size="sm" className="gap-1.5">
+          <Link href="/deliveries/route" onClick={() => emitNavigationStart()}>
+            <RouteIcon className="h-4 w-4" />
+            <span>תכנון מסלול</span>
+          </Link>
+        </Button>
         {/* Desktop only: on a phone this wrapped onto a line of its own under
             the pills — a whole row of screen for a number you can see by
             scrolling. Beside the pills on a wider screen it costs nothing. */}
