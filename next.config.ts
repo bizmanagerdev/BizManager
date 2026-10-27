@@ -37,7 +37,6 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_POWERSYNC_ASSETS: `/powersync/${POWERSYNC_VERSION}`,
   },
   experimental: {
-    turbopackUseSystemTlsCerts: true,
     // recharts is the one heavy chart lib in this repo not already covered by
     // Next's built-in optimizePackageImports defaults — trims its barrel import.
     optimizePackageImports: ["recharts"],
