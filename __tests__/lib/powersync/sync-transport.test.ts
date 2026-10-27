@@ -114,19 +114,28 @@ describe("the sync's way of connecting", () => {
     });
 
     it("the other tabs hear of a switch", () => {
-      const heard = vi.fn();
-      const stop = watchStoredTransport(heard);
-      rememberTransport("http", FORGET_REMEMBERED_BEFORE + 1000);
-      window.dispatchEvent(new StorageEvent("storage", { key: "bizh-sync-transport" }));
-      expect(heard).toHaveBeenLastCalledWith("http");
-      rememberTransport("web-socket");
-      window.dispatchEvent(new StorageEvent("storage", { key: "bizh-sync-transport" }));
-      expect(heard).toHaveBeenLastCalledWith("web-socket");
-      window.dispatchEvent(new StorageEvent("storage", { key: "something-else" }));
-      expect(heard).toHaveBeenCalledTimes(2);
-      stop();
-      window.dispatchEvent(new StorageEvent("storage", { key: "bizh-sync-transport" }));
-      expect(heard).toHaveBeenCalledTimes(2);
+      // The other tabs read the remembered way against the clock: pinned, or a
+      // switch dated in the past runs out of its week in real time (this one
+      // did on 2026-10-25, and the test failed from then on).
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(FORGET_REMEMBERED_BEFORE + 1000);
+      try {
+        const heard = vi.fn();
+        const stop = watchStoredTransport(heard);
+        rememberTransport("http");
+        window.dispatchEvent(new StorageEvent("storage", { key: "bizh-sync-transport" }));
+        expect(heard).toHaveBeenLastCalledWith("http");
+        rememberTransport("web-socket");
+        window.dispatchEvent(new StorageEvent("storage", { key: "bizh-sync-transport" }));
+        expect(heard).toHaveBeenLastCalledWith("web-socket");
+        window.dispatchEvent(new StorageEvent("storage", { key: "something-else" }));
+        expect(heard).toHaveBeenCalledTimes(2);
+        stop();
+        window.dispatchEvent(new StorageEvent("storage", { key: "bizh-sync-transport" }));
+        expect(heard).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
