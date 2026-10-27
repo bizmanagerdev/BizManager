@@ -166,8 +166,8 @@ function savedPages(page: Page) {
 /**
  * Ask the service worker for the whole app's code, and the build it's for —
  * the message the app sends (lib/powersync/device-frames.ts saveAppCode).
- * The app asks once its on-device copy has synced (OfflineMenuFrames), which
- * never happens in CI, so the test asks the same way.
+ * With no ready copy, as in CI, the app asks 3 minutes after it opened
+ * (OfflineMenuFrames); the test asks at once the same way instead of waiting.
  */
 function askForAppCode(page: Page) {
   return page.evaluate(() => {
