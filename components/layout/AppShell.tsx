@@ -142,8 +142,6 @@ export default function AppShell({
           initialMe={initialMe}
           showSearch={showSearch}
         />
-        <OfflineBanner />
-        <SavedCopyNotice />
         <div className="flex min-w-0 flex-1">
           {sidebar.length > 0 && (
             // Suspense boundary required because AppSidebar reads useSearchParams
@@ -168,6 +166,12 @@ export default function AppShell({
                 under it (StickyHeaderHeight). */}
             <div id={STICKY_HEADER_ID} className="sticky top-[60px] z-20 flex flex-col">
               <StickyHeaderHeight />
+              {/* The connection bars too — over the page, not the sidebar's column
+                  (owner, 2026-10-27: "alerts should only be over the page, not
+                  into the navbar"); stuck under the top bar like the rest, so
+                  "no connection" stays in view while scrolling. */}
+              <OfflineBanner />
+              <SavedCopyNotice />
               {/* A route being driven on this phone: the way back to it, on every page. */}
               <DriveBar />
               <AlertBar locale={viewerLocale === "ar" ? "ar" : "he"} remembered={rememberedAlertBars} />
