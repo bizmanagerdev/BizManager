@@ -59,9 +59,19 @@ export function deviceCheckCookie(page: DeviceCheckPage): string {
  */
 export const FRAME_SAVE_HEADER = "x-bizh-frame-save";
 
+/**
+ * Is this the service worker saving the page's frame in the background? A
+ * record's page then leaves out its history too — the costliest of its server
+ * reads and the least needed with no connection (owner, 2026-10-25: "do 1");
+ * opened online, the page refreshes its server parts and the history comes.
+ */
+export async function savingFrameInBackground(): Promise<boolean> {
+  return (await headers()).get(FRAME_SAVE_HEADER) === "1";
+}
+
 /** Does this device still have to compare `page` today? */
 export async function deviceCheckDue(page: DeviceCheckPage): Promise<boolean> {
-  if ((await headers()).get(FRAME_SAVE_HEADER) === "1") return false;
+  if (await savingFrameInBackground()) return false;
   const jar = await cookies();
   return jar.get(deviceCheckCookie(page))?.value !== israelDateKey();
 }

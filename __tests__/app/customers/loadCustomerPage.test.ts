@@ -25,7 +25,7 @@ vi.mock("@/lib/customers/counterpartyBalance", async (importOriginal) => ({
   getCustomerLoanPositions: libs.getCustomerLoanPositions,
 }));
 
-import { startCustomerPageReads } from "@/app/(app)/customers/[id]/loadCustomerPage";
+import { startCustomerPageReads, startCustomerServerReads } from "@/app/(app)/customers/[id]/loadCustomerPage";
 
 type Row = Record<string, unknown>;
 type Call = {
@@ -242,6 +242,13 @@ describe("the customer page's reads", () => {
     const orderSources = sources.filter((source) => source.values);
     expect(orderSources.map((source) => source.values!.length)).toEqual([150, 150, 20]);
     expect(sources[0]).toEqual({ tableName: "customers", recordId: "c1" });
+  });
+
+  it("a page saved by the service worker in the background reads no history, even for an admin", async () => {
+    const { supabase } = makeDb({ customers: [CUSTOMER], order_overview_view: orders(3) });
+    const reads = startCustomerServerReads(supabase, "c1", viewer("admin"), undefined, { withHistory: false });
+    expect(await reads.history).toEqual({ items: [], error: null });
+    expect(libs.getEntityAuditTrail).not.toHaveBeenCalled();
   });
 
   it("works the money out from the orders and the projects with their payments", async () => {

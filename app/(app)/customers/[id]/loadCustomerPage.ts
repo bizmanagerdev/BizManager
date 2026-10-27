@@ -57,13 +57,16 @@ type Viewer = {
 /**
  * What only the server reads for the page. `known` hands over what the core
  * already read (the server version); on its own (the page drawn from the
- * device) it reads the ids it needs itself — a few small reads.
+ * device) it reads the ids it needs itself — a few small reads. `withHistory`
+ * false leaves the history out even for an admin (a frame the service worker
+ * saves in the background, lib/powersync/device-check.ts).
  */
 export function startCustomerServerReads(
   supabase: SupabaseClient,
   id: string,
   viewer: Viewer,
-  known?: { orderIds: Promise<string[]>; projectIds: Promise<string[]>; linkedUserId: Promise<string | null> }
+  known?: { orderIds: Promise<string[]>; projectIds: Promise<string[]>; linkedUserId: Promise<string | null> },
+  { withHistory = true }: { withHistory?: boolean } = {}
 ) {
   const canManage = viewer.role.then((role) => role === "admin" || role === "office");
   const isAdmin = viewer.role.then((role) => role === "admin");
@@ -201,7 +204,7 @@ export function startCustomerServerReads(
   // ≤150 source; the trail merges them and keeps the newest.
   const history: Promise<CustomerHistory> = Promise.all([isAdmin, orderIds, projectIds])
     .then(([admin, orderIdList, projectIdList]) => {
-      if (!admin) return { items: [], error: null };
+      if (!admin || !withHistory) return { items: [], error: null };
       const sources: EntityAuditSource[] = [
         { tableName: "customers", recordId: id },
         { tableName: "orders", jsonKey: "customer_id", value: id },

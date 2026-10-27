@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   startCustomerPageReads: vi.fn(),
   startCustomerServerReads: vi.fn(),
   deviceOn: { current: false },
+  savingFrame: { current: false },
   order: [] as string[],
 }));
 vi.mock("next/navigation", () => ({ notFound: h.notFound }));
@@ -26,6 +27,7 @@ vi.mock("@/lib/timezone", () => ({ israelDateKey: () => "2026-10-13" }));
 vi.mock("@/lib/powersync/device-check", () => ({
   devicePageOn: async () => h.deviceOn.current,
   deviceCheckDue: async () => false,
+  savingFrameInBackground: async () => h.savingFrame.current,
 }));
 vi.mock("@/app/(app)/customers/[id]/loadCustomerPage", () => ({
   startCustomerPageReads: h.startCustomerPageReads,
@@ -65,6 +67,7 @@ beforeEach(() => {
   h.notFound.mockClear();
   h.order.length = 0;
   h.deviceOn.current = false;
+  h.savingFrame.current = false;
   h.requireStaffPage.mockReset().mockImplementation(async () => {
     // The check answers after a round trip.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -99,6 +102,22 @@ describe("the customer page on the server", () => {
     expect(props.viewer).toEqual({ userId: "u1", role: "admin", locale: "he" });
     expect(props.serverReads.server).toBeInstanceOf(Promise);
     expect(props.serverReads.history).toBeInstanceOf(Promise);
+  });
+
+  it("saved by the service worker in the background: no history, even for an admin (the costliest read, owner 2026-10-25)", async () => {
+    h.deviceOn.current = true;
+    h.savingFrame.current = true;
+    const page = (await open("c1")) as ReactElement;
+    expect(h.startCustomerServerReads.mock.calls[0]![4]).toEqual({ withHistory: false });
+    const props = viewOf(page, LocalCustomerPage).props as { serverReads: { history: unknown; server: unknown } };
+    expect(props.serverReads.history).toBeNull();
+    expect(props.serverReads.server).toBeInstanceOf(Promise);
+  });
+
+  it("opened by the person (not a background save): an admin's history is read", async () => {
+    h.deviceOn.current = true;
+    await open("c1");
+    expect(h.startCustomerServerReads.mock.calls[0]![4]).toEqual({ withHistory: true });
   });
 
   it("the device version gives office staff no history either", async () => {

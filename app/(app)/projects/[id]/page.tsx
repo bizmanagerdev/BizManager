@@ -4,7 +4,7 @@ import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { sanitizeLedgerPrefs } from "@/lib/projectLedgerPrefs";
 import { startProjectPageIdReads, startProjectPageReads } from "@/lib/projects/project-page";
-import { deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
+import { deviceCheckDue, devicePageOn, savingFrameInBackground } from "@/lib/powersync/device-check";
 import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW } from "@/lib/powersync/config";
 import { loadProjectPageExtras } from "@/app/(app)/projects/[id]/loadProjectPageExtras";
 import { ProjectPageStreamed } from "@/app/(app)/projects/[id]/ProjectPageView";
@@ -64,8 +64,15 @@ export default async function ProjectPage({
   // not the whole page. ?data=server is the way back when the copy can't serve
   // it; a device whose copy is still incomplete gets the server version at once.
   if (!serverVersion && (await devicePageOn("projectPage", profile))) {
+    // Saved by the service worker in the background: no history (device-check.ts).
+    const savingFrame = await savingFrameInBackground();
     const extras =
-      earlyReads?.extras ?? loadProjectPageExtras(supabase, { id, ...startProjectPageIdReads(supabase, id), withActivity });
+      earlyReads?.extras ??
+      loadProjectPageExtras(supabase, {
+        id,
+        ...startProjectPageIdReads(supabase, id),
+        withActivity: savingFrame ? Promise.resolve(false) : withActivity,
+      });
     // Once a day per device, the server's own reading of the project too —
     // streamed after the page, for the device to compare (lib/powersync/device-check.ts).
     const checkDue = LOCAL_DATA_SHADOW.projectPage && (await deviceCheckDue("projectPage"));

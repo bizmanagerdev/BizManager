@@ -3,7 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { loadOrderPageCore, orderPaymentIds, readOrderPayments } from "@/lib/orders/order-page";
-import { deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
+import { deviceCheckDue, devicePageOn, savingFrameInBackground } from "@/lib/powersync/device-check";
 import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW } from "@/lib/powersync/config";
 import { loadOrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPageExtras";
 import OrderPageView from "@/app/(app)/sales/orders/[id]/OrderPageView";
@@ -59,12 +59,14 @@ export default async function SalesOrderPage({
   // when the copy can't serve it; a device whose copy is still incomplete gets
   // the server version at once.
   if (!serverVersion && (await devicePageOn("orders", profile))) {
+    // Saved by the service worker in the background: no history (device-check.ts).
+    const savingFrame = await savingFrameInBackground();
     const extras =
       earlyReads?.extras ??
       loadOrderPageExtras(supabase, {
         id,
         paymentIds: readOrderPayments(supabase, id).then(orderPaymentIds),
-        withActivity: Promise.resolve(profile.role === "admin"),
+        withActivity: Promise.resolve(profile.role === "admin" && !savingFrame),
       });
     // Once a day per device, the server's own reading of the order too —
     // streamed after the page, for the device to compare (lib/powersync/device-check.ts).
