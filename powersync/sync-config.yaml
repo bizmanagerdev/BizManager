@@ -1,4 +1,11 @@
-# BizManager — PowerSync Sync Streams, v1.12 (2026-10-24): a recurring
+# BizManager — PowerSync Sync Streams, v1.13 (2026-10-27): workers' phones
+# under the sync server's limit of 1,000 parameter results. A worker's payments
+# came from every order not closed (281 and growing with each order), counted
+# three times over by the OR in worker_deliveries_gate: נתן's phone needed
+# 1,078 and has been refused since 26/10, the others ~900. Now only the open
+# orders' payments (the only orders a worker's copy holds), and the gate has
+# no OR.
+# v1.12 (2026-10-24): a recurring
 # bill's currency (recurring_expense_templates.currency) — a bill in US$ / C$
 # reads in its currency on the device.
 # v1.11 (2026-10-13): staff also get
@@ -48,8 +55,10 @@ with:
   worker_me: SELECT id FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'worker'
   worker_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'worker'
   # Workers whose deliveries section isn't switched off — it's on unless set
-  # to false (lib/auth/sections.ts sanitizeSectionAccess).
-  worker_deliveries_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'worker' AND (section_access IS NULL OR section_access ->> 'deliveries' IS NULL OR section_access ->> 'deliveries' != false)
+  # to false (lib/auth/sections.ts sanitizeSectionAccess). No OR: the sync
+  # server splits an OR into one lookup per part, and every lookup a stream
+  # joins with this gate is counted again for each.
+  worker_deliveries_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'worker' AND ifnull(section_access ->> 'deliveries', true) != false
 
 streams:
   # Names and colours of everyone, plus what the staff screens show
@@ -289,9 +298,13 @@ streams:
         SELECT order_items.* FROM order_items, worker_deliveries_gate AS bucket
         WHERE order_items.order_id IN (SELECT id FROM orders WHERE status != 'delivered' AND status != 'completed' AND status != 'closed' AND status != 'cancelled'
           AND status != 'סופקה' AND status != 'הושלמה' AND status != 'סגורה' AND status != 'בוטלה')
+      # Payments of the open orders only — the only orders on a worker's copy
+      # (worker_business). Every order not closed was one parameter result
+      # each, and that list only grows.
       - |
         SELECT payments.* FROM payments, worker_deliveries_gate AS bucket
-        WHERE payments.order_id IN (SELECT id FROM orders WHERE status != 'closed' AND status != 'cancelled' AND status != 'סגורה' AND status != 'בוטלה')
+        WHERE payments.order_id IN (SELECT id FROM orders WHERE status != 'delivered' AND status != 'completed' AND status != 'closed' AND status != 'cancelled'
+          AND status != 'סופקה' AND status != 'הושלמה' AND status != 'סגורה' AND status != 'בוטלה')
 
   # His own shift reports, open and waiting for approval (the server's RLS lets
   # a worker read his own) — the clock checks the phone for a shift already
