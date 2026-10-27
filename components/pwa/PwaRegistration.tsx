@@ -100,7 +100,13 @@ export default function PwaRegistration() {
     // playwright.config.ts's webServer comment) didn't fix the SAME "element
     // detached from the DOM" instability — proof it was never really about
     // dev-mode compilation, at least not only.
-    if (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_E2E_TEST === "1") {
+    //
+    // Except on the offline test's own address (a .test name the test's browser
+    // maps to 127.0.0.1 — e2e/offline-pages.spec.ts): there the worker is what's
+    // being tested, and sw.js runs as it does in production.
+    const testBuildWithoutWorker =
+      process.env.NEXT_PUBLIC_E2E_TEST === "1" && !window.location.hostname.endsWith(".test");
+    if (process.env.NODE_ENV !== "production" || testBuildWithoutWorker) {
       void (async () => {
         const regs = await navigator.serviceWorker.getRegistrations();
         const hadSw = regs.length > 0;

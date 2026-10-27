@@ -97,6 +97,25 @@ can't reach: the native push and share plugins (`lib/native-push.ts`,
 `lib/native-share.ts`), and the installed APK itself, which points at
 production and is never driven by these tests.
 
+**Offline** (`offline-*.spec.ts`, run in the `offline` project — CI only)
+- `offline-pages` — with the network off: saved pages open from the device with one red bar that stays; a page never opened says "not saved" and the app stays where it is; "+" → task form opens; a refresh loads the saved copy; back online the bar goes. Then the same with only the server silent while the device says it's online (the owner's laptop, 2026-10-27).
+
+The service worker removes itself on localhost and 127.0.0.1, and the test
+build (`NEXT_PUBLIC_E2E_TEST=1`) doesn't register it there. So this project's
+browser reaches the same production build as `http://bizh.test:3100`: Chrome
+maps the name to 127.0.0.1 and treats it as a secure origin
+(`playwright.config.ts`), and the test build registers its worker on a `.test`
+name (`components/pwa/PwaRegistration.tsx`). Port 3100 is a switch inside the
+test, in front of the server on 3000, turned off to make the server stop
+answering. It runs only on the production build CI serves (`next dev` has no
+service worker), as its own CI step.
+
+Not covered offline yet: the device pages' saved frames (`SAVE_FRAMES`,
+`OfflineMenuFrames`) — they need the on-device copy (PowerSync), and CI has no
+PowerSync service, so the test runs as a device whose copy isn't ready
+(server-version pages, saved whole). Also saves made offline (a task created
+with no connection, sent when it's back).
+
 **Not covered yet:** property management beyond leases (rent schedule,
 tenants, furniture), the weekly meetings page (/meetings), the VAT page,
 Morning invoicing, and push notifications.
