@@ -1,7 +1,8 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { CommonPowerSyncDatabase } from "@powersync/web";
 import { localDataPageOn, type LOCAL_DATA_PAGES } from "./config";
 import type { Locale } from "@/lib/i18n/types";
+import { isServerReachable, useServerReachable } from "@/lib/pwa/connection";
 
 // The open on-device database and its sync status, for any component to read.
 // Deliberately free of PowerSync runtime imports: pages and the top bar read
@@ -200,13 +201,25 @@ function watchWake() {
 }
 
 /**
- * True when this device is online, on screen, and its complete copy has had
- * no sync connection for `afterMs`: the copy is out of date, and pages drawn
- * from it should show the server version instead (useLocalCard). Offline it
- * stays false — then the copy is the whole point.
+ * True when the server answers, the app is on screen, and its complete copy
+ * has had no sync connection for `afterMs`: the copy is out of date, and pages
+ * drawn from it should show the server version instead (useLocalCard). With
+ * the server not answering it stays false — then the copy is the whole point.
+ * "Answering" is the server's, not the device's word (lib/pwa/connection.ts):
+ * a laptop with its Wi-Fi off but another network adapter up says it's
+ * online, so 30 s offline read as "the sync is blocked", and the pages it
+ * opened next came from the server instead of being saved for offline
+ * (owner's test, 2026-10-27). When the server answers again, the sync gets
+ * its few seconds to reconnect, as when the app opens.
  */
 export function useLocalCopyBehind(afterMs = COPY_BEHIND_AFTER_MS): boolean {
   const since = useSyncExternalStore(subscribe, () => disconnectedSince, () => null);
+  const reachable = useServerReachable();
+  const wasReachable = useRef(reachable);
+  useEffect(() => {
+    if (reachable && !wasReachable.current) restartCopyBehindClock();
+    wasReachable.current = reachable;
+  }, [reachable]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (since === null) return;
@@ -222,7 +235,7 @@ export function useLocalCopyBehind(afterMs = COPY_BEHIND_AFTER_MS): boolean {
   }, [since, afterMs]);
   const behind =
     since !== null &&
-    !(typeof navigator !== "undefined" && navigator.onLine === false) &&
+    reachable &&
     // Off screen nothing is shown; coming back starts the count again.
     !(typeof document !== "undefined" && document.visibilityState === "hidden") &&
     now - since >= afterMs;
@@ -272,8 +285,9 @@ export async function whenDeviceSavesSent(timeoutMs = 8000): Promise<boolean> {
   for (;;) {
     const row = await db.getOptional<{ n: number }>("SELECT count(*) AS n FROM ps_crud").catch(() => null);
     if (!row || !row.n) return true;
-    // No connection: nothing will go now — don't keep the person waiting.
-    if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
+    // No connection (the server not answering — lib/pwa/connection.ts): nothing
+    // will go now — don't keep the person waiting.
+    if (!isServerReachable()) return false;
     if (Date.now() - started >= timeoutMs) return false;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }

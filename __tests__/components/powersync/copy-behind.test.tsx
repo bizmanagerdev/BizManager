@@ -12,6 +12,14 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, re
 const toasts = vi.hoisted(() => ({ info: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { info: toasts.info } }));
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: () => {} }));
+// Whether the server answers (lib/pwa/connection.ts) — the copy is only ever
+// "behind" while it does, whatever the device says.
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/pwa/connection", () => ({
+  isServerReachable: () => net.up,
+  useServerReachable: () => net.up,
+  whenServerReachable: () => () => {},
+}));
 vi.mock("@/lib/powersync/local-results", () => ({
   peekResult: () => ({ data: { rows: [] } }),
   resultKey: () => "k",
@@ -33,6 +41,7 @@ const synced = (connected: boolean) => ({
 
 function setOnline(online: boolean) {
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
+  net.up = online;
 }
 
 function setVisible(visible: boolean) {
@@ -73,6 +82,30 @@ describe("useLocalCopyBehind", () => {
     expect(result.current).toBe(true);
     act(() => setLocalSyncStatus(synced(true)));
     expect(result.current).toBe(false);
+  });
+
+  it("the device saying it's online but the server not answering: never behind (owner's laptop, 2026-10-27)", () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => true });
+    net.up = false;
+    const { result } = renderHook(() => ({ behind: useLocalCopyBehind(), blocked: useSyncBlocked() }));
+    act(() => setLocalSyncStatus(synced(false)));
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS * 3));
+    expect(result.current.behind).toBe(false);
+    // Nor noted as blocked — the pages it opens next stay saved for offline.
+    expect(result.current.blocked).toBe(false);
+  });
+
+  it("the server answering again: the sync gets its seconds to reconnect, as when the app opens", () => {
+    net.up = false;
+    const { result, rerender } = renderHook(() => useLocalCopyBehind());
+    act(() => setLocalSyncStatus(synced(false)));
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS * 3));
+    net.up = true;
+    rerender();
+    act(() => vi.advanceTimersByTime(COPY_BEHIND_AFTER_MS - 1000));
+    expect(result.current).toBe(false);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current).toBe(true);
   });
 
   it("offline, the copy is never behind — then it's the whole point", () => {

@@ -54,7 +54,9 @@ function pageNotSaved(href: unknown) {
     noteOffline("page not saved", {
       url: target.pathname + target.search,
       worker: navigator.serviceWorker?.controller?.scriptURL ?? null,
-      ...saved,
+      // As text: Sentry cuts lists this deep to "[Array]" (the first report, 2026-10-27).
+      frames: saved.frames.join(" · "),
+      pages: saved.pages.join(" · "),
     })
   );
 }

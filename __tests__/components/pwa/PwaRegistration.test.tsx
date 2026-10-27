@@ -237,7 +237,8 @@ describe("a page moved to with no connection that isn't saved", () => {
     await settle();
     expect(hoisted.noteOffline).toHaveBeenCalledWith(
       "page not saved",
-      expect.objectContaining({ url: "/customers/c1", frames: ["80d44d44 /customers"] })
+      // As text — Sentry cuts a list this deep to "[Array]".
+      expect.objectContaining({ url: "/customers/c1", frames: "80d44d44 /customers" })
     );
   });
 
