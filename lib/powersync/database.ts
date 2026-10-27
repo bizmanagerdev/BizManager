@@ -10,6 +10,7 @@ import {
 import { withSentry } from "@/lib/sentry-lazy";
 import { BizConnector } from "./connector";
 import { isConnectionDrop } from "./connection-drop";
+import { isServerReachable } from "@/lib/pwa/connection";
 import { POWERSYNC_ASSETS_BASE } from "./config";
 import { AppSchema } from "./schema";
 import { setLocalDatabase, setLocalSyncStatus, type LocalSyncStatus } from "./store";
@@ -84,7 +85,9 @@ function describeError(error: unknown): string {
 }
 
 function report(message: string, error: unknown) {
-  if (typeof navigator !== "undefined" && !navigator.onLine) return; // offline isn't a bug
+  // Offline isn't a bug — the server not answering, not the device's own word
+  // (lib/pwa/connection.ts: a laptop says "online" with its Wi-Fi off).
+  if (!isServerReachable()) return;
   if (reported.has(message)) return;
   reported.add(message);
   const description = describeError(error);
