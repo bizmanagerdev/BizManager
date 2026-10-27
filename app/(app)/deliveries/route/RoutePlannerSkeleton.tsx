@@ -1,15 +1,17 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** The planner's shape while it loads: the map, and the settings beside it on a computer. */
+/** The planner's shape while it loads: the step bar, the map and the step on a phone; the steps beside the map on a computer. */
 export default function RoutePlannerSkeleton() {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] lg:items-start">
-      <Skeleton className="h-72 rounded-card sm:h-96 lg:col-start-2 lg:row-start-1 lg:h-[520px]" />
-      <div className="space-y-4 lg:col-start-1 lg:row-start-1">
-        <Skeleton className="h-80 rounded-card" />
-        <Skeleton className="h-44 rounded-card" />
-        <Skeleton className="h-32 rounded-card" />
+    <div className="lg:grid lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] lg:items-start lg:gap-6">
+      <div className="space-y-5">
+        <Skeleton className="h-16 rounded-2xl" />
+        <Skeleton className="h-64 rounded-card lg:hidden" />
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="h-10 rounded-xl" />
+        <Skeleton className="h-72 rounded-xl" />
       </div>
+      <Skeleton className="hidden h-[calc(100dvh-7rem)] min-h-[420px] rounded-card lg:block" />
     </div>
   );
 }

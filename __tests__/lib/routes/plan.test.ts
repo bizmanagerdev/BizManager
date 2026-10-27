@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { formatDistance, formatDuration, phaseRules, possibleOrders, stopPhase } from "@/lib/routes/plan";
+import {
+  chainRules,
+  firstLastRules,
+  formatDistance,
+  formatDuration,
+  phaseRules,
+  pinnedRules,
+  possibleOrders,
+  rulesConflict,
+  stopPhase,
+} from "@/lib/routes/plan";
 import { decodePolyline } from "@/lib/routes/polyline";
 import { departureFrom, formatCount, googleMapsLinks } from "@/app/(app)/deliveries/route/RoutePlanner";
 
-// The route planner's "first … then …", its counts and its words.
+// The route planner's order choices — the cities' order, the stop to start
+// or finish with, stops moved by hand — its counts and its words.
 
 describe("stopPhase", () => {
   it("puts a stop in the step naming its city, else its region, else with the rest at the end", () => {
@@ -19,10 +30,6 @@ describe("stopPhase", () => {
     expect(stopPhase("בני ברק", ["מרכז", "ירושלים"])).toBe(0);
   });
 
-  it("the rest can go first instead", () => {
-    expect(stopPhase("בני ברק", ["ירושלים"], true)).toBe(0);
-    expect(stopPhase("ירושלים", ["ירושלים"], true)).toBe(1);
-  });
 });
 
 describe("phaseRules", () => {
@@ -36,15 +43,62 @@ describe("phaseRules", () => {
     ]);
   });
 
-  it("no rules without phases", () => {
+  it("no rules without phases, and a stop with no phase is left out", () => {
     expect(phaseRules([0, 0, 0])).toEqual([]);
+    expect(phaseRules([0, null, 1])).toEqual([[0, 2]]);
+    expect(phaseRules([null, null])).toEqual([]);
   });
 });
 
 describe("possibleOrders", () => {
-  it("n! with no phases, each phase's own count with phases", () => {
-    expect(possibleOrders([0, 0, 0, 0])).toBe(24);
-    expect(possibleOrders([0, 0, 1, 1, 1])).toBe(2 * 6);
+  it("n!", () => {
+    expect(possibleOrders(1)).toBe(1);
+    expect(possibleOrders(4)).toBe(24);
+    expect(possibleOrders(6)).toBe(720);
+  });
+});
+
+describe("the order rules", () => {
+  it("the stop to start with goes before every other; the one to finish with after every other", () => {
+    expect(firstLastRules(["a", "b", "c"], "b", null)).toEqual([
+      ["b", "a"],
+      ["b", "c"],
+    ]);
+    expect(firstLastRules(["a", "b", "c"], null, "a")).toEqual([
+      ["b", "a"],
+      ["c", "a"],
+    ]);
+    expect(firstLastRules(["a", "b", "c"], "a", "c").map((pair) => pair.join(">")).sort()).toEqual(["a>b", "a>c", "b>c"]);
+  });
+
+  it("a stop moved by hand keeps everything above it before it and everything below it after it", () => {
+    expect(pinnedRules(["a", "b", "c", "d"], new Set(["c"]))).toEqual([
+      ["a", "c"],
+      ["b", "c"],
+      ["c", "d"],
+    ]);
+    expect(pinnedRules(["a", "b"], new Set())).toEqual([]);
+  });
+
+  it("exactly this order", () => {
+    expect(chainRules(["a", "b", "c"])).toEqual([
+      ["a", "b"],
+      ["b", "c"],
+    ]);
+  });
+
+  it("rules from one order never contradict; a circle does", () => {
+    const order = ["a", "b", "c", "d"];
+    const index = (id: string) => order.indexOf(id);
+    const pinned = pinnedRules(order, new Set(["b", "d"])).map(([x, y]) => [index(x), index(y)] as [number, number]);
+    expect(rulesConflict(4, pinned)).toBe(false);
+    expect(
+      rulesConflict(3, [
+        [0, 1],
+        [1, 2],
+        [2, 0],
+      ])
+    ).toBe(true);
   });
 });
 

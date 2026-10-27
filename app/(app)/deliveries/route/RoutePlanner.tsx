@@ -2,29 +2,27 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { SectionCard, SECTION_ICON_CLASS, SectionCount } from "@/components/ui/section-card";
 import { AddressPicker } from "@/components/ui/address-picker";
 import { CallIconButton } from "@/components/ui/contact-link";
+import { StepWizard, type WizardStepDef } from "@/components/ui/step-wizard";
 import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import {
   AddIcon,
   ArrowDownIcon,
   ArrowUpIcon,
   CashIcon,
-  ClockIcon,
+  ChevronDownIcon,
   CloseIcon,
-  DeliveryIcon,
   ExternalLinkIcon,
   FlagIcon,
   InfoIcon,
-  LocationIcon,
-  RouteIcon,
+  LockIcon,
   ShareIcon,
   SpinnerIcon,
   WarningIcon,
@@ -36,9 +34,12 @@ import { wazeLinkForPin } from "@/lib/delivery-location";
 import { formatShortDate } from "@/lib/date";
 import { decodePolyline } from "@/lib/routes/polyline";
 import {
+  chainRules,
+  firstLastRules,
   formatDistance,
   formatDuration,
   MAX_ROUTE_STOPS,
+  pinnedRules,
   stopPhase,
   type RouteCost,
   type RouteEnd,
@@ -57,6 +58,18 @@ const RouteMap = dynamic(() => import("./RouteMap"), {
   loading: () => <div className="h-full w-full animate-pulse bg-muted" />,
 });
 
+// The planner as steps you can go back to (owner, 2026-10-26: "like a steps
+// bar … each step has a name, and you could choose which step you want to go
+// back to"), with the map beside them on a computer and above them on a phone.
+
+type Step = "stops" | "places" | "order" | "route";
+const STEPS: WizardStepDef<Step>[] = [
+  { n: "stops", label: "עצירות" },
+  { n: "places", label: "יציאה וסיום" },
+  { n: "order", label: "סדר" },
+  { n: "route", label: "המסלול" },
+];
+
 const REGIONS = ["צפון", "מרכז", "דרום"] as const;
 const STORAGE_KEY = "bizh.routePlanner.v1";
 
@@ -69,29 +82,11 @@ type Saved = {
   startAddress: StructuredAddress | null;
   endMode: EndMode;
   endAddress: StructuredAddress | null;
-  objective: "time" | "distance";
   serviceMinutes: number;
 };
 
-function readSaved(): Saved {
-  const fallback: Saved = { startMode: "address", startAddress: null, endMode: "return", endAddress: null, objective: "time", serviceMinutes: 10 };
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<Saved> | null;
-    if (!saved) return fallback;
-    return {
-      startMode: saved.startMode === "gps" ? "gps" : "address",
-      startAddress: saved.startAddress ?? null,
-      endMode: saved.endMode === "last" || saved.endMode === "address" ? saved.endMode : "return",
-      endAddress: saved.endAddress ?? null,
-      objective: saved.objective === "distance" ? "distance" : "time",
-      serviceMinutes:
-        typeof saved.serviceMinutes === "number" && saved.serviceMinutes >= 0 && saved.serviceMinutes <= 120 ? saved.serviceMinutes : 10,
-    };
-  } catch {
-    // No storage on this device (a private window): the defaults.
-    return fallback;
-  }
-}
+/** How the order was asked for: Google's fastest with the choices, around stops moved by hand, or exactly as arranged. */
+type PlanMode = "best" | "around" | "exact";
 
 type Plan = {
   result: RoutePlanResult;
@@ -103,10 +98,16 @@ type Plan = {
   endLabel: string;
   endIsStart: boolean;
   serviceMinutes: number;
-  objective: "time" | "distance";
-  steps: string[];
+  mode: PlanMode;
+  /** Stops that keep their place: the first / last asked for and the ones moved by hand. */
+  pinned: Set<string>;
+  /** In words, what the person chose about the order — for "why this route". */
+  choices: string[];
   signature: string;
 };
+
+/** Stops moved by hand on the route, not planned yet. */
+type Arranged = { order: string[]; pinned: Set<string> };
 
 type PlanError = { message: string; setup?: boolean; unreachable?: string[] };
 
@@ -147,6 +148,38 @@ function pointOf(address: StructuredAddress | null): RoutePoint | null {
 /** "הרצל 5, ירושלים" — the city added when the address line doesn't name it. */
 function placeLine(stop: PlannerStop): string {
   return [stop.address, stop.address.includes(stop.city) ? null : stop.city].filter(Boolean).join(", ");
+}
+
+function readSaved(): Saved {
+  const fallback: Saved = { startMode: "address", startAddress: null, endMode: "return", endAddress: null, serviceMinutes: 10 };
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<Saved> | null;
+    if (!saved) return fallback;
+    return {
+      startMode: saved.startMode === "gps" ? "gps" : "address",
+      startAddress: saved.startAddress ?? null,
+      endMode: saved.endMode === "last" || saved.endMode === "address" ? saved.endMode : "return",
+      endAddress: saved.endAddress ?? null,
+      serviceMinutes:
+        typeof saved.serviceMinutes === "number" && saved.serviceMinutes >= 0 && saved.serviceMinutes <= 120 ? saved.serviceMinutes : 10,
+    };
+  } catch {
+    // No storage on this device (a private window): the defaults.
+    return fallback;
+  }
+}
+
+/** A computer: the map beside the steps. (The planner is drawn in the browser only.) */
+function useWideScreen(): boolean {
+  const query = "(min-width: 1024px)";
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const update = () => setWide(list.matches);
+    list.addEventListener("change", update);
+    return () => list.removeEventListener("change", update);
+  }, []);
+  return wide;
 }
 
 function currentPosition(): Promise<RoutePoint> {
@@ -231,7 +264,7 @@ function CityDot({ city, className }: { city: string; className?: string }) {
 }
 
 const chipClass = (on: boolean) =>
-  cn("rounded-full border px-3 py-1 text-xs font-semibold", on ? `border-secondary ${TOGGLE_ON}` : `border-border bg-background ${TOGGLE_OFF}`);
+  cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold", on ? `border-secondary ${TOGGLE_ON}` : `border-border bg-background ${TOGGLE_OFF}`);
 
 /** Why a stop can't be in the route, in the words the office uses. */
 function missingReason(stop: PlannerStop): string {
@@ -240,89 +273,114 @@ function missingReason(stop: PlannerStop): string {
   return "הכתובת לא נבחרה מרשימת Google — אין לה נקודה על המפה";
 }
 
+function StepHeading({ title, hint }: { title: string; hint?: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <h2 className="text-base font-semibold">{title}</h2>
+      {hint ? <p className="text-sm text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
+}
+
 export default function RoutePlanner({ stops, canEditAddress }: { stops: PlannerStop[]; canEditAddress: boolean }) {
+  const wide = useWideScreen();
+  const [step, setStep] = useState<Step>("stops");
+
   const [extras, setExtras] = useState<PlannerStop[]>([]);
   const allStops = useMemo(() => [...stops, ...extras], [stops, extras]);
   const routable = useMemo(() => allStops.filter(isRoutable), [allStops]);
   const missing = useMemo(() => stops.filter((stop) => !isRoutable(stop)), [stops]);
 
-  // Every stop with a place on the map starts chosen; the chips and boxes narrow it.
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(stops.filter(isRoutable).map((s) => s.key)));
+  // Nothing chosen to begin with: the person picks the stops (owner, 2026-10-26).
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const chosen = useMemo(() => routable.filter((stop) => selected.has(stop.key)), [routable, selected]);
 
-  // The last start, end and settings, kept on this device (the planner is drawn in the browser only).
+  // The last start, end and minutes, kept on this device.
   const [saved] = useState(readSaved);
   const [startMode, setStartMode] = useState<StartMode>(saved.startMode);
   const [startAddress, setStartAddress] = useState<StructuredAddress | null>(saved.startAddress);
   const [gpsPoint, setGpsPoint] = useState<RoutePoint | null>(null);
   const [endMode, setEndMode] = useState<EndMode>(saved.endMode);
   const [endAddress, setEndAddress] = useState<StructuredAddress | null>(saved.endAddress);
-  const [orderMode, setOrderMode] = useState<"auto" | "custom">("auto");
-  const [steps, setSteps] = useState<string[]>([]);
-  const [restFirst, setRestFirst] = useState(false);
-  const [objective, setObjective] = useState<"time" | "distance">(saved.objective);
   const [departureTime, setDepartureTime] = useState("");
   const [serviceMinutes, setServiceMinutes] = useState(saved.serviceMinutes);
-
-  const [adding, setAdding] = useState(false);
-  const [extraAddress, setExtraAddress] = useState<StructuredAddress | null>(null);
-  const [extraNote, setExtraNote] = useState("");
-
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [working, setWorking] = useState(false);
-  const [error, setError] = useState<PlanError | null>(null);
-  const [activeLeg, setActiveLeg] = useState<number | null>(null);
-  const resultsRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     try {
-      const next: Saved = { startMode, startAddress, endMode, endAddress, objective, serviceMinutes };
+      const next: Saved = { startMode, startAddress, endMode, endAddress, serviceMinutes };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       // Not kept; nothing else depends on it.
     }
-  }, [startMode, startAddress, endMode, endAddress, objective, serviceMinutes]);
+  }, [startMode, startAddress, endMode, endAddress, serviceMinutes]);
 
-  // The places on offer for "first … then …": the regions and the cities of the chosen stops.
+  // The order: the stop to start or finish with, and the cities' order.
+  const [firstStop, setFirstStop] = useState<string | null>(null);
+  const [lastStop, setLastStop] = useState<string | null>(null);
+  const [cityOrder, setCityOrder] = useState<string[]>([]);
+
+  const [adding, setAdding] = useState(false);
+  const [extraAddress, setExtraAddress] = useState<StructuredAddress | null>(null);
+  const [extraNote, setExtraNote] = useState("");
+  const [showMissing, setShowMissing] = useState(false);
+
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [arranged, setArranged] = useState<Arranged | null>(null);
+  const [working, setWorking] = useState<PlanMode | null>(null);
+  const [error, setError] = useState<PlanError | null>(null);
+  const [activeLeg, setActiveLeg] = useState<number | null>(null);
+
+  // A choice that went away with its stop is dropped with it.
+  const chosenKeys = new Set(chosen.map((stop) => stop.key));
+  const first = firstStop && chosenKeys.has(firstStop) ? firstStop : null;
+  const last = lastStop && chosenKeys.has(lastStop) && lastStop !== first ? lastStop : null;
   const presentRegions = REGIONS.filter((region) => chosen.some((stop) => getCityRegion(stop.city) === region));
   const presentCities = Array.from(new Set(chosen.map((stop) => stop.city))).sort((a, b) => a.localeCompare(b, "he"));
-  const stepOptions: string[] = [...presentRegions, ...presentCities];
-  const activeSteps = orderMode === "custom" ? steps : [];
-  const phaseOf = (stop: PlannerStop) => stopPhase(stop.city, activeSteps, restFirst);
-  const stepCounts = activeSteps.map((_, index) => chosen.filter((stop) => phaseOf(stop) === index + (restFirst ? 1 : 0)).length);
-  const restCount = chosen.filter((stop) => phaseOf(stop) === (restFirst ? 0 : activeSteps.length)).length;
+  const cityChoices = [...(presentRegions.length > 1 ? presentRegions : []), ...presentCities];
+  const steps = cityOrder.filter((token) => cityChoices.includes(token));
 
   const startPoint = startMode === "gps" ? gpsPoint : pointOf(startAddress);
   const endPoint: RoutePoint | null = endMode === "address" ? pointOf(endAddress) : null;
+  const placesReady = (startMode === "gps" || startPoint !== null) && (endMode !== "address" || endPoint !== null);
 
-  // What a worked-out plan was asked with; a change shows "חישוב מחדש".
+  // What a plan was asked with; a change shows "תכנון מחדש".
   const signature = JSON.stringify({
     keys: chosen.map((stop) => stop.key),
     start: startMode === "gps" ? "gps" : startPoint,
     endMode,
     endPoint,
-    steps: activeSteps,
-    restFirst,
-    objective,
+    first,
+    last,
+    steps,
     departureTime,
     serviceMinutes,
   });
   const stale = plan !== null && plan.signature !== signature;
 
-  const blocker =
-    chosen.length === 0
-      ? "בחרו לפחות עצירה אחת."
-      : chosen.length > MAX_ROUTE_STOPS
-        ? `נבחרו ${chosen.length} עצירות — אפשר עד ${MAX_ROUTE_STOPS} במסלול אחד.`
-        : startMode === "address" && !startPoint
-          ? "בחרו מאיפה יוצאים."
-          : endMode === "address" && !endPoint
-            ? "בחרו איפה מסיימים."
-            : null;
+  const stopsReady = chosen.length > 0 && chosen.length <= MAX_ROUTE_STOPS;
+  const satisfied = (id: Step) =>
+    id === "stops" ? stopsReady : id === "places" ? placesReady : id === "order" ? plan !== null : true;
+  const stepIndex = STEPS.findIndex((s) => s.n === step);
+  const canClickStep = (id: Step) => {
+    const at = STEPS.findIndex((s) => s.n === id);
+    if (at <= stepIndex) return true;
+    return STEPS.slice(0, at).every((s) => satisfied(s.n));
+  };
 
-  const compute = async () => {
-    if (blocker || working) return;
-    setWorking(true);
+  /** The choices in words, for "why this route". */
+  const describeChoices = (mode: PlanMode, pinnedCount: number): string[] => {
+    if (mode === "exact") return ["בדיוק בסדר שסידרתם"];
+    const words: string[] = [];
+    const nameOf = (key: string | null) => chosen.find((stop) => stop.key === key)?.name;
+    if (first) words.push(`להתחיל ב${nameOf(first)}`);
+    if (last) words.push(`לסיים ב${nameOf(last)}`);
+    if (steps.length > 0) words.push(steps.join(" ← "));
+    if (mode === "around" && pinnedCount > 0) words.push(pinnedCount === 1 ? "עצירה שהזזתם" : `${pinnedCount} עצירות שהזזתם`);
+    return words;
+  };
+
+  const compute = async (mode: PlanMode) => {
+    if (working) return;
+    setWorking(mode);
     setError(null);
     try {
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
@@ -334,11 +392,31 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       const end: RouteEnd =
         endMode === "last" ? { mode: "last" } : endMode === "address" && endPoint ? { mode: "point", point: endPoint } : { mode: "return" };
       const departure = departureFrom(departureTime, new Date());
+
+      // Stops moved by hand keep their place; so do the first and last asked for.
+      const ids = chosen.map((stop) => stop.key);
+      let before: Array<[string, string]>;
+      let pinned = new Set<string>();
+      if (mode === "exact" && arranged) {
+        before = chainRules(arranged.order);
+        pinned = new Set(arranged.order);
+      } else if (mode === "around" && arranged) {
+        pinned = new Set([...arranged.pinned, ...(first ? [first] : []), ...(last ? [last] : [])]);
+        before = pinnedRules(arranged.order, pinned);
+      } else {
+        before = firstLastRules(ids, first, last);
+        pinned = new Set([...(first ? [first] : []), ...(last ? [last] : [])]);
+      }
       const request: RoutePlanRequest = {
         start,
         end,
-        stops: chosen.map((stop) => ({ id: stop.key, lat: stop.lat!, lng: stop.lng!, phase: phaseOf(stop) })),
-        objective,
+        stops: chosen.map((stop) => ({
+          id: stop.key,
+          lat: stop.lat!,
+          lng: stop.lng!,
+          phase: mode === "exact" || steps.length === 0 || pinned.has(stop.key) ? null : stopPhase(stop.city, steps),
+        })),
+        before,
         departure: departure ? departure.toISOString() : null,
         serviceMinutes,
       };
@@ -357,26 +435,24 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
         result: body,
         stops: body.order.map((key) => byKey.get(key)).filter((stop): stop is PlannerStop => Boolean(stop)),
         start,
-        startLabel: startMode === "gps" ? "המיקום שלי" : addressLine(startAddress!, { withUnit: false }),
+        startLabel: startMode === "gps" ? "המיקום שלי" : startAddress ? addressLine(startAddress, { withUnit: false }) || startAddress.formatted : "",
         end: endMode === "address" ? endPoint : null,
-        endLabel: endMode === "address" && endAddress ? addressLine(endAddress, { withUnit: false }) : "",
+        endLabel: endMode === "address" && endAddress ? addressLine(endAddress, { withUnit: false }) || endAddress.formatted : "",
         endIsStart: endMode === "return",
         serviceMinutes,
-        objective,
-        steps: activeSteps,
+        mode,
+        pinned,
+        choices: describeChoices(mode, [...(arranged?.pinned ?? [])].filter((key) => key !== first && key !== last).length),
         signature,
       });
+      setArranged(null);
       setActiveLeg(null);
-      // On a phone the results are below the settings: bring them up.
-      requestAnimationFrame(() => {
-        if (window.matchMedia("(max-width: 1023px)").matches) {
-          resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      });
+      setStep("route");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       setError({ message: e instanceof Error ? e.message : "חישוב המסלול נכשל. נסו שוב." });
     } finally {
-      setWorking(false);
+      setWorking(null);
     }
   };
 
@@ -399,10 +475,6 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       }
       return next;
     });
-  const routableRegions = REGIONS.map((region) => ({
-    region,
-    members: routable.filter((stop) => getCityRegion(stop.city) === region),
-  })).filter((group) => group.members.length > 0);
   const routableCities = Array.from(new Set(routable.map((stop) => stop.city)))
     .sort((a, b) => a.localeCompare(b, "he"))
     .map((city) => ({ city, members: routable.filter((stop) => stop.city === city) }));
@@ -420,7 +492,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
         name: note || "עצירה נוספת",
         phone: null,
         city: extraAddress.city,
-        address: addressLine(extraAddress),
+        address: addressLine(extraAddress) || extraAddress.formatted,
         lat: point.lat,
         lng: point.lng,
         notFound: false,
@@ -445,44 +517,43 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
     });
   };
 
-  // ── "First … then …" ──
-  const addStep = () => {
-    const unused = stepOptions.find((option) => !steps.includes(option));
-    if (unused) setSteps((prev) => [...prev, unused]);
+  // ── Moving stops by hand on the route ──
+  const showPlan = plan !== null && !stale;
+  const routeOrder = useMemo(() => arranged?.order ?? plan?.stops.map((stop) => stop.key) ?? [], [arranged, plan]);
+  const move = (key: string, by: -1 | 1) => {
+    if (!plan) return;
+    const order = [...routeOrder];
+    const at = order.indexOf(key);
+    const to = at + by;
+    if (at < 0 || to < 0 || to >= order.length) return;
+    [order[at], order[to]] = [order[to], order[at]];
+    setArranged({ order, pinned: new Set([...(arranged?.pinned ?? plan.pinned), key]) });
   };
-  const moveStep = (index: number, by: -1 | 1) =>
-    setSteps((prev) => {
-      const next = [...prev];
-      const to = index + by;
-      if (to < 0 || to >= next.length) return prev;
-      [next[index], next[to]] = [next[to], next[index]];
-      return next;
-    });
-  const presets =
-    presentRegions.length >= 2
-      ? [
-          { label: "צפון ← דרום", steps: REGIONS.filter((r) => presentRegions.includes(r)) as string[] },
-          { label: "דרום ← צפון", steps: [...REGIONS].reverse().filter((r) => presentRegions.includes(r)) as string[] },
-        ]
-      : [];
 
   // ── The map ──
-  const showPlan = plan !== null && !stale;
+  const stopByKey = useMemo(() => new Map(allStops.map((stop) => [stop.key, stop])), [allStops]);
   const mapStops: MapStop[] = useMemo(() => {
-    if (plan && showPlan) {
-      return plan.stops.map((stop, index) => ({
-        key: stop.key,
-        lat: stop.lat!,
-        lng: stop.lng!,
-        color: cityColour(stop.city),
-        label: `${index + 1}. ${stop.name}`,
-        number: index + 1,
-      }));
+    if (step === "route" && plan && showPlan) {
+      return routeOrder
+        .map((key) => stopByKey.get(key))
+        .filter((stop): stop is PlannerStop => Boolean(stop))
+        .map((stop, index) => ({ key: stop.key, lat: stop.lat!, lng: stop.lng!, color: cityColour(stop.city), label: stop.name, number: index + 1 }));
     }
-    return chosen.map((stop) => ({ key: stop.key, lat: stop.lat!, lng: stop.lng!, color: cityColour(stop.city), label: stop.name, number: null }));
-  }, [plan, showPlan, chosen]);
+    // Choosing the stops: every one that can go, the chosen ones in colour. After that, only the chosen.
+    const shown = step === "stops" ? routable : chosen;
+    return shown.map((stop) => ({
+      key: stop.key,
+      lat: stop.lat!,
+      lng: stop.lng!,
+      color: cityColour(stop.city),
+      label: stop.name,
+      number: null,
+      muted: !selected.has(stop.key),
+    }));
+  }, [step, plan, showPlan, routeOrder, stopByKey, routable, chosen, selected]);
   const mapLegs = useMemo(() => {
-    if (!plan || !showPlan) return [];
+    // Moved by hand: the old lines no longer match the order.
+    if (step !== "route" || !plan || !showPlan || arranged) return [];
     const points = [
       plan.start,
       ...plan.stops.map((stop) => ({ lat: stop.lat!, lng: stop.lng! })),
@@ -496,10 +567,11 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
             [points[index + 1].lat, points[index + 1].lng],
           ]
     );
-  }, [plan, showPlan]);
-  const mapStart: MapPoint | null = plan && showPlan ? plan.start : startPoint;
-  const mapEnd: MapPoint | null = plan && showPlan ? plan.end : endPoint;
-  const mapEndIsStart = plan && showPlan ? plan.endIsStart : endMode === "return";
+  }, [step, plan, showPlan, arranged]);
+  const onRoute = step === "route" && plan !== null && showPlan;
+  const mapStart: MapPoint | null = onRoute ? plan.start : startPoint;
+  const mapEnd: MapPoint | null = onRoute ? plan.end : endPoint;
+  const mapEndIsStart = onRoute ? plan.endIsStart : endMode === "return";
 
   const share = async () => {
     if (!plan) return;
@@ -519,534 +591,565 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       toast.error("לא הצלחנו להעתיק את המסלול.");
     }
   };
-  const mapsLinks = plan
-    ? googleMapsLinks([
-        plan.start,
-        ...plan.stops.map((stop) => ({ lat: stop.lat!, lng: stop.lng! })),
-        ...(plan.endIsStart ? [plan.start] : plan.end ? [plan.end] : []),
-      ])
-    : [];
-  const unreachableNames = (error?.unreachable ?? [])
-    .map((key) => allStops.find((stop) => stop.key === key)?.name)
-    .filter(Boolean);
+
+  const map = (
+    <RouteMap
+      className="h-full w-full"
+      start={mapStart}
+      end={mapEnd}
+      endIsStart={mapEndIsStart}
+      stops={mapStops}
+      legs={mapLegs}
+      activeLeg={activeLeg}
+      onStopClick={step === "stops" ? toggle : undefined}
+    />
+  );
+
+  const goTo = (id: Step) => {
+    setError(null);
+    setStep(id);
+  };
+
+  // ── The footer: what "next" does on each step ──
+  const footer: {
+    onNext: () => void;
+    nextDisabled: boolean;
+    nextLabel?: ReactNode;
+    isLastStep?: boolean;
+    footerCenter?: ReactNode;
+  } = (() => {
+    if (step === "stops") {
+      return {
+        onNext: () => goTo("places"),
+        nextDisabled: !stopsReady,
+        footerCenter:
+          chosen.length > MAX_ROUTE_STOPS ? (
+            <span className="text-xs font-semibold text-destructive">נבחרו {chosen.length} — אפשר עד {MAX_ROUTE_STOPS}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">{chosen.length === 0 ? "בחרו עצירות מהרשימה או מהמפה" : `נבחרו ${chosen.length} עצירות`}</span>
+          ),
+      };
+    }
+    if (step === "places") return { onNext: () => goTo("order"), nextDisabled: !placesReady };
+    if (step === "order") {
+      return {
+        onNext: () => void compute("best"),
+        nextDisabled: working !== null,
+        nextLabel: working ? (
+          <span className="inline-flex items-center gap-1.5">
+            <SpinnerIcon className="h-4 w-4 animate-spin" />
+            Google מתכנן…
+          </span>
+        ) : (
+          "תכנון המסלול"
+        ),
+      };
+    }
+    if (stale) {
+      return { onNext: () => void compute("best"), nextDisabled: working !== null, nextLabel: working ? "Google מתכנן…" : "תכנון מחדש" };
+    }
+    return {
+      onNext: () => void share(),
+      nextDisabled: !plan || arranged !== null,
+      isLastStep: true,
+      nextLabel: (
+        <span className="inline-flex items-center gap-1.5">
+          <ShareIcon className="h-4 w-4" />
+          שליחת המסלול לנהג
+        </span>
+      ),
+    };
+  })();
+
+  const backTo: Record<Step, Step | null> = { stops: null, places: "stops", order: "places", route: "order" };
+  const unreachableNames = (error?.unreachable ?? []).map((key) => stopByKey.get(key)?.name).filter(Boolean);
 
   return (
-    // One column no wider than the screen on a phone (a long line can't stretch it past the edge).
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] lg:items-start">
-      {/* The map: first on a phone, beside the settings on a computer. */}
-      <div className="relative h-72 overflow-hidden rounded-card border border-border/60 shadow-card sm:h-96 lg:col-start-2 lg:row-start-1 lg:h-[520px]">
-        <RouteMap
-          className="h-full w-full"
-          start={mapStart}
-          end={mapEnd}
-          endIsStart={mapEndIsStart}
-          stops={mapStops}
-          legs={mapLegs}
-          activeLeg={activeLeg}
-        />
-        {plan && showPlan ? (
-          <div className="pointer-events-none absolute inset-x-2 top-2 z-[1000] flex justify-center">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-border/60 bg-background/95 px-4 py-1.5 text-sm shadow-card">
-              <span className="font-bold">{formatDuration(plan.result.total.durationSec)}</span>
-              <span className="text-muted-foreground">{formatDistance(plan.result.total.distanceM)}</span>
-              <span className="text-muted-foreground">{plan.stops.length} עצירות</span>
-            </div>
-          </div>
-        ) : null}
-      </div>
+    <div className="lg:grid lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] lg:items-start lg:gap-6">
+      <StepWizard
+        variant="page"
+        steps={STEPS}
+        current={step}
+        canClickStep={canClickStep}
+        onStepClick={(id) => {
+          if (canClickStep(id)) goTo(id);
+        }}
+        onBack={backTo[step] ? () => goTo(backTo[step]!) : undefined}
+        onNext={footer.onNext}
+        nextDisabled={footer.nextDisabled}
+        nextLabel={footer.nextLabel}
+        isLastStep={footer.isLastStep}
+        footerCenter={footer.footerCenter}
+        error={error?.message}
+        note={
+          error?.setup
+            ? "זה חלק מההגדרה ב-Google Cloud."
+            : unreachableNames.length > 0
+              ? `לא נמצאה דרך אל: ${unreachableNames.join(", ")}. הורידו אותן ונסו שוב.`
+              : undefined
+        }
+        className="min-w-0"
+      >
+        {/* On a phone the map rides above the step; on a computer it stands beside the steps. */}
+        {wide ? null : <div className="h-64 overflow-hidden rounded-card border border-border/60 shadow-card">{map}</div>}
 
-      {/* The settings. */}
-      <div className="space-y-4 lg:col-start-1 lg:row-span-2 lg:row-start-1">
-        {missing.length > 0 ? (
-          <div role="alert" className="space-y-2 rounded-card border border-warning bg-warning-soft p-3 text-warning-soft-foreground">
-            <div className="flex items-start gap-2 text-sm font-semibold">
-              <WarningIcon className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                {missing.length === 1
-                  ? "משלוח אחד בלי כתובת מדויקת — הוא לא ייכנס למסלול"
-                  : `${missing.length} משלוחים בלי כתובת מדויקת — הם לא ייכנסו למסלול`}
-              </span>
-            </div>
-            <ul className="space-y-1.5 text-sm">
-              {missing.map((stop) => (
-                <li key={stop.key} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-background/70 px-2.5 py-1.5 text-foreground">
-                  <CityDot city={stop.city} />
-                  <span className="font-medium">{stop.name}</span>
-                  <span className="text-muted-foreground">· {stop.city}</span>
-                  <span className="w-full text-xs text-muted-foreground">
-                    {stop.address && stop.address.trim() !== stop.city.trim() ? `"${stop.address}" — ` : ""}
-                    {missingReason(stop)}
-                  </span>
-                  {canEditAddress && stop.customerId ? (
-                    <Link href={`/customers/${stop.customerId}`} className="text-xs font-semibold text-secondary hover:underline">
-                      עדכון הכתובת בכרטיס הלקוח
-                    </Link>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        {step === "stops" ? (
+          <div className="space-y-4">
+            <StepHeading title="אילו עצירות נוסעים היום?" hint="לחצו על עצירה ברשימה או על נקודה במפה." />
 
-        <SectionCard icon={<DeliveryIcon className={SECTION_ICON_CLASS} />} title="עצירות במסלול" aside={<SectionCount count={chosen.length} />}>
-          {routable.length === 0 ? (
-            <p className="text-sm text-muted-foreground">אין משלוחים פתוחים עם כתובת על המפה. אפשר להוסיף עצירה למטה.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSelected(allOn(routable) ? new Set() : new Set(routable.map((stop) => stop.key)))}
-                aria-pressed={allOn(routable)}
-                className={chipClass(allOn(routable))}
-              >
-                הכל · {routable.length}
-              </button>
-              {/* "רק צפון" only when there's more than one region to choose from. */}
-              {(routableRegions.length > 1 ? routableRegions : []).map(({ region, members }) => {
-                const only = allOn(members) && chosen.length === members.length;
-                return (
-                  <button
-                    key={region}
-                    type="button"
-                    // "רק צפון": only the north; pressed again, everything back.
-                    onClick={() => setSelected(new Set((only ? routable : members).map((stop) => stop.key)))}
-                    aria-pressed={only}
-                    className={chipClass(only)}
-                  >
-                    רק {region} · {members.length}
-                  </button>
-                );
-              })}
-              {routableCities.map(({ city, members }) => (
+            {missing.length > 0 ? (
+              <div className="rounded-xl border border-warning/60 bg-warning-soft/60 text-sm text-warning-soft-foreground">
                 <button
-                  key={city}
                   type="button"
-                  onClick={() => toggleGroup(members)}
-                  aria-pressed={allOn(members)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold",
-                    allOn(members) ? "border-secondary/50 bg-secondary/10 text-foreground" : `border-border bg-background ${TOGGLE_OFF}`
-                  )}
+                  onClick={() => setShowMissing((open) => !open)}
+                  aria-expanded={showMissing}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-right"
                 >
-                  <CityDot city={city} className="h-2 w-2" />
-                  {city} · {members.length}
+                  <WarningIcon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 font-medium">
+                    {missing.length === 1 ? "משלוח אחד בלי כתובת מדויקת — לא יופיע" : `${missing.length} משלוחים בלי כתובת מדויקת — לא יופיעו`}
+                  </span>
+                  <ChevronDownIcon className={cn("h-4 w-4 shrink-0 transition-transform", showMissing && "rotate-180")} />
                 </button>
-              ))}
-            </div>
-          )}
-
-          {routable.length > 0 ? (
-            <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
-              {routable.map((stop) => {
-                const on = selected.has(stop.key);
-                return (
-                  <li key={stop.key} className={cn("flex items-start gap-2.5 p-2.5", !on && "opacity-55")}>
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      onChange={() => toggle(stop.key)}
-                      aria-label={`${stop.name} במסלול`}
-                      className="mt-1 h-4 w-4 shrink-0 accent-secondary"
-                    />
-                    <button type="button" onClick={() => toggle(stop.key)} className="min-w-0 flex-1 text-right">
-                      <span className="flex items-start gap-1.5">
-                        <CityDot city={stop.city} className="mt-1.5" />
-                        <span className="min-w-0 break-words text-sm font-semibold">{stop.name}</span>
-                      </span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">{placeLine(stop)}</span>
-                      <span className="mt-1 flex flex-wrap gap-1">
-                        {stop.kind === "extra" ? (
-                          <span className="rounded-full bg-secondary/10 px-2 py-0.5 text-[0.7rem] font-semibold text-secondary">עצירה נוספת</span>
+                {showMissing ? (
+                  <ul className="space-y-1.5 px-3 pb-3">
+                    {missing.map((stop) => (
+                      <li key={stop.key} className="rounded-lg bg-background/80 px-2.5 py-1.5 text-foreground">
+                        <div className="flex flex-wrap items-center gap-x-2">
+                          <CityDot city={stop.city} />
+                          <span className="font-medium">{stop.name}</span>
+                          <span className="text-muted-foreground">· {stop.city}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">{missingReason(stop)}</div>
+                        {canEditAddress && stop.customerId ? (
+                          <Link href={`/customers/${stop.customerId}`} className="text-xs font-semibold text-secondary hover:underline">
+                            עדכון הכתובת בכרטיס הלקוח
+                          </Link>
                         ) : null}
-                        {stop.orderIds.length > 1 ? (
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-[0.7rem] text-muted-foreground">{stop.orderIds.length} משלוחים</span>
-                        ) : null}
-                        {stop.collectOnDelivery ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.7rem] font-semibold text-warning-soft-foreground">
-                            <CashIcon className="h-3 w-3" />
-                            גבייה
-                          </span>
-                        ) : null}
-                        {stop.requestedDate ? (
-                          <span className="rounded-full border border-border px-2 py-0.5 text-[0.7rem] text-muted-foreground">
-                            למשלוח: {formatShortDate(stop.requestedDate)}
-                          </span>
-                        ) : null}
-                      </span>
-                    </button>
-                    {stop.kind === "extra" ? (
-                      <button
-                        type="button"
-                        onClick={() => removeExtra(stop.key)}
-                        aria-label="הסרת העצירה"
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                      >
-                        <CloseIcon className="h-4 w-4" />
-                      </button>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
-
-          {adding ? (
-            <div className="space-y-2 rounded-xl border border-dashed border-secondary/40 p-3">
-              <p className="text-sm font-semibold">עצירה נוספת במסלול</p>
-              <AddressPicker value={extraAddress} onChange={setExtraAddress} allowUnit={false} ariaLabel="כתובת העצירה" />
-              <Input
-                value={extraNote}
-                onChange={(e) => setExtraNote(e.target.value)}
-                placeholder="מה עושים שם? (לא חובה) — למשל איסוף סחורה"
-                aria-label="מה עושים בעצירה"
-              />
-              <div className="flex gap-2">
-                <Button type="button" size="sm" onClick={addExtra} disabled={!pointOf(extraAddress)}>
-                  הוספה למסלול
-                </Button>
-                <Button type="button" size="sm" variant="muted" onClick={() => setAdding(false)}>
-                  ביטול
-                </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
-            </div>
-          ) : (
-            <Button type="button" variant="soft" size="sm" className="w-full" onClick={() => setAdding(true)}>
-              <AddIcon />
-              עצירה נוספת (כתובת שלא במשלוחים)
-            </Button>
-          )}
-        </SectionCard>
+            ) : null}
 
-        <SectionCard icon={<LocationIcon className={SECTION_ICON_CLASS} />} title="יציאה וסיום">
-          <div className="space-y-2">
-            <p className="text-sm font-medium">יוצאים מ…</p>
-            <Segmented
-              value={startMode}
-              onChange={setStartMode}
-              options={[
-                { value: "address", label: "כתובת" },
-                { value: "gps", label: "המיקום שלי" },
-              ]}
-            />
-            {startMode === "address" ? (
-              <AddressPicker value={startAddress} onChange={setStartAddress} allowUnit={false} ariaLabel="כתובת היציאה" placeholder="מאיפה יוצאים? רחוב ומספר" />
+            {routable.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSelected(allOn(routable) ? new Set() : new Set(routable.map((stop) => stop.key)))}
+                  className={chipClass(false)}
+                >
+                  {allOn(routable) ? "ניקוי הבחירה" : `בחירת הכל · ${routable.length}`}
+                </button>
+                {routableCities.map(({ city, members }) => (
+                  <button key={city} type="button" onClick={() => toggleGroup(members)} aria-pressed={allOn(members)} className={chipClass(allOn(members))}>
+                    <CityDot city={city} className="h-2 w-2" />
+                    {city} · {members.length}
+                  </button>
+                ))}
+              </div>
             ) : (
-              <p className="text-xs text-muted-foreground">המיקום של המכשיר נלקח ברגע החישוב.</p>
+              <p className="text-sm text-muted-foreground">אין משלוחים פתוחים עם כתובת על המפה. אפשר להוסיף עצירה למטה.</p>
+            )}
+
+            {routable.length > 0 ? (
+              <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
+                {routable.map((stop) => {
+                  const on = selected.has(stop.key);
+                  return (
+                    <li key={stop.key} className={cn("flex items-start gap-2.5 p-2.5 transition-colors", on && "bg-secondary/5")}>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => toggle(stop.key)}
+                        aria-label={`${stop.name} במסלול`}
+                        className="mt-1 h-5 w-5 shrink-0 accent-secondary"
+                      />
+                      <button type="button" onClick={() => toggle(stop.key)} className="min-w-0 flex-1 text-right">
+                        <span className="flex items-start gap-1.5">
+                          <CityDot city={stop.city} className="mt-1.5" />
+                          <span className="min-w-0 break-words text-sm font-semibold">{stop.name}</span>
+                        </span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">{placeLine(stop)}</span>
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {stop.kind === "extra" ? (
+                            <span className="rounded-full bg-secondary/10 px-2 py-0.5 text-[0.7rem] font-semibold text-secondary">עצירה נוספת</span>
+                          ) : null}
+                          {stop.orderIds.length > 1 ? (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.7rem] text-muted-foreground">{stop.orderIds.length} משלוחים</span>
+                          ) : null}
+                          {stop.collectOnDelivery ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.7rem] font-semibold text-warning-soft-foreground">
+                              <CashIcon className="h-3 w-3" />
+                              גבייה
+                            </span>
+                          ) : null}
+                          {stop.requestedDate ? (
+                            <span className="rounded-full border border-border px-2 py-0.5 text-[0.7rem] text-muted-foreground">
+                              למשלוח: {formatShortDate(stop.requestedDate)}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                      {stop.kind === "extra" ? (
+                        <button
+                          type="button"
+                          onClick={() => removeExtra(stop.key)}
+                          aria-label="הסרת העצירה"
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <CloseIcon className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+
+            {adding ? (
+              <div className="space-y-2 rounded-xl border border-dashed border-secondary/40 p-3">
+                <p className="text-sm font-semibold">עצירה נוספת במסלול</p>
+                <AddressPicker value={extraAddress} onChange={setExtraAddress} allowUnit={false} ariaLabel="כתובת העצירה" />
+                <Input
+                  value={extraNote}
+                  onChange={(e) => setExtraNote(e.target.value)}
+                  placeholder="מה עושים שם? (לא חובה) — למשל איסוף סחורה"
+                  aria-label="מה עושים בעצירה"
+                  data-no-enter-next
+                />
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" onClick={addExtra} disabled={!pointOf(extraAddress)}>
+                    הוספה למסלול
+                  </Button>
+                  <Button type="button" size="sm" variant="muted" onClick={() => setAdding(false)}>
+                    ביטול
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button type="button" variant="soft" size="sm" className="w-full" onClick={() => setAdding(true)}>
+                <AddIcon />
+                עצירה נוספת (כתובת שלא במשלוחים)
+              </Button>
             )}
           </div>
-          <div className="space-y-2">
-            <p className="text-sm font-medium">מסיימים ב…</p>
-            <Segmented
-              value={endMode}
-              onChange={setEndMode}
-              options={[
-                { value: "return", label: "חזרה להתחלה" },
-                { value: "last", label: "בעצירה האחרונה" },
-                { value: "address", label: "כתובת אחרת" },
-              ]}
-            />
-            {endMode === "address" ? (
-              <AddressPicker value={endAddress} onChange={setEndAddress} allowUnit={false} ariaLabel="כתובת הסיום" placeholder="איפה מסיימים? רחוב ומספר" />
-            ) : null}
-          </div>
-        </SectionCard>
+        ) : null}
 
-        <SectionCard icon={<RouteIcon className={SECTION_ICON_CLASS} />} title="סדר הנסיעה">
-          <Segmented
-            value={orderMode}
-            onChange={(mode) => {
-              setOrderMode(mode);
-              if (mode === "custom" && steps.length === 0 && stepOptions.length > 0) setSteps([stepOptions[0]]);
-            }}
-            options={[
-              { value: "auto", label: "הכי טוב — Google בוחר" },
-              { value: "custom", label: "אני קובע מה קודם" },
-            ]}
-          />
-          {orderMode === "custom" ? (
+        {step === "places" ? (
+          <div className="space-y-5">
+            <StepHeading title="מאיפה יוצאים, לאן חוזרים ומתי" />
             <div className="space-y-2">
-              {presets.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {presets.map((preset) => (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      onClick={() => setSteps(preset.steps)}
-                      className={chipClass(JSON.stringify(steps) === JSON.stringify(preset.steps))}
-                    >
-                      {preset.label}
-                    </button>
+              <p className="text-sm font-medium">יוצאים מ…</p>
+              <Segmented
+                value={startMode}
+                onChange={setStartMode}
+                options={[
+                  { value: "address", label: "כתובת" },
+                  { value: "gps", label: "המיקום שלי" },
+                ]}
+              />
+              {startMode === "address" ? (
+                <AddressPicker value={startAddress} onChange={setStartAddress} allowUnit={false} ariaLabel="כתובת היציאה" placeholder="מאיפה יוצאים? רחוב ומספר" />
+              ) : (
+                <p className="text-xs text-muted-foreground">המיקום של המכשיר נלקח ברגע התכנון.</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">מסיימים ב…</p>
+              <Segmented
+                value={endMode}
+                onChange={setEndMode}
+                options={[
+                  { value: "return", label: "חזרה להתחלה" },
+                  { value: "last", label: "בעצירה האחרונה" },
+                  { value: "address", label: "כתובת אחרת" },
+                ]}
+              />
+              {endMode === "address" ? (
+                <AddressPicker value={endAddress} onChange={setEndAddress} allowUnit={false} ariaLabel="כתובת הסיום" placeholder="איפה מסיימים? רחוב ומספר" />
+              ) : null}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">שעת יציאה</span>
+                <Input type="time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} aria-label="שעת יציאה" />
+                <span className="block text-xs text-muted-foreground">{departureTime ? "לפי העומס הצפוי מהשעה הזו" : "ריק = יוצאים עכשיו"}</span>
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">דקות בכל עצירה</span>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={120}
+                  value={serviceMinutes}
+                  onChange={(e) => setServiceMinutes(Math.max(0, Math.min(120, Number(e.target.value) || 0)))}
+                  aria-label="דקות בכל עצירה"
+                />
+                <span className="block text-xs text-muted-foreground">לפריקה ומסירה</span>
+              </label>
+            </div>
+          </div>
+        ) : null}
+
+        {step === "order" ? (
+          <div className="space-y-5">
+            <StepHeading
+              title="הסדר"
+              hint="Google בוחר את הסדר הכי מהיר — עם העומס הצפוי בכל קטע בשעה שתגיעו אליו. אפשר לקבוע כאן מה חשוב לכם, והשאר Google יסדר."
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">להתחיל ב…</span>
+                <NativeSelect value={first ?? ""} onChange={(e) => setFirstStop(e.target.value || null)} aria-label="העצירה הראשונה">
+                  <option value="">Google יחליט</option>
+                  {chosen.map((stop) => (
+                    <option key={stop.key} value={stop.key}>
+                      {stop.name} · {stop.city}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">לסיים ב…</span>
+                <NativeSelect value={last ?? ""} onChange={(e) => setLastStop(e.target.value || null)} aria-label="העצירה האחרונה">
+                  <option value="">Google יחליט</option>
+                  {chosen
+                    .filter((stop) => stop.key !== first)
+                    .map((stop) => (
+                      <option key={stop.key} value={stop.key}>
+                        {stop.name} · {stop.city}
+                      </option>
+                    ))}
+                </NativeSelect>
+              </label>
+            </div>
+            {cityChoices.length > 1 ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">סדר לפי ערים (לא חובה)</p>
+                <p className="text-xs text-muted-foreground">לחצו לפי הסדר שבו תרצו לנסוע — למשל קודם ירושלים, אחר כך צפון. לחיצה נוספת מורידה.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {cityChoices.map((token) => {
+                    const at = steps.indexOf(token);
+                    const region = (REGIONS as readonly string[]).includes(token);
+                    return (
+                      <button
+                        key={token}
+                        type="button"
+                        onClick={() => setCityOrder(at >= 0 ? steps.filter((t) => t !== token) : [...steps, token])}
+                        aria-pressed={at >= 0}
+                        className={chipClass(at >= 0)}
+                      >
+                        {at >= 0 ? (
+                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-secondary-foreground text-[0.65rem] font-bold text-secondary">
+                            {at + 1}
+                          </span>
+                        ) : region ? null : (
+                          <CityDot city={token} className="h-2 w-2" />
+                        )}
+                        {region ? `אזור ${token}` : token}
+                      </button>
+                    );
+                  })}
+                </div>
+                {steps.length > 0 ? (
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">הסדר: </span>
+                    <span className="font-medium">{[...steps, "כל השאר"].join(" ← ")}</span>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              אחרי שהמסלול מוכן אפשר גם להזיז עצירות ביד, ו-Google יסדר את השאר סביבן.
+            </p>
+          </div>
+        ) : null}
+
+        {step === "route" ? (
+          plan ? (
+            <div className="space-y-4">
+              {stale ? (
+                <div className="flex items-start gap-2 rounded-xl border border-secondary/40 bg-secondary/5 p-3 text-sm">
+                  <InfoIcon className="mt-0.5 h-4 w-4 shrink-0 text-secondary" />
+                  <span>שיניתם משהו בשלבים הקודמים — המסלול שלמטה הוא הקודם. לחצו &quot;תכנון מחדש&quot;.</span>
+                </div>
+              ) : null}
+
+              <Card className={cn("space-y-3 p-4", (stale || arranged) && "opacity-60")}>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Figure label="זמן נסיעה" value={formatDuration(plan.result.total.durationSec)} />
+                  <Figure label="מרחק" value={formatDistance(plan.result.total.distanceM)} />
+                  <Figure label="יציאה" value={clock(plan.result.departure)} />
+                  <Figure label="סיום משוער" value={clock(plan.result.finish)} />
+                </div>
+                <p className="text-xs text-muted-foreground">כולל {plan.serviceMinutes} דק׳ בכל עצירה · זמני הנסיעה עם העומס הצפוי בכל קטע</p>
+                <div className="flex flex-wrap gap-2">
+                  {googleMapsLinks([
+                    plan.start,
+                    ...plan.stops.map((stop) => ({ lat: stop.lat!, lng: stop.lng! })),
+                    ...(plan.endIsStart ? [plan.start] : plan.end ? [plan.end] : []),
+                  ]).map((href, index, links) => (
+                    <Button key={href} asChild variant="outline" size="sm" className="gap-1.5">
+                      <a href={href} target="_blank" rel="noopener noreferrer">
+                        <ExternalLinkIcon />
+                        {links.length > 1 ? `Google Maps · חלק ${index + 1}` : "פתיחה ב-Google Maps"}
+                      </a>
+                    </Button>
                   ))}
                 </div>
+              </Card>
+
+              {arranged ? (
+                <div className="space-y-2 rounded-xl border border-secondary/50 bg-secondary/5 p-3">
+                  <p className="text-sm font-semibold">הזזתם עצירות. איך לתכנן?</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={() => void compute("around")} disabled={working !== null}>
+                      {working === "around" ? <SpinnerIcon className="animate-spin" /> : null}
+                      Google יסדר את השאר סביב השינוי
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => void compute("exact")} disabled={working !== null}>
+                      {working === "exact" ? <SpinnerIcon className="animate-spin" /> : null}
+                      בדיוק בסדר הזה
+                    </Button>
+                    <Button type="button" size="sm" variant="muted" onClick={() => setArranged(null)} disabled={working !== null}>
+                      ביטול
+                    </Button>
+                  </div>
+                </div>
               ) : null}
-              <ol className="space-y-1.5">
-                {steps.map((step, index) => (
-                  <li key={index} className="flex items-center gap-1.5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-bold text-secondary-foreground">
-                      {index + 1}
-                    </span>
-                    <NativeSelect
-                      dense
-                      value={step}
-                      onChange={(e) => setSteps((prev) => prev.map((s, i) => (i === index ? e.target.value : s)))}
-                      aria-label={`שלב ${index + 1}`}
-                      className="min-w-0 flex-1"
-                    >
-                      {[...stepOptions, ...(stepOptions.includes(step) ? [] : [step])].map((option) => (
-                        <option key={option} value={option}>
-                          {(REGIONS as readonly string[]).includes(option) ? `אזור ${option}` : option}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                    <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">{stepCounts[index]} עצירות</span>
-                    <button
-                      type="button"
-                      onClick={() => moveStep(index, -1)}
-                      disabled={index === 0}
-                      aria-label="להקדים"
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-30"
-                    >
-                      <ArrowUpIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveStep(index, 1)}
-                      disabled={index === steps.length - 1}
-                      aria-label="לאחר"
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-30"
-                    >
-                      <ArrowDownIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSteps((prev) => prev.filter((_, i) => i !== index))}
-                      aria-label="הסרת השלב"
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      <CloseIcon className="h-4 w-4" />
-                    </button>
-                  </li>
-                ))}
-              </ol>
-              {stepOptions.some((option) => !steps.includes(option)) ? (
-                <Button type="button" variant="soft" size="sm" onClick={addStep}>
-                  <AddIcon />
-                  ואז…
-                </Button>
-              ) : null}
-              {restCount > 0 && steps.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>{restCount === 1 ? "עצירה אחת שלא בשלבים:" : `${restCount} עצירות שלא בשלבים:`}</span>
-                  <Segmented
-                    className="w-auto"
-                    value={restFirst ? "first" : "last"}
-                    onChange={(value) => setRestFirst(value === "first")}
-                    options={[
-                      { value: "last", label: "בסוף" },
-                      { value: "first", label: "בהתחלה" },
-                    ]}
+
+              <Card className={cn("p-2 sm:p-3", stale && "opacity-60")}>
+                <ol>
+                  <TimelinePoint
+                    marker={<span className="text-[0.7rem] font-bold">{plan.endIsStart ? "⇆" : "▶"}</span>}
+                    markerClass="bg-emerald-700 text-white"
+                    title={plan.startLabel}
+                    meta={`יציאה ${clock(plan.result.departure)}`}
                   />
-                </div>
-              ) : null}
-              <p className="text-xs text-muted-foreground">בתוך כל שלב Google מוצא את הסדר הכי טוב.</p>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">Google בוחר את הסדר הכי טוב, עם העומס הצפוי בכל שעה של הנסיעה.</p>
-          )}
-        </SectionCard>
-
-        <SectionCard icon={<ClockIcon className={SECTION_ICON_CLASS} />} title="זמנים">
-          <Segmented
-            value={objective}
-            onChange={setObjective}
-            options={[
-              { value: "time", label: "הכי מהיר (זמן)" },
-              { value: "distance", label: "הכי קצר (ק״מ)" },
-            ]}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">שעת יציאה</span>
-              <Input type="time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} aria-label="שעת יציאה" />
-              <span className="block text-xs text-muted-foreground">{departureTime ? "העומס הצפוי מהשעה הזו" : "ריק = עכשיו"}</span>
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">דקות בכל עצירה</span>
-              <Input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={120}
-                value={serviceMinutes}
-                onChange={(e) => setServiceMinutes(Math.max(0, Math.min(120, Number(e.target.value) || 0)))}
-                aria-label="דקות בכל עצירה"
-              />
-              <span className="block text-xs text-muted-foreground">לפריקה ומסירה</span>
-            </label>
-          </div>
-        </SectionCard>
-
-        {/* Held at the bottom of the screen on a computer, on a solid strip so the list scrolls under it. */}
-        <div className="space-y-2 lg:sticky lg:bottom-0 lg:-mx-1 lg:rounded-t-card lg:bg-background lg:px-1 lg:pb-3 lg:pt-2">
-
-          <Button type="button" size="lg" className="w-full gap-2" onClick={compute} disabled={Boolean(blocker) || working}>
-            {working ? <SpinnerIcon className="animate-spin" /> : <RouteIcon />}
-            {working ? "Google מתכנן את המסלול…" : plan && !stale ? "תכנון מחדש" : `תכנון המסלול · ${chosen.length} עצירות`}
-          </Button>
-          {blocker ? <p className="text-center text-xs text-muted-foreground">{blocker}</p> : null}
-        </div>
-      </div>
-
-      {/* The results. */}
-      <div ref={resultsRef} className="scroll-mt-20 space-y-4 lg:col-start-2 lg:row-start-2">
-        {error ? (
-          <div role="alert" className="space-y-1.5 rounded-card border border-destructive/40 bg-destructive/5 p-3 text-sm">
-            <p className="flex items-start gap-2 font-semibold text-destructive">
-              <WarningIcon className="mt-0.5 h-4 w-4 shrink-0" />
-              {error.message}
-            </p>
-            {unreachableNames.length > 0 ? <p>לא נמצאה דרך אל: {unreachableNames.join(", ")}. הורידו אותן מהמסלול ונסו שוב.</p> : null}
-            {error.setup ? <p className="text-muted-foreground">זה חלק מההגדרה ב-Google Cloud. אחרי שהיא תושלם, המסלול יתוכנן כאן.</p> : null}
-          </div>
-        ) : null}
-
-        {stale ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-card border border-secondary/40 bg-secondary/5 p-3 text-sm">
-            <InfoIcon className="h-4 w-4 shrink-0 text-secondary" />
-            <span className="flex-1">שיניתם את ההגדרות — המסלול שלמטה הוא הקודם.</span>
-            <Button type="button" size="sm" onClick={compute} disabled={Boolean(blocker) || working}>
-              תכנון מחדש
-            </Button>
-          </div>
-        ) : null}
-
-        {!plan ? (
-          <Card className="space-y-2 p-4 text-sm text-muted-foreground">
-            <p className="flex items-center gap-2 font-semibold text-foreground">
-              <RouteIcon className="h-4 w-4 text-secondary" />
-              איך זה עובד
-            </p>
-            <p>בוחרים עצירות, מאיפה יוצאים ואיפה מסיימים — ואם צריך, מה קודם (למשל ירושלים ואז צפון).</p>
-            <p>
-              מתכנן המסלולים של Google — אותו מתכנן שחברות משלוחים עובדות איתו — בוחר את הסדר עם העומס הצפוי בכל קטע בשעה שתגיעו אליו, לא רק
-              העומס של עכשיו.
-            </p>
-            <p>מקבלים מפה, שעת הגעה לכל עצירה, ניווט ב-Waze לכל אחת, ומסלול לשליחה לנהג.</p>
-          </Card>
-        ) : (
-          <>
-            <Card className={cn("space-y-3 p-4", stale && "opacity-60")}>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">זמן נסיעה</p>
-                  <p className="text-xl font-bold tabular-nums">{formatDuration(plan.result.total.durationSec)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">מרחק</p>
-                  <p className="text-xl font-bold tabular-nums">{formatDistance(plan.result.total.distanceM)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">יציאה</p>
-                  <p className="text-xl font-bold tabular-nums">{clock(plan.result.departure)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">סיום משוער</p>
-                  <p className="text-xl font-bold tabular-nums">{clock(plan.result.finish)}</p>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">כולל {plan.serviceMinutes} דק׳ בכל עצירה · זמני הנסיעה עם העומס הצפוי בכל קטע</p>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={share} className="gap-1.5">
-                  <ShareIcon />
-                  שליחת המסלול לנהג
-                </Button>
-                {mapsLinks.map((href, index) => (
-                  <Button key={href} asChild variant="outline" className="gap-1.5">
-                    <a href={href} target="_blank" rel="noopener noreferrer">
-                      <ExternalLinkIcon />
-                      {mapsLinks.length > 1 ? `Google Maps · חלק ${index + 1}` : "פתיחה ב-Google Maps"}
-                    </a>
-                  </Button>
-                ))}
-              </div>
-            </Card>
-
-            <WhyCard plan={plan} />
-
-            <Card className={cn("p-2 sm:p-3", stale && "opacity-60")}>
-              <ol>
-                <TimelinePoint
-                  marker={<span className="text-[0.7rem] font-bold">{plan.endIsStart ? "⇆" : "▶"}</span>}
-                  markerClass="bg-emerald-700 text-white"
-                  title={plan.startLabel}
-                  meta={`יציאה ${clock(plan.result.departure)}`}
-                />
-                {plan.stops.map((stop, index) => (
-                  <li key={stop.key}>
-                    <TimelineLeg
-                      index={index}
-                      count={plan.result.legs.length}
-                      leg={plan.result.legs[index]}
-                      active={activeLeg === index}
-                      onHover={setActiveLeg}
-                    />
-                    <div className="flex items-start gap-3 rounded-xl p-2 hover:bg-muted/40">
-                      <span
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm font-bold text-primary shadow"
-                        style={{ backgroundColor: cityColour(stop.city) }}
-                      >
-                        {index + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-baseline gap-x-2">
-                          <span className="break-words font-semibold">{stop.name}</span>
-                          <span className="text-sm font-semibold tabular-nums text-secondary">{clock(plan.result.arrivals[index])}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">{placeLine(stop)}</p>
-                        {stop.collectOnDelivery ? (
-                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.7rem] font-semibold text-warning-soft-foreground">
-                            <CashIcon className="h-3 w-3" />
-                            גבייה במסירה
+                  {routeOrder.map((key, index) => {
+                    const stop = stopByKey.get(key);
+                    if (!stop) return null;
+                    const leg = arranged ? null : plan.result.legs[index];
+                    const kept = (arranged?.pinned ?? plan.pinned).has(key);
+                    return (
+                      <li key={key}>
+                        {leg ? (
+                          <TimelineLeg index={index} count={plan.result.legs.length} leg={leg} active={activeLeg === index} onHover={setActiveLeg} />
+                        ) : (
+                          <div className="h-3" />
+                        )}
+                        <div className="flex items-start gap-2.5 rounded-xl p-2 hover:bg-muted/40">
+                          <span
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm font-bold text-primary shadow"
+                            style={{ backgroundColor: cityColour(stop.city) }}
+                          >
+                            {index + 1}
                           </span>
-                        ) : null}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {stop.phone ? <CallIconButton phone={stop.phone} name={stop.name} /> : null}
-                        <a
-                          href={wazeLinkForPin({ lat: stop.lat!, lng: stop.lng! })}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label={`ניווט אל ${stop.name}`}
-                          className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"
-                        >
-                          <WazeIcon className="h-5 w-5" />
-                        </a>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-                {plan.result.legs.length > plan.stops.length ? (
-                  <li>
-                    <TimelineLeg
-                      index={plan.stops.length}
-                      count={plan.result.legs.length}
-                      leg={plan.result.legs[plan.stops.length]}
-                      active={activeLeg === plan.stops.length}
-                      onHover={setActiveLeg}
-                    />
-                  </li>
-                ) : null}
-                <TimelinePoint
-                  marker={<FlagIcon className="h-3.5 w-3.5" />}
-                  markerClass="bg-primary text-primary-foreground"
-                  title={plan.endIsStart ? `חזרה ל${plan.startLabel}` : plan.end ? plan.endLabel : "סיום בעצירה האחרונה"}
-                  meta={`סיום משוער ${clock(plan.result.finish)}`}
-                />
-              </ol>
-            </Card>
-          </>
-        )}
-      </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline gap-x-2">
+                              <span className="break-words font-semibold">{stop.name}</span>
+                              {arranged ? null : (
+                                <span className="text-sm font-semibold tabular-nums text-secondary">{clock(plan.result.arrivals[index])}</span>
+                              )}
+                              {kept ? (
+                                <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground" title="נשאר במקום שבחרתם">
+                                  <LockIcon className="h-3 w-3" />
+                                  במקום שבחרתם
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="text-xs text-muted-foreground">{placeLine(stop)}</p>
+                            {stop.collectOnDelivery ? (
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.7rem] font-semibold text-warning-soft-foreground">
+                                <CashIcon className="h-3 w-3" />
+                                גבייה במסירה
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="flex shrink-0 flex-col items-center gap-1 sm:flex-row">
+                            <div className="flex items-center gap-1">
+                              {stop.phone ? <CallIconButton phone={stop.phone} name={stop.name} /> : null}
+                              <a
+                                href={wazeLinkForPin({ lat: stop.lat!, lng: stop.lng! })}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label={`ניווט אל ${stop.name}`}
+                                className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"
+                              >
+                                <WazeIcon className="h-5 w-5" />
+                              </a>
+                            </div>
+                            {/* Moving a stop by hand (owner: "allow it for me"). */}
+                            <div className="flex items-center">
+                              <button
+                                type="button"
+                                onClick={() => move(key, -1)}
+                                disabled={index === 0 || stale || working !== null}
+                                aria-label={`להקדים את ${stop.name}`}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              >
+                                <ArrowUpIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => move(key, 1)}
+                                disabled={index === routeOrder.length - 1 || stale || working !== null}
+                                aria-label={`לאחר את ${stop.name}`}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              >
+                                <ArrowDownIcon className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                  {!arranged && plan.result.legs.length > plan.stops.length ? (
+                    <li>
+                      <TimelineLeg
+                        index={plan.stops.length}
+                        count={plan.result.legs.length}
+                        leg={plan.result.legs[plan.stops.length]}
+                        active={activeLeg === plan.stops.length}
+                        onHover={setActiveLeg}
+                      />
+                    </li>
+                  ) : null}
+                  <TimelinePoint
+                    marker={<FlagIcon className="h-3.5 w-3.5" />}
+                    markerClass="bg-primary text-primary-foreground"
+                    title={plan.endIsStart ? `חזרה ל${plan.startLabel}` : plan.end ? plan.endLabel : "סיום בעצירה האחרונה"}
+                    meta={arranged ? "השעות יתעדכנו אחרי התכנון" : `סיום משוער ${clock(plan.result.finish)}`}
+                  />
+                </ol>
+              </Card>
+
+              <WhyCard plan={plan} />
+            </div>
+          ) : null
+        ) : null}
+      </StepWizard>
+
+      {/* A computer: the map beside the steps, held on screen while they scroll. */}
+      {wide ? (
+        <div className="sticky top-20 h-[calc(100dvh-7rem)] min-h-[420px] overflow-hidden rounded-card border border-border/60 shadow-card">
+          {map}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Figure({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-xl font-bold tabular-nums">{value}</p>
     </div>
   );
 }
@@ -1097,38 +1200,22 @@ function TimelineLeg({
   );
 }
 
-function CompareRow({
-  label,
-  cost,
-  base,
-  max,
-  objective,
-  best,
-}: {
-  label: string;
-  cost: RouteCost;
-  base: RouteCost;
-  max: number;
-  objective: "time" | "distance";
-  best: boolean;
-}) {
-  const value = objective === "time" ? cost.durationSec : cost.distanceM;
-  const diff = value - (objective === "time" ? base.durationSec : base.distanceM);
+function CompareRow({ label, cost, base, max, best }: { label: string; cost: RouteCost; base: RouteCost; max: number; best: boolean }) {
+  const diff = cost.durationSec - base.durationSec;
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
         <span className={cn("font-medium", best && "text-success")}>{label}</span>
         <span className="tabular-nums text-muted-foreground">
           {formatDuration(cost.durationSec)} · {formatDistance(cost.distanceM)}
-          {!best && diff > 0 ? (
-            <span className="ms-1.5 font-semibold text-destructive">+{objective === "time" ? formatDuration(diff) : formatDistance(diff)}</span>
-          ) : null}
+          {!best && diff > 0 ? <span className="ms-1.5 font-semibold text-destructive">+{formatDuration(diff)}</span> : null}
+          {!best && diff < 0 ? <span className="ms-1.5 font-semibold text-success">−{formatDuration(-diff)}</span> : null}
         </span>
       </div>
       <div className="h-2.5 overflow-hidden rounded-full bg-muted">
         <div
-          className={cn("h-full rounded-full", best ? "bg-success" : diff > 0 ? "bg-destructive/70" : "bg-secondary/70")}
-          style={{ width: `${max > 0 ? Math.max(4, (value / max) * 100) : 0}%` }}
+          className={cn("h-full rounded-full", best ? "bg-secondary" : diff > 0 ? "bg-destructive/70" : "bg-success")}
+          style={{ width: `${max > 0 ? Math.max(4, (cost.durationSec / max) * 100) : 0}%` }}
         />
       </div>
     </div>
@@ -1136,63 +1223,59 @@ function CompareRow({
 }
 
 function WhyCard({ plan }: { plan: Plan }) {
-  const { result, objective } = plan;
+  const { result } = plan;
   const n = plan.stops.length;
-  const metric = (cost: RouteCost) => (objective === "time" ? cost.durationSec : cost.distanceM);
-  const show = (amount: number) => (objective === "time" ? formatDuration(amount) : formatDistance(amount));
   const list = result.compare.listOrder;
   const free = result.compare.freeBest;
-  const listGap = list ? metric(list) - metric(result.total) : 0;
-  const preferenceCost = free ? metric(result.total) - metric(free) : 0;
+  const listGap = list ? list.durationSec - result.total.durationSec : 0;
+  const choiceCost = free ? result.total.durationSec - free.durationSec : 0;
+  const choices = plan.choices.join(", ");
   const rows = [
-    { label: "המסלול הזה", cost: result.total, best: true },
-    ...(list ? [{ label: "לפי הסדר ברשימת המשלוחים", cost: list, best: false }] : []),
-    ...(free ? [{ label: "בלי מה שקבעתם שיהיה קודם", cost: free, best: false }] : []),
+    { label: plan.mode === "exact" ? "הסדר שלכם" : "המסלול הזה", cost: result.total, best: true },
+    ...(free ? [{ label: "הכי מהיר בלי הבחירות שלכם", cost: free, best: false }] : []),
+    ...(list ? [{ label: "לפי הסדר ברשימה", cost: list, best: false }] : []),
   ];
-  const max = Math.max(...rows.map((row) => metric(row.cost)));
+  const max = Math.max(...rows.map((row) => row.cost.durationSec));
   const partialTraffic = result.legs.some((leg) => leg.trafficUnavailable);
 
   return (
-    <Card className={cn("space-y-3 p-4")}>
+    <Card className="space-y-3 p-4">
       <p className="flex items-center gap-2 font-semibold">
         <InfoIcon className="h-4 w-4 text-secondary" />
-        למה זה המסלול הטוב ביותר?
+        למה המסלול הזה?
       </p>
       <ul className="space-y-1.5 text-sm">
-        <li>
-          • את הסדר בחר <b>מתכנן המסלולים של Google</b> — עם העומס ש-Google צופה בכל קטע בשעה שתגיעו אליו, לא רק העומס של עכשיו.
-        </li>
-        {n > 1 ? (
-          <li>
-            • ל-{n} עצירות יש {formatCount(result.possibleOrders)} סדרים אפשריים{plan.steps.length > 0 ? " (בסדר שקבעתם)" : ""}.
-            {result.triedRoutes > 1
-              ? ` Google תכנן את המסלול ${result.triedRoutes} פעמים — בחיפוש החופשי שלו, וכל פעם מתחיל בעצירה קרובה אחרת — ונבחר ה${objective === "time" ? "מהיר" : "קצר"} מכולם.`
-              : ` זה ה${objective === "time" ? "מהיר" : "קצר"} ש-Google מצא.`}
-          </li>
+        {plan.mode === "exact" ? (
+          <li>• זה בדיוק הסדר שסידרתם — Google חישב לו את הזמנים עם העומס הצפוי בכל קטע.</li>
         ) : (
-          <li>• עצירה אחת — אין סדר לבחור.</li>
+          <li>
+            • את הסדר בחר <b>מתכנן המסלולים של Google</b> — עם העומס ש-Google צופה בכל קטע בשעה שתגיעו אליו, לא רק העומס של עכשיו.
+            {n > 1 && result.triedRoutes > 1
+              ? ` מתוך ${formatCount(result.possibleOrders)} סדרים אפשריים, Google תכנן את המסלול ${result.triedRoutes} פעמים — כל פעם מתחיל בעצירה קרובה אחרת — ונבחר המהיר מכולם.`
+              : ""}
+          </li>
         )}
+        {free ? (
+          <li>
+            •{" "}
+            {choiceCost > 0 ? (
+              <>
+                הבחירות שלכם ({choices}) מוסיפות <b>{formatDuration(choiceCost)}</b> לעומת הסדר הכי מהיר בלעדיהן. זה בסדר — המסלול שומר עליהן.
+              </>
+            ) : (
+              <>הבחירות שלכם ({choices}) לא עולות כלום — זה גם הסדר הכי מהיר.</>
+            )}
+          </li>
+        ) : null}
         {list && n > 1 ? (
           <li>
             •{" "}
             {listGap > 0 ? (
               <>
-                חוסך <b>{show(listGap)}</b> לעומת נסיעה לפי הסדר ברשימה, באותה שעה ובאותו עומס.
+                חוסך <b>{formatDuration(listGap)}</b> לעומת נסיעה לפי הסדר ברשימה.
               </>
             ) : (
-              "הסדר ברשימה יוצא טוב בדיוק כמו המסלול הזה."
-            )}
-          </li>
-        ) : null}
-        {free ? (
-          <li>
-            •{" "}
-            {preferenceCost > 0 ? (
-              <>
-                מה שקבעתם ({plan.steps.join(" ← ")}) מוסיף <b>{show(preferenceCost)}</b> לעומת הסדר הכי טוב בלי הגבלה.
-              </>
-            ) : (
-              <>מה שקבעתם ({plan.steps.join(" ← ")}) לא עולה כלום — זה גם הסדר הכי טוב.</>
+              "הסדר ברשימה יוצא מהיר בדיוק כמו המסלול הזה."
             )}
           </li>
         ) : null}
@@ -1200,7 +1283,7 @@ function WhyCard({ plan }: { plan: Plan }) {
       {rows.length > 1 ? (
         <div className="space-y-2.5">
           {rows.map((row) => (
-            <CompareRow key={row.label} label={row.label} cost={row.cost} base={result.total} max={max} objective={objective} best={row.best} />
+            <CompareRow key={row.label} label={row.label} cost={row.cost} base={result.total} max={max} best={row.best} />
           ))}
         </div>
       ) : null}

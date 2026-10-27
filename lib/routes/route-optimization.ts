@@ -28,7 +28,6 @@ export type OptimizeInput = {
   /** Time spent at each stop. */
   serviceSec: number;
   departure: Date;
-  objective: "time" | "distance";
   /** [first, second]: stop `first` is visited before stop `second` (indexes into stops). */
   before: Array<[number, number]>;
   /** How long Google may take. */
@@ -115,9 +114,17 @@ async function signIn(): Promise<{ projectId: string; credential: Credential }> 
 
 const location = (point: LatLng) => ({ latitude: point.lat, longitude: point.lng });
 
-/** The request Google gets: one vehicle (the driver), one delivery per stop. */
+/**
+ * A time as Google takes it: whole seconds. "…T09:30:00.437Z" is refused
+ * ("nanos must be unset") — every plan made for "now" failed on 2026-10-26.
+ */
+export function googleTime(at: Date): string {
+  return new Date(Math.floor(at.getTime() / 1000) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/** The request Google gets: one vehicle (the driver), one delivery per stop — always the fastest. */
 export function optimizeToursBody(input: OptimizeInput) {
-  const departure = input.departure.toISOString();
+  const departure = googleTime(input.departure);
   return {
     timeout: `${input.searchSec}s`,
     searchMode: input.search === "first" ? "RETURN_FAST" : "CONSUME_ALL_AVAILABLE_TIME",
@@ -125,7 +132,7 @@ export function optimizeToursBody(input: OptimizeInput) {
     populateTransitionPolylines: true,
     model: {
       globalStartTime: departure,
-      globalEndTime: new Date(input.departure.getTime() + 24 * 3600_000).toISOString(),
+      globalEndTime: googleTime(new Date(input.departure.getTime() + 24 * 3600_000)),
       shipments: input.stops.map((stop) => ({
         label: stop.id,
         deliveries: [{ arrivalLocation: location(stop), duration: `${Math.round(input.serviceSec)}s` }],
@@ -138,7 +145,7 @@ export function optimizeToursBody(input: OptimizeInput) {
           ...(input.end ? { endLocation: location(input.end) } : {}),
           // Leaves at the time asked, not whenever suits the traffic.
           startTimeWindows: [{ startTime: departure, endTime: departure }],
-          ...(input.objective === "distance" ? { costPerKilometer: 1 } : { costPerHour: 1 }),
+          costPerHour: 1,
         },
       ],
       precedenceRules: input.before.map(([first, second]) => ({

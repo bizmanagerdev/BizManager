@@ -5,18 +5,19 @@
 // itself rate better (found 2026-10-26 with six real stops: it kept a route
 // 3 minutes slower, even given 12 seconds or the better route to start from).
 // So the route is asked for several ways at once — Google's own search, and
-// the route starting at each of the stops nearest the start — and the fastest
-// by Google's own traffic times is kept.
+// the route starting at each of the stops nearest the start that may come
+// first — and the fastest by Google's own traffic times is kept.
 //
 // Beside it, to show why it's the best: the stops in the list's order and,
-// when "first … then …" was asked, the best order without it. If either of
-// those fails the route still comes back.
+// when the person chose anything about the order, Google's fastest without
+// those choices. If either of those fails the route still comes back.
 
 import { optimizeRoute, type LatLng, type OptimizedRoute, type OptimizeInput } from "@/lib/routes/route-optimization";
 import {
   MAX_ROUTE_STOPS,
   phaseRules,
   possibleOrders,
+  rulesConflict,
   type RouteEnd,
   type RoutePlanRequest,
   type RoutePlanResult,
@@ -73,27 +74,30 @@ export function parseRoutePlanRequest(body: unknown): RoutePlanRequest {
     const at = point(s);
     if (!id || !at || ids.has(id)) throw new RoutePlanError("אחת העצירות בלי מיקום על המפה.", 400);
     ids.add(id);
-    const phase = typeof s.phase === "number" && Number.isInteger(s.phase) && s.phase >= 0 && s.phase < 50 ? s.phase : 0;
+    const phase = typeof s.phase === "number" && Number.isInteger(s.phase) && s.phase >= 0 && s.phase < 50 ? s.phase : null;
     return { id, lat: at.lat, lng: at.lng, phase };
+  });
+
+  const beforeIn = Array.isArray(b.before) ? b.before : [];
+  if (beforeIn.length > MAX_ROUTE_STOPS * MAX_ROUTE_STOPS) throw new RoutePlanError("יותר מדי כללי סדר.", 400);
+  const before = beforeIn.map((pair) => {
+    const [first, second] = Array.isArray(pair) ? pair : [];
+    if (typeof first !== "string" || typeof second !== "string" || !ids.has(first) || !ids.has(second) || first === second) {
+      throw new RoutePlanError("כלל סדר לעצירה שלא במסלול.", 400);
+    }
+    return [first, second] as [string, string];
   });
 
   const departure = typeof b.departure === "string" && !Number.isNaN(new Date(b.departure).getTime()) ? b.departure : null;
   const minutes = typeof b.serviceMinutes === "number" && Number.isFinite(b.serviceMinutes) ? b.serviceMinutes : 10;
-  return {
-    start,
-    end,
-    stops,
-    objective: b.objective === "distance" ? "distance" : "time",
-    departure,
-    serviceMinutes: Math.min(120, Math.max(0, Math.round(minutes))),
-  };
+  return { start, end, stops, before, departure, serviceMinutes: Math.min(120, Math.max(0, Math.round(minutes))) };
 }
 
-/** A leaving time to plan the traffic for: the one asked, up to a week ahead; else a minute from now. */
-function leavingAt(value: string | null, now: Date): Date {
-  const soon = new Date(now.getTime() + 60_000);
+/** A leaving time to plan the traffic for: the one asked, up to a week ahead; else the next whole minute. */
+export function leavingAt(value: string | null, now: Date): Date {
+  const soon = new Date(Math.ceil((now.getTime() + 60_000) / 60_000) * 60_000);
   if (!value) return soon;
-  const at = new Date(value);
+  const at = new Date(Math.floor(new Date(value).getTime() / 1000) * 1000);
   return at.getTime() > soon.getTime() && at.getTime() - now.getTime() < 7 * 24 * 3600_000 ? at : soon;
 }
 
@@ -107,12 +111,18 @@ function crowKm(a: LatLng, b: LatLng): number {
 
 /**
  * The stops tried as the first one: those nearest the start among the ones
- * that may come first ("first … then …"). None when there's no real choice.
+ * the rules let come first (none must come before them). None when there's
+ * no real choice.
  */
-export function firstStopTries(stops: Array<LatLng & { phase: number }>, start: LatLng, limit = FIRST_STOP_TRIES): number[] {
+export function firstStopTries(
+  stops: LatLng[],
+  start: LatLng,
+  rules: ReadonlyArray<[number, number]> = [],
+  limit = FIRST_STOP_TRIES
+): number[] {
   if (stops.length < 3) return [];
-  const firstPhase = Math.min(...stops.map((stop) => stop.phase));
-  const allowed = stops.map((stop, index) => ({ stop, index })).filter(({ stop }) => stop.phase === firstPhase);
+  const mustWait = new Set(rules.map(([, second]) => second));
+  const allowed = stops.map((stop, index) => ({ stop, index })).filter(({ index }) => !mustWait.has(index));
   if (allowed.length < 2) return [];
   return allowed
     .sort((a, b) => crowKm(start, a.stop) - crowKm(start, b.stop) || a.index - b.index)
@@ -129,19 +139,24 @@ const firstOf = (first: number, count: number): Array<[number, number]> =>
 export async function planRoute(request: RoutePlanRequest, now: Date = new Date()): Promise<RoutePlanResult> {
   const { stops, end, start } = request;
   const n = stops.length;
-  const phases = stops.map((stop) => stop.phase);
+  const index = new Map(stops.map((stop, i) => [stop.id, i]));
+  const rules: Array<[number, number]> = [
+    ...phaseRules(stops.map((stop) => stop.phase)),
+    ...request.before.map(([a, b]): [number, number] => [index.get(a)!, index.get(b)!]),
+  ];
+  if (rulesConflict(n, rules)) {
+    throw new RoutePlanError("הסדר שבחרתם סותר את עצמו (עצירה אחת גם לפני וגם אחרי אחרת). שנו אחת הבחירות ונסו שוב.", 400);
+  }
+
   const base: Omit<OptimizeInput, "before" | "searchSec"> = {
     start,
     end: end.mode === "point" ? end.point : end.mode === "return" ? start : null,
     stops: stops.map(({ id, lat, lng }) => ({ id, lat, lng })),
     serviceSec: request.serviceMinutes * 60,
     departure: leavingAt(request.departure, now),
-    objective: request.objective,
   };
-  const rules = phaseRules(phases);
   const listChain: Array<[number, number]> = stops.slice(1).map((_, k) => [k, k + 1]);
-  const hasPhases = new Set(phases).size > 1;
-  const tries = firstStopTries(stops, start);
+  const tries = firstStopTries(stops, start, rules);
 
   const [searched, firstStopRoutes, listOrder, free] = await Promise.all([
     optimizeRoute({ ...base, before: rules, searchSec: SEARCH_SEC }),
@@ -150,17 +165,16 @@ export async function planRoute(request: RoutePlanRequest, now: Date = new Date(
     ),
     // The order is fixed, so Google answers as soon as it has timed it (1 s was too short for it: "deadline").
     n > 1 ? optimizeRoute({ ...base, before: listChain, searchSec: SEARCH_SEC, search: "first" }).catch(() => null) : null,
-    hasPhases ? optimizeRoute({ ...base, before: [], searchSec: SEARCH_SEC }).catch(() => null) : null,
+    rules.length > 0 ? optimizeRoute({ ...base, before: [], searchSec: SEARCH_SEC }).catch(() => null) : null,
   ]);
 
-  const measure = (plan: OptimizedRoute) => (request.objective === "distance" ? plan.distanceM : plan.durationSec);
   const best = (plans: Array<OptimizedRoute | null>): OptimizedRoute | null =>
-    plans.reduce<OptimizedRoute | null>((kept, plan) => (plan && (!kept || measure(plan) < measure(kept)) ? plan : kept), null);
+    plans.reduce<OptimizedRoute | null>((kept, plan) => (plan && (!kept || plan.durationSec < kept.durationSec) ? plan : kept), null);
 
   // Google's own search first, so a tie keeps it.
   const route = best([searched, ...firstStopRoutes])!;
-  // The route with "first … then …" is also a route without it: the best without is never worse.
-  const freeBest = hasPhases && free ? best([free, route]) : null;
+  // The route with the choices is also a route without them: the best without is never worse.
+  const freeBest = rules.length > 0 && free ? best([free, route]) : null;
   const cost = (plan: OptimizedRoute | null) => (plan ? { durationSec: plan.durationSec, distanceM: plan.distanceM } : null);
   return {
     order: route.order,
@@ -169,7 +183,7 @@ export async function planRoute(request: RoutePlanRequest, now: Date = new Date(
     finish: route.finish,
     total: { durationSec: route.durationSec, distanceM: route.distanceM },
     compare: { listOrder: cost(listOrder), freeBest: cost(freeBest) },
-    possibleOrders: possibleOrders(phases),
+    possibleOrders: possibleOrders(n),
     triedRoutes: 1 + firstStopRoutes.filter(Boolean).length,
     departure: base.departure.toISOString(),
   };

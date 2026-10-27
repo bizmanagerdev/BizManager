@@ -7,9 +7,12 @@ export type MapStop = {
   lng: number;
   /** The city's colour (lib/deliveries/city-colours.ts). */
   color: string;
+  /** Who it is — written beside the pin, so a phone shows it without hovering. */
   label: string;
   /** The stop's place in the route; null before a route is worked out. */
   number: number | null;
+  /** Not in the route (yet): a small grey pin. */
+  muted?: boolean;
 };
 
 export type MapPoint = { lat: number; lng: number };
