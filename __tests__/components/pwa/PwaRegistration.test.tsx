@@ -272,3 +272,44 @@ describe("a page moved to with no connection that isn't saved", () => {
     expect(hoisted.toastInfo).not.toHaveBeenCalled();
   });
 });
+
+// A test build (NEXT_PUBLIC_E2E_TEST) keeps the worker off on 127.0.0.1, where
+// sw.js would remove itself mid-test — except on the offline test's .test
+// address, where the worker is what's tested (e2e/offline-pages.spec.ts).
+
+describe("a test build", () => {
+  beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_E2E_TEST", "1");
+    visibility = "visible";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    sw.controller = null;
+    sw.register = vi.fn(async () => ({ update: async () => {} }));
+    sw.ready = new Promise(() => {});
+    Object.assign(sw, { getRegistrations: vi.fn(async () => []) });
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: sw });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204, headers: { "X-Bizh-Build": "old1" } })));
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  const at = (hostname: string) =>
+    Object.defineProperty(window, "location", { configurable: true, value: { ...window.location, hostname, reload } });
+
+  it("registers no worker on 127.0.0.1", async () => {
+    at("127.0.0.1");
+    render(<PwaRegistration />);
+    await settle();
+    expect(sw.register).not.toHaveBeenCalled();
+  });
+
+  it("registers it on the offline test's .test address", async () => {
+    at("bizh.test");
+    render(<PwaRegistration />);
+    await settle();
+    expect(sw.register).toHaveBeenCalledWith("/sw.js?v=old1");
+  });
+});

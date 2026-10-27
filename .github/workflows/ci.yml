@@ -249,6 +249,7 @@ jobs:
           echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY" >> .env.test.local
 
       - name: Build the app
+        id: build
         # Runs the e2e suite against a real production build instead of
         # `next dev` — see playwright.config.ts's webServer comment for the
         # full story: four separate attempts at patching around dev mode's
@@ -269,7 +270,9 @@ jobs:
         # self-destructs, and force-navigates every open tab the instant it
         # activates — mid-test. Right behavior for a real dev machine, wrong
         # for a from-scratch e2e build with nothing stale to clean up. See
-        # PwaRegistration.tsx's own comment for the full account.
+        # PwaRegistration.tsx's own comment for the full account. The offline
+        # test (its own step below) reaches this same build on a .test name,
+        # where the worker does register and runs as in production.
         #
         # NEXT_PUBLIC_* vars must be present at BUILD time to get baked into
         # the client bundle, so .env.test.local (written by the previous
@@ -325,14 +328,34 @@ jobs:
           SQL
 
       - name: Run E2E tests
-        run: npm run test:e2e
+        id: e2e
+        run: npm run test:e2e -- --project=chromium --project=mobile
 
       - name: Upload Playwright report on failure
-        if: failure()
+        if: ${{ !cancelled() && steps.e2e.outcome == 'failure' }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
           path: playwright-report/
+          retention-days: 7
+
+      - name: Run the offline test
+        # The app with the service worker running and the network switched off
+        # mid-test (e2e/offline-pages.spec.ts — every offline bug of Oct 24–27
+        # was found only by hand). Its own step, so its result reads apart from
+        # the rest of the suite, and it runs even when the rest failed.
+        id: offline
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:e2e -- --project=offline
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-offline
+
+      - name: Upload the offline test's report on failure
+        if: ${{ !cancelled() && steps.offline.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-offline
+          path: playwright-report-offline/
           retention-days: 7
 
       - name: Stop local Supabase stack

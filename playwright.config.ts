@@ -8,6 +8,16 @@ import path from "node:path";
 // is a single command; nothing here ever reads the app's real .env.
 loadEnv({ path: path.resolve(__dirname, ".env.test.local") });
 
+// The offline test's address (e2e/offline-pages.spec.ts). The service worker
+// removes itself on localhost and 127.0.0.1 (public/sw.js IS_DEV_HOST), so its
+// browser reaches the same server under a .test name mapped to 127.0.0.1 —
+// treated as a secure origin, which a service worker needs (https elsewhere).
+// The test build registers its worker only on such a name
+// (components/pwa/PwaRegistration). Port 3100 is the test's own switch in front
+// of the server on 3000, which it turns off to make the server stop answering.
+const OFFLINE_HOST = "bizh.test";
+const OFFLINE_BASE_URL = `http://${OFFLINE_HOST}:3100`;
+
 export default defineConfig({
   testDir: "./e2e",
   // Local iteration only — see global-setup.ts's own comment for why this is
@@ -32,7 +42,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: /mobile-.*\.spec\.ts/,
+      testIgnore: /(mobile|offline)-.*\.spec\.ts/,
     },
     // The Android app is a native shell that loads the live site in Android's
     // Chrome WebView (capacitor.config.ts), so the phone experience IS the web
@@ -44,6 +54,30 @@ export default defineConfig({
       name: "mobile",
       use: { ...devices["Pixel 7"] },
       testMatch: /mobile-.*\.spec\.ts/,
+    },
+    // With the service worker running (see OFFLINE_HOST above) and the network
+    // switched off mid-test. Its own CI step (.github/workflows/ci.yml).
+    {
+      name: "offline",
+      use: {
+        ...devices["Desktop Chrome"],
+        // The full Chromium, not the headless shell the other projects get:
+        // the shell ignores the secure-origin switch below (checked
+        // 2026-10-27 — no secure context, so no service worker).
+        channel: "chromium",
+        baseURL: OFFLINE_BASE_URL,
+        serviceWorkers: "allow",
+        launchOptions: {
+          args: [
+            `--host-resolver-rules=MAP ${OFFLINE_HOST} 127.0.0.1`,
+            `--unsafely-treat-insecure-origin-as-secure=${OFFLINE_BASE_URL}`,
+          ],
+        },
+      },
+      testMatch: /offline-.*\.spec\.ts/,
+      // Each move with no connection loads a whole page from the device and
+      // starts it again — slower than 5 s on a busy 2-core runner.
+      expect: { timeout: 15_000 },
     },
   ],
 
