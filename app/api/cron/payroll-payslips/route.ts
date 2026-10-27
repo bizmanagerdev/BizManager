@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth/requireCronSecret";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureRecentPayslips } from "@/lib/payroll-center";
 
@@ -6,11 +7,8 @@ import { ensureRecentPayslips } from "@/lib/payroll-center";
 // so pay day never starts with «יצירת תלוש». Runs just after midnight Israel time,
 // so a new month's payslips exist from its first morning. See ensureRecentPayslips.
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const cron = requireCronSecret(req);
+  if (!cron.ok) return cron.response;
 
   const supabase = createSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });

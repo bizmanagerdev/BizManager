@@ -42,14 +42,15 @@ vi.mock("@/lib/notifications/alert-config", () => ({
 
 import { GET } from "@/app/api/cron/nightly-review/route";
 
-const run = () => GET(new Request("http://test/api/cron/nightly-review"));
+const run = () =>
+  GET(new Request("http://test/api/cron/nightly-review", { headers: { authorization: "Bearer s3cret" } }));
 const insertedKey = () => (calls.find((c) => c.table === "reminders" && c.method === "insert")?.args[0] as { dedupe_key?: string })?.dedupe_key;
 
 beforeEach(() => {
   calls.length = 0;
   existing = null;
   deliverPush.mockClear();
-  delete process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "s3cret";
   vi.useFakeTimers({ toFake: ["Date"] });
 });
 afterEach(() => vi.useRealTimers());

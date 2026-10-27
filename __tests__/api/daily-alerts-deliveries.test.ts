@@ -43,13 +43,14 @@ vi.mock("@/lib/notifications/identity", () => ({ usersToAuthMap: async () => new
 
 import { GET } from "@/app/api/cron/daily-alerts/route";
 
-const run = () => GET(new Request("http://test/api/cron/daily-alerts?force=true"));
+const run = () =>
+  GET(new Request("http://test/api/cron/daily-alerts?force=true", { headers: { authorization: "Bearer s3cret" } }));
 const sentPush = () => deliverPush.mock.calls[0]?.[2] as { title: string; body: string } | undefined;
 
 beforeEach(() => {
   calls.length = 0;
   deliverPush.mockClear();
-  delete process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "s3cret";
 });
 
 describe("the 17:00 deliveries push", () => {

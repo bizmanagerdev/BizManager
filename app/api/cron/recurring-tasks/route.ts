@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth/requireCronSecret";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { generateRecurringTasksNow } from "@/lib/recurring-tasks";
 
@@ -12,11 +13,8 @@ import { generateRecurringTasksNow } from "@/lib/recurring-tasks";
 // from the 1st's morning. Safe to repeat: templates already done this month
 // are skipped.
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const cron = requireCronSecret(req);
+  if (!cron.ok) return cron.response;
 
   const supabase = createSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });

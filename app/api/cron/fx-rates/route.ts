@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth/requireCronSecret";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncFxRates } from "@/lib/fx/rates";
 import { withSentry } from "@/lib/sentry-lazy";
@@ -13,11 +14,8 @@ import { withSentry } from "@/lib/sentry-lazy";
 // rate before it — so a job that has quietly stopped would only show as old
 // rates. Sentry hears about it when the newest rate is over a week old.
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const cron = requireCronSecret(req);
+  if (!cron.ok) return cron.response;
 
   const supabase = createSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });

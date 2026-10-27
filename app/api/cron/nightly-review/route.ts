@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth/requireCronSecret";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { deliverPush } from "@/lib/notifications/deliver";
 import { getNightlyConfig, recipientsForAudience } from "@/lib/notifications/alert-config";
@@ -33,11 +34,8 @@ function israelDate(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const cron = requireCronSecret(req);
+  if (!cron.ok) return cron.response;
 
   const supabase = createSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });

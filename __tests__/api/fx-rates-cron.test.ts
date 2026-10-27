@@ -14,7 +14,8 @@ vi.mock("@/lib/sentry-lazy", () => ({
 
 import { GET } from "@/app/api/cron/fx-rates/route";
 
-const run = (headers: Record<string, string> = {}) => GET(new Request("http://test/api/cron/fx-rates", { headers }));
+const run = (headers: Record<string, string> = { authorization: "Bearer s3cret" }) =>
+  GET(new Request("http://test/api/cron/fx-rates", { headers }));
 
 const fresh = {
   since: "2026-10-12",
@@ -28,7 +29,7 @@ beforeEach(() => {
   syncFxRates.mockReset();
   captureMessage.mockReset();
   captureException.mockReset();
-  delete process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "s3cret";
 });
 
 describe("GET /api/cron/fx-rates", () => {

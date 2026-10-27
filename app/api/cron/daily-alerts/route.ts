@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth/requireCronSecret";
 import { orderCity } from "@/lib/ui/cities";
 import { CLOSED_ORDER_STATUSES } from "@/app/(app)/sales/loadDeliveries";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -42,13 +43,8 @@ function scheduleMatchesNow(schedule: AlertSchedule): boolean {
 }
 
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const cron = requireCronSecret(req);
+  if (!cron.ok) return cron.response;
 
   const url = new URL(req.url);
   const force = url.searchParams.get("force") === "true";
