@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,28 +14,25 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { AddressPicker } from "@/components/ui/address-picker";
 import { CallIconButton } from "@/components/ui/contact-link";
 import { StepWizard, type WizardStepDef } from "@/components/ui/step-wizard";
-import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import {
   AddIcon,
-  ArrowDownIcon,
-  ArrowUpIcon,
   CashIcon,
   CheckIcon,
   ChevronDownIcon,
   CloseIcon,
-  ExternalLinkIcon,
   FlagIcon,
   InfoIcon,
   LockIcon,
   ShareIcon,
   SpinnerIcon,
   WarningIcon,
-  WazeIcon,
 } from "@/components/ui/icons";
 import { addressLine, type StructuredAddress } from "@/lib/address/structured";
 import { cityColour } from "@/lib/deliveries/city-colours";
 import { wazeLinkForPin } from "@/lib/delivery-location";
 import { formatShortDate } from "@/lib/date";
+import { parseDrive, type Drive } from "@/lib/routes/drive";
 import { decodePolyline } from "@/lib/routes/polyline";
 import {
   chainRules,
@@ -49,10 +49,12 @@ import {
   type RoutePoint,
 } from "@/lib/routes/plan";
 import { isRoutable, type PlannerStop } from "@/lib/routes/planner-stops";
-import { israelParts, israelWallClockToUtc } from "@/lib/timezone";
+import { israelDateKey, israelParts, israelWallClockToUtc } from "@/lib/timezone";
 import { getCityRegion } from "@/lib/ui/cities";
 import { cn } from "@/lib/utils";
 import { legColour, type MapPoint, type MapStop } from "./map-parts";
+import RouteDrive from "./RouteDrive";
+import { CityDot, clock, placeLine, Segmented } from "./route-ui";
 
 const RouteMap = dynamic(() => import("./RouteMap"), {
   ssr: false,
@@ -73,6 +75,7 @@ const STEPS: WizardStepDef<Step>[] = [
 
 const REGIONS = ["צפון", "מרכז", "דרום"] as const;
 const STORAGE_KEY = "bizh.routePlanner.v1";
+const DRIVE_KEY = "bizh.routeDrive.v1";
 
 type StartMode = "gps" | "address";
 type EndMode = "return" | "last" | "address";
@@ -102,10 +105,11 @@ type Plan = {
   mode: PlanMode;
   /** Stops that keep their place: the first / last asked for and the ones moved by hand. */
   pinned: Set<string>;
-  /** In words, what the person chose about the order — for "why this route". */
-  choices: string[];
   signature: string;
 };
+
+/** What the person chose about the order on step 3. */
+type Choices = { first: string | null; last: string | null; steps: string[] };
 
 /** Stops moved by hand on the route, not planned yet. */
 type Arranged = { order: string[]; pinned: Set<string> };
@@ -137,18 +141,8 @@ export function departureFrom(time: string, now: Date): Date | null {
   return at;
 }
 
-function clock(iso: string): string {
-  const p = israelParts(new Date(iso));
-  return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
-}
-
 function pointOf(address: StructuredAddress | null): RoutePoint | null {
   return address && address.lat !== null && address.lng !== null ? { lat: address.lat, lng: address.lng } : null;
-}
-
-/** "הרצל 5, ירושלים" — the city added when the address line doesn't name it. */
-function placeLine(stop: PlannerStop): string {
-  return [stop.address, stop.address.includes(stop.city) ? null : stop.city].filter(Boolean).join(", ");
 }
 
 function readSaved(): Saved {
@@ -218,20 +212,6 @@ export async function currentPosition(): Promise<RoutePoint> {
   }
 }
 
-/** Google Maps links for the route, 9 stops between each start and end at most (Google's limit). */
-export function googleMapsLinks(points: RoutePoint[]): string[] {
-  const at = (p: RoutePoint) => `${p.lat},${p.lng}`;
-  const links: string[] = [];
-  for (let from = 0; from < points.length - 1; from += 10) {
-    const part = points.slice(from, Math.min(points.length, from + 11));
-    const params = new URLSearchParams({ api: "1", origin: at(part[0]), destination: at(part[part.length - 1]), travelmode: "driving" });
-    const middle = part.slice(1, -1);
-    if (middle.length > 0) params.set("waypoints", middle.map(at).join("|"));
-    links.push(`https://www.google.com/maps/dir/?${params.toString()}`);
-  }
-  return links;
-}
-
 /** The route as text for the driver: each stop with its time, address, phone and Waze link. */
 function shareText(plan: Plan): string {
   const { result } = plan;
@@ -250,39 +230,6 @@ function shareText(plan: Plan): string {
   });
   lines.push("", `סיום משוער: ${clock(result.finish)}${plan.endIsStart ? " (חזרה לנקודת היציאה)" : plan.end ? ` · ${plan.endLabel}` : ""}`);
   return lines.join("\n");
-}
-
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  className,
-}: {
-  value: T;
-  options: Array<{ value: T; label: string }>;
-  onChange: (value: T) => void;
-  className?: string;
-}) {
-  return (
-    <div className={cn(SEGMENTED_GROUP, "flex w-full", className)} role="radiogroup">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={value === option.value}
-          onClick={() => onChange(option.value)}
-          className={cn(SEGMENT, "flex-1 px-2 text-center", value === option.value ? TOGGLE_ON : TOGGLE_OFF)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function CityDot({ city, className }: { city: string; className?: string }) {
-  return <span aria-hidden className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-full", className)} style={{ backgroundColor: cityColour(city) }} />;
 }
 
 const chipClass = (on: boolean) =>
@@ -337,6 +284,24 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
     }
   }, [startMode, startAddress, endMode, endAddress, serviceMinutes]);
 
+  // The route being driven, kept on the phone: back from Waze — or after the
+  // phone closed the app — it opens on the same stop.
+  const [drive, setDrive] = useState<Drive | null>(() => {
+    try {
+      return parseDrive(localStorage.getItem(DRIVE_KEY), israelDateKey());
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (drive) localStorage.setItem(DRIVE_KEY, JSON.stringify(drive));
+      else localStorage.removeItem(DRIVE_KEY);
+    } catch {
+      // Not kept: the drive still runs while the page stays open.
+    }
+  }, [drive]);
+
   // The order: the stop to start or finish with, and the cities' order.
   const [firstStop, setFirstStop] = useState<string | null>(null);
   const [lastStop, setLastStop] = useState<string | null>(null);
@@ -352,6 +317,13 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const [working, setWorking] = useState<PlanMode | null>(null);
   const [error, setError] = useState<PlanError | null>(null);
   const [activeLeg, setActiveLeg] = useState<number | null>(null);
+
+  // On a computer the steps scroll inside their own card; on a phone the page scrolls.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const toTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   // A choice that went away with its stop is dropped with it.
   const chosenKeys = new Set(chosen.map((stop) => stop.key));
@@ -378,17 +350,17 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const placesReady = startPoint !== null && (endMode !== "address" || endPoint !== null);
 
   // What a plan was asked with; a change shows "תכנון מחדש".
-  const signature = JSON.stringify({
-    keys: chosen.map((stop) => stop.key),
-    start: startMode === "gps" ? "gps" : startPoint,
-    endMode,
-    endPoint,
-    first,
-    last,
-    steps,
-    departureTime,
-    serviceMinutes,
-  });
+  const signatureOf = (choices: Choices) =>
+    JSON.stringify({
+      keys: chosen.map((stop) => stop.key),
+      start: startMode === "gps" ? "gps" : startPoint,
+      endMode,
+      endPoint,
+      ...choices,
+      departureTime,
+      serviceMinutes,
+    });
+  const signature = signatureOf({ first, last, steps });
   const stale = plan !== null && plan.signature !== signature;
 
   const stopsReady = chosen.length > 0 && chosen.length <= MAX_ROUTE_STOPS;
@@ -401,19 +373,14 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
     return STEPS.slice(0, at).every((s) => satisfied(s.n));
   };
 
-  /** The choices in words, for "why this route". */
-  const describeChoices = (mode: PlanMode, pinnedCount: number): string[] => {
-    if (mode === "exact") return ["בדיוק בסדר שסידרתם"];
-    const words: string[] = [];
-    const nameOf = (key: string | null) => chosen.find((stop) => stop.key === key)?.name;
-    if (first) words.push(`להתחיל ב${nameOf(first)}`);
-    if (last) words.push(`לסיים ב${nameOf(last)}`);
-    if (steps.length > 0) words.push(steps.join(" ← "));
-    if (mode === "around" && pinnedCount > 0) words.push(pinnedCount === 1 ? "עצירה שהזזתם" : `${pinnedCount} עצירות שהזזתם`);
-    return words;
-  };
-
-  const compute = async (mode: PlanMode) => {
+  /** Plans the route. `over` asks with other choices than the steps hold: an option picked in "why this route". */
+  const compute = async (mode: PlanMode, over: Partial<Choices> & { order?: string[] } = {}) => {
+    const choices: Choices = {
+      first: over.first !== undefined ? over.first : first,
+      last: over.last !== undefined ? over.last : last,
+      steps: over.steps ?? steps,
+    };
+    const exactOrder = over.order ?? arranged?.order ?? null;
     if (working) return;
     setWorking(mode);
     setError(null);
@@ -440,15 +407,16 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       const ids = chosen.map((stop) => stop.key);
       let before: Array<[string, string]>;
       let pinned = new Set<string>();
-      if (mode === "exact" && arranged) {
-        before = chainRules(arranged.order);
-        pinned = new Set(arranged.order);
+      const ends = [...(choices.first ? [choices.first] : []), ...(choices.last ? [choices.last] : [])];
+      if (mode === "exact" && exactOrder) {
+        before = chainRules(exactOrder);
+        pinned = new Set(exactOrder);
       } else if (mode === "around" && arranged) {
-        pinned = new Set([...arranged.pinned, ...(first ? [first] : []), ...(last ? [last] : [])]);
+        pinned = new Set([...arranged.pinned, ...ends]);
         before = pinnedRules(arranged.order, pinned);
       } else {
-        before = firstLastRules(ids, first, last);
-        pinned = new Set([...(first ? [first] : []), ...(last ? [last] : [])]);
+        before = firstLastRules(ids, choices.first, choices.last);
+        pinned = new Set(ends);
       }
       const request: RoutePlanRequest = {
         start,
@@ -457,7 +425,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
           id: stop.key,
           lat: stop.lat!,
           lng: stop.lng!,
-          phase: mode === "exact" || steps.length === 0 || pinned.has(stop.key) ? null : stopPhase(stop.city, steps),
+          phase: mode === "exact" || choices.steps.length === 0 || pinned.has(stop.key) ? null : stopPhase(stop.city, choices.steps),
         })),
         before,
         departure: departure ? departure.toISOString() : null,
@@ -485,13 +453,12 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
         serviceMinutes,
         mode,
         pinned,
-        choices: describeChoices(mode, [...(arranged?.pinned ?? [])].filter((key) => key !== first && key !== last).length),
-        signature,
+        signature: signatureOf(choices),
       });
       setArranged(null);
       setActiveLeg(null);
       setStep("route");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      toTop();
     } catch (e) {
       setError({ message: e instanceof Error ? e.message : "חישוב המסלול נכשל. נסו שוב." });
     } finally {
@@ -563,14 +530,32 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   // ── Moving stops by hand on the route ──
   const showPlan = plan !== null && !stale;
   const routeOrder = useMemo(() => arranged?.order ?? plan?.stops.map((stop) => stop.key) ?? [], [arranged, plan]);
-  const move = (key: string, by: -1 | 1) => {
-    if (!plan) return;
-    const order = [...routeOrder];
-    const at = order.indexOf(key);
-    const to = at + by;
-    if (at < 0 || to < 0 || to >= order.length) return;
-    [order[at], order[to]] = [order[to], order[at]];
-    setArranged({ order, pinned: new Set([...(arranged?.pinned ?? plan.pinned), key]) });
+  // Dragged by its number (owner, 2026-10-27: "reorder should be by the dots, not the arrows").
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!plan || !over || active.id === over.id) return;
+    const key = String(active.id);
+    const from = routeOrder.indexOf(key);
+    const to = routeOrder.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    setArranged({ order: arrayMove(routeOrder, from, to), pinned: new Set([...(arranged?.pinned ?? plan.pinned), key]) });
+  };
+
+  // Another option picked in "why this route": Google's fastest with none of the choices, or the list's order.
+  const pickFastest = () => {
+    setFirstStop(null);
+    setLastStop(null);
+    setCityOrder([]);
+    setArranged(null);
+    void compute("best", { first: null, last: null, steps: [] });
+  };
+  const pickListOrder = () => {
+    setArranged(null);
+    void compute("exact", { order: chosen.map((stop) => stop.key) });
   };
 
   // ── The map ──
@@ -611,24 +596,56 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
           ]
     );
   }, [step, plan, showPlan, arranged]);
+  // Driving: the stops in their order, the ones behind the driver in grey.
+  const driveStops: MapStop[] = useMemo(
+    () =>
+      drive
+        ? drive.stops.map((stop, index) => ({
+            key: stop.key,
+            lat: stop.lat,
+            lng: stop.lng,
+            color: cityColour(stop.city),
+            label: stop.name,
+            number: index + 1,
+            muted: Boolean(drive.outcome[stop.key]),
+          }))
+        : [],
+    [drive]
+  );
   const onRoute = step === "route" && plan !== null && showPlan;
   const mapStart: MapPoint | null = onRoute ? plan.start : startPoint;
   const mapEnd: MapPoint | null = onRoute ? plan.end : endPoint;
   const mapEndIsStart = onRoute ? plan.endIsStart : endMode === "return";
 
-  // The route in Google Maps: the main button on the finished route takes the
-  // driver there (owner, 2026-10-27); sending it to a driver is the side option.
-  const mapsLinks = useMemo(
-    () =>
-      plan
-        ? googleMapsLinks([
-            plan.start,
-            ...plan.stops.map((stop) => ({ lat: stop.lat!, lng: stop.lng! })),
-            ...(plan.endIsStart ? [plan.start] : plan.end ? [plan.end] : []),
-          ])
-        : [],
-    [plan]
-  );
+  // "יציאה לדרך": the route becomes a drive, and Waze opens on the first stop
+  // (owner, 2026-10-27); sending it to a driver is the side option.
+  const startDrive = () => {
+    if (!plan || plan.stops.length === 0) return;
+    const next: Drive = {
+      day: israelDateKey(),
+      stops: plan.stops.map((stop, index) => ({
+        key: stop.key,
+        kind: stop.kind,
+        name: stop.name,
+        phone: stop.phone,
+        city: stop.city,
+        address: stop.address,
+        orderIds: stop.orderIds,
+        collectOnDelivery: stop.collectOnDelivery,
+        note: stop.note,
+        lat: stop.lat!,
+        lng: stop.lng!,
+        arrival: plan.result.arrivals[index] ?? null,
+      })),
+      end: plan.endIsStart ? { point: plan.start, label: "נקודת היציאה" } : plan.end ? { point: plan.end, label: "נקודת הסיום" } : null,
+      at: 0,
+      outcome: {},
+      confirmed: [],
+    };
+    setDrive(next);
+    window.open(wazeLinkForPin(next.stops[0]), "_blank", "noopener,noreferrer");
+    window.scrollTo({ top: 0 });
+  };
 
   const share = async () => {
     if (!plan) return;
@@ -665,6 +682,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const goTo = (id: Step) => {
     setError(null);
     setStep(id);
+    panelRef.current?.scrollTo({ top: 0 });
     if (id === "places" && startMode === "gps" && !gpsPoint) locate();
   };
 
@@ -675,6 +693,8 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
     nextLabel?: ReactNode;
     isLastStep?: boolean;
     footerCenter?: ReactNode;
+    onBack?: () => void;
+    backLabel?: string;
   } = (() => {
     if (step === "stops") {
       return {
@@ -706,36 +726,92 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
     if (stale) {
       return { onNext: () => void compute("best"), nextDisabled: working !== null, nextLabel: working ? "Google מתכנן…" : "תכנון מחדש" };
     }
-    return {
-      onNext: () => window.open(mapsLinks[0], "_blank", "noopener,noreferrer"),
-      nextDisabled: mapsLinks.length === 0 || arranged !== null,
-      isLastStep: true,
-      nextLabel:
-        mapsLinks.length > 1 ? (
-          "יציאה לדרך · חלק 1"
-        ) : (
-          // On a narrow phone it breaks before "ב-Google Maps", not after "ב-".
-          <>
-            יציאה לדרך <span className="whitespace-nowrap">ב-Google Maps</span>
-          </>
+    // Stops moved by hand: the question sits here, where the buttons always
+    // are, not in a box above the list (owner, 2026-10-27: "I couldn't figure
+    // out where to look").
+    if (arranged) {
+      return {
+        onNext: () => void compute("around"),
+        nextDisabled: working !== null,
+        isLastStep: true,
+        nextLabel: working === "around" ? "Google מתכנן…" : "Google יסדר את השאר סביב השינוי",
+        onBack: () => setArranged(null),
+        backLabel: "ביטול",
+        footerCenter: (
+          <div className="flex w-full flex-col items-center gap-1.5 text-center">
+            <p className="text-sm font-semibold">שיניתם את הסדר — איך לתכנן?</p>
+            <Button type="button" size="sm" variant="outline" onClick={() => void compute("exact")} disabled={working !== null}>
+              {working === "exact" ? <SpinnerIcon className="animate-spin" /> : null}
+              בדיוק בסדר הזה
+            </Button>
+          </div>
         ),
+      };
+    }
+    return {
+      onNext: startDrive,
+      nextDisabled: !plan || plan.stops.length === 0 || arranged !== null,
+      isLastStep: true,
+      nextLabel: "יציאה לדרך ב-Waze",
     };
   })();
 
   const backTo: Record<Step, Step | null> = { stops: null, places: "stops", order: "places", route: "order" };
   const unreachableNames = (error?.unreachable ?? []).map((key) => stopByKey.get(key)?.name).filter(Boolean);
 
+  if (drive) {
+    return (
+      <div className="lg:grid lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] lg:items-start lg:gap-6">
+        <div
+          ref={panelRef}
+          className={cn(wide && "sticky top-20 h-[calc(100dvh-7.75rem)] min-h-[420px] min-w-0 overflow-y-auto overscroll-contain rounded-card border border-border/60 bg-muted/30 p-3 shadow-card")}
+        >
+          <RouteDrive
+            drive={drive}
+            update={(change) => setDrive((current) => (current ? change(current) : current))}
+            onEnd={() => setDrive(null)}
+            onNextStop={toTop}
+          />
+        </div>
+        {wide ? (
+          <div className="sticky top-20 h-[calc(100dvh-7.75rem)] min-h-[420px] overflow-hidden rounded-card border border-border/60 shadow-card">
+            <RouteMap
+              className="h-full w-full"
+              start={null}
+              end={drive.end?.point ?? null}
+              endIsStart={false}
+              stops={driveStops}
+              legs={[]}
+              activeLeg={null}
+              onStopClick={(key) =>
+                setDrive((current) => {
+                  if (!current) return current;
+                  const at = current.stops.findIndex((stop) => stop.key === key);
+                  const outcome = current.stops[at] ? current.outcome[key] : undefined;
+                  return at < 0 || outcome === "delivered" || outcome === "done" ? current : { ...current, at };
+                })
+              }
+            />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="lg:grid lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] lg:items-start lg:gap-6">
       <StepWizard
-        variant="page"
+        // A computer: one card as tall as the map, only its middle scrolls (owner, 2026-10-27).
+        variant={wide ? "panel" : "page"}
+        bodyRef={panelRef}
         steps={STEPS}
         current={step}
         canClickStep={canClickStep}
         onStepClick={(id) => {
           if (canClickStep(id)) goTo(id);
         }}
-        onBack={backTo[step] ? () => goTo(backTo[step]!) : undefined}
+        onBack={footer.onBack ?? (backTo[step] ? () => goTo(backTo[step]!) : undefined)}
+        backLabel={footer.backLabel}
         onNext={footer.onNext}
         nextDisabled={footer.nextDisabled}
         nextLabel={footer.nextLabel}
@@ -749,7 +825,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
               ? `לא נמצאה דרך אל: ${unreachableNames.join(", ")}. הורידו אותן ונסו שוב.`
               : undefined
         }
-        className="min-w-0"
+        className={wide ? "sticky top-20 h-[calc(100dvh-7.75rem)] min-h-[420px] min-w-0 overflow-hidden rounded-card border border-border/60 bg-card shadow-card" : "min-w-0"}
       >
         {/* On a phone the map rides above the step; on a computer it stands beside the steps. */}
         {wide ? null : <div className="h-64 overflow-hidden rounded-card border border-border/60 shadow-card">{map}</div>}
@@ -1071,52 +1147,29 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                   <Figure label="סיום משוער" value={clock(plan.result.finish)} />
                 </div>
                 <p className="text-xs text-muted-foreground">כולל {plan.serviceMinutes} דק׳ בכל עצירה · זמני הנסיעה עם העומס הצפוי בכל קטע</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => void share()}
-                    disabled={stale || arranged !== null}
-                  >
-                    <ShareIcon />
-                    שליחת המסלול לנהג
-                  </Button>
-                  {/* Over 9 stops Google Maps takes the route in parts; the main button opens the first. */}
-                  {mapsLinks.length > 1
-                    ? mapsLinks.map((href, index) => (
-                        <Button key={href} asChild variant="outline" size="sm" className="gap-1.5">
-                          <a href={href} target="_blank" rel="noopener noreferrer">
-                            <ExternalLinkIcon />
-                            Google Maps · חלק {index + 1}
-                          </a>
-                        </Button>
-                      ))
-                    : null}
-                </div>
+                <ChoiceCost plan={plan} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => void share()}
+                  disabled={stale || arranged !== null}
+                >
+                  <ShareIcon />
+                  שליחת המסלול לנהג
+                </Button>
               </Card>
 
-              {arranged ? (
-                <div className="space-y-2 rounded-xl border border-secondary/50 bg-secondary/5 p-3">
-                  <p className="text-sm font-semibold">הזזתם עצירות. איך לתכנן?</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" onClick={() => void compute("around")} disabled={working !== null}>
-                      {working === "around" ? <SpinnerIcon className="animate-spin" /> : null}
-                      Google יסדר את השאר סביב השינוי
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => void compute("exact")} disabled={working !== null}>
-                      {working === "exact" ? <SpinnerIcon className="animate-spin" /> : null}
-                      בדיוק בסדר הזה
-                    </Button>
-                    <Button type="button" size="sm" variant="muted" onClick={() => setArranged(null)} disabled={working !== null}>
-                      ביטול
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
               <Card className={cn("p-2 sm:p-3", stale && "opacity-60")}>
+                {stale ? null : (
+                  <p className="flex items-start gap-1.5 px-2 pb-2 pt-1 text-sm text-muted-foreground">
+                    <InfoIcon className="mt-0.5 h-4 w-4 shrink-0 text-secondary" />
+                    {arranged ? "בחרו למטה איך לתכנן." : "לשינוי הסדר — גררו עצירה במספר שלה."}
+                  </p>
+                )}
+                <DndContext id="route-stops-dnd" sensors={sensors} onDragEnd={onDragEnd}>
+                  <SortableContext items={routeOrder} strategy={verticalListSortingStrategy}>
                 <ol>
                   <TimelinePoint
                     marker={<span className="text-[0.7rem] font-bold">{plan.endIsStart ? "⇆" : "▶"}</span>}
@@ -1130,77 +1183,45 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                     const leg = arranged ? null : plan.result.legs[index];
                     const kept = (arranged?.pinned ?? plan.pinned).has(key);
                     return (
-                      <li key={key}>
-                        {leg ? (
-                          <TimelineLeg index={index} count={plan.result.legs.length} leg={leg} active={activeLeg === index} onHover={setActiveLeg} />
-                        ) : (
-                          <div className="h-3" />
-                        )}
-                        <div className="flex items-start gap-2.5 rounded-xl p-2 hover:bg-muted/40">
-                          <span
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm font-bold text-primary shadow"
-                            style={{ backgroundColor: cityColour(stop.city) }}
-                          >
-                            {index + 1}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-baseline gap-x-2">
-                              <span className="break-words font-semibold">{stop.name}</span>
-                              {arranged ? null : (
-                                <span className="text-sm font-semibold tabular-nums text-secondary">{clock(plan.result.arrivals[index])}</span>
-                              )}
-                              {kept ? (
-                                <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground" title="נשאר במקום שבחרתם">
-                                  <LockIcon className="h-3 w-3" />
-                                  במקום שבחרתם
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="text-xs text-muted-foreground">{placeLine(stop)}</p>
-                            {stop.collectOnDelivery ? (
-                              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.7rem] font-semibold text-warning-soft-foreground">
-                                <CashIcon className="h-3 w-3" />
-                                גבייה במסירה
+                      <SortableStop
+                        key={key}
+                        id={key}
+                        number={index + 1}
+                        name={stop.name}
+                        color={cityColour(stop.city)}
+                        disabled={stale || working !== null}
+                        highlighted={arranged !== null && kept}
+                        leg={
+                          leg ? (
+                            <TimelineLeg index={index} count={plan.result.legs.length} leg={leg} active={activeLeg === index} onHover={setActiveLeg} />
+                          ) : (
+                            <div className="h-3" />
+                          )
+                        }
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-baseline gap-x-2">
+                            <span className="break-words font-semibold">{stop.name}</span>
+                            {arranged ? null : (
+                              <span className="text-sm font-semibold tabular-nums text-secondary">{clock(plan.result.arrivals[index])}</span>
+                            )}
+                            {kept ? (
+                              <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground" title="נשאר במקום שבחרתם">
+                                <LockIcon className="h-3 w-3" />
+                                במקום שבחרתם
                               </span>
                             ) : null}
                           </div>
-                          <div className="flex shrink-0 flex-col items-center gap-1 sm:flex-row">
-                            <div className="flex items-center gap-1">
-                              {stop.phone ? <CallIconButton phone={stop.phone} name={stop.name} /> : null}
-                              <a
-                                href={wazeLinkForPin({ lat: stop.lat!, lng: stop.lng! })}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label={`ניווט אל ${stop.name}`}
-                                className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"
-                              >
-                                <WazeIcon className="h-5 w-5" />
-                              </a>
-                            </div>
-                            {/* Moving a stop by hand (owner: "allow it for me"). */}
-                            <div className="flex items-center">
-                              <button
-                                type="button"
-                                onClick={() => move(key, -1)}
-                                disabled={index === 0 || stale || working !== null}
-                                aria-label={`להקדים את ${stop.name}`}
-                                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-30"
-                              >
-                                <ArrowUpIcon className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => move(key, 1)}
-                                disabled={index === routeOrder.length - 1 || stale || working !== null}
-                                aria-label={`לאחר את ${stop.name}`}
-                                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-30"
-                              >
-                                <ArrowDownIcon className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
+                          <p className="text-xs text-muted-foreground">{placeLine(stop)}</p>
+                          {stop.collectOnDelivery ? (
+                            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.7rem] font-semibold text-warning-soft-foreground">
+                              <CashIcon className="h-3 w-3" />
+                              גבייה במסירה
+                            </span>
+                          ) : null}
                         </div>
-                      </li>
+                        {stop.phone ? <CallIconButton phone={stop.phone} name={stop.name} className="shrink-0" /> : null}
+                      </SortableStop>
                     );
                   })}
                   {!arranged && plan.result.legs.length > plan.stops.length ? (
@@ -1221,9 +1242,13 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                     meta={arranged ? "השעות יתעדכנו אחרי התכנון" : `סיום משוער ${clock(plan.result.finish)}`}
                   />
                 </ol>
+                  </SortableContext>
+                </DndContext>
               </Card>
 
-              <WhyCard plan={plan} />
+              <div className={cn(arranged && "pointer-events-none opacity-60")}>
+                <WhyCard plan={plan} working={working} onFastest={pickFastest} onListOrder={pickListOrder} />
+              </div>
             </div>
           ) : null
         ) : null}
@@ -1231,11 +1256,70 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
 
       {/* A computer: the map beside the steps, held on screen while they scroll. */}
       {wide ? (
-        <div className="sticky top-20 h-[calc(100dvh-7rem)] min-h-[420px] overflow-hidden rounded-card border border-border/60 shadow-card">
+        <div className="sticky top-20 h-[calc(100dvh-7.75rem)] min-h-[420px] overflow-hidden rounded-card border border-border/60 shadow-card">
           {map}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A stop on the route, dragged up or down by its number. */
+function SortableStop({
+  id,
+  number,
+  name,
+  color,
+  disabled,
+  highlighted,
+  leg,
+  children,
+}: {
+  id: string;
+  number: number;
+  name: string;
+  color: string;
+  disabled: boolean;
+  /** Moved by hand, waiting for "how to plan". */
+  highlighted: boolean;
+  /** The drive to this stop, drawn above it. */
+  leg: ReactNode;
+  children: ReactNode;
+}) {
+  const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id, disabled });
+  return (
+    <li
+      ref={setNodeRef}
+      // Up and down only.
+      style={{ transform: CSS.Translate.toString(transform && { ...transform, x: 0 }), transition }}
+      className={cn("relative", isDragging && "z-10")}
+    >
+      {leg}
+      <div
+        className={cn(
+          "flex items-center gap-2.5 rounded-xl bg-card p-2",
+          isDragging ? "shadow-lg ring-2 ring-secondary" : highlighted ? "bg-secondary/10" : "hover:bg-muted/40"
+        )}
+      >
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          disabled={disabled}
+          aria-label={`גררו כדי להזיז את ${name}`}
+          title="גררו לשינוי הסדר"
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm font-bold text-primary shadow",
+            !disabled && "cursor-grab touch-none active:cursor-grabbing"
+          )}
+          style={{ backgroundColor: color }}
+        >
+          {number}
+        </button>
+        {children}
+      </div>
+    </li>
   );
 }
 
@@ -1294,94 +1378,149 @@ function TimelineLeg({
   );
 }
 
-function CompareRow({ label, cost, base, max, best }: { label: string; cost: RouteCost; base: RouteCost; max: number; best: boolean }) {
+/** One way to drive the stops: its time against this route's, and a tap to switch to it. */
+function CompareRow({
+  label,
+  cost,
+  base,
+  max,
+  current,
+  onPick,
+  busy,
+  disabled,
+}: {
+  label: string;
+  cost: RouteCost;
+  base: RouteCost;
+  max: number;
+  current: boolean;
+  onPick?: () => void;
+  busy: boolean;
+  disabled: boolean;
+}) {
   const diff = cost.durationSec - base.durationSec;
-  return (
-    <div className="space-y-1">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
-        <span className={cn("font-medium", best && "text-success")}>{label}</span>
+  const body = (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
+        <span className={cn("inline-flex items-center gap-1.5 font-medium", current && "text-success")}>
+          {current ? <CheckIcon className="h-4 w-4" /> : null}
+          {label}
+        </span>
         <span className="tabular-nums text-muted-foreground">
           {formatDuration(cost.durationSec)} · {formatDistance(cost.distanceM)}
-          {!best && diff > 0 ? <span className="ms-1.5 font-semibold text-destructive">+{formatDuration(diff)}</span> : null}
-          {!best && diff < 0 ? <span className="ms-1.5 font-semibold text-success">−{formatDuration(-diff)}</span> : null}
+          {!current && diff > 0 ? <span className="ms-1.5 font-semibold text-destructive">+{formatDuration(diff)}</span> : null}
+          {!current && diff < 0 ? <span className="ms-1.5 font-semibold text-success">−{formatDuration(-diff)}</span> : null}
         </span>
       </div>
       <div className="h-2.5 overflow-hidden rounded-full bg-muted">
         <div
-          className={cn("h-full rounded-full", best ? "bg-secondary" : diff > 0 ? "bg-destructive/70" : "bg-success")}
+          className={cn("h-full rounded-full", current ? "bg-secondary" : diff > 0 ? "bg-destructive/70" : "bg-success")}
           style={{ width: `${max > 0 ? Math.max(4, (cost.durationSec / max) * 100) : 0}%` }}
         />
       </div>
-    </div>
+      {onPick ? (
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-secondary">
+          {busy ? <SpinnerIcon className="h-3.5 w-3.5 animate-spin" /> : null}
+          {busy ? "Google מתכנן…" : "לעבור למסלול הזה"}
+        </span>
+      ) : null}
+    </>
+  );
+  if (!onPick) return <div className="space-y-1 rounded-lg p-2">{body}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      disabled={disabled}
+      className="block w-full space-y-1 rounded-lg border border-border/70 p-2 text-right hover:border-secondary/50 hover:bg-secondary/5 disabled:opacity-60"
+    >
+      {body}
+    </button>
   );
 }
 
-function WhyCard({ plan }: { plan: Plan }) {
+/** What the chosen order costs against Google's fastest, at the top of the route (owner: the box at the bottom was missed). */
+function ChoiceCost({ plan }: { plan: Plan }) {
+  const free = plan.result.compare.freeBest;
+  if (!free) return null;
+  const cost = plan.result.total.durationSec - free.durationSec;
+  const exact = plan.mode === "exact";
+  return (
+    <p
+      className={cn(
+        "flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-sm",
+        cost > 0 ? "bg-warning-soft text-warning-soft-foreground" : "bg-success/10 text-success"
+      )}
+    >
+      {cost > 0 ? <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckIcon className="mt-0.5 h-4 w-4 shrink-0" />}
+      {cost > 0 ? (
+        <span>
+          {exact ? "הסדר שלכם מוסיף" : "הבחירות שלכם מוסיפות"} <b>+{formatDuration(cost)}</b> לעומת הכי מהיר
+        </span>
+      ) : (
+        <span>{exact ? "הסדר שלכם לא מוסיף זמן" : "הבחירות שלכם לא מוסיפות זמן"}</span>
+      )}
+    </p>
+  );
+}
+
+/** Why this route, in a line, and the other ways to drive it — each one a tap away (owner, 2026-10-27: "too much text … let me choose"). */
+function WhyCard({
+  plan,
+  working,
+  onFastest,
+  onListOrder,
+}: {
+  plan: Plan;
+  working: PlanMode | null;
+  onFastest: () => void;
+  onListOrder: () => void;
+}) {
   const { result } = plan;
   const n = plan.stops.length;
-  const list = result.compare.listOrder;
+  const list = n > 1 ? result.compare.listOrder : null;
   const free = result.compare.freeBest;
-  const listGap = list ? list.durationSec - result.total.durationSec : 0;
-  const choiceCost = free ? result.total.durationSec - free.durationSec : 0;
-  const choices = plan.choices.join(", ");
   const rows = [
-    { label: plan.mode === "exact" ? "הסדר שלכם" : "המסלול הזה", cost: result.total, best: true },
-    ...(free ? [{ label: "הכי מהיר בלי הבחירות שלכם", cost: free, best: false }] : []),
-    ...(list ? [{ label: "לפי הסדר ברשימה", cost: list, best: false }] : []),
+    { label: plan.mode === "exact" ? "הסדר שלכם" : "המסלול הזה", cost: result.total, current: true },
+    ...(free ? [{ label: "הכי מהיר, בלי הבחירות שלכם", cost: free, current: false, onPick: onFastest, busy: working === "best" }] : []),
+    ...(list ? [{ label: "לפי הסדר ברשימה", cost: list, current: false, onPick: onListOrder, busy: working === "exact" }] : []),
   ];
   const max = Math.max(...rows.map((row) => row.cost.durationSec));
   const partialTraffic = result.legs.some((leg) => leg.trafficUnavailable);
 
   return (
     <Card className="space-y-3 p-4">
-      <p className="flex items-center gap-2 font-semibold">
-        <InfoIcon className="h-4 w-4 text-secondary" />
-        למה המסלול הזה?
-      </p>
-      <ul className="space-y-1.5 text-sm">
-        {plan.mode === "exact" ? (
-          <li>• זה בדיוק הסדר שסידרתם — Google חישב לו את הזמנים עם העומס הצפוי בכל קטע.</li>
-        ) : (
-          <li>
-            • את הסדר בחר <b>מתכנן המסלולים של Google</b> — עם העומס ש-Google צופה בכל קטע בשעה שתגיעו אליו, לא רק העומס של עכשיו.
-            {n > 1 && result.triedRoutes > 1
-              ? ` מתוך ${formatCount(result.possibleOrders)} סדרים אפשריים, Google תכנן את המסלול ${result.triedRoutes} פעמים — כל פעם מתחיל בעצירה קרובה אחרת — ונבחר המהיר מכולם.`
-              : ""}
-          </li>
-        )}
-        {free ? (
-          <li>
-            •{" "}
-            {choiceCost > 0 ? (
-              <>
-                הבחירות שלכם ({choices}) מוסיפות <b>{formatDuration(choiceCost)}</b> לעומת הסדר הכי מהיר בלעדיהן. זה בסדר — המסלול שומר עליהן.
-              </>
-            ) : (
-              <>הבחירות שלכם ({choices}) לא עולות כלום — זה גם הסדר הכי מהיר.</>
-            )}
-          </li>
-        ) : null}
-        {list && n > 1 ? (
-          <li>
-            •{" "}
-            {listGap > 0 ? (
-              <>
-                חוסך <b>{formatDuration(listGap)}</b> לעומת נסיעה לפי הסדר ברשימה.
-              </>
-            ) : (
-              "הסדר ברשימה יוצא מהיר בדיוק כמו המסלול הזה."
-            )}
-          </li>
-        ) : null}
-      </ul>
+      <div className="space-y-1">
+        <p className="flex items-center gap-2 font-semibold">
+          <InfoIcon className="h-4 w-4 text-secondary" />
+          למה המסלול הזה?
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {plan.mode === "exact"
+            ? "בדיוק בסדר שבחרתם, עם העומס הצפוי בכל קטע."
+            : n > 1
+              ? `הכי מהיר מתוך ${formatCount(result.possibleOrders)} סדרים אפשריים, עם העומס הצפוי בכל קטע.`
+              : "עם העומס הצפוי בכל קטע."}
+        </p>
+      </div>
       {rows.length > 1 ? (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {rows.map((row) => (
-            <CompareRow key={row.label} label={row.label} cost={row.cost} base={result.total} max={max} best={row.best} />
+            <CompareRow
+              key={row.label}
+              label={row.label}
+              cost={row.cost}
+              base={result.total}
+              max={max}
+              current={row.current}
+              onPick={"onPick" in row ? row.onPick : undefined}
+              busy={"busy" in row ? Boolean(row.busy) : false}
+              disabled={working !== null}
+            />
           ))}
         </div>
       ) : null}
-      {partialTraffic ? <p className="text-xs text-muted-foreground">בחלק מהקטעים ל-Google לא היו נתוני עומס — הזמן שלהם לפי כביש פנוי.</p> : null}
+      {partialTraffic ? <p className="text-xs text-muted-foreground">בחלק מהקטעים אין ל-Google נתוני עומס.</p> : null}
     </Card>
   );
 }

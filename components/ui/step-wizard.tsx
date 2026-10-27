@@ -259,9 +259,11 @@ export type StepWizardProps<TStep extends string | number> = {
    * "dialog" — a fixed-height column inside a dialog: pinned bars, scrolling
    * middle. "page" — a standalone page: the step bar is a sticky card, the
    * action bar is flush above the bottom nav on mobile, and the page itself
-   * scrolls.
+   * scrolls. "panel" — a side card on a page, as tall as the caller makes it:
+   * the step bar at its top, the action bar at its bottom, only the middle
+   * scrolls (the route planner beside its map on a computer).
    */
-  variant?: "dialog" | "page";
+  variant?: "dialog" | "page" | "panel";
   steps: WizardStepDef<TStep>[];
   current: TStep;
   canClickStep: (n: TStep) => boolean;
@@ -364,6 +366,7 @@ export function StepWizard<TStep extends string | number>({
   children,
 }: StepWizardProps<TStep>) {
   const inDialog = variant === "dialog";
+  const inPanel = variant === "panel";
 
   // Dialog mode uses the shared chrome, so a wizard is indistinguishable from
   // a FormDialog. Page mode keeps its own sticky-card bar — a standalone page
@@ -415,7 +418,9 @@ export function StepWizard<TStep extends string | number>({
     </div>
   );
 
-  const header = inDialog ? (
+  const header = inPanel ? (
+    <div className="flex shrink-0 items-start gap-2 border-b border-border/70 px-4 py-3">{headerContent}</div>
+  ) : inDialog ? (
     <DialogChromeHeader
       onClose={onClose}
       closeDisabled={closeDisabled}
@@ -430,7 +435,11 @@ export function StepWizard<TStep extends string | number>({
     </div>
   );
 
-  const body = inDialog ? (
+  const body = inPanel ? (
+    <div ref={bodyRef} className={cn("min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-4", bodyClassName)}>
+      {children}
+    </div>
+  ) : inDialog ? (
     <DialogChromeBody ref={bodyRef} className={bodyClassName}>
       {children}
     </DialogChromeBody>
@@ -500,7 +509,9 @@ export function StepWizard<TStep extends string | number>({
     </>
   );
 
-  const footer = inDialog ? (
+  const footer = inPanel ? (
+    <div className="shrink-0 space-y-2 border-t border-border/70 px-4 py-3">{footerInner}</div>
+  ) : inDialog ? (
     <DialogChromeFooter>{footerInner}</DialogChromeFooter>
   ) : (
     // Standalone: flush above the bottom nav on a phone, a sticky card on md+.
@@ -527,14 +538,14 @@ export function StepWizard<TStep extends string | number>({
       ref={rootRef}
       onKeyDown={nextOnEnter ? onEnter : undefined}
       className={cn(
-        inDialog ? "flex min-h-0 flex-1 flex-col" : "flex flex-col gap-5 pb-28 md:pb-0",
+        inDialog ? "flex min-h-0 flex-1 flex-col" : inPanel ? "flex min-h-0 flex-col" : "flex flex-col gap-5 pb-28 md:pb-0",
         className
       )}
     >
       {header}
       {submitOnEnter ? (
         <form
-          className={cn(inDialog ? "flex min-h-0 flex-1 flex-col" : "contents")}
+          className={cn(inDialog || inPanel ? "flex min-h-0 flex-1 flex-col" : "contents")}
           onSubmit={(e) => {
             e.preventDefault();
             onNext();

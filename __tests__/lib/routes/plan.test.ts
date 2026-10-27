@@ -15,7 +15,6 @@ import {
   currentPosition,
   departureFrom,
   formatCount,
-  googleMapsLinks,
   locationError,
 } from "@/app/(app)/deliveries/route/RoutePlanner";
 
@@ -203,25 +202,5 @@ describe("currentPosition (\"המיקום שלי\")", () => {
     expect(locationError(2)).toContain("GPS");
     expect(locationError(3)).toContain("זמן");
     expect(new Set([1, 2, 3, null].map(locationError)).size).toBe(4);
-  });
-});
-
-describe("googleMapsLinks", () => {
-  const points = Array.from({ length: 13 }, (_, i) => ({ lat: 31 + i / 100, lng: 35 }));
-
-  it("one link up to 9 stops between start and end", () => {
-    const links = googleMapsLinks(points.slice(0, 11));
-    expect(links).toHaveLength(1);
-    const url = new URL(links[0]);
-    expect(url.searchParams.get("origin")).toBe("31,35");
-    expect(url.searchParams.get("destination")).toBe("31.1,35");
-    expect(url.searchParams.get("waypoints")?.split("|")).toHaveLength(9);
-  });
-
-  it("more stops: parts that carry on from where the last one ended", () => {
-    const links = googleMapsLinks(points);
-    expect(links).toHaveLength(2);
-    expect(new URL(links[1]).searchParams.get("origin")).toBe(new URL(links[0]).searchParams.get("destination"));
-    expect(new URL(links[1]).searchParams.get("destination")).toBe("31.12,35");
   });
 });

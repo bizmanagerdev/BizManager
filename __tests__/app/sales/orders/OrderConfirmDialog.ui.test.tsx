@@ -256,8 +256,8 @@ function openDialog(props: Partial<React.ComponentProps<typeof OrderConfirmDialo
   fireEvent.click(screen.getByRole("button", { name: "סמן כסופק" }));
 }
 
-async function openOnItems() {
-  openDialog();
+async function openOnItems(props: Partial<React.ComponentProps<typeof OrderConfirmDialog>> = {}) {
+  openDialog(props);
   await screen.findByRole("heading", { name: "מה נמסר בפועל?" });
 }
 
@@ -1542,6 +1542,37 @@ describe("confirming", () => {
         extra: { orderId: "o1", status: 400, serverError: "אחד הפריטים בהזמנה אינו תקין." },
       })
     );
+  });
+
+  // The route's drive moves on to the next stop from here (owner, 2026-10-27).
+  describe("tells the page it's saved", () => {
+    it("on the server", async () => {
+      const onConfirmed = vi.fn();
+      await openOnItems({ onConfirmed });
+      await straightToReview();
+      await confirmDelivery();
+      await waitFor(() => expect(onConfirmed).toHaveBeenCalledTimes(1));
+    });
+
+    it("on the phone, waiting for a connection", async () => {
+      saves.upload.mockResolvedValue({ queued: true, reason: "offline" });
+      const onConfirmed = vi.fn();
+      await openOnItems({ onConfirmed });
+      await straightToReview();
+      await confirmDelivery();
+      await screen.findByRole("heading", { name: "אין כרגע חיבור לאינטרנט" });
+      expect(onConfirmed).toHaveBeenCalledTimes(1);
+    });
+
+    it("not when the server refused it", async () => {
+      saves.upload.mockResolvedValue({ queued: false, ok: false, status: 400, error: "אחד הפריטים בהזמנה אינו תקין." });
+      const onConfirmed = vi.fn();
+      await openOnItems({ onConfirmed });
+      await straightToReview();
+      await confirmDelivery();
+      await screen.findByText("אחד הפריטים בהזמנה אינו תקין.");
+      expect(onConfirmed).not.toHaveBeenCalled();
+    });
   });
 
   it.each([

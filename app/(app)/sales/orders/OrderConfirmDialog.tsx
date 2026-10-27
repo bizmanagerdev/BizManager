@@ -227,6 +227,7 @@ export default function OrderConfirmDialog({
   description = "עדכון כמויות שנמסרו, תשלום, החזר והוכחת אספקה במסך אחד.",
   customerName,
   authorName,
+  onConfirmed,
 }: {
   orderId: string;
   buttonLabel?: React.ReactNode;
@@ -237,6 +238,8 @@ export default function OrderConfirmDialog({
   customerName?: string | null;
   /** Who's confirming — used to attribute the delivery note in the order thread. */
   authorName?: string | null;
+  /** The confirmation is saved — on the server, or on the phone to send when the connection is back. */
+  onConfirmed?: () => void;
 }) {
   const router = useRouter();
   // The note's author: the page's own name for the viewer, else the person
@@ -783,6 +786,7 @@ export default function OrderConfirmDialog({
         // the driver (and whoever debugs this later) can tell at a glance that
         // this was a connectivity problem, not a rejection.
         setQueuedReason(result.reason);
+        onConfirmed?.();
         return;
       }
 
@@ -808,6 +812,7 @@ export default function OrderConfirmDialog({
       }
 
       setOpen(false);
+      onConfirmed?.();
       startTransition(() => {
         router.refresh();
       });
