@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   chainRules,
   firstLastRules,
@@ -11,7 +11,13 @@ import {
   stopPhase,
 } from "@/lib/routes/plan";
 import { decodePolyline } from "@/lib/routes/polyline";
-import { departureFrom, formatCount, googleMapsLinks } from "@/app/(app)/deliveries/route/RoutePlanner";
+import {
+  currentPosition,
+  departureFrom,
+  formatCount,
+  googleMapsLinks,
+  locationError,
+} from "@/app/(app)/deliveries/route/RoutePlanner";
 
 // The route planner's order choices — the cities' order, the stop to start
 // or finish with, stops moved by hand — its counts and its words.
@@ -143,6 +149,60 @@ describe("departureFrom", () => {
 
   it("an hour already gone is tomorrow", () => {
     expect(departureFrom("07:00", now)?.toISOString()).toBe("2026-10-27T05:00:00.000Z");
+  });
+});
+
+describe("currentPosition (\"המיקום שלי\")", () => {
+  /** A device that answers each ask in turn: a place, or a failure's code. */
+  function device(answers: Array<number | "found">) {
+    const asked: PositionOptions[] = [];
+    vi.stubGlobal("navigator", {
+      geolocation: {
+        getCurrentPosition: (found: PositionCallback, failed: PositionErrorCallback, options: PositionOptions) => {
+          asked.push(options);
+          const answer = answers[asked.length - 1];
+          if (answer === "found") found({ coords: { latitude: 31.8, longitude: 35.2 } } as GeolocationPosition);
+          else failed({ code: answer } as GeolocationPositionError);
+        },
+      },
+    });
+    return asked;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("the GPS's answer, asked once", async () => {
+    const asked = device(["found"]);
+    await expect(currentPosition()).resolves.toEqual({ lat: 31.8, lng: 35.2 });
+    expect(asked.map((options) => options.enableHighAccuracy)).toEqual([true]);
+  });
+
+  it("GPS too slow or lost: the phone's coarser location instead", async () => {
+    for (const code of [2, 3]) {
+      const asked = device([code, "found"]);
+      await expect(currentPosition()).resolves.toEqual({ lat: 31.8, lng: 35.2 });
+      expect(asked.map((options) => options.enableHighAccuracy)).toEqual([true, false]);
+    }
+  });
+
+  it("blocked: says so at once, without asking again", async () => {
+    const asked = device([1]);
+    await expect(currentPosition()).rejects.toThrow(locationError(1));
+    expect(asked).toHaveLength(1);
+  });
+
+  it("nothing either way: why, in the words of the last answer", async () => {
+    device([3, 2]);
+    await expect(currentPosition()).rejects.toThrow(locationError(2));
+  });
+
+  it("each cause in its own words", () => {
+    expect(locationError(1)).toContain("חסומה");
+    expect(locationError(2)).toContain("GPS");
+    expect(locationError(3)).toContain("זמן");
+    expect(new Set([1, 2, 3, null].map(locationError)).size).toBe(4);
   });
 });
 

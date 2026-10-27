@@ -17,6 +17,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CashIcon,
+  CheckIcon,
   ChevronDownIcon,
   CloseIcon,
   ExternalLinkIcon,
@@ -182,18 +183,39 @@ function useWideScreen(): boolean {
   return wide;
 }
 
-function currentPosition(): Promise<RoutePoint> {
-  return new Promise((resolve, reject) => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      reject(new Error("המכשיר לא נותן מיקום. בחרו כתובת יציאה."));
-      return;
-    }
+/** Why the device gave no location, in words that say what to do (one message for all three sent people looking in the wrong place). */
+export function locationError(code: number | null): string {
+  if (code === 1) return "הגישה למיקום חסומה. אפשרו מיקום לאתר בדפדפן, או ל-BizH בהגדרות הטלפון — או בחרו כתובת יציאה.";
+  if (code === 2) return "המכשיר לא מצא את המיקום שלו. בדקו שהמיקום (GPS) פתוח — או בחרו כתובת יציאה.";
+  if (code === 3) return "מציאת המיקום לקחה יותר מדי זמן. נסו שוב — או בחרו כתובת יציאה.";
+  return "המכשיר לא נותן מיקום. בחרו כתובת יציאה.";
+}
+
+function askPosition(options: PositionOptions): Promise<RoutePoint> {
+  return new Promise((resolve, reject) =>
     navigator.geolocation.getCurrentPosition(
       (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
-      () => reject(new Error("לא הצלחנו לקבל את המיקום שלכם. אשרו גישה למיקום או בחרו כתובת יציאה.")),
-      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 }
-    );
-  });
+      reject,
+      options
+    )
+  );
+}
+
+/** The device's location: its GPS first; when that finds nothing in time, the coarser one the phone already has (Wi-Fi, cell). */
+export async function currentPosition(): Promise<RoutePoint> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) throw new Error(locationError(null));
+  try {
+    return await askPosition({ enableHighAccuracy: true, timeout: 12_000, maximumAge: 60_000 });
+  } catch (first) {
+    const code = (first as GeolocationPositionError).code;
+    // Blocked is blocked: asking again only waits for the same answer.
+    if (code === 1) throw new Error(locationError(1));
+    try {
+      return await askPosition({ enableHighAccuracy: false, timeout: 10_000, maximumAge: 5 * 60_000 });
+    } catch (second) {
+      throw new Error(locationError((second as GeolocationPositionError).code ?? code));
+    }
+  }
 }
 
 /** Google Maps links for the route, 9 stops between each start and end at most (Google's limit). */
@@ -300,6 +322,8 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const [startMode, setStartMode] = useState<StartMode>(saved.startMode);
   const [startAddress, setStartAddress] = useState<StructuredAddress | null>(saved.startAddress);
   const [gpsPoint, setGpsPoint] = useState<RoutePoint | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
   const [endMode, setEndMode] = useState<EndMode>(saved.endMode);
   const [endAddress, setEndAddress] = useState<StructuredAddress | null>(saved.endAddress);
   const [departureTime, setDepartureTime] = useState("");
@@ -338,9 +362,20 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const cityChoices = [...(presentRegions.length > 1 ? presentRegions : []), ...presentCities];
   const steps = cityOrder.filter((token) => cityChoices.includes(token));
 
+  // "המיקום שלי" is looked for as soon as it's chosen, so a phone that won't
+  // give it says so on this step — not two steps later at "תכנון המסלול".
+  const locate = () => {
+    if (locating) return;
+    setLocating(true);
+    setGpsError(null);
+    currentPosition()
+      .then(setGpsPoint, (e: unknown) => setGpsError(e instanceof Error ? e.message : locationError(null)))
+      .finally(() => setLocating(false));
+  };
+
   const startPoint = startMode === "gps" ? gpsPoint : pointOf(startAddress);
   const endPoint: RoutePoint | null = endMode === "address" ? pointOf(endAddress) : null;
-  const placesReady = (startMode === "gps" || startPoint !== null) && (endMode !== "address" || endPoint !== null);
+  const placesReady = startPoint !== null && (endMode !== "address" || endPoint !== null);
 
   // What a plan was asked with; a change shows "תכנון מחדש".
   const signature = JSON.stringify({
@@ -386,8 +421,16 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         throw new Error("אין חיבור לרשת — תכנון מסלול צריך את Google.");
       }
-      const start = startMode === "gps" ? await currentPosition() : startPoint;
-      if (startMode === "gps") setGpsPoint(start);
+      // Where the device is now; if it can't say this time, where it was found on step 2.
+      let start = startPoint;
+      if (startMode === "gps") {
+        try {
+          start = await currentPosition();
+          setGpsPoint(start);
+        } catch (e) {
+          if (!gpsPoint) throw e;
+        }
+      }
       if (!start) throw new Error("בחרו מאיפה יוצאים.");
       const end: RouteEnd =
         endMode === "last" ? { mode: "last" } : endMode === "address" && endPoint ? { mode: "point", point: endPoint } : { mode: "return" };
@@ -622,6 +665,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const goTo = (id: Step) => {
     setError(null);
     setStep(id);
+    if (id === "places" && startMode === "gps" && !gpsPoint) locate();
   };
 
   // ── The footer: what "next" does on each step ──
@@ -861,7 +905,10 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
               <p className="text-sm font-medium">יוצאים מ…</p>
               <Segmented
                 value={startMode}
-                onChange={setStartMode}
+                onChange={(mode) => {
+                  setStartMode(mode);
+                  if (mode === "gps" && !gpsPoint) locate();
+                }}
                 options={[
                   { value: "address", label: "כתובת" },
                   { value: "gps", label: "המיקום שלי" },
@@ -869,9 +916,29 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
               />
               {startMode === "address" ? (
                 <AddressPicker value={startAddress} onChange={setStartAddress} allowUnit={false} ariaLabel="כתובת היציאה" placeholder="מאיפה יוצאים? רחוב ומספר" />
-              ) : (
-                <p className="text-xs text-muted-foreground">המיקום של המכשיר נלקח ברגע התכנון.</p>
-              )}
+              ) : locating ? (
+                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  מאתרים את המיקום…
+                </p>
+              ) : gpsPoint ? (
+                <p className="flex items-center gap-1.5 text-sm text-success">
+                  <CheckIcon className="h-4 w-4 shrink-0" />
+                  המיקום נמצא. ברגע התכנון הוא נלקח שוב, מעודכן.
+                </p>
+              ) : gpsError ? (
+                <div className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+                  <p className="text-sm text-destructive">{gpsError}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={locate}>
+                      נסו שוב
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setStartMode("address")}>
+                      בחירת כתובת
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div className="space-y-2">
               <p className="text-sm font-medium">מסיימים ב…</p>
