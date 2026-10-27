@@ -13,18 +13,44 @@ import { useSyncExternalStore } from "react";
 
 const PING_EVERY_MS = 5000;
 const PING_TIMEOUT_MS = 4000;
+// Remembered on the device while the server isn't answering, so the next page
+// starts that way: with no connection every page change loads a saved page
+// whole, and each one starting as "online" made the bar go and come back
+// (owner, 2026-10-27: "these bars appear then disappear then reappear").
+const DOWN_KEY = "bizh-server-down";
+/** A note older than this says nothing about now (the device was put away offline, opened online later). */
+const DOWN_NOTE_MS = 10 * 60 * 1000;
+
+function downNoted(): boolean {
+  try {
+    return Date.now() - Number(localStorage.getItem(DOWN_KEY) ?? "0") < DOWN_NOTE_MS;
+  } catch {
+    return false;
+  }
+}
+
+function noteDown(down: boolean) {
+  try {
+    if (down) localStorage.setItem(DOWN_KEY, String(Date.now()));
+    else localStorage.removeItem(DOWN_KEY);
+  } catch {
+    // Storage blocked: this page knows, the next one finds out.
+  }
+}
 
 // A page the service worker answered with a saved copy (data-bizh-saved on
-// <html>) starts as not answering, until a ping says otherwise.
+// <html>), or opened while the server wasn't answering a moment ago, starts as
+// not answering — until a ping (at once) says otherwise.
 let reachable =
   typeof navigator === "undefined"
     ? true
-    : navigator.onLine && document.documentElement.dataset.bizhSaved === undefined;
+    : navigator.onLine && document.documentElement.dataset.bizhSaved === undefined && !downNoted();
 const listeners = new Set<() => void>();
 
 function set(next: boolean) {
   if (next === reachable) return;
   reachable = next;
+  noteDown(!next);
   for (const listener of [...listeners]) listener();
 }
 
@@ -104,9 +130,10 @@ export function watchConnection(): () => void {
   window.addEventListener("offline", onOffline);
   navigator.serviceWorker?.addEventListener("message", onWorkerMessage);
   // Opened on a saved copy (the service worker's answer when the server
-  // didn't): find out at once rather than trusting the device.
+  // didn't), or right after the server stopped answering: find out at once
+  // rather than trusting the device.
   if (!navigator.onLine) set(false);
-  else if (document.documentElement.dataset.bizhSaved !== undefined) void checkConnection();
+  else if (!reachable) void checkConnection();
   pingWhileDown();
   return () => {
     stopListening();

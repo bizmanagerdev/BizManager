@@ -7,6 +7,12 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 // reloads itself the moment the server answers — unless that already happened
 // a moment ago (then a button, not a reload loop). An ordinary page: nothing.
 
+// Whether the server answers (lib/pwa/connection.ts): with no connection at all,
+// the red bar says it and this one steps aside (owner, 2026-10-27: two bars
+// saying the same thing).
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/pwa/connection", () => ({ useServerReachable: () => net.up }));
+
 import SavedCopyNotice from "@/components/layout/SavedCopyNotice";
 
 const reload = vi.fn();
@@ -15,6 +21,7 @@ describe("SavedCopyNotice", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     reload.mockReset();
+    net.up = true;
     sessionStorage.clear();
     delete document.documentElement.dataset.bizhSaved;
     Object.defineProperty(window, "location", { configurable: true, value: { ...window.location, reload, pathname: "/deliveries" } });
@@ -23,6 +30,20 @@ describe("SavedCopyNotice", () => {
     cleanup();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("no connection at all: not shown (the red bar says it) — and still reloads once the server answers", async () => {
+    document.documentElement.dataset.bizhSaved = String(Date.parse("2026-10-27T14:13:00Z"));
+    net.up = false;
+    let serverBack = false;
+    vi.stubGlobal("fetch", vi.fn(async () => (serverBack ? new Response(null, { status: 204 }) : Promise.reject(new TypeError("Failed to fetch")))));
+    const { container } = render(<SavedCopyNotice />);
+    expect(container.textContent).toBe("");
+    serverBack = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("an ordinary page: nothing", () => {

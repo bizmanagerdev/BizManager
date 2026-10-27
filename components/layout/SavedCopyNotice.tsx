@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { OfflineIcon } from "@/components/ui/icons";
 import { formatDayMonth, formatTimeOnly } from "@/lib/date";
+import { useServerReachable } from "@/lib/pwa/connection";
 
 // The page on screen is a copy saved on this device, shown because the server
 // didn't answer in time (the service worker marks it: <html data-bizh-saved>,
@@ -11,6 +12,10 @@ import { formatDayMonth, formatTimeOnly } from "@/lib/date";
 // itself the moment the server answers again. If a reload already landed on a
 // saved copy a moment ago (the server answers, but too slowly for the page),
 // it stops reloading by itself and offers a button instead.
+// With no connection at all the red "no connection" bar says it (OfflineBanner):
+// this one steps aside rather than say the same thing twice (owner,
+// 2026-10-27: "why 2 separate bars, it's the same meaning") — its reload when
+// the server answers still runs.
 
 /** How often the server is asked whether it's back. */
 const CHECK_EVERY_MS = 5000;
@@ -24,6 +29,7 @@ function lastReloadKey(): string {
 export default function SavedCopyNotice() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [autoReload, setAutoReload] = useState(true);
+  const reachable = useServerReachable();
 
   useEffect(() => {
     const raw = document.documentElement.dataset.bizhSaved;
@@ -65,7 +71,7 @@ export default function SavedCopyNotice() {
     };
   }, []);
 
-  if (savedAt === null) return null;
+  if (savedAt === null || !reachable) return null;
   // "14/10 15:32" on Israel's clock, not the device's.
   const savedIso = savedAt ? new Date(savedAt).toISOString() : null;
   const time = savedIso ? `${formatDayMonth(savedIso, "")} ${formatTimeOnly(savedIso, "")}` : null;
