@@ -47,7 +47,6 @@ export async function middleware(req: NextRequest) {
 
   const isPublic =
     path.startsWith("/login") ||
-    path.startsWith("/register") ||
     path.startsWith("/forgot-password") ||
     path.startsWith("/reset-password") ||
     path === "/manifest.webmanifest" ||
