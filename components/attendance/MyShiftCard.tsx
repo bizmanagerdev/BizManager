@@ -284,9 +284,16 @@ export default function MyShiftCard({
       onCommit: async () => {
         // Through the send queue: with no signal the clock-out waits for the
         // connection instead of reverting and losing the note and end time.
+        // It names its shift, so a resend after the answer was lost is
+        // recognised as done and can't close a shift opened since. (A clock-in
+        // still waiting has no id yet: the end time stands in for it.)
         const result = await offlineFetch(
           "/api/attendance/my/close",
-          { notes: noteSnapshot || null, clock_out: endIso },
+          {
+            notes: noteSnapshot || null,
+            clock_out: endIso,
+            ...(openShift.id !== "pending" ? { report_id: openShift.id } : {}),
+          },
           "סיום המשמרת"
         );
         if (!result.queued && !result.ok) {

@@ -2,10 +2,10 @@
 
 import { useEffect } from "react";
 import type { SeverityLevel } from "@sentry/nextjs";
-import { CONNECTION_EVENTS } from "@/lib/offline-queue";
+import { CONNECTION_EVENTS, type ParkedNote } from "@/lib/offline-queue";
 import { withSentry } from "@/lib/sentry-lazy";
 
-type ConnDetail = { label?: string; count?: number; reason?: string };
+type ConnDetail = { label?: string; count?: number; reason?: string; items?: ParkedNote[] };
 
 /**
  * Field-observability for the offline system. Every offline write/upload emits a
@@ -34,15 +34,17 @@ export default function ConnectionTelemetry() {
       crumb("queue synced", { count });
     };
     const onFailed = (e: Event) => {
-      const { count } = ((e as CustomEvent).detail ?? {}) as ConnDetail;
+      const { count, items } = ((e as CustomEvent).detail ?? {}) as ConnDetail;
       crumb("queue failed", { count }, "error");
       // A permanent failure is the actionable signal — surface it as a captured
-      // event (not just a breadcrumb) so it can alert / be counted.
+      // event (not just a breadcrumb) so it can alert / be counted. Which saves
+      // and why (the queue's note of each: label, address, status, error), and
+      // the first one's address as a tag to search by.
       withSentry((Sentry) =>
         Sentry.captureMessage("offline action permanently failed", {
           level: "warning",
-          tags: { area: "offline" },
-          extra: { count },
+          tags: { area: "offline", ...(items?.[0] ? { offline_path: items[0].path } : {}) },
+          extra: { count, items },
         })
       );
     };

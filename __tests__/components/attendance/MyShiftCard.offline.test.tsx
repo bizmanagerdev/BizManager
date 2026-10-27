@@ -18,6 +18,13 @@ vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/offline-queue", () => ({ offlineFetch }));
 vi.mock("@/lib/powersync/store", () => ({ readyLocalDatabase }));
 vi.mock("@/lib/powersync/local-results", () => ({ localClient }));
+// The clock-out's undo window, skipped: it commits at once.
+vi.mock("@/lib/undo-engine", () => ({
+  scheduleDeferredAction: (args: { onApplyOptimistic: () => void; onCommit: () => Promise<unknown> }) => {
+    args.onApplyOptimistic();
+    void args.onCommit();
+  },
+}));
 
 import MyShiftCard from "@/components/attendance/MyShiftCard";
 
@@ -97,5 +104,47 @@ describe("clocking in with no signal", () => {
     } finally {
       now.mockRestore();
     }
+  });
+});
+
+// A close resent after its answer was lost must be recognised by the server
+// as done, never close a shift opened since (סאלח, 24–25/10): it names its shift.
+describe("clocking out", () => {
+  async function closeShiftOf(openShift: Parameters<typeof MyShiftCard>[0]["openShift"]) {
+    online = true;
+    offlineFetch.mockResolvedValue({ queued: false, ok: true, data: { ok: true } });
+    render(<MyShiftCard openShift={openShift} pendingCount={0} locale="he" userId="worker-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "סיום משמרת" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "שליחה לאישור" }));
+    });
+    expect(offlineFetch).toHaveBeenCalledTimes(1);
+    const [path, body] = offlineFetch.mock.calls[0];
+    expect(path).toBe("/api/attendance/my/close");
+    return body as Record<string, unknown>;
+  }
+
+  it("names the shift it closes, with the time it was pressed", async () => {
+    const body = await closeShiftOf({
+      id: "report-7",
+      clock_in: "2026-10-25T08:36:29.340Z",
+      clock_out: null,
+      worked_minutes: null,
+      status: "open",
+      source: "app",
+      notes: null,
+      created_at: "2026-10-25T08:36:29.399Z",
+    });
+    expect(body.report_id).toBe("report-7");
+    expect(typeof body.clock_out).toBe("string");
+  });
+
+  it("names none for a clock-in still waiting to be sent (it has no id yet)", async () => {
+    localStorage.setItem(
+      "bizh-pending-shift",
+      JSON.stringify({ clock_in: "2026-10-25T08:00:00.000Z", notes: null, at: Date.now() })
+    );
+    const body = await closeShiftOf(null);
+    expect(body).not.toHaveProperty("report_id");
   });
 });

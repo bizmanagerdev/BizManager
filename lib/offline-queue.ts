@@ -385,6 +385,12 @@ export async function offlineFetch(
 
 export type ProcessResult = { processed: number; failed: number; remaining: number };
 
+/**
+ * What a save given up on was — for the report, so the next one says which
+ * save and why (סאלח's two said only "1", 24–25/10). Never its content.
+ */
+export type ParkedNote = { label: string; path: string; status: number | null; error: string };
+
 /** Treat 4xx (except 408/429) as permanent — retrying won't help. */
 function isPermanentFailure(status: number): boolean {
   return status >= 400 && status < 500 && status !== 408 && status !== 429;
@@ -398,6 +404,12 @@ export function isDeleteUrl(url: string): boolean {
 export async function processQueue(): Promise<ProcessResult> {
   let processed = 0;
   let failed = 0;
+  const parked: ParkedNote[] = [];
+  const park = (entry: QueueEntry, error: string, status: number | null) => {
+    failEntry(entry, error);
+    failed++;
+    parked.push({ label: entry.label, path: entry.url.split("?")[0], status, error: error.slice(0, 200) });
+  };
 
   // Re-read the queue each iteration so we always see the freshest attempt counts.
   for (let entry = waiting()[0]; entry; entry = waiting()[0]) {
@@ -408,8 +420,7 @@ export async function processQueue(): Promise<ProcessResult> {
       const id = queuedResultId(entry.after.key, entry.after.idPath);
       if (!id) {
         if (queuedKeyFailed(entry.after.key)) {
-          failEntry(entry, "השמירה שזה שייך אליה לא נקלטה.");
-          failed++;
+          park(entry, "השמירה שזה שייך אליה לא נקלטה.", null);
           continue;
         }
         // What it waits for hasn't gone out yet — a later pass sends both.
@@ -453,16 +464,14 @@ export async function processQueue(): Promise<ProcessResult> {
       }
 
       if (isPermanentFailure(response.status)) {
-        failEntry(entry, hebrewError);
-        failed++;
+        park(entry, hebrewError, response.status);
         continue;
       }
 
       // Transient server error (5xx/408/429) — bump attempts, park if exhausted.
       const attempts = entry.attempts + 1;
       if (attempts >= MAX_ATTEMPTS) {
-        failEntry(entry, hebrewError);
-        failed++;
+        park(entry, hebrewError, response.status);
       } else {
         writeQueue(readQueue().map((e) => (e.id === entry.id ? { ...e, attempts } : e)));
         // Stop this pass; let a later trigger retry so we don't hammer the server.
@@ -476,7 +485,7 @@ export async function processQueue(): Promise<ProcessResult> {
   }
 
   if (processed > 0) emit(CONNECTION_EVENTS.synced, { count: processed });
-  if (failed > 0) emit(CONNECTION_EVENTS.failed, { count: failed });
+  if (failed > 0) emit(CONNECTION_EVENTS.failed, { count: failed, items: parked });
 
   return { processed, failed, remaining: waiting().length };
 }
