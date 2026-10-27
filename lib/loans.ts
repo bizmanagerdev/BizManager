@@ -354,6 +354,8 @@ export async function fetchLoans(
           `id,direction,lender,borrower,loan_date,loan_method,repayment_method,documentation,amount,due_date,interest_amount,business_domain,counterparty_customer_id,status,notes,account_id,created_at,${MONEY_CURRENCY_COLUMNS}`
         )
         .order("loan_date", { ascending: false })
+        // A unique tie-break: paging by a date alone can skip or repeat a loan.
+        .order("id")
         .range(from, to);
       if (loanId) query = query.eq("id", loanId);
       if (customerId) query = query.eq("counterparty_customer_id", customerId);
@@ -376,6 +378,7 @@ export async function fetchLoans(
             .select("*")
             .eq("loan_id", loanId)
             .order("repayment_date", { ascending: true })
+            .order("id")
             .range(from, to)
         ),
       ]);
@@ -391,6 +394,7 @@ export async function fetchLoans(
               .select("*")
               .in("loan_id", loanIds)
               .order("repayment_date", { ascending: true })
+              .order("id")
               .range(from, to)
           )
         : [];
@@ -402,6 +406,7 @@ export async function fetchLoans(
             .from("loan_repayments")
             .select("*")
             .order("repayment_date", { ascending: true })
+            .order("id")
             .range(from, to)
         ),
       ]);

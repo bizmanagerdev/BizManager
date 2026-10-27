@@ -9,6 +9,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { loadAccountsOverview } from "@/lib/accounts";
 import { fetchLoans } from "@/lib/loans";
 import { loadTodayFxRates } from "@/lib/fx/rates";
+import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
 import { propertyDisplayName } from "@/lib/properties";
 import { BANK_STRIP_COOKIE, bankStripStyle } from "@/lib/ui/bank-strip-height";
@@ -50,19 +51,24 @@ export default async function BankPage({
     // row needs the full computed Loan shape (outstanding, plannedInstallments…),
     // not just what the ledger scan keeps for display.
     fetchLoans(supabase),
-    supabase.from("projects").select("id,name").order("created_at", { ascending: false }).limit(300),
+    supabase.from("projects").select("id,name").order("created_at", { ascending: false }).order("id").limit(300),
     // For the expense-edit dialog's property picker (property_management domain)
     // — same list CashFlowPageContent.tsx feeds ExpenseDialog with, just fetched
     // here too since this page's own edit dialog wasn't getting it at all
     // (2026-08-27, "look around for more places with this issue": editing an
     // unlinked expense here and switching it to ניהול נכסים showed "no
     // properties available" even though properties exist).
-    supabase.from("properties").select("id,name,address,is_active").order("address", { ascending: true }).limit(999),
+    supabase.from("properties").select("id,name,address,is_active").order("address", { ascending: true }).order("id").limit(999),
     // Merchant memory — how a description like this was filed last time, so the
-    // quick row fills its own שיוך.
-    supabase
-      .from("expense_merchant_mappings")
-      .select("merchant_key,business_domain,project_id,property_id,category"),
+    // quick row fills its own שיוך. Every page of it (539 rows on 2026-10-27; an
+    // unpaged read stops at 1,000).
+    fetchAllPagedResult((from, to) =>
+      supabase
+        .from("expense_merchant_mappings")
+        .select("merchant_key,business_domain,project_id,property_id,category")
+        .order("id")
+        .range(from, to)
+    ),
     // A US$ or C$ account's balance in shekels, at today's rate.
     loadTodayFxRates(supabase),
   ]);

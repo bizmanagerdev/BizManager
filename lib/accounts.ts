@@ -8,6 +8,7 @@ import {
   settlementAccountFor,
 } from "@/lib/card-settlements";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
+import { chunkStrings } from "@/lib/financial/utils";
 import type { LoanRepayment } from "@/lib/loans";
 import { buildFocusHref } from "@/lib/audit";
 import { getBusinessDomainLabel } from "@/lib/expenses";
@@ -381,7 +382,9 @@ export async function loadAccounts(
       (a, b) =>
         Number(b.isActive) - Number(a.isActive) ||
         a.sortOrder - b.sortOrder ||
-        a.name.localeCompare(b.name, "he")
+        a.name.localeCompare(b.name, "he") ||
+        // A fixed tie-break: the server's and a phone's text comparison can differ.
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     );
 }
 
@@ -430,6 +433,17 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   // and collected into `failedTables` so callers can show a real "this may be
   // incomplete" notice instead of a balance that quietly looks fine.
   const failedTables: string[] = [];
+  // Rows for a list of ids, 150 ids at a time (every expense's id in one
+  // address made it tens of KB long) and every page of each — a lookup by
+  // `.in()` with no paging stopped at 1,000 rows. Unreadable → none, as before.
+  const rowsForIds = async (
+    ids: Iterable<string>,
+    read: (batch: string[], from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>
+  ): Promise<Row[]> => {
+    const batches = chunkStrings(Array.from(new Set(ids)), 150);
+    const results = await Promise.all(batches.map((batch) => fetchAllPagedResult<Row>((from, to) => read(batch, from, to))));
+    return results.flatMap((result) => result.data ?? []);
+  };
   const scan = async (table: string, page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>) => {
     const { data, error } = await fetchAllPagedResult<Row>(page);
     if (error) {
@@ -467,6 +481,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           // payment_date reaches back a month (each row still checks its own
           // date against the opening date below).
           .or(`payment_date.gte.${cardScanSince(earliestOpening)},due_date.gte.${earliestOpening}`)
+          // A fixed order, or rows past the first 1,000 can be skipped or read twice.
+          .order("id")
           .range(from, to)
       ),
       // billed_to_customer/included_in_base_price are NOT columns on `expenses`
@@ -484,6 +500,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           )
           .not("account_id", "is", null)
           .gte("expense_date", earliestOpening)
+          // A fixed order, or rows past the first 1,000 can be skipped or read twice.
+          .order("id")
           .range(from, to)
       ),
       scan("worker_payments", (from, to) =>
@@ -492,6 +510,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .select(`id,account_id,payment_date,amount,payment_method,notes,user_id,created_at,recorded_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           .gte("payment_date", earliestOpening)
+          // A fixed order, or rows past the first 1,000 can be skipped or read twice.
+          .order("id")
           .range(from, to)
       ),
       // Loans: principal lands in (taken) / leaves (given) a real account.
@@ -501,6 +521,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .select(`id,account_id,direction,loan_date,amount,loan_method,lender,borrower,business_domain,created_at,created_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           .gte("loan_date", earliestOpening)
+          // A fixed order, or rows past the first 1,000 can be skipped or read twice.
+          .order("id")
           .range(from, to)
       ),
       // Repayments: full cash moved (principal + interest), opposite direction.
@@ -517,6 +539,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .select(`id,account_id,loan_id,repayment_date,amount,interest_amount,method,notes,created_at,created_by,${MONEY_CURRENCY_COLUMNS}`)
           .not("account_id", "is", null)
           .gte("repayment_date", earliestOpening)
+          // A fixed order, or rows past the first 1,000 can be skipped or read twice.
+          .order("id")
           .range(from, to)
       ),
       // העברה בין חשבונות: one row = two legs (OUT of from, IN to to). Never
@@ -530,6 +554,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
               "card_row:card_statement_rows(statement_id,card_label,description)"
           )
           .gte("transfer_date", earliestOpening)
+          // A fixed order, or rows past the first 1,000 can be skipped or read twice.
+          .order("id")
           .range(from, to)
       ),
       // Credit-card statement → ONE lump charge on the account (see the
@@ -541,6 +567,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .from("card_statement_charges")
           .select("id,statement_id,card_label,account_id,amount,charge_date,notes,created_at,created_by")
           .gte("charge_date", earliestOpening)
+          // A fixed order, or rows past the first 1,000 can be skipped or read twice.
+          .order("id")
           .range(from, to)
       ),
       // Card payments recorded with no account: their deposit still lands in
@@ -552,6 +580,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .is("account_id", null)
           .eq("payment_method", "credit_card")
           .or(`payment_date.gte.${cardScanSince(earliestOpening)},due_date.gte.${earliestOpening}`)
+          // A fixed order, or rows past the first 1,000 can be skipped or read twice.
+          .order("id")
           .range(from, to)
       ),
     ]);
@@ -614,14 +644,15 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     .map((r) => str(r.id))
     .filter((id): id is string => Boolean(id));
   if (expenseIdsForBilling.length > 0) {
-    const { data: projectExpenseRows } = await fetchAllPagedResult<Row>((from, to) =>
+    const projectExpenseRows = await rowsForIds(expenseIdsForBilling, (batch, from, to) =>
       supabase
         .from("project_expenses")
         .select("expense_id,included_in_base_price,billed_to_customer")
-        .in("expense_id", expenseIdsForBilling)
+        .in("expense_id", batch)
+        .order("id")
         .range(from, to)
     );
-    for (const row of projectExpenseRows ?? []) {
+    for (const row of projectExpenseRows) {
       const expenseId = str(row.expense_id);
       if (!expenseId) continue;
       expenseBillingByExpenseId.set(expenseId, {
@@ -637,15 +668,15 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     .map((r) => str(r.id))
     .filter((id): id is string => Boolean(id));
   if (workerPaymentIds.length > 0) {
-    const { data: allocationsData } = await fetchAllPagedResult<Row>((from, to) =>
+    const allocations = await rowsForIds(workerPaymentIds, (batch, from, to) =>
       supabase
         .from("worker_payment_allocations")
         .select("worker_payment_id,attendance_session_id")
-        .in("worker_payment_id", workerPaymentIds)
+        .in("worker_payment_id", batch)
         .not("attendance_session_id", "is", null)
+        .order("id")
         .range(from, to)
     );
-    const allocations = allocationsData ?? [];
     const sessionIds = Array.from(
       new Set(
         allocations
@@ -655,14 +686,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     );
     const sessionProject = new Map<string, string>();
     if (sessionIds.length > 0) {
-      const { data: sessionsData } = await fetchAllPagedResult<Row>((from, to) =>
-        supabase
-          .from("attendance_sessions")
-          .select("id,project_id")
-          .in("id", sessionIds)
-          .range(from, to)
+      const sessionsData = await rowsForIds(sessionIds, (batch, from, to) =>
+        supabase.from("attendance_sessions").select("id,project_id").in("id", batch).order("id").range(from, to)
       );
-      for (const s of sessionsData ?? []) {
+      for (const s of sessionsData) {
         const sid = str(s.id);
         const pid = str(s.project_id);
         if (sid && pid) sessionProject.set(sid, pid);
@@ -696,12 +723,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   await Promise.all([
     workerIds.size === 0
       ? Promise.resolve()
-      : supabase
-          .from("users")
-          .select("id,full_name")
-          .in("id", Array.from(workerIds))
-          .then(({ data }) => {
-            for (const u of (data ?? []) as Row[]) {
+      : rowsForIds(workerIds, (batch, from, to) =>
+          supabase.from("users").select("id,full_name").in("id", batch).order("id").range(from, to)
+        ).then((data) => {
+            for (const u of data) {
               const id = str(u.id);
               const name = str(u.full_name)?.trim();
               if (id && name) workerNameById.set(id, name);
@@ -709,12 +734,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           }),
     projectIds.size === 0
       ? Promise.resolve()
-      : supabase
-          .from("projects")
-          .select("id,name,customer_id")
-          .in("id", Array.from(projectIds))
-          .then(({ data }) => {
-            for (const p of (data ?? []) as Row[]) {
+      : rowsForIds(projectIds, (batch, from, to) =>
+          supabase.from("projects").select("id,name,customer_id").in("id", batch).order("id").range(from, to)
+        ).then((data) => {
+            for (const p of data) {
               const id = str(p.id);
               if (!id) continue;
               const name = str(p.name)?.trim();
@@ -725,12 +748,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           }),
     orderIds.size === 0
       ? Promise.resolve()
-      : supabase
-          .from("orders")
-          .select("id,customer_id")
-          .in("id", Array.from(orderIds))
-          .then(({ data }) => {
-            for (const o of (data ?? []) as Row[]) {
+      : rowsForIds(orderIds, (batch, from, to) =>
+          supabase.from("orders").select("id,customer_id").in("id", batch).order("id").range(from, to)
+        ).then((data) => {
+            for (const o of data) {
               const id = str(o.id);
               const cid = str(o.customer_id);
               if (id && cid) orderCustomerById.set(id, cid);
@@ -738,12 +759,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           }),
     propertyIds.size === 0
       ? Promise.resolve()
-      : supabase
-          .from("properties")
-          .select("id,name,address")
-          .in("id", Array.from(propertyIds))
-          .then(({ data }) => {
-            for (const p of (data ?? []) as Row[]) {
+      : rowsForIds(propertyIds, (batch, from, to) =>
+          supabase.from("properties").select("id,name,address").in("id", batch).order("id").range(from, to)
+        ).then((data) => {
+            for (const p of data) {
               const id = str(p.id);
               if (!id) continue;
               const address = str(p.address) ?? "";
@@ -760,11 +779,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     ...orderCustomerById.values(),
   ]);
   if (customerIds.size > 0) {
-    const { data } = await supabase
-      .from("customers")
-      .select("id,name,phone")
-      .in("id", Array.from(customerIds));
-    for (const c of (data ?? []) as Row[]) {
+    const data = await rowsForIds(customerIds, (batch, from, to) =>
+      supabase.from("customers").select("id,name,phone").in("id", batch).order("id").range(from, to)
+    );
+    for (const c of data) {
       const id = str(c.id);
       const name = str(c.name)?.trim();
       if (!id || !name) continue;
@@ -1160,11 +1178,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     )
   );
   if (repayLoanIds.length > 0) {
-    const { data: extraLoans } = await supabase
-      .from("loans")
-      .select("id,direction,lender,borrower,business_domain")
-      .in("id", repayLoanIds);
-    for (const row of (extraLoans ?? []) as Row[]) rememberLoan(row);
+    const extraLoans = await rowsForIds(repayLoanIds, (batch, from, to) =>
+      supabase.from("loans").select("id,direction,lender,borrower,business_domain").in("id", batch).order("id").range(from, to)
+    );
+    for (const row of extraLoans) rememberLoan(row);
   }
 
   // ── Loan principal: taken = cash IN, given = cash OUT ───────────────────────
