@@ -1,4 +1,12 @@
-# BizManager — PowerSync Sync Streams, v1.13 (2026-10-27): workers' phones
+# BizManager — PowerSync Sync Streams, v1.14 (2026-10-27): the accounts page
+# (/financial/bank) from the device — staff also get the accounts' own details
+# (kind, currency, opening balance, order), transfers between accounts, the
+# quick line's remembered categories, the Bank of Israel exchange rates from
+# 2025 (owner: "i only need exchange rates from 2025"), the card statement
+# lines' description and the "מול מזומן" lines (no expense), and who entered a
+# card charge and when; admins also get the "נבדק מול הבנק" ticks (admin-only,
+# as their RLS). bank_tables = 1 marks a copy that has them.
+# v1.13 (2026-10-27): workers' phones
 # under the sync server's limit of 1,000 parameter results. A worker's payments
 # came from every order not closed (281 and growing with each order), counted
 # three times over by the OR in worker_deliveries_gate: נתן's phone needed
@@ -50,6 +58,8 @@ with:
   staff_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
   # The signed-in staff member's own users.id.
   staff_me: SELECT id FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
+  # Admins only — the accounts page's ticks (account_ledger_checks' RLS).
+  admin_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'admin'
   # The signed-in worker's own users.id, and a one-row gate for all workers
   # (same conditions as current_app_user_id(): active, may sign in).
   worker_me: SELECT id FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'worker'
@@ -143,16 +153,23 @@ streams:
       - SELECT product_categories.* FROM product_categories, staff_gate AS bucket
       # Which documents are linked to what (the tasks board's paperclip).
       - SELECT document_links.* FROM document_links, staff_gate AS bucket
-      # A project's page: each movement's account by name, the VAT rate, and
-      # a recurring bill's rule by name (and who set it up). Names and the
-      # rate only — no balances or other settings.
-      - SELECT accounts.id, accounts.name FROM accounts, staff_gate AS bucket
+      # A project's page: each movement's account by name; the accounts page:
+      # each account's kind, currency, opening balance and order (v1.14).
+      # Staff read and manage accounts in the app (RLS "Staff manage accounts").
+      - SELECT accounts.* FROM accounts, staff_gate AS bucket
+      # The accounts page (v1.14): transfers between accounts, the quick line's
+      # remembered categories (both staff, as their RLS), and the exchange
+      # rates from 2025 (readable by everyone signed in).
+      - SELECT account_transfers.* FROM account_transfers, staff_gate AS bucket
+      - SELECT expense_merchant_mappings.* FROM expense_merchant_mappings, staff_gate AS bucket
+      - SELECT fx_rates.* FROM fx_rates, staff_gate AS bucket WHERE fx_rates.rate_date >= '2025-01-01'
       # The VAT rate (a project's page) and the books start date (the money
       # chart shows nothing before it). money_tables = 1 marks a copy that has
       # the money cards' tables below — it arrives in the same complete
       # download as they do, so a device never works the cards out from a copy
       # that hasn't received them yet (lib/powersync/money-copy.ts).
-      - SELECT 'true' AS id, business_settings.vat_rate, business_settings.books_start_date, 1 AS money_tables FROM business_settings, staff_gate AS bucket
+      # bank_tables = 1 (v1.14): a copy that has the accounts page's tables.
+      - SELECT 'true' AS id, business_settings.vat_rate, business_settings.books_start_date, 1 AS money_tables, 1 AS bank_tables FROM business_settings, staff_gate AS bucket
       # Recurring bills: their rules — the payments card lists what's coming
       # (and when to remind), a project's page names them.
       - |
@@ -174,16 +191,19 @@ streams:
       # card settlements already confirmed, and the payment sources' settings.
       - SELECT loans.* FROM loans, staff_gate AS bucket
       - SELECT loan_repayments.* FROM loan_repayments, staff_gate AS bucket
+      # Who entered a charge and when, and each line's description — the
+      # accounts page's register (v1.14). Every line now, the "מול מזומן" ones
+      # (no expense, a transfer instead) too; the money cards still take only
+      # the lines with an expense (lib/payables.ts).
       - |
         SELECT card_statement_charges.id, card_statement_charges.statement_id, card_statement_charges.card_label,
                card_statement_charges.account_id, card_statement_charges.amount, card_statement_charges.charge_date,
-               card_statement_charges.notes
+               card_statement_charges.notes, card_statement_charges.created_at, card_statement_charges.created_by
         FROM card_statement_charges, staff_gate AS bucket
       - |
         SELECT card_statement_rows.id, card_statement_rows.expense_id, card_statement_rows.statement_id,
-               card_statement_rows.card_label, card_statement_rows.category
+               card_statement_rows.card_label, card_statement_rows.category, card_statement_rows.description
         FROM card_statement_rows, staff_gate AS bucket
-        WHERE card_statement_rows.expense_id IS NOT NULL
       - |
         SELECT card_settlement_confirmations.id, card_settlement_confirmations.account_id,
                card_settlement_confirmations.settlement_date
@@ -193,6 +213,12 @@ streams:
                outflow_source_settings.reminder_work_days_before, outflow_source_settings.account_id,
                outflow_source_settings.is_active
         FROM outflow_source_settings, staff_gate AS bucket
+
+  # The accounts page's "נבדק מול הבנק" ticks — admins only, as their RLS
+  # ("Admins can manage account ledger checks"); the page is admin-only too.
+  bank_admin:
+    auto_subscribe: true
+    query: SELECT account_ledger_checks.* FROM account_ledger_checks, admin_gate AS bucket
 
   # ── Workers (approved 2026-10-07) ──────────────────────────────────────────
   # Exactly what the server already lets a worker read (the tables' RLS
