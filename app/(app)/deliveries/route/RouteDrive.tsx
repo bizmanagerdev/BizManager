@@ -12,7 +12,7 @@ import { cityColour } from "@/lib/deliveries/city-colours";
 import { wazeLinkForPin } from "@/lib/delivery-location";
 import { finishStop, nextOpen, type Drive, type StopOutcome } from "@/lib/routes/drive";
 import { cn } from "@/lib/utils";
-import { clock, placeLine } from "./route-ui";
+import { dayClock, placeLine } from "./route-ui";
 
 // The route, driven (owner, 2026-10-27): "I drive to the first stop, go back
 // into the app, click confirm delivery. After I confirm it, it lets me continue
@@ -110,8 +110,8 @@ export default function RouteDrive({
             <h2 className="break-words text-xl font-bold leading-tight">{stop.name}</h2>
             <p className="text-sm text-muted-foreground">{placeLine(stop)}</p>
             {/* The hour is the plan's, not a live one: say so (owner: "what hour is it showing?"). */}
-            {stop.arrival ? <p className="text-sm tabular-nums text-muted-foreground">שעת הגעה לפי התכנון: {clock(stop.arrival)}</p> : null}
-            {stop.kind === "extra" && stop.note ? <p className="text-sm">{stop.note}</p> : null}
+            {stop.arrival ? <p className="text-sm tabular-nums text-muted-foreground">שעת הגעה לפי התכנון: {dayClock(stop.arrival)}</p> : null}
+            {stop.kind === "extra" && stop.note && stop.note !== stop.name ? <p className="text-sm">{stop.note}</p> : null}
             <div className="flex flex-wrap gap-1.5 pt-1">
               {stop.collectOnDelivery ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-xs font-semibold text-warning-soft-foreground">
@@ -276,7 +276,7 @@ export default function RouteDrive({
                           : outcome === "skipped"
                             ? "לא נמסר"
                             : s.arrival
-                              ? `הגעה ${clock(s.arrival)}`
+                              ? `הגעה ${dayClock(s.arrival)}`
                               : ""}
                   </span>
                 </button>

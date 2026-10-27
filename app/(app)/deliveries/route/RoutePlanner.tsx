@@ -28,7 +28,7 @@ import {
   SpinnerIcon,
   WarningIcon,
 } from "@/components/ui/icons";
-import { addressLine, type StructuredAddress } from "@/lib/address/structured";
+import { addressLine, EMPTY_ADDRESS, type StructuredAddress } from "@/lib/address/structured";
 import { cityColour } from "@/lib/deliveries/city-colours";
 import { wazeLinkForPin } from "@/lib/delivery-location";
 import { formatShortDate } from "@/lib/date";
@@ -54,7 +54,7 @@ import { getCityRegion } from "@/lib/ui/cities";
 import { cn } from "@/lib/utils";
 import { legColour, type MapPoint, type MapStop } from "./map-parts";
 import RouteDrive from "./RouteDrive";
-import { CityDot, clock, placeLine, Segmented } from "./route-ui";
+import { CityDot, clock, dayClock, leavesTomorrow, placeLine, Segmented } from "./route-ui";
 
 const RouteMap = dynamic(() => import("./RouteMap"), {
   ssr: false,
@@ -163,6 +163,16 @@ function readSaved(): Saved {
   }
 }
 
+/** "13:53" in Israel now, kept current: the departure field shows it until an hour is chosen (owner, 2026-10-27: "not the ---- lines"). */
+function useNowClock(): string {
+  const [now, setNow] = useState(() => clock(new Date().toISOString()));
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(clock(new Date().toISOString())), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
+}
+
 /** A computer: the map beside the steps. (The planner is drawn in the browser only.) */
 function useWideScreen(): boolean {
   const query = "(min-width: 1024px)";
@@ -215,19 +225,19 @@ export async function currentPosition(): Promise<RoutePoint> {
 function shareText(plan: Plan): string {
   const { result } = plan;
   const lines = [
-    `מסלול משלוחים · יציאה ${clock(result.departure)} מ${plan.startLabel}`,
+    `מסלול משלוחים · יציאה ${dayClock(result.departure)} מ${plan.startLabel}`,
     `${plan.stops.length} עצירות · ${formatDuration(result.total.durationSec)} נסיעה · ${formatDistance(result.total.distanceM)}`,
     "",
   ];
   plan.stops.forEach((stop, index) => {
-    lines.push(`${index + 1}. ${clock(result.arrivals[index])} · ${stop.name}`);
+    lines.push(`${index + 1}. ${dayClock(result.arrivals[index])} · ${stop.name}`);
     const place = placeLine(stop);
     if (place) lines.push(`   ${place}`);
     if (stop.phone) lines.push(`   ${stop.phone}`);
     if (stop.collectOnDelivery) lines.push('   גבייה ע"י הנהג');
     if (stop.lat !== null && stop.lng !== null) lines.push(`   ${wazeLinkForPin({ lat: stop.lat, lng: stop.lng })}`);
   });
-  lines.push("", `סיום משוער: ${clock(result.finish)}${plan.endIsStart ? " (חזרה לנקודת היציאה)" : plan.end ? ` · ${plan.endLabel}` : ""}`);
+  lines.push("", `סיום משוער: ${dayClock(result.finish)}${plan.endIsStart ? " (חזרה לנקודת היציאה)" : plan.end ? ` · ${plan.endLabel}` : ""}`);
   return lines.join("\n");
 }
 
@@ -272,16 +282,35 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [endMode, setEndMode] = useState<EndMode>(saved.endMode);
   const [endAddress, setEndAddress] = useState<StructuredAddress | null>(saved.endAddress);
+  // Empty is "now": the field shows the clock, and the route leaves when it's planned.
   const [departureTime, setDepartureTime] = useState("");
+  const nowClock = useNowClock();
   const [serviceMinutes, setServiceMinutes] = useState(saved.serviceMinutes);
+  // "שינוי המסלול" mid-drive: planning again, while the drive waits to be replaced or gone back to.
+  const [editingDrive, setEditingDrive] = useState(false);
+  // The start and end kept before a drive was changed, put back afterwards: a route changed on the
+  // road (from "my location", to the drive's end) isn't the next route's default.
+  const beforeEdit = useRef<Saved | null>(null);
   useEffect(() => {
+    if (editingDrive) return;
     try {
       const next: Saved = { startMode, startAddress, endMode, endAddress, serviceMinutes };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       // Not kept; nothing else depends on it.
     }
-  }, [startMode, startAddress, endMode, endAddress, serviceMinutes]);
+  }, [startMode, startAddress, endMode, endAddress, serviceMinutes, editingDrive]);
+  const leaveEdit = () => {
+    const kept = beforeEdit.current;
+    if (kept) {
+      setStartMode(kept.startMode);
+      setStartAddress(kept.startAddress);
+      setEndMode(kept.endMode);
+      setEndAddress(kept.endAddress);
+      beforeEdit.current = null;
+    }
+    setEditingDrive(false);
+  };
 
   // The route being driven, kept on the phone: back from Waze — or after the
   // phone closed the app — it opens on the same stop.
@@ -292,8 +321,6 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       return null;
     }
   });
-  // "שינוי המסלול" mid-drive: planning again, while the drive waits to be replaced or gone back to.
-  const [editingDrive, setEditingDrive] = useState(false);
   useEffect(() => {
     try {
       if (drive) localStorage.setItem(DRIVE_STORAGE_KEY, JSON.stringify(drive));
@@ -323,10 +350,20 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
 
   // On a computer the steps scroll inside their own card; on a phone the page scrolls.
   const panelRef = useRef<HTMLDivElement>(null);
+  // At once, not smoothly: a smooth scroll was cut short as the page changed length under it.
   const toTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0 });
+    panelRef.current?.scrollTo({ top: 0 });
   };
+  // A step opens at its own question, not where the last one's button was.
+  const stepTopRef = useRef<HTMLDivElement>(null);
+  const showStepTop = () => stepTopRef.current?.scrollIntoView({ block: "start" });
+  const openedStep = useRef(step);
+  useEffect(() => {
+    if (openedStep.current === step) return;
+    openedStep.current = step;
+    stepTopRef.current?.scrollIntoView({ block: "start" });
+  }, [step]);
 
   // A choice that went away with its stop is dropped with it.
   const chosenKeys = new Set(chosen.map((stop) => stop.key));
@@ -461,7 +498,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       setArranged(null);
       setActiveLeg(null);
       setStep("route");
-      toTop();
+      showStepTop();
     } catch (e) {
       setError({ message: e instanceof Error ? e.message : "חישוב המסלול נכשל. נסו שוב." });
     } finally {
@@ -641,12 +678,19 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
         arrival: plan.result.arrivals[index] ?? null,
       })),
       end: plan.endIsStart ? { point: plan.start, label: "נקודת היציאה" } : plan.end ? { point: plan.end, label: "נקודת הסיום" } : null,
+      endPlace: plan.endIsStart
+        ? startMode === "address" && startAddress
+          ? startAddress
+          : { ...EMPTY_ADDRESS, lat: plan.start.lat, lng: plan.start.lng, formatted: "המקום שממנו יצאתם" }
+        : plan.end
+          ? endAddress
+          : null,
       at: 0,
       outcome: {},
       confirmed: [],
     };
     setDrive(next);
-    setEditingDrive(false);
+    leaveEdit();
     window.open(wazeLinkForPin(next.stops[0]), "_blank", "noopener,noreferrer");
     window.scrollTo({ top: 0 });
   };
@@ -686,7 +730,6 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const goTo = (id: Step) => {
     setError(null);
     setStep(id);
-    panelRef.current?.scrollTo({ top: 0 });
     if (id === "places" && startMode === "gps" && !gpsPoint) locate();
   };
 
@@ -789,11 +832,20 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       }));
     if (addedBack.length > 0) setExtras((prev) => [...prev, ...addedBack]);
     setSelected(new Set(left.map((stop) => stop.key)));
+    beforeEdit.current = { startMode, startAddress, endMode, endAddress, serviceMinutes };
     setStartMode("gps");
+    // It still ends where the drive was going to end, not at the spot it's changed from.
+    if (drive.endPlace) {
+      setEndMode("address");
+      setEndAddress(drive.endPlace);
+    } else if (!drive.end) {
+      setEndMode("last");
+    }
     setError(null);
     setStep("stops");
     setEditingDrive(true);
-    toTop();
+    // The planner is drawn in place of the drive first.
+    window.setTimeout(showStepTop, 0);
   };
 
   if (drive && !editingDrive) {
@@ -865,19 +917,23 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
         }
         className={wide ? "sticky top-20 h-[calc(100dvh-7.75rem)] min-h-[420px] min-w-0 overflow-hidden rounded-card border border-border/60 bg-card shadow-card" : "min-w-0"}
       >
+        {/* On a phone the map rides above the step; on a computer it stands beside the steps. */}
+        {wide ? null : <div className="h-64 overflow-hidden rounded-card border border-border/60 shadow-card">{map}</div>}
+
+        {/* Where a step begins: each step opens here, its question at the top of the screen (owner,
+            2026-10-27: "I came to the second step and I came to the bottom of the page"). Zero height. */}
+        <div ref={stepTopRef} aria-hidden className="-mb-5 h-0 scroll-mt-[calc(60px+var(--page-sticky-h,0px)+0.5rem)]" />
+
         {drive && editingDrive ? (
           <div className="space-y-2 rounded-xl border border-secondary/40 bg-secondary/5 p-3 text-sm">
             <p>
               <b>שינוי המסלול באמצע נסיעה.</b> העצירות שנשארו כבר נבחרו. מסלול חדש יחליף את הנסיעה.
             </p>
-            <Button type="button" size="sm" variant="outline" onClick={() => setEditingDrive(false)}>
+            <Button type="button" size="sm" variant="outline" onClick={leaveEdit}>
               חזרה לנסיעה
             </Button>
           </div>
         ) : null}
-
-        {/* On a phone the map rides above the step; on a computer it stands beside the steps. */}
-        {wide ? null : <div className="h-64 overflow-hidden rounded-card border border-border/60 shadow-card">{map}</div>}
 
         {step === "stops" ? (
           <div className="space-y-4">
@@ -1083,8 +1139,23 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
             <div className="grid grid-cols-2 gap-3">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">שעת יציאה</span>
-                <Input type="time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} aria-label="שעת יציאה" />
-                <span className="block text-xs text-muted-foreground">{departureTime ? "לפי העומס הצפוי מהשעה הזו" : "ריק = יוצאים עכשיו"}</span>
+                <Input type="time" value={departureTime || nowClock} onChange={(e) => setDepartureTime(e.target.value)} aria-label="שעת יציאה" />
+                {departureTime ? (
+                  <span
+                    className={cn(
+                      "block text-xs",
+                      leavesTomorrow(departureTime, nowClock) ? "font-semibold text-warning-soft-foreground" : "text-muted-foreground"
+                    )}
+                  >
+                    {/* An hour already gone is tomorrow's (departureFrom): said before planning. */}
+                    {leavesTomorrow(departureTime, nowClock) ? `השעה עברה — יוצאים מחר ב-${departureTime}` : "לפי העומס הצפוי מהשעה הזו"} ·{" "}
+                    <button type="button" onClick={() => setDepartureTime("")} className="font-semibold text-secondary hover:underline">
+                      עכשיו
+                    </button>
+                  </span>
+                ) : (
+                  <span className="block text-xs text-muted-foreground">יוצאים עכשיו</span>
+                )}
               </label>
               <label className="space-y-1 text-sm">
                 <span className="font-medium">דקות בכל עצירה</span>
@@ -1094,7 +1165,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                   min={0}
                   max={120}
                   value={serviceMinutes}
-                  onChange={(e) => setServiceMinutes(Math.max(0, Math.min(120, Number(e.target.value) || 0)))}
+                  onChange={(e) => setServiceMinutes(Math.max(0, Math.min(120, Math.round(Number(e.target.value)) || 0)))}
                   aria-label="דקות בכל עצירה"
                 />
                 <span className="block text-xs text-muted-foreground">לפריקה ומסירה</span>
@@ -1192,8 +1263,8 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <Figure label="זמן נסיעה" value={formatDuration(plan.result.total.durationSec)} />
                   <Figure label="מרחק" value={formatDistance(plan.result.total.distanceM)} />
-                  <Figure label="יציאה" value={clock(plan.result.departure)} />
-                  <Figure label="סיום משוער" value={clock(plan.result.finish)} />
+                  <Figure label="יציאה" value={dayClock(plan.result.departure)} />
+                  <Figure label="סיום משוער" value={dayClock(plan.result.finish)} />
                 </div>
                 <p className="text-xs text-muted-foreground">כולל {plan.serviceMinutes} דק׳ בכל עצירה · זמני הנסיעה עם העומס הצפוי בכל קטע</p>
                 <ChoiceCost plan={plan} />
@@ -1224,7 +1295,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                     marker={<span className="text-[0.7rem] font-bold">{plan.endIsStart ? "⇆" : "▶"}</span>}
                     markerClass="bg-emerald-700 text-white"
                     title={plan.startLabel}
-                    meta={`יציאה ${clock(plan.result.departure)}`}
+                    meta={`יציאה ${dayClock(plan.result.departure)}`}
                   />
                   {routeOrder.map((key, index) => {
                     const stop = stopByKey.get(key);
@@ -1252,7 +1323,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                           <div className="flex flex-wrap items-baseline gap-x-2">
                             <span className="break-words font-semibold">{stop.name}</span>
                             {arranged ? null : (
-                              <span className="text-sm font-semibold tabular-nums text-secondary">{clock(plan.result.arrivals[index])}</span>
+                              <span className="text-sm font-semibold tabular-nums text-secondary">{dayClock(plan.result.arrivals[index])}</span>
                             )}
                             {kept ? (
                               <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground" title="נשאר במקום שבחרתם">
@@ -1288,7 +1359,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                     marker={<FlagIcon className="h-3.5 w-3.5" />}
                     markerClass="bg-primary text-primary-foreground"
                     title={plan.endIsStart ? `חזרה ל${plan.startLabel}` : plan.end ? plan.endLabel : "סיום בעצירה האחרונה"}
-                    meta={arranged ? "השעות יתעדכנו אחרי התכנון" : `סיום משוער ${clock(plan.result.finish)}`}
+                    meta={arranged ? "השעות יתעדכנו אחרי התכנון" : `סיום משוער ${dayClock(plan.result.finish)}`}
                   />
                 </ol>
                   </SortableContext>
@@ -1531,8 +1602,13 @@ function WhyCard({
   const free = result.compare.freeBest;
   const rows = [
     { label: plan.mode === "exact" ? "הסדר שלכם" : "המסלול הזה", cost: result.total, current: true },
-    ...(free ? [{ label: "הכי מהיר, בלי הבחירות שלכם", cost: free, current: false, onPick: onFastest, busy: working === "best" }] : []),
-    ...(list ? [{ label: "לפי הסדר ברשימה", cost: list, current: false, onPick: onListOrder, busy: working === "exact" }] : []),
+    // An option exactly as fast as this route is this route (the list's order, once picked): not offered.
+    ...(free && free.durationSec !== result.total.durationSec
+      ? [{ label: "הכי מהיר, בלי הבחירות שלכם", cost: free, current: false, onPick: onFastest, busy: working === "best" }]
+      : []),
+    ...(list && list.durationSec !== result.total.durationSec
+      ? [{ label: "לפי הסדר ברשימה", cost: list, current: false, onPick: onListOrder, busy: working === "exact" }]
+      : []),
   ];
   const max = Math.max(...rows.map((row) => row.cost.durationSec));
   const partialTraffic = result.legs.some((leg) => leg.trafficUnavailable);

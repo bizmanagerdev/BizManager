@@ -11,6 +11,7 @@ import {
   stopPhase,
 } from "@/lib/routes/plan";
 import { decodePolyline } from "@/lib/routes/polyline";
+import { dayClock, leavesTomorrow } from "@/app/(app)/deliveries/route/route-ui";
 import {
   currentPosition,
   departureFrom,
@@ -202,5 +203,37 @@ describe("currentPosition (\"המיקום שלי\")", () => {
     expect(locationError(2)).toContain("GPS");
     expect(locationError(3)).toContain("זמן");
     expect(new Set([1, 2, 3, null].map(locationError)).size).toBe(4);
+  });
+});
+
+describe("hours that say their day", () => {
+  // 14:10 in Israel on 27/10/2026 (UTC+2).
+  const now = new Date("2026-10-27T12:10:00Z");
+
+  it("today's hour plain, tomorrow's with מחר, a later one with its date", () => {
+    expect(dayClock("2026-10-27T15:30:00Z", now)).toBe("17:30");
+    expect(dayClock("2026-10-28T05:00:00Z", now)).toBe("מחר 07:00");
+    // 00:10 on the 28th is tomorrow too, though it's only ten hours away.
+    expect(dayClock("2026-10-27T22:10:00Z", now)).toBe("מחר 00:10");
+    expect(dayClock("2026-10-29T06:00:00Z", now)).toBe("29/10 08:00");
+  });
+
+  it("an hour gone by more than five minutes is tomorrow's", () => {
+    expect(leavesTomorrow("07:00", "14:10")).toBe(true);
+    expect(leavesTomorrow("13:50", "14:10")).toBe(true);
+    expect(leavesTomorrow("14:07", "14:10")).toBe(false);
+    expect(leavesTomorrow("16:00", "14:10")).toBe(false);
+    // Just before midnight, an hour after it is tomorrow's; one before it isn't.
+    expect(leavesTomorrow("00:10", "23:59")).toBe(true);
+    expect(leavesTomorrow("23:59", "00:02")).toBe(false);
+    expect(leavesTomorrow("", "14:10")).toBe(false);
+  });
+
+  it("agrees with the hour the plan is asked for", () => {
+    for (const time of ["07:00", "13:50", "14:07", "16:00", "23:45"]) {
+      const planned = departureFrom(time, now)!;
+      const tomorrow = dayClock(planned.toISOString(), now).startsWith("מחר");
+      expect([time, tomorrow]).toEqual([time, leavesTomorrow(time, "14:10")]);
+    }
   });
 });

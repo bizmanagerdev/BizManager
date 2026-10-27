@@ -4,6 +4,7 @@
 // interested in Google Maps". The drive is kept on the phone, so coming back
 // from Waze lands on the same stop.
 
+import type { StructuredAddress } from "@/lib/address/structured";
 import type { RoutePoint } from "@/lib/routes/plan";
 import type { PlannerStop } from "@/lib/routes/planner-stops";
 
@@ -30,6 +31,8 @@ export type Drive = {
   stops: DriveStop[];
   /** Where the route ends after the last stop; null when it ends at the last stop. */
   end: { point: RoutePoint; label: string } | null;
+  /** The end as an address, for "שינוי המסלול": a route changed on the road still ends there, not where the driver is. */
+  endPlace?: StructuredAddress | null;
   /** The stop the driver is on; stops.length once every stop is behind them. */
   at: number;
   outcome: Record<string, StopOutcome>;
@@ -64,6 +67,7 @@ export function parseDrive(json: string | null, today: string): Drive | null {
       day: drive.day,
       stops: drive.stops,
       end: drive.end ?? null,
+      ...(drive.endPlace ? { endPlace: drive.endPlace } : {}),
       at,
       outcome: drive.outcome && typeof drive.outcome === "object" ? drive.outcome : {},
       confirmed: Array.isArray(drive.confirmed) ? drive.confirmed : [],

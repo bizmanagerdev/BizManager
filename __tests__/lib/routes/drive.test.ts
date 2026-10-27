@@ -77,6 +77,12 @@ describe("parseDrive", () => {
     expect(parseDrive(JSON.stringify(kept), "2026-10-27")).toEqual(kept);
   });
 
+  it("the end as an address comes back with it", () => {
+    const endPlace = { city: "ירושלים", street: "רמת הגולן", houseNumber: "12", unit: "", lat: 31.8, lng: 35.22, placeId: null, formatted: "רמת הגולן 12, ירושלים" };
+    expect(parseDrive(JSON.stringify(drive({ endPlace })), "2026-10-27")?.endPlace).toEqual(endPlace);
+    expect(parseDrive(JSON.stringify(drive()), "2026-10-27")).not.toHaveProperty("endPlace");
+  });
+
   it("yesterday's drive doesn't", () => {
     expect(parseDrive(JSON.stringify(drive()), "2026-10-28")).toBeNull();
   });
