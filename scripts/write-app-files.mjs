@@ -8,7 +8,10 @@
 // Left out: source maps, and PowerSync's engine files (.wasm/.mjs) that the
 // bundler copies here — the app loads those from public/powersync/<version>/.
 //
-// Runs after `next build` (package.json "postbuild").
+// Runs inside `next build`, right after it compiles (next.config.ts,
+// compiler.runAfterProductionCompile). It used to run after it (package.json
+// "postbuild"), but since Next 16.4 Vercel takes the build's files when
+// `next build` ends, so that list never reached the site (404 on 925e521b).
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -35,14 +38,14 @@ export function appFiles(staticDir) {
   return files.sort();
 }
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
-if (isMain) {
-  const staticDir = path.join(process.cwd(), ".next", "static");
+/** Writes the list to `<distDir>/static/bizh-app-files/<build>.json`. */
+export function writeAppFiles(distDir, env = process.env) {
+  const staticDir = path.join(distDir, "static");
   if (!existsSync(staticDir)) {
     console.log("[app files] no .next/static — skipped");
-    process.exit(0);
+    return;
   }
-  const build = buildId();
+  const build = buildId(env);
   const files = appFiles(staticDir);
   const outDir = path.join(staticDir, "bizh-app-files");
   mkdirSync(outDir, { recursive: true });

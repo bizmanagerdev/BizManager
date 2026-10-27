@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { writeAppFiles } from "./scripts/write-app-files.mjs";
 
 // Identifies THIS deploy. The service worker keys its caches on this value and
 // is registered as `/sw.js?v=<BUILD_ID>`, so every deploy produces a new SW
@@ -35,6 +37,13 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
     NEXT_PUBLIC_POWERSYNC_ASSETS: `/powersync/${POWERSYNC_VERSION}`,
+  },
+  compiler: {
+    // The service worker's list of this build's code files, written inside
+    // `next build` so Vercel deploys it (scripts/write-app-files.mjs says why).
+    // withSentryConfig runs its own step after this one.
+    runAfterProductionCompile: async ({ projectDir, distDir }) =>
+      writeAppFiles(path.resolve(projectDir, distDir)),
   },
   experimental: {
     // recharts is the one heavy chart lib in this repo not already covered by
