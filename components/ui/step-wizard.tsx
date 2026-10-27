@@ -456,9 +456,11 @@ export function StepWizard<TStep extends string | number>({
 
       {/* Back and next ALWAYS share this one row, however large the text gets
           (e.g. the accessibility font-scale setting) — never flex-wrap here, so
-          back can never end up stacked above next. Each button shrinks and its
-          label wraps onto a second line inside it, never cut with "…" (owner,
-          2026-10-11: at the bigger text sizes "אישור אספקה" read "אישור אספק…"). */}
+          back can never end up stacked above next. Next shrinks and its label
+          wraps onto a second line inside it, never cut with "…" (owner,
+          2026-10-11: at the bigger text sizes "אישור אספקה" read "אישור אספק…").
+          Back, one short word, keeps its width: shrunk beside a long next label
+          it broke inside the word, "חזר/ה" (owner, 2026-10-27). */}
       <div className="flex flex-nowrap items-center gap-2">
         {onBack ? (
           <Button
@@ -466,7 +468,7 @@ export function StepWizard<TStep extends string | number>({
             variant="muted"
             onClick={onBack}
             disabled={backDisabled}
-            className={cn("me-auto min-w-0 shrink", FOOTER_BUTTON_CLASS)}
+            className={cn("me-auto shrink-0", FOOTER_BUTTON_CLASS)}
           >
             <ChevronRightIcon className="h-4 w-4 shrink-0" />
             <span className={FOOTER_LABEL_CLASS}>{backLabel}</span>

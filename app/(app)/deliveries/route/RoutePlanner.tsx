@@ -666,7 +666,15 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       onNext: () => window.open(mapsLinks[0], "_blank", "noopener,noreferrer"),
       nextDisabled: mapsLinks.length === 0 || arranged !== null,
       isLastStep: true,
-      nextLabel: mapsLinks.length > 1 ? "יציאה לדרך · חלק 1" : "יציאה לדרך ב-Google Maps",
+      nextLabel:
+        mapsLinks.length > 1 ? (
+          "יציאה לדרך · חלק 1"
+        ) : (
+          // On a narrow phone it breaks before "ב-Google Maps", not after "ב-".
+          <>
+            יציאה לדרך <span className="whitespace-nowrap">ב-Google Maps</span>
+          </>
+        ),
     };
   })();
 
