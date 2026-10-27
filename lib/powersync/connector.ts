@@ -5,6 +5,7 @@ import { POWERSYNC_URL } from "./config";
 import {
   DEVICE_SAVE_REFUSED_EVENT,
   DEVICE_SAVE_SENT_EVENT,
+  goneIsDone,
   isCarriedChange,
   requestForChange,
   restoreForChange,
@@ -19,7 +20,8 @@ import {
 //   instance is set up with Supabase auth) and sends what the sync rules allow;
 // - uploads: saves made on the device copy (lib/powersync/local-writes.ts —
 //   tasks created, edited, moved, deleted; comments added; customers,
-//   projects and orders created, projects and orders edited) go through our own
+//   projects and orders created, projects and orders edited; the accounts
+//   page's quick line, ticks and deletes) go through our own
 //   API routes, so permission checks, notifications, reminders and the
 //   history log keep running. Each carries an Idempotency-Key, so a change
 //   sent again after its answer was lost is never applied twice.
@@ -70,7 +72,7 @@ async function send(request: DeviceSaveRequest, key: string, restore: OrderResto
   let res: Response;
   try {
     res = await fetch(request.url, {
-      method: "POST",
+      method: request.method ?? "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": key },
       credentials: "same-origin",
       body: JSON.stringify(request.body),
@@ -81,7 +83,7 @@ async function send(request: DeviceSaveRequest, key: string, restore: OrderResto
   }
   if (res.ok) return;
   // Deleting something that's already gone did what it was meant to.
-  if (request.kind === "task-delete" && res.status === 404) return;
+  if (goneIsDone(request.kind) && res.status === 404) return;
   // Signed out for a moment, overloaded, or the server itself failing: later.
   if (res.status === 401 || res.status === 408 || res.status === 429 || res.status >= 500) {
     throw new RetryLater(`HTTP ${res.status}`, true);

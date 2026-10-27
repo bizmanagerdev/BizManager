@@ -68,6 +68,8 @@ import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { saveAccountOrderDirect } from "@/lib/accounts/accountsClient";
 import { invalidateAccountsCache } from "@/components/financial/AccountSelect";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
+import { deviceBankSaves } from "@/lib/financial/device-bank-saves";
+import { DEVICE_SAVE_REFUSED_EVENT, type DeviceSaveRefused } from "@/lib/powersync/local-writes";
 
 const ExpenseDialog = dynamic(
   () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
@@ -486,6 +488,7 @@ export default function BankClient({
   merchantMemory = {},
   dataIncomplete = false,
   fxRates = {},
+  deviceSaves = false,
 }: {
   accounts: AccountWithLedger[];
   /** For a loan/loan_repayment row's inline edit — the full computed shape
@@ -508,6 +511,10 @@ export default function BankClient({
   /** Each currency's newest Bank of Israel rate — a US$ or C$ account's
    *  shekels today. */
   fxRates?: TodayFxRates;
+  /** Drawn from the device copy (LocalBankPage): the quick line, the ticks
+   *  and the deletes are saved on it first (lib/financial/device-bank-saves.ts)
+   *  and the page redraws from it — nothing to reload. */
+  deviceSaves?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -809,16 +816,18 @@ export default function BankClient({
     const queueKey = `${accountId}|${row.id}`;
     const save = (checkQueue.current.get(queueKey) ?? Promise.resolve()).then(async () => {
       try {
+        const amount = ledgerSignedAmount(row.type, row.accountAmount);
+        const date = ledgerDay(row.date);
+        // Drawn from the device copy: the tick goes onto it, and up from there.
+        const device = deviceSaves ? deviceBankSaves() : null;
+        if (device) {
+          await device.setCheck({ accountId, entryKey: row.id, amount, date, checked });
+          return;
+        }
         const res = await fetch("/api/accounts/ledger-checks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            account_id: accountId,
-            entry_key: row.id,
-            amount: ledgerSignedAmount(row.type, row.accountAmount),
-            date: ledgerDay(row.date),
-            checked,
-          }),
+          body: JSON.stringify({ account_id: accountId, entry_key: row.id, amount, date, checked }),
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) throw new Error(json.error || "שמירת הסימון נכשלה.");
@@ -829,6 +838,21 @@ export default function BankClient({
     });
     checkQueue.current.set(queueKey, save);
   }
+
+  // A tick or a delete saved on the device that the server then refused: the
+  // copy goes back to the server's version at the next sync — so the page's
+  // own stand-ins (a tick shown, a row hidden) step aside for it. The toast
+  // saying why is DeviceSaveNotices'.
+  useEffect(() => {
+    if (!deviceSaves) return;
+    const onRefused = (event: Event) => {
+      const { kind } = (event as CustomEvent<DeviceSaveRefused>).detail;
+      if (kind === "ledger-check") setLocalChecks(new Map());
+      if (kind.endsWith("-delete") && !kind.startsWith("task-")) setHiddenLedgerRowIds(new Set());
+    };
+    window.addEventListener(DEVICE_SAVE_REFUSED_EVENT, onRefused);
+    return () => window.removeEventListener(DEVICE_SAVE_REFUSED_EVENT, onRefused);
+  }, [deviceSaves]);
 
   // The card's "N לא נבדקו": opens that account on just those rows; on the
   // account already showing them, back to all of them.
@@ -858,6 +882,9 @@ export default function BankClient({
         }),
       onCommit: async () => {
         try {
+          // Drawn from the device copy: deleted on it, and on the server from there.
+          const device = deviceSaves ? deviceBankSaves() : null;
+          if (device && (await device.deleteRow({ kind: "transfer", id }))) return { ok: true };
           const result = await deleteAccountTransfer(id);
           if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת ההעברה נכשלה.") };
           startTransition(() => { router.refresh(); });
@@ -931,6 +958,9 @@ export default function BankClient({
         }),
       onCommit: async () => {
         try {
+          // Drawn from the device copy: deleted on it, and on the server from there.
+          const device = deviceSaves ? deviceBankSaves() : null;
+          if (device && (await device.deleteRow(ref))) return { ok: true };
           if (ref.kind === "loan") {
             const result = await deleteLoan(ref.id);
             if (!result.ok) return { ok: false, error: result.error };
@@ -1738,6 +1768,7 @@ export default function BankClient({
         projects={projects}
         properties={recurringProperties}
         merchantMemory={merchantMemory}
+        deviceSaves={deviceSaves}
         onSaved={() => startTransition(() => { router.refresh(); })}
         onHeightChange={setQuickEntryHeight}
       />

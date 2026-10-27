@@ -4,11 +4,12 @@ import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
-import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
+import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { currencyPricing, type MoneyCurrencyBody } from "@/lib/fx/money-input";
 import { MONEY_CURRENCY_COLUMNS } from "@/lib/fx/currencies";
-
+import { expenseDomainFrom, expenseFieldsFrom, expenseRowFrom, type ExpenseBody } from "@/lib/expenses/expense-input";
+import { clientRowId } from "@/lib/client-row-id";
 
 export async function POST(req: Request) {
   try {
@@ -17,61 +18,15 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "expenses/create", async () => {
-    const body = (await req.json()) as {
-      project_id?: string | null;
-      order_id?: string | null;
-      property_id?: string | null;
-      business_domain?: string;
-      amount?: number | string;
-      category?: string;
-      description?: string;
-      notes?: string;
-      expense_date?: string | null;
-      included_in_base_price?: boolean;
-      billed_to_customer?: boolean;
-      bill_to_customer_amount?: number | string | null;
-      project_expense_notes?: string;
-      payment_status?: string | null;
-      paid_amount?: number | string | null;
-      payment_method?: string | null;
-      account_id?: string | null;
-      tag_ids?: unknown;
-    } & MoneyCurrencyBody;
+    const body = (await req.json()) as ExpenseBody & MoneyCurrencyBody;
+    // Read and checked the same way the phone does (lib/expenses/expense-input.ts).
+    const fields = expenseFieldsFrom(body);
+    if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
+    const { projectId, orderId, propertyId } = fields;
+    // An expense saved on the phone first comes with the app's own id (lib/powersync/local-writes.ts).
+    const clientId = clientRowId(body.id);
 
-    const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
-    const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
-    const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
-    const businessDomainInput =
-      typeof body.business_domain === "string" ? body.business_domain.trim() : "";
-    const category = typeof body.category === "string" ? body.category.trim() : "";
-    const description = typeof body.description === "string" ? body.description.trim() : null;
-    const notes = typeof body.notes === "string" ? body.notes.trim() : null;
-    const includedInBasePrice = Boolean(body.included_in_base_price);
-    const billedToCustomer = Boolean(body.billed_to_customer);
-    const projectExpenseNotes =
-      typeof body.project_expense_notes === "string" ? body.project_expense_notes.trim() : null;
-
-    const amountNumber =
-      typeof body.amount === "number" ? body.amount : typeof body.amount === "string" ? Number(body.amount) : NaN;
-
-    if (!category || !Number.isFinite(amountNumber)) {
-      return NextResponse.json({ error: "יש להזין קטגוריה וסכום." }, { status: 400 });
-    }
-
-    const expenseDate = typeof body.expense_date === "string" ? body.expense_date : null;
-    if (!expenseDate) {
-      return NextResponse.json({ error: "יש להזין תאריך להוצאה." }, { status: 400 });
-    }
-
-    const selectedLinks = [projectId, orderId, propertyId].filter(Boolean);
-    if (selectedLinks.length > 1) {
-      return NextResponse.json(
-        { error: "ניתן לשייך הוצאה למקור אחד בלבד (פרויקט / הזמנה / נכס)." },
-        { status: 400 }
-      );
-    }
-
-    let businessDomain = businessDomainInput;
+    let businessDomain = fields.businessDomain;
 
     if (projectId) {
       const { data: project, error: projectError } = await supabase
@@ -123,52 +78,17 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!isExpenseBusinessDomain(businessDomain)) {
-      return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
-    }
-    if (businessDomain === "property_management" && !propertyId) {
-      return NextResponse.json({ error: "יש לבחור נכס לתחום ניהול נכסים." }, { status: 400 });
-    }
-    if (businessDomain === "logistics_projects" && !projectId) {
-      return NextResponse.json({ error: "יש לבחור פרויקט לתחום פרויקטים." }, { status: 400 });
-    }
-
-    const rawPaymentStatus = typeof body.payment_status === "string" ? body.payment_status.trim() : null;
-    const paymentStatus = rawPaymentStatus === "paid" || rawPaymentStatus === "partial" || rawPaymentStatus === "not_paid"
-      ? rawPaymentStatus
-      : null;
-    const rawPaidAmount = body.paid_amount != null ? Number(body.paid_amount) : null;
-    const paidAmount = paymentStatus === "partial" && rawPaidAmount != null && Number.isFinite(rawPaidAmount) && rawPaidAmount > 0
-      ? rawPaidAmount
-      : null;
-    const paymentMethod = typeof body.payment_method === "string" && body.payment_method.trim()
-      ? body.payment_method.trim()
-      : null;
-    const accountId = typeof body.account_id === "string" && body.account_id.trim()
-      ? body.account_id.trim()
-      : null;
+    const domain = expenseDomainFrom(businessDomain, fields);
+    if ("error" in domain) return NextResponse.json({ error: domain.error }, { status: 400 });
 
     // In US$ or C$: the amounts as typed, in shekels at the day's rate (or the
     // rate typed) — amount and paid_amount are the shekels.
-    const pricing = await currencyPricing(supabase, body, { amount: amountNumber, date: expenseDate });
+    const pricing = await currencyPricing(supabase, body, { amount: fields.amount, date: fields.expenseDate });
     if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
 
     const baseExpensePayload = {
-      expense_date: expenseDate,
-      amount: pricing.toShekels(amountNumber),
-      category,
-      description,
-      business_domain: businessDomain,
-      project_id: projectId || null,
-      order_id: orderId || null,
-      property_id: propertyId || null,
-      notes,
-      recorded_by: profile.id,
-      payment_status: paymentStatus,
-      paid_amount: paidAmount === null ? null : pricing.toShekels(paidAmount),
-      payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? paymentMethod : null,
-      account_id: accountId,
-      ...(pricing.columns ?? {}),
+      ...(clientId ? { id: clientId } : {}),
+      ...expenseRowFrom(fields, { businessDomain: domain.domain, recordedBy: profile.id, pricing }),
     };
     const selectExpense =
       `id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at,${MONEY_CURRENCY_COLUMNS}`;
@@ -178,6 +98,22 @@ export async function POST(req: Request) {
       .insert(baseExpensePayload)
       .select(selectExpense)
       .maybeSingle();
+
+    if (expenseInsertError && clientId && expenseInsertError.code === "23505") {
+      // Sent again after its answer was lost: the expense it already made (its
+      // project link, history line and tags were done the first time).
+      const { data: existing } = await supabase.from("expenses").select(selectExpense).eq("id", clientId).maybeSingle();
+      if (existing) {
+        const { data: link } = projectId
+          ? await supabase
+              .from("project_expenses")
+              .select("id,project_id,expense_id,included_in_base_price,billed_to_customer,notes")
+              .eq("expense_id", clientId)
+              .maybeSingle()
+          : { data: null };
+        return NextResponse.json({ expense: existing, projectExpense: link ?? null });
+      }
+    }
 
     const expense: Record<string, unknown> | null = expenseData as Record<string, unknown> | null;
     const expenseError = expenseInsertError ? { message: expenseInsertError.message } : null;
@@ -195,9 +131,9 @@ export async function POST(req: Request) {
         .insert({
           project_id: projectId,
           expense_id: createdExpenseId,
-          included_in_base_price: includedInBasePrice,
-          billed_to_customer: billedToCustomer,
-          notes: projectExpenseNotes,
+          included_in_base_price: fields.includedInBasePrice,
+          billed_to_customer: fields.billedToCustomer,
+          notes: fields.projectExpenseNotes,
         })
         .select("id,project_id,expense_id,included_in_base_price,billed_to_customer,notes")
         .maybeSingle();

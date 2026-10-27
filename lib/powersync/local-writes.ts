@@ -27,8 +27,10 @@ import { isReminderAction, reminderActionUpdates, type ReminderAction } from "@/
 // price set. Orders: created and edited (the order form — written by
 // lib/orders/device-order-writes.ts, sent from here). Reminders: done,
 // snoozed, dismissed, reopened. Payments: added to an order or a project, and
-// marked collected. A new row gets its id here (the routes accept it), so it's
-// the same row once the server has it.
+// marked collected. The accounts page: the quick line's expenses and income,
+// the "נבדק מול הבנק" ticks, and a register row of any kind deleted. A new row
+// gets its id here (the routes accept it), so it's the same row once the
+// server has it.
 //
 // What isn't a column of the row — a task's members, tags and the reminders
 // set while creating it — rides in the row's local-only `_extras` column
@@ -36,6 +38,7 @@ import { isReminderAction, reminderActionUpdates, type ReminderAction } from "@/
 // so it goes up in the same queue, in order, with the change it belongs to.
 
 type Db = Pick<AbstractPowerSyncDatabase, "execute" | "getOptional">;
+type TxDb = Pick<AbstractPowerSyncDatabase, "writeTransaction">;
 
 /** A task's own fields, as the task routes take them. */
 export type TaskFields = {
@@ -489,6 +492,209 @@ function paymentExtras(value: unknown): { route: PaymentRoute; body: Record<stri
   }
 }
 
+// ── The accounts page ────────────────────────────────────────────────────────
+// Saved on the device first (owner's OK 2026-10-27): the quick line's expenses
+// and income, the "נבדק מול הבנק" ticks, and a register row of any kind
+// deleted — the balances and the register, drawn from the copy, show it at
+// once, with no connection too. Each change carries the request the page used
+// to send, in the row's `_extras` as { send: { kind, body } }, and goes up to
+// that same route. A row removed on the phone gets its request written onto
+// it first and is then deleted, in one transaction: PowerSync sends no columns
+// with a delete, so the delete itself goes nowhere (isCarriedChange) — nor do
+// the rows the server deletes with it (a loan's repayments, an expense's
+// project link), removed on the phone too so the register matches.
+
+/** The route each of the accounts page's saves goes up through. */
+const SENT_ROUTES = {
+  "expense-create": { url: "/api/expenses/create" },
+  "income-create": { url: "/api/payments/create" },
+  "ledger-check": { url: "/api/accounts/ledger-checks" },
+  "expense-delete": { url: "/api/expenses/delete" },
+  "payment-delete": { url: "/api/payments/delete" },
+  "order-payment-delete": { url: "/api/orders/payments/delete" },
+  "worker-payment-delete": { url: "/api/payroll/worker-payments", method: "DELETE" },
+  // Rows with no route of their own (the page deletes them in place).
+  "loan-delete": { url: "/api/accounts/register-delete" },
+  "repayment-delete": { url: "/api/accounts/register-delete" },
+  "card-charge-delete": { url: "/api/accounts/register-delete" },
+  "transfer-delete": { url: "/api/accounts/register-delete" },
+} as const satisfies Record<string, { url: string; method?: "DELETE" }>;
+
+export type SentKind = keyof typeof SENT_ROUTES;
+
+/** The accounts page's tables: a delete on one went up with the change before it. */
+const SENT_TABLES = new Set([
+  "expenses",
+  "project_expenses",
+  "worker_payments",
+  "loans",
+  "loan_repayments",
+  "card_statement_charges",
+  "account_transfers",
+  "account_ledger_checks",
+]);
+
+/** The tables a register row lives in. */
+export type RegisterTable =
+  | "payments"
+  | "expenses"
+  | "worker_payments"
+  | "loans"
+  | "loan_repayments"
+  | "card_statement_charges"
+  | "account_transfers";
+
+function sendExtras(kind: SentKind, body: Record<string, unknown>): string {
+  return JSON.stringify({ send: { kind, body }, n: nonce() });
+}
+
+/** The request a change carries in its `_extras`, or null. */
+function sentRequestOf(value: unknown): DeviceSaveRequest | null {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const send = (JSON.parse(value) as { send?: { kind?: unknown; body?: unknown } }).send;
+    if (!send || typeof send.kind !== "string" || !(send.kind in SENT_ROUTES)) return null;
+    if (!send.body || typeof send.body !== "object") return null;
+    const kind = send.kind as SentKind;
+    const route: { url: string; method?: "DELETE" } = SENT_ROUTES[kind];
+    return { kind, url: route.url, ...(route.method ? { method: route.method } : {}), body: send.body as Record<string, unknown> };
+  } catch {
+    return null;
+  }
+}
+
+function insertSql(table: string, columns: string[]): string {
+  return `INSERT INTO ${table} (id, ${columns.join(", ")}) VALUES (?, ${columns.map(() => "?").join(", ")})`;
+}
+
+/**
+ * The quick line's expense on the device copy: its row as the server makes it
+ * (lib/expenses/expense-input.ts), its project link (`link`, for a project's
+ * expense), and the request that makes them on the server.
+ */
+export async function addExpenseOnDevice(
+  db: TxDb,
+  expense: {
+    id: string;
+    row: Record<string, unknown>;
+    link: { project_id: string; included_in_base_price: boolean; billed_to_customer: boolean; notes: string | null } | null;
+    body: Record<string, unknown>;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.writeTransaction(async (tx) => {
+    await tx.execute(insertSql("expenses", [...Object.keys(expense.row), "created_at", "updated_at", "_extras"]), [
+      expense.id,
+      ...Object.values(expense.row).map(sqlValue),
+      now,
+      now,
+      sendExtras("expense-create", { ...expense.body, id: expense.id }),
+    ]);
+    if (!expense.link) return;
+    const link = { ...expense.link, expense_id: expense.id };
+    await tx.execute(insertSql("project_expenses", Object.keys(link)), [
+      crypto.randomUUID(),
+      ...Object.values(link).map(sqlValue),
+    ]);
+  });
+}
+
+/** The quick line's income on the device copy: its row as the server makes it (lib/payments/payment-input.ts), and its request. */
+export async function addIncomeOnDevice(
+  db: Db,
+  income: { id: string; row: Record<string, unknown>; body: Record<string, unknown> }
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.execute(insertSql("payments", [...Object.keys(income.row), "created_at", "updated_at", "_extras"]), [
+    income.id,
+    ...Object.values(income.row).map(sqlValue),
+    now,
+    now,
+    sendExtras("income-create", { ...income.body, id: income.id }),
+  ]);
+}
+
+/**
+ * A register line ticked (or unticked) "נבדק מול הבנק" on the device copy —
+ * as the route keeps it: one row per account and line, with the line's signed
+ * amount and day, so an edited line reads unticked again. Unticked: the row
+ * is removed (its request written onto it first; onto a stand-in when the
+ * phone has none, so the request still goes up).
+ */
+export async function setLedgerCheckOnDevice(
+  db: TxDb,
+  check: { accountId: string; entryKey: string; amount: number; date: string; checked: boolean; userId: string }
+): Promise<void> {
+  const body = {
+    account_id: check.accountId,
+    entry_key: check.entryKey,
+    amount: check.amount,
+    date: check.date,
+    checked: check.checked,
+  };
+  await db.writeTransaction(async (tx) => {
+    const stored = await tx.getOptional<{ id: string }>(
+      "SELECT id FROM account_ledger_checks WHERE account_id = ? AND entry_key = ? LIMIT 1",
+      [check.accountId, check.entryKey]
+    );
+    const now = new Date().toISOString();
+    const extras = sendExtras("ledger-check", body);
+    if (stored && check.checked) {
+      await tx.execute(
+        "UPDATE account_ledger_checks SET amount_at_check = ?, date_at_check = ?, checked_at = ?, checked_by = ?, _extras = ? WHERE id = ?",
+        [check.amount, check.date, now, check.userId, extras, stored.id]
+      );
+      return;
+    }
+    if (stored) {
+      await tx.execute("UPDATE account_ledger_checks SET _extras = ? WHERE id = ?", [extras, stored.id]);
+    } else {
+      await tx.execute(
+        insertSql("account_ledger_checks", [
+          "account_id", "entry_key", "amount_at_check", "date_at_check", "checked_at", "checked_by", "_extras",
+        ]),
+        [crypto.randomUUID(), check.accountId, check.entryKey, check.amount, check.date, now, check.userId, extras]
+      );
+    }
+    if (!check.checked) {
+      await tx.execute("DELETE FROM account_ledger_checks WHERE account_id = ? AND entry_key = ?", [
+        check.accountId,
+        check.entryKey,
+      ]);
+    }
+  });
+}
+
+/**
+ * A register row deleted on the device copy: the request the page sends is
+ * written onto it, then it's deleted — with `alsoDelete`, the rows the server
+ * deletes with it. False when the phone doesn't have it (delete on the server).
+ */
+export async function deleteRowOnDevice(
+  db: TxDb,
+  removal: {
+    table: RegisterTable;
+    id: string;
+    kind: SentKind;
+    body: Record<string, unknown>;
+    alsoDelete?: { table: "loan_repayments"; column: "loan_id" } | { table: "project_expenses"; column: "expense_id" };
+  }
+): Promise<boolean> {
+  return db.writeTransaction(async (tx) => {
+    const stored = await tx.getOptional<{ id: string }>(`SELECT id FROM ${removal.table} WHERE id = ?`, [removal.id]);
+    if (!stored) return false;
+    await tx.execute(`UPDATE ${removal.table} SET _extras = ? WHERE id = ?`, [
+      sendExtras(removal.kind, removal.body),
+      removal.id,
+    ]);
+    if (removal.alsoDelete) {
+      await tx.execute(`DELETE FROM ${removal.alsoDelete.table} WHERE ${removal.alsoDelete.column} = ?`, [removal.id]);
+    }
+    await tx.execute(`DELETE FROM ${removal.table} WHERE id = ?`, [removal.id]);
+    return true;
+  });
+}
+
 function customerCreateBody(id: string, data: Record<string, unknown>): Record<string, unknown> {
   let extras: Record<string, unknown> = {};
   try {
@@ -539,10 +745,16 @@ export type DeviceSaveKind =
   | "order-payment"
   | "project-payment"
   | "payment-collected"
-  | "reminder-action";
+  | "reminder-action"
+  | SentKind;
 
-/** One queued device save, as the API route it goes through. */
-export type DeviceSaveRequest = { kind: DeviceSaveKind; url: string; body: Record<string, unknown> };
+/** One queued device save, as the API route it goes through (a POST, unless it says). */
+export type DeviceSaveRequest = { kind: DeviceSaveKind; url: string; method?: "DELETE"; body: Record<string, unknown> };
+
+/** A delete whose row the server no longer has did what it was meant to (sent again, or deleted elsewhere meanwhile). */
+export function goneIsDone(kind: DeviceSaveKind): boolean {
+  return kind === "task-delete" || (kind in SENT_ROUTES && kind.endsWith("-delete"));
+}
 
 /** The row as it stands on the device now (what a change that didn't record a column needs). */
 export type CurrentRow = (id: string, table: "tasks" | "projects") => Promise<Record<string, unknown> | null>;
@@ -601,10 +813,14 @@ export function restoreForChange(op: Pick<CrudEntry, "table" | "op" | "opData">)
  * an order's lines, payments and stock, written with the order on the phone
  * (lib/orders/device-order-writes.ts) — its request carries them, and the
  * server's own come back at the next sync. A payment made or marked collected
- * by itself carries its own request (`_extras`) and goes up on its own.
+ * by itself carries its own request (`_extras`) and goes up on its own. On the
+ * accounts page's tables a delete went up with the change before it, and an
+ * expense's project link with its expense.
  */
-export function isCarriedChange(op: Pick<CrudEntry, "table" | "opData">): boolean {
+export function isCarriedChange(op: Pick<CrudEntry, "table" | "opData"> & { op?: CrudEntry["op"] }): boolean {
   if (op.table === "payments") return !op.opData?._extras;
+  if (op.table === "project_expenses") return true;
+  if (SENT_TABLES.has(op.table) && String(op.op) === "DELETE") return true;
   return op.table === "order_items" || op.table === "inventory";
 }
 
@@ -623,6 +839,10 @@ export async function requestForChange(
   // into the page (the page only uses the writes above).
   const kind: string = op.op;
   const data = op.opData ?? {};
+
+  // The accounts page's saves carry their own request, whatever the table.
+  const sent = kind === "DELETE" ? null : sentRequestOf(data._extras);
+  if (sent) return sent;
 
   if (op.table === "task_comments") {
     if (kind === "PUT") {

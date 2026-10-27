@@ -184,3 +184,49 @@ describe("POST /api/expenses/create — an expense in dollars", () => {
     });
   });
 });
+
+// Saved on the phone first (the accounts page's quick line, 2026-10-27): the
+// expense comes with the app's own id, and may be sent again after its answer
+// was lost.
+describe("POST /api/expenses/create — an expense saved on the phone first", () => {
+  const PHONE_ID = "11111111-2222-4333-8444-555555555555";
+
+  it("is made with the phone's own id", async () => {
+    const inserted: unknown[] = [];
+    const base = makeSupabase({ expenses: { data: { id: PHONE_ID }, error: null } });
+    grant({
+      from: (table: string) => {
+        const builder = base.from(table) as Record<string, unknown>;
+        const insert = builder.insert as (row: unknown) => unknown;
+        builder.insert = (row: unknown) => {
+          inserted.push(row);
+          return insert(row);
+        };
+        return builder;
+      },
+    });
+    const res = await post({ ...VALID, id: PHONE_ID.toUpperCase() });
+    expect(res.status).toBe(200);
+    expect(inserted[0]).toMatchObject({ id: PHONE_ID, amount: 250, category: "חומרים", recorded_by: "prof-1" });
+  });
+
+  it("sent again: answers with the expense it already made — nothing made or logged twice", async () => {
+    const answers: Resp[] = [
+      { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint" } },
+      { data: { id: PHONE_ID, amount: 250 }, error: null },
+    ];
+    const base = makeSupabase({});
+    grant({
+      from: (table: string) => {
+        const builder = base.from(table) as Record<string, unknown>;
+        if (table === "expenses") builder.maybeSingle = () => Promise.resolve(answers.shift());
+        return builder;
+      },
+    });
+    const res = await post({ ...VALID, id: PHONE_ID });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ expense: { id: PHONE_ID, amount: 250 }, projectExpense: null });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+    expect(syncEntityTags).not.toHaveBeenCalled();
+  });
+});

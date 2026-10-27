@@ -70,6 +70,17 @@ export default function DeviceSaveNotices({ locale }: { locale: Locale }) {
       "project-payment": "ההכנסה לפרויקט לא נשמרה",
       "payment-collected": "סימון הגבייה לא נשמר",
       "reminder-action": "ההתראה לא עודכנה",
+      "expense-create": "ההוצאה לא נשמרה",
+      "income-create": "ההכנסה לא נשמרה",
+      "ledger-check": "הסימון \"נבדק מול הבנק\" לא נשמר",
+      "expense-delete": "ההוצאה לא נמחקה",
+      "payment-delete": "התשלום לא נמחק",
+      "order-payment-delete": "התשלום לא נמחק",
+      "worker-payment-delete": "התשלום לעובד לא נמחק",
+      "loan-delete": "ההלוואה לא נמחקה",
+      "repayment-delete": "החזר ההלוואה לא נמחק",
+      "card-charge-delete": "חיוב האשראי לא נמחק",
+      "transfer-delete": "ההעברה לא נמחקה",
     };
     const onRefused = (event: Event) => {
       const { kind, message, restore } = (event as CustomEvent<DeviceSaveRefused>).detail;

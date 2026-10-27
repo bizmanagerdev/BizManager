@@ -83,6 +83,34 @@ export function rowDay(date: string | null | undefined): string {
 }
 
 /**
+ * The same as currencyPricing below, at a rate already known: a save made on
+ * the phone first (lib/financial/device-bank-saves.ts), at the rate its form
+ * shows — the day's, or the one typed. The server works it out again when the
+ * save arrives.
+ */
+export function currencyPricingAt(
+  body: MoneyCurrencyBody,
+  { amount, rate }: { amount: number; rate: number | null }
+): CurrencyPricing | { error: string } {
+  if (body.currency === undefined || body.currency === null || body.currency === "") {
+    return { columns: null, toShekels: (value) => value };
+  }
+  const currency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : "";
+  if (currency === "ILS") {
+    return {
+      columns: { currency: "ILS", foreign_amount: null, fx_rate: null, fx_rate_manual: false },
+      toShekels: (value) => value,
+    };
+  }
+  if (!isForeignCurrency(currency)) return { error: "מטבע לא מוכר." };
+  if (rate === null || !(Number.isFinite(rate) && rate > 0)) return { error: "יש להקליד את השער." };
+  return {
+    columns: { currency, foreign_amount: round2(amount), fx_rate: rate, fx_rate_manual: body.fx_rate_manual === true },
+    toShekels: (value) => round2(value * rate),
+  };
+}
+
+/**
  * How a form's typed amounts become the row's columns. `amount` is the row's
  * own amount as typed (its foreign_amount); `date` the row's day.
  */

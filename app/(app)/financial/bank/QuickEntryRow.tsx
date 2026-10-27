@@ -24,7 +24,10 @@
 //
 // It writes through the SAME endpoints as everywhere else (/api/expenses/create,
 // /api/payments/create), so audit, VAT and receipts behave identically — this is
-// a faster way in, not a second way of recording money.
+// a faster way in, not a second way of recording money. On a page drawn from
+// the device copy the line is saved on the copy first and goes up to those
+// same endpoints from there (lib/financial/device-bank-saves.ts): the register
+// shows it at once, with no connection too.
 
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -50,6 +53,7 @@ import { useSidebarCollapse } from "@/components/layout/sidebar-collapse-context
 import { cn } from "@/lib/utils";
 import type { Account } from "@/lib/accounts";
 import { registerReversibleCreate } from "@/lib/undo-engine";
+import { deviceBankSaves } from "@/lib/financial/device-bank-saves";
 import { israelDateKey } from "@/lib/timezone";
 import { isForeignCurrency } from "@/lib/fx/currencies";
 import { CurrencySymbolMenu, FxRateLine, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
@@ -76,6 +80,7 @@ export default function QuickEntryRow({
   projects,
   properties,
   merchantMemory,
+  deviceSaves = false,
   onSaved,
   onHeightChange,
 }: {
@@ -84,6 +89,8 @@ export default function QuickEntryRow({
   properties: Array<{ id: string; label: string }>;
   /** How a description like this was filed last time — fills the row for you. */
   merchantMemory: MerchantMemory;
+  /** The page is drawn from the device copy: save there first. */
+  deviceSaves?: boolean;
   onSaved: () => void;
   /** Fires with the bar's live rendered height (px) whenever it changes — so a
    *  caller with its OWN internally-scrolling content (e.g. BankClient's
@@ -231,49 +238,57 @@ export default function QuickEntryRow({
             : "bank_transfer";
       // In US$ / C$: the amount as typed, at the day's rate (or the one typed).
       const currency = money.body();
-      const res =
-        kind === "expense"
-          ? await fetch("/api/expenses/create", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                expense_date: date,
-                amount: value,
-                category,
-                description: description.trim() || category,
-                business_domain: businessDomain,
-                project_id: projectId || null,
-                property_id: propertyId || null,
-                payment_status: "paid",
-                payment_method: paymentMethod,
-                account_id: account.id,
-                ...currency,
-              }),
-            })
-          : await fetch("/api/payments/create", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                payment_date: date,
-                amount_total: value,
-                business_domain: businessDomain,
-                payment_method: paymentMethod,
-                project_id: projectId || undefined,
-                property_id: propertyId || undefined,
-                notes: description.trim() || undefined,
-                account_id: account.id,
-                ...currency,
-              }),
-            });
-
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        expense?: { id?: string };
-        payment?: { id?: string };
+      const expenseBody = {
+        expense_date: date,
+        amount: value,
+        category,
+        description: description.trim() || category,
+        business_domain: businessDomain,
+        project_id: projectId || null,
+        property_id: propertyId || null,
+        payment_status: "paid",
+        payment_method: paymentMethod,
+        account_id: account.id,
+        ...currency,
       };
-      if (!res.ok) {
-        toast.error(toHebrewError(json.error, "השמירה נכשלה."));
-        return;
+      const incomeBody = {
+        payment_date: date,
+        amount_total: value,
+        business_domain: businessDomain,
+        payment_method: paymentMethod,
+        project_id: projectId || undefined,
+        property_id: propertyId || undefined,
+        notes: description.trim() || undefined,
+        account_id: account.id,
+        ...currency,
+      };
+
+      // Drawn from the device copy: saved on it (the register redraws from
+      // it), and on the server from there. Null when the phone doesn't have
+      // what the line is linked to — then on the server, as before.
+      const device = deviceSaves ? deviceBankSaves() : null;
+      let createdId: string | null | undefined = device
+        ? kind === "expense"
+          ? await device.addExpense(expenseBody, money.rate)
+          : await device.addIncome(incomeBody, money.rate)
+        : null;
+      const savedOnDevice = Boolean(createdId);
+      if (!savedOnDevice) {
+        const res = await fetch(kind === "expense" ? "/api/expenses/create" : "/api/payments/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(kind === "expense" ? expenseBody : incomeBody),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          expense?: { id?: string };
+          payment?: { id?: string };
+        };
+        if (!res.ok) {
+          toast.error(toHebrewError(json.error, "השמירה נכשלה."));
+          return;
+        }
+        createdId = kind === "expense" ? json.expense?.id : json.payment?.id;
       }
 
       // The date, the domain and the category stay — a run of lines off one
@@ -281,14 +296,14 @@ export default function QuickEntryRow({
       setDescription("");
       setAmount("");
       descriptionRef.current?.focus();
-      onSaved();
+      if (!savedOnDevice) onSaved();
 
       const message = kind === "expense" ? "ההוצאה נרשמה." : "ההכנסה נרשמה.";
-      const createdId = kind === "expense" ? json.expense?.id : json.payment?.id;
       if (!createdId) {
         toast.success(message);
         return;
       }
+      const savedId = createdId;
       // Undo = a real reverse delete call, not a deferred commit — this quick
       // row writes through the same /api/expenses|payments/create endpoints
       // everywhere else does, and undo replays their existing delete route
@@ -297,16 +312,26 @@ export default function QuickEntryRow({
       const undoPropertyId = businessDomain === "property_management" ? propertyId || undefined : undefined;
       registerReversibleCreate({
         scope: kind === "expense" ? "expense" : "payment",
-        id: createdId,
+        id: savedId,
         message,
         onUndo: async () => {
+          // Saved on the device: deleted there too (the save and its undo go up in order).
+          const onDevice = savedOnDevice ? deviceBankSaves() : null;
+          const undone = onDevice
+            ? await onDevice.deleteRow(
+                kind === "expense"
+                  ? { kind: "expense", id: savedId, projectId: undoProjectId ?? null, orderId: null, propertyId: undoPropertyId ?? null }
+                  : { kind: "payment", id: savedId, projectId: undoProjectId ?? null, orderId: null }
+              )
+            : false;
+          if (undone) return { ok: true };
           const delRes = await fetch(kind === "expense" ? "/api/expenses/delete" : "/api/payments/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(
               kind === "expense"
-                ? { id: createdId, project_id: undoProjectId, property_id: undoPropertyId }
-                : { id: createdId, project_id: undoProjectId }
+                ? { id: savedId, project_id: undoProjectId, property_id: undoPropertyId }
+                : { id: savedId, project_id: undoProjectId }
             ),
           });
           const delJson = (await delRes.json().catch(() => ({}))) as { error?: string };

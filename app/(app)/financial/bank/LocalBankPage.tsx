@@ -16,9 +16,11 @@ const BankClient = dynamic(() => import("./BankClient"), {
 // The accounts page drawn from the on-device copy (LOCAL_DATA_PAGES.bank):
 // every account's balance and register, the loans and the quick line's lists,
 // worked out with the server's own loader (loadBankPage) on the device — again
-// by itself whenever a payment, expense, transfer or tick changes. Saves still
-// go to the server and come back through the copy. If the device's copy can't
-// serve the page, it reloads as the server version (?data=server).
+// by itself whenever a payment, expense, transfer or tick changes. The quick
+// line, the ticks and the deletes are saved on the copy first and go to the
+// server from there (lib/financial/device-bank-saves.ts); the edit windows
+// still save on the server and come back through the copy. If the device's
+// copy can't serve the page, it reloads as the server version (?data=server).
 
 export default function LocalBankPage({ viewer }: { viewer: LocalCardViewer }) {
   const searchParams = useSearchParams();
@@ -43,6 +45,7 @@ export default function LocalBankPage({ viewer }: { viewer: LocalCardViewer }) {
       merchantMemory={data.merchantMemory}
       dataIncomplete={data.dataIncomplete}
       fxRates={data.fxRates}
+      deviceSaves
     />
   );
 }

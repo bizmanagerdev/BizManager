@@ -536,6 +536,9 @@ const expenses = new Table(
     installment_index: int,
     installment_count: int,
     ...MONEY_CURRENCY_COLUMNS,
+    // Local only (never synced): saved on the accounts page on the phone first —
+    // the request it goes up with (lib/powersync/local-writes.ts).
+    _extras: text,
   },
   { indexes: { by_project: ["project_id"], by_date: ["expense_date"] } }
 );
@@ -606,6 +609,9 @@ const worker_payments = new Table(
     account_id: text,
     // Paid in US$ / C$ (supabase/migrations/20261025100000_worker_payment_currency.sql).
     ...MONEY_CURRENCY_COLUMNS,
+    // Local only (never synced): saved on the accounts page on the phone first —
+    // the request it goes up with (lib/powersync/local-writes.ts).
+    _extras: text,
   },
   { indexes: { by_user: ["user_id"] } }
 );
@@ -747,6 +753,9 @@ const loans = new Table({
   updated_at: text,
   account_id: text,
   ...MONEY_CURRENCY_COLUMNS,
+  // Local only (never synced): saved on the accounts page on the phone first —
+  // the request it goes up with (lib/powersync/local-writes.ts).
+  _extras: text,
 });
 const loan_repayments = new Table(
   {
@@ -763,6 +772,9 @@ const loan_repayments = new Table(
     installment_index: int,
     installment_count: int,
     ...MONEY_CURRENCY_COLUMNS,
+    // Local only (never synced): saved on the accounts page on the phone first —
+    // the request it goes up with (lib/powersync/local-writes.ts).
+    _extras: text,
   },
   { indexes: { by_loan: ["loan_id"] } }
 );
@@ -776,6 +788,9 @@ const card_statement_charges = new Table({
   // Who recorded it and when — the accounts page's register (v1.14).
   created_at: text,
   created_by: text,
+  // Local only (never synced): saved on the accounts page on the phone first —
+  // the request it goes up with (lib/powersync/local-writes.ts).
+  _extras: text,
 });
 // Every statement line from v1.14 (before: only those filed as an expense),
 // with its description — a "מול מזומן" line's transfer shows it.
@@ -807,6 +822,9 @@ const account_transfers = new Table({
   created_by: text,
   created_at: text,
   updated_at: text,
+  // Local only (never synced): saved on the accounts page on the phone first —
+  // the request it goes up with (lib/powersync/local-writes.ts).
+  _extras: text,
 });
 const expense_merchant_mappings = new Table({
   merchant_key: text,
@@ -830,6 +848,9 @@ const account_ledger_checks = new Table({
   date_at_check: text,
   checked_at: text,
   checked_by: text,
+  // Local only (never synced): saved on the accounts page on the phone first —
+  // the request it goes up with (lib/powersync/local-writes.ts).
+  _extras: text,
 });
 
 export const AppSchema = new Schema({
