@@ -573,6 +573,20 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const mapEnd: MapPoint | null = onRoute ? plan.end : endPoint;
   const mapEndIsStart = onRoute ? plan.endIsStart : endMode === "return";
 
+  // The route in Google Maps: the main button on the finished route takes the
+  // driver there (owner, 2026-10-27); sending it to a driver is the side option.
+  const mapsLinks = useMemo(
+    () =>
+      plan
+        ? googleMapsLinks([
+            plan.start,
+            ...plan.stops.map((stop) => ({ lat: stop.lat!, lng: stop.lng! })),
+            ...(plan.endIsStart ? [plan.start] : plan.end ? [plan.end] : []),
+          ])
+        : [],
+    [plan]
+  );
+
   const share = async () => {
     if (!plan) return;
     const text = shareText(plan);
@@ -649,15 +663,10 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       return { onNext: () => void compute("best"), nextDisabled: working !== null, nextLabel: working ? "Google מתכנן…" : "תכנון מחדש" };
     }
     return {
-      onNext: () => void share(),
-      nextDisabled: !plan || arranged !== null,
+      onNext: () => window.open(mapsLinks[0], "_blank", "noopener,noreferrer"),
+      nextDisabled: mapsLinks.length === 0 || arranged !== null,
       isLastStep: true,
-      nextLabel: (
-        <span className="inline-flex items-center gap-1.5">
-          <ShareIcon className="h-4 w-4" />
-          שליחת המסלול לנהג
-        </span>
-      ),
+      nextLabel: mapsLinks.length > 1 ? "יציאה לדרך · חלק 1" : "יציאה לדרך ב-Google Maps",
     };
   })();
 
@@ -988,18 +997,28 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
                 </div>
                 <p className="text-xs text-muted-foreground">כולל {plan.serviceMinutes} דק׳ בכל עצירה · זמני הנסיעה עם העומס הצפוי בכל קטע</p>
                 <div className="flex flex-wrap gap-2">
-                  {googleMapsLinks([
-                    plan.start,
-                    ...plan.stops.map((stop) => ({ lat: stop.lat!, lng: stop.lng! })),
-                    ...(plan.endIsStart ? [plan.start] : plan.end ? [plan.end] : []),
-                  ]).map((href, index, links) => (
-                    <Button key={href} asChild variant="outline" size="sm" className="gap-1.5">
-                      <a href={href} target="_blank" rel="noopener noreferrer">
-                        <ExternalLinkIcon />
-                        {links.length > 1 ? `Google Maps · חלק ${index + 1}` : "פתיחה ב-Google Maps"}
-                      </a>
-                    </Button>
-                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => void share()}
+                    disabled={stale || arranged !== null}
+                  >
+                    <ShareIcon />
+                    שליחת המסלול לנהג
+                  </Button>
+                  {/* Over 9 stops Google Maps takes the route in parts; the main button opens the first. */}
+                  {mapsLinks.length > 1
+                    ? mapsLinks.map((href, index) => (
+                        <Button key={href} asChild variant="outline" size="sm" className="gap-1.5">
+                          <a href={href} target="_blank" rel="noopener noreferrer">
+                            <ExternalLinkIcon />
+                            Google Maps · חלק {index + 1}
+                          </a>
+                        </Button>
+                      ))
+                    : null}
                 </div>
               </Card>
 
