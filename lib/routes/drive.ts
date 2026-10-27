@@ -7,6 +7,10 @@
 import type { RoutePoint } from "@/lib/routes/plan";
 import type { PlannerStop } from "@/lib/routes/planner-stops";
 
+/** Where the drive is kept on the phone, and the event the planner fires when it changes. */
+export const DRIVE_STORAGE_KEY = "bizh.routeDrive.v1";
+export const DRIVE_CHANGED_EVENT = "bizh:route-drive";
+
 export type DriveStop = Pick<
   PlannerStop,
   "key" | "kind" | "name" | "phone" | "city" | "address" | "orderIds" | "collectOnDelivery" | "note"

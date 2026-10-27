@@ -52,12 +52,15 @@ export default function RouteDrive({
   drive,
   update,
   onEnd,
+  onEdit,
   onNextStop,
 }: {
   drive: Drive;
   /** Changes the drive from its latest state (a confirmation lands after an await). */
   update: (change: (drive: Drive) => Drive) => void;
   onEnd: () => void;
+  /** Back to planning with the stops not done yet; the drive stays until a new one starts. */
+  onEdit: () => void;
   /** Brings the next stop's card into view, from its top. */
   onNextStop: () => void;
 }) {
@@ -91,16 +94,23 @@ export default function RouteDrive({
     <div className="space-y-4">
       {stop ? (
         <Card className="space-y-4 p-4">
-          <div className="flex items-baseline justify-between gap-2 text-sm">
-            <span className="font-semibold text-secondary">
+          {/* Where the driver is headed, said in words (owner, 2026-10-27: "it should say בנסיעה ל
+              wherever we're going … I didn't get it"). Once delivered, it's the stop they're at. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-xl bg-secondary/10 px-3 py-2 text-sm">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-secondary">
+              {confirmedHere.length > 0 ? <CheckIcon className="h-4 w-4" /> : <WazeIcon className="h-4 w-4" />}
+              {confirmedHere.length > 0 ? "הגעתם אל" : "בנסיעה ב-Waze אל"}
+            </span>
+            <span className="text-muted-foreground">
               עצירה {drive.at + 1} מתוך {total}
             </span>
-            {stop.arrival ? <span className="tabular-nums text-muted-foreground">מתוכנן {clock(stop.arrival)}</span> : null}
           </div>
 
           <div className="space-y-1">
             <h2 className="break-words text-xl font-bold leading-tight">{stop.name}</h2>
             <p className="text-sm text-muted-foreground">{placeLine(stop)}</p>
+            {/* The hour is the plan's, not a live one: say so (owner: "what hour is it showing?"). */}
+            {stop.arrival ? <p className="text-sm tabular-nums text-muted-foreground">שעת הגעה לפי התכנון: {clock(stop.arrival)}</p> : null}
             {stop.kind === "extra" && stop.note ? <p className="text-sm">{stop.note}</p> : null}
             <div className="flex flex-wrap gap-1.5 pt-1">
               {stop.collectOnDelivery ? (
@@ -120,12 +130,15 @@ export default function RouteDrive({
             <Button asChild variant="outline" className="h-auto min-h-11 min-w-0 flex-1 gap-2 whitespace-normal py-2">
               <a href={wazeLinkForPin(stop)} target="_blank" rel="noopener noreferrer">
                 <WazeIcon />
-                ניווט לכאן ב-Waze
+                <span>
+                  Waze נסגר? <span className="whitespace-nowrap">ניווט מחדש</span>
+                </span>
               </a>
             </Button>
           </div>
 
           <div className="space-y-2 border-t border-border/60 pt-4">
+            {confirmedHere.length === 0 ? <p className="text-sm font-medium">הגעתם?</p> : null}
             {stop.kind === "extra" ? (
               <GoButton href={goHref} onGo={() => finish("done")}>
                 <CheckIcon />
@@ -263,7 +276,7 @@ export default function RouteDrive({
                           : outcome === "skipped"
                             ? "לא נמסר"
                             : s.arrival
-                              ? clock(s.arrival)
+                              ? `הגעה ${clock(s.arrival)}`
                               : ""}
                   </span>
                 </button>
@@ -273,11 +286,22 @@ export default function RouteDrive({
         </ol>
       </Card>
 
-      {stop ? (
-        <Button type="button" variant="muted" className="w-full" onClick={() => (openCount > 0 ? setEnding(true) : onEnd())}>
-          סיום הנסיעה
+      {/* Something changed on the road (owner: "I need to be able to cancel and edit the route"). */}
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" className="h-auto min-h-11 flex-1 whitespace-normal py-2" onClick={onEdit}>
+          שינוי המסלול
         </Button>
-      ) : null}
+        {stop ? (
+          <Button
+            type="button"
+            variant="muted"
+            className="h-auto min-h-11 flex-1 whitespace-normal py-2"
+            onClick={() => (openCount > 0 ? setEnding(true) : onEnd())}
+          >
+            סיום הנסיעה
+          </Button>
+        ) : null}
+      </div>
 
       <ConfirmDialog
         open={ending}

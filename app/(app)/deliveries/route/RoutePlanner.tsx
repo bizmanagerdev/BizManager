@@ -32,7 +32,7 @@ import { addressLine, type StructuredAddress } from "@/lib/address/structured";
 import { cityColour } from "@/lib/deliveries/city-colours";
 import { wazeLinkForPin } from "@/lib/delivery-location";
 import { formatShortDate } from "@/lib/date";
-import { parseDrive, type Drive } from "@/lib/routes/drive";
+import { DRIVE_CHANGED_EVENT, DRIVE_STORAGE_KEY, parseDrive, type Drive } from "@/lib/routes/drive";
 import { decodePolyline } from "@/lib/routes/polyline";
 import {
   chainRules,
@@ -75,7 +75,6 @@ const STEPS: WizardStepDef<Step>[] = [
 
 const REGIONS = ["צפון", "מרכז", "דרום"] as const;
 const STORAGE_KEY = "bizh.routePlanner.v1";
-const DRIVE_KEY = "bizh.routeDrive.v1";
 
 type StartMode = "gps" | "address";
 type EndMode = "return" | "last" | "address";
@@ -288,15 +287,19 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   // phone closed the app — it opens on the same stop.
   const [drive, setDrive] = useState<Drive | null>(() => {
     try {
-      return parseDrive(localStorage.getItem(DRIVE_KEY), israelDateKey());
+      return parseDrive(localStorage.getItem(DRIVE_STORAGE_KEY), israelDateKey());
     } catch {
       return null;
     }
   });
+  // "שינוי המסלול" mid-drive: planning again, while the drive waits to be replaced or gone back to.
+  const [editingDrive, setEditingDrive] = useState(false);
   useEffect(() => {
     try {
-      if (drive) localStorage.setItem(DRIVE_KEY, JSON.stringify(drive));
-      else localStorage.removeItem(DRIVE_KEY);
+      if (drive) localStorage.setItem(DRIVE_STORAGE_KEY, JSON.stringify(drive));
+      else localStorage.removeItem(DRIVE_STORAGE_KEY);
+      // The "בנסיעה" bar on the other pages reads it.
+      window.dispatchEvent(new Event(DRIVE_CHANGED_EVENT));
     } catch {
       // Not kept: the drive still runs while the page stays open.
     }
@@ -643,6 +646,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
       confirmed: [],
     };
     setDrive(next);
+    setEditingDrive(false);
     window.open(wazeLinkForPin(next.stops[0]), "_blank", "noopener,noreferrer");
     window.scrollTo({ top: 0 });
   };
@@ -759,7 +763,40 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
   const backTo: Record<Step, Step | null> = { stops: null, places: "stops", order: "places", route: "order" };
   const unreachableNames = (error?.unreachable ?? []).map((key) => stopByKey.get(key)?.name).filter(Boolean);
 
-  if (drive) {
+  // Something changed on the road: plan again from where the driver is, with the stops not done yet.
+  const editDrive = () => {
+    if (!drive) return;
+    const left = drive.stops.filter((stop) => drive.outcome[stop.key] !== "delivered" && drive.outcome[stop.key] !== "done");
+    const known = new Set(allStops.map((stop) => stop.key));
+    // An added address is the drive's own; it comes back as an added stop.
+    const addedBack: PlannerStop[] = left
+      .filter((stop) => stop.kind === "extra" && !known.has(stop.key))
+      .map((stop) => ({
+        key: stop.key,
+        kind: "extra",
+        name: stop.name,
+        phone: stop.phone,
+        city: stop.city,
+        address: stop.address,
+        lat: stop.lat,
+        lng: stop.lng,
+        notFound: false,
+        customerId: null,
+        orderIds: [],
+        collectOnDelivery: false,
+        requestedDate: null,
+        note: stop.note,
+      }));
+    if (addedBack.length > 0) setExtras((prev) => [...prev, ...addedBack]);
+    setSelected(new Set(left.map((stop) => stop.key)));
+    setStartMode("gps");
+    setError(null);
+    setStep("stops");
+    setEditingDrive(true);
+    toTop();
+  };
+
+  if (drive && !editingDrive) {
     return (
       <div className="lg:grid lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] lg:items-start lg:gap-6">
         <div
@@ -771,6 +808,7 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
             update={(change) => setDrive((current) => (current ? change(current) : current))}
             onEnd={() => setDrive(null)}
             onNextStop={toTop}
+            onEdit={editDrive}
           />
         </div>
         {wide ? (
@@ -827,6 +865,17 @@ export default function RoutePlanner({ stops, canEditAddress }: { stops: Planner
         }
         className={wide ? "sticky top-20 h-[calc(100dvh-7.75rem)] min-h-[420px] min-w-0 overflow-hidden rounded-card border border-border/60 bg-card shadow-card" : "min-w-0"}
       >
+        {drive && editingDrive ? (
+          <div className="space-y-2 rounded-xl border border-secondary/40 bg-secondary/5 p-3 text-sm">
+            <p>
+              <b>שינוי המסלול באמצע נסיעה.</b> העצירות שנשארו כבר נבחרו. מסלול חדש יחליף את הנסיעה.
+            </p>
+            <Button type="button" size="sm" variant="outline" onClick={() => setEditingDrive(false)}>
+              חזרה לנסיעה
+            </Button>
+          </div>
+        ) : null}
+
         {/* On a phone the map rides above the step; on a computer it stands beside the steps. */}
         {wide ? null : <div className="h-64 overflow-hidden rounded-card border border-border/60 shadow-card">{map}</div>}
 

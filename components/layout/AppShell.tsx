@@ -8,6 +8,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { DesktopQuickCreateFab } from "@/components/layout/DesktopQuickCreateFab";
 import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress";
 import OfflineBanner from "@/components/layout/OfflineBanner";
+import DriveBar from "@/components/layout/DriveBar";
 import SavedCopyNotice from "@/components/layout/SavedCopyNotice";
 import ConnectionToasts from "@/components/layout/ConnectionToasts";
 import AuthLockToasts from "@/components/layout/AuthLockToasts";
@@ -167,6 +168,8 @@ export default function AppShell({
                 under it (StickyHeaderHeight). */}
             <div id={STICKY_HEADER_ID} className="sticky top-[60px] z-20 flex flex-col">
               <StickyHeaderHeight />
+              {/* A route being driven on this phone: the way back to it, on every page. */}
+              <DriveBar />
               <AlertBar locale={viewerLocale === "ar" ? "ar" : "he"} remembered={rememberedAlertBars} />
               {/* Slot for a page's own search/filter row, on the SAME surface as the
                   bar above it — the bar is the page's colour now, so a dark strip
