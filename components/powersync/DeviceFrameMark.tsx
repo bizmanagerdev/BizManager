@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { saveDeviceFrames } from "@/lib/powersync/device-frames";
+import { isServerReachable } from "@/lib/pwa/connection";
 
 /** A frame rendered this long before the app opened came from a saved copy. */
 const FRAME_FRESH_MS = 15_000;
@@ -33,7 +34,7 @@ export default function DeviceFrameMark({ page, renderedAt }: { page: string; re
   }, [renderedAt]);
   useEffect(() => {
     if (renderedAt >= performance.timeOrigin - FRAME_FRESH_MS) return;
-    if (!navigator.onLine) return;
+    if (!isServerReachable()) return;
     const key = `bizh-frame-refreshed:${page}`;
     try {
       const last = Number(sessionStorage.getItem(key) ?? "0");

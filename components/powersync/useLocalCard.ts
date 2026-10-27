@@ -9,6 +9,7 @@ import { parseStoredResult, readStoredResultRaw, storedResultJson } from "@/lib/
 import { deviceCopyPending, setDeviceCopyPending } from "@/lib/powersync/device-pending";
 import { withSentry } from "@/lib/sentry-lazy";
 import { noteOffline } from "@/lib/pwa/offline-report";
+import { isServerReachable, whenServerReachable } from "@/lib/pwa/connection";
 import type { LocalCardKind, LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
 
 // One page part from the on-device copy (LOCAL_DATA_PAGES), worked out with
@@ -41,7 +42,8 @@ const waitingForConnection = new Set<string>();
  * No connection: the server version can't come either — asking for it only
  * reached the service worker's "not saved" (owner's test, 2026-10-25: the
  * sales tab's notice on the customers page). The page keeps what it shows,
- * says why, and goes to the server version once the connection is back — if
+ * says why, and goes to the server version once the server answers again
+ * (lib/pwa/connection.ts — the device's own "online" can't be trusted) — if
  * it's still the page on screen and the device still hasn't drawn it.
  */
 function fallBackWhenOnline(
@@ -62,14 +64,20 @@ function fallBackWhenOnline(
   // Only slow, the device may still answer: nothing to say yet.
   if (reason !== "slow") toast.info("הדף לא נטען מהמכשיר — ייטען כשיחזור החיבור", { id: "device-page-offline" });
   const here = window.location.pathname;
-  window.addEventListener(
-    "online",
-    () => {
-      waitingForConnection.delete(page);
-      if (window.location.pathname === here && stillNeeded()) router.replace(href);
-    },
-    { once: true }
-  );
+  whenServerReachable(() => {
+    waitingForConnection.delete(page);
+    if (window.location.pathname === here && stillNeeded()) router.replace(href);
+  });
+}
+
+/**
+ * A record the device doesn't have (not synced yet): its server version — or,
+ * with no connection, once the server answers, saying so meanwhile
+ * (LocalCustomerPage, LocalProjectPage, LocalOrderPage, LocalPropertyPage).
+ */
+export function showServerVersion(router: ReturnType<typeof useRouter>, page: string, href: string) {
+  if (isServerReachable()) router.replace(href);
+  else fallBackWhenOnline(router, page, href, "missing", undefined, () => true);
 }
 
 function fallBackToServer(
@@ -80,7 +88,7 @@ function fallBackToServer(
   error?: unknown,
   stillNeeded: () => boolean = () => true
 ) {
-  if (!navigator.onLine) {
+  if (!isServerReachable()) {
     fallBackWhenOnline(router, page, href, reason, error, stillNeeded);
     return;
   }
@@ -208,11 +216,11 @@ export function useLocalCard<K extends LocalCardKind>({
   const copyIncomplete = statusKnown && !status.hasSynced;
   useEffect(() => {
     if (answered) return;
-    if (copyIncomplete || (!statusKnown && navigator.onLine && deviceCopyPending())) {
+    if (copyIncomplete || (!statusKnown && isServerReachable() && deviceCopyPending())) {
       fallBackToServer(router, page, serverHrefRef.current, "not-synced");
       return;
     }
-    if (fellBack.has(page) && !ready && navigator.onLine) {
+    if (fellBack.has(page) && !ready && isServerReachable()) {
       router.replace(serverHrefRef.current);
       return;
     }

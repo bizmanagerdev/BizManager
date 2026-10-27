@@ -28,6 +28,14 @@ vi.mock("@/lib/offline-queue", () => ({ processQueue: vi.fn() }));
 vi.mock("@/lib/offline-upload", () => ({ processUploadQueue: vi.fn() }));
 vi.mock("@/lib/powersync/device-frames", () => ({ dropDeviceFrame: hoisted.dropDeviceFrame }));
 vi.mock("sonner", () => ({ toast: { info: hoisted.toastInfo } }));
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/pwa/connection", () => ({
+  isServerReachable: () => net.up,
+  useServerReachable: () => net.up,
+  whenServerReachable: () => () => {},
+  watchConnection: () => () => {},
+}));
+
 vi.mock("@/components/layout/TopNavigationProgress", () => ({ emitNavigationContentShown: hoisted.contentShown }));
 vi.mock("@/lib/pwa/offline-report", () => ({
   noteOffline: hoisted.noteOffline,
@@ -233,11 +241,15 @@ describe("a page moved to with no connection that isn't saved", () => {
     );
   });
 
-  it("what went wrong offline is sent when the app opens, and when the connection comes back", async () => {
-    render(<PwaRegistration />);
+  it("what went wrong offline is sent when the app opens, and each time the server answers again", async () => {
+    const { rerender } = render(<PwaRegistration />);
     await settle();
     expect(hoisted.sendOfflineReport).toHaveBeenCalledTimes(1);
-    window.dispatchEvent(new Event("online"));
+    net.up = false;
+    rerender(<PwaRegistration />);
+    expect(hoisted.sendOfflineReport).toHaveBeenCalledTimes(1);
+    net.up = true;
+    rerender(<PwaRegistration />);
     expect(hoisted.sendOfflineReport).toHaveBeenCalledTimes(2);
   });
 

@@ -13,8 +13,17 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => (h.cookie ? { value: h.cookie } : undefined), has: () => false }),
 }));
 vi.mock("@/lib/timezone", () => ({ israelDateKey: () => "2026-10-24" }));
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/pwa/connection", () => ({
+  isServerReachable: () => net.up,
+  useServerReachable: () => net.up,
+  whenServerReachable: () => () => {},
+  watchConnection: () => () => {},
+}));
 
-import { dropDeviceFrame, menuFramePaths, saveDeviceFrames } from "@/lib/powersync/device-frames";
+
+import { dropDeviceFrame, menuFramePaths, saveAppCode, saveDeviceFrames } from "@/lib/powersync/device-frames";
+import { RUNNING_BUILD } from "@/lib/pwa/app-version";
 import { deviceCheckDue } from "@/lib/powersync/device-check";
 import { DEFAULT_SECTION_ACCESS } from "@/lib/auth/sections";
 
@@ -54,9 +63,29 @@ describe("asking the service worker to save pages", () => {
 
   it("not with no connection, nor with nothing to ask for", () => {
     saveDeviceFrames([]);
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    net.up = false;
     saveDeviceFrames(["/customers/c1"]);
+    net.up = true;
     expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("asks for the whole app's code — this version's, from the deployment this page came from", () => {
+    const script = document.createElement("script");
+    script.src = "https://www.biz-h.com/_next/static/chunks/main.js?dpl=dpl_5";
+    document.head.appendChild(script);
+    try {
+      saveAppCode();
+      expect(postMessage).toHaveBeenCalledWith({ type: "SAVE_APP_CODE", build: RUNNING_BUILD, dpl: "dpl_5" });
+    } finally {
+      script.remove();
+    }
+  });
+
+  it("the server not answering: the code isn't asked for (it couldn't be fetched)", () => {
+    net.up = false;
+    saveAppCode();
+    expect(postMessage).not.toHaveBeenCalled();
+    net.up = true;
   });
 
   it("no service worker (first visit, or not supported): nothing happens", () => {

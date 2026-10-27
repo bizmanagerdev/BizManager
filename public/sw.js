@@ -11,7 +11,8 @@ const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
 const FRAMES_CACHE = `bizh-frames-${V}`;   // the device pages' frames (below)
-const ALL_CACHES   = [STATIC_CACHE, PAGES_CACHE, API_CACHE, FRAMES_CACHE];
+const FOLLOWED_CACHE = `bizh-followed-${V}`; // code files already looked through (fetchAhead)
+const ALL_CACHES   = [STATIC_CACHE, PAGES_CACHE, API_CACHE, FRAMES_CACHE, FOLLOWED_CACHE];
 
 // Detect development environments. The SW must NEVER run on localhost / Vercel
 // preview deployments — it caches stale Next.js dev chunks and HTML which
@@ -191,6 +192,40 @@ self.addEventListener("sync", (event) => {
   }
 });
 
+// ── Whether the server answers ───────────────────────────────────────────────
+// The open pages hear when a request this worker sent failed, and when one
+// went through after that (lib/pwa/connection.ts): the device's own "online"
+// can't be trusted — a laptop with any other network adapter up says it's
+// online with its Wi-Fi off (owner's test, 2026-10-27: no "no connection"
+// bar). Only changes are told; a page checks a failure with a ping before
+// believing it (a cancelled request fails too).
+let lastWentThrough = true;
+
+function wentThrough(ok) {
+  if (ok === lastWentThrough) return;
+  lastWentThrough = ok;
+  self.clients
+    .matchAll({ type: "window" })
+    .then((clients) => {
+      for (const client of clients) client.postMessage({ type: "CONNECTION", online: ok });
+    })
+    .catch(() => {});
+}
+
+/** fetch(), telling the pages when requests start failing or go through again. */
+function fetchTold(input, init) {
+  return fetch(input, init).then(
+    (res) => {
+      wentThrough(true);
+      return res;
+    },
+    (error) => {
+      wentThrough(false);
+      throw error;
+    }
+  );
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function putInCache(cacheName, request, response) {
   if (!response.ok) return;
@@ -249,47 +284,76 @@ function buildOf(html) {
   return match && match[1] ? match[1] : null;
 }
 
-const AHEAD_MAX_FILES = 150;
+const AHEAD_MAX_FILES = 400;
 const AHEAD_AT_ONCE = 4;
 const CODE_FILE = /\.(?:js|css|woff2?|ttf|png|svg|jpg|webp|ico|json)$/;
+// Inside a code file, the files it loads later (a form opened from "+", a
+// dialog): Turbopack names them as "static/chunks/<hash>.js".
+const LATER_FILE = /static\/chunks\/[A-Za-z0-9_.-]+\.(?:js|css)/g;
+// The code files whose later files were already looked for, this version, are
+// kept in FOLLOWED_CACHE — a page's code is mostly shared, so each is read
+// once, not once per page.
+
+async function runAtOnce(items, work) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await work(items[next++]);
+  };
+  await Promise.all(Array.from({ length: AHEAD_AT_ONCE }, worker));
+}
 
 /**
- * A newer build's page, saved for the next opening: the code it loads is
- * fetched now, so that opening finds it on the phone instead of downloading
- * it cold (half of the slow "first opening after a deploy"). Not on data
+ * A saved page's code, fetched now: what it loads at once, and — followed
+ * through the code files themselves — what it loads later, so the page works
+ * with no connection, its forms and dialogs too (owner's test, 2026-10-27: a
+ * saved copy of a newer version, then "+" and the whole app broke — the forms'
+ * code had never been on the laptop). Only files not on the device are
+ * downloaded; a file's name changes only when its content does. Not on data
  * saver; best effort — whatever isn't fetched loads as before.
  */
 async function fetchAhead(html) {
   try {
     const connection = self.navigator && self.navigator.connection;
     if (connection && connection.saveData) return;
-    const files = new Map();
+    // The deployment the page's own files come from (?dpl=, Skew Protection):
+    // its later files are asked for there too.
+    const dpl = (/[?&]dpl=([A-Za-z0-9_-]+)/.exec(html) || [])[1];
+    const queue = new Map();
     // In attributes, and in the page's inline data where quotes are escaped
     // (\"/_next/static/…\") — the backslash ends the address.
     for (const match of html.matchAll(/\/_next\/static\/[^"'\s\\)<>]+/g)) {
       const url = new URL(match[0].replace(/&amp;/g, "&"), self.location.origin);
       if (!CODE_FILE.test(url.pathname)) continue;
-      files.set(staticKey(url), url.href);
-      if (files.size >= AHEAD_MAX_FILES) break;
-    }
-    const missing = [];
-    for (const [key, href] of files) {
-      if (!(await matchCache(key))) missing.push([key, href]);
+      queue.set(staticKey(url), url.href);
     }
     const cache = await caches.open(STATIC_CACHE);
-    let next = 0;
-    const worker = async () => {
-      while (next < missing.length) {
-        const [key, href] = missing[next++];
+    const followed = await caches.open(FOLLOWED_CACHE);
+    const seen = new Set();
+    while (queue.size > 0 && seen.size < AHEAD_MAX_FILES) {
+      const batch = [...queue].slice(0, AHEAD_MAX_FILES - seen.size);
+      queue.clear();
+      for (const [key] of batch) seen.add(key);
+      await runAtOnce(batch, async ([key, href]) => {
         try {
-          const res = await fetch(href);
-          if (res.ok) await cache.put(key, res);
+          let res = await matchCache(key);
+          if (!res) {
+            const fetched = await fetch(href);
+            if (!fetched.ok) return;
+            await cache.put(key, fetched.clone());
+            res = fetched;
+          }
+          if (!key.endsWith(".js") || (await followed.match(key))) return;
+          const text = await res.text();
+          for (const match of text.matchAll(LATER_FILE)) {
+            const later = `${self.location.origin}/_next/${match[0]}`;
+            if (!seen.has(later)) queue.set(later, dpl ? `${later}?dpl=${dpl}` : later);
+          }
+          await followed.put(key, new Response(""));
         } catch {
           // Loads when the page asks for it.
         }
-      }
-    };
-    await Promise.all(Array.from({ length: AHEAD_AT_ONCE }, worker));
+      });
+    }
   } catch {
     // Nothing fetched ahead — the next opening downloads it, as before.
   }
@@ -560,13 +624,12 @@ async function matchFrame(request) {
 // (SAVE_FRAMES) — so the same one isn't fetched twice at once.
 const framesSaving = new Map();
 
-// `response` must be a copy nobody else reads. `ahead`: a page of a newer build
-// than this worker's (a deploy since) has its code fetched now (fetchAhead) —
-// only from the background refresh, never while the page itself is loading it.
-// `withCode`: its code is fetched now whatever its build — a page saved without
-// ever being opened here (SAVE_FRAMES) has none on the device, and opened with
-// no connection it couldn't start (owner's test, 2026-10-25: the tasks page's
-// saved copy, then "אירעה תקלה בטעינת הדף").
+// `response` must be a copy nobody else reads. `withCode`: its code is fetched
+// now (fetchAhead) — only when saved in the background, never while the page
+// itself is loading it. A page saved without ever being opened here
+// (SAVE_FRAMES), or of a newer build (a deploy since), has none on the device,
+// and opened with no connection it couldn't start (owner's tests, 2026-10-25:
+// the tasks page's saved copy, then "אירעה תקלה בטעינת הדף"; 2026-10-27: "+").
 function saveFrame(request, response, options) {
   const href = hrefOf(request);
   const saving = saveFrameNow(href, response, options).finally(() => {
@@ -576,7 +639,7 @@ function saveFrame(request, response, options) {
   return saving;
 }
 
-async function saveFrameNow(href, response, { ahead = false, withCode = false } = {}) {
+async function saveFrameNow(href, response, { withCode = false } = {}) {
   try {
     const cache = await caches.open(FRAMES_CACHE);
     if (!response || !response.ok || response.redirected || response.type === "opaqueredirect") {
@@ -596,7 +659,7 @@ async function saveFrameNow(href, response, { ahead = false, withCode = false } 
     if (build) headers["X-Bizh-Build"] = build;
     await cache.put(href, new Response(html, { headers }));
     if (isTrimmedFrame(href)) await trimDetailFrames(cache);
-    if (withCode || (ahead && build && build !== V)) await fetchAhead(html);
+    if (withCode) await fetchAhead(html);
   } catch {
     // Not saved — the next open just waits for the server, as before.
   }
@@ -631,7 +694,7 @@ async function saveFramesAskedFor(hrefs) {
     if (fetched > 0) await new Promise((resolve) => setTimeout(resolve, FRAME_SAVE_GAP_MS));
     fetched += 1;
     try {
-      const res = await fetch(href, {
+      const res = await fetchTold(href, {
         credentials: "same-origin",
         cache: "no-store",
         headers: { Accept: "text/html", [FRAME_SAVE_HEADER]: "1" },
@@ -643,10 +706,61 @@ async function saveFramesAskedFor(hrefs) {
   }
 }
 
+// ── The whole app's code ─────────────────────────────────────────────────────
+// Every code file of this version, downloaded once — as an installed app's
+// are — so every screen, form and dialog works with no connection, not only
+// the pages opened online (owner, 2026-10-27: "let's just do the whole app at
+// once"). The build lists them (scripts/write-app-files.mjs); the page asks
+// once it has settled (OfflineMenuFrames), saying which deployment it is
+// (?dpl=, Skew Protection) so the list and files come from this version even
+// after a newer one is live. Only files not on the device are downloaded — a
+// file's name changes only when its content does, so an update brings only
+// what changed. Not on data saver.
+const APP_CODE_DONE = `${self.location.origin}/__bizh-app-code-${V}`;
+
+async function saveAppCode(dpl) {
+  try {
+    const connection = self.navigator && self.navigator.connection;
+    if (connection && connection.saveData) return;
+    const cache = await caches.open(STATIC_CACHE);
+    if (await cache.match(APP_CODE_DONE)) return;
+    const query = dpl ? `?dpl=${encodeURIComponent(dpl)}` : "";
+    const listRes = await fetchTold(`/_next/static/bizh-app-files/${V}.json${query}`, { cache: "no-store" });
+    if (!listRes.ok) return;
+    const { files } = await listRes.json();
+    if (!Array.isArray(files)) return;
+    let failed = 0;
+    await runAtOnce(
+      files.filter((file) => typeof file === "string" && file.startsWith("/_next/static/")),
+      async (file) => {
+        const key = `${self.location.origin}${file}`;
+        // On the device already (kept into this version's cache if it was the last one's).
+        if (await cachedStatic(key, key)) return;
+        try {
+          const res = await fetch(`${file}${query}`);
+          if (res.ok) await cache.put(key, res);
+          else failed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+    );
+    // Done only when nothing failed — otherwise the next opening tries the rest.
+    if (failed === 0) await cache.put(APP_CODE_DONE, new Response(""));
+  } catch {
+    // Not now: the next opening asks again.
+  }
+}
+
 self.addEventListener("message", (event) => {
   const data = event.data;
-  if (!data || data.type !== "SAVE_FRAMES" || !Array.isArray(data.urls)) return;
-  event.waitUntil(saveFramesAskedFor(data.urls.filter((u) => typeof u === "string")));
+  if (!data) return;
+  if (data.type === "SAVE_FRAMES" && Array.isArray(data.urls)) {
+    event.waitUntil(saveFramesAskedFor(data.urls.filter((u) => typeof u === "string")));
+  } else if (data.type === "SAVE_APP_CODE" && data.build === V) {
+    // A page of this version only: another's list is another's code.
+    event.waitUntil(saveAppCode(typeof data.dpl === "string" ? data.dpl : ""));
+  }
 });
 
 // ── A page with no saved copy, with no connection ───────────────────────────
@@ -711,7 +825,7 @@ self.addEventListener("fetch", (event) => {
       cachedStatic(key, request).then(
         (cached) =>
           cached ??
-          fetch(request).then((res) => {
+          fetchTold(request).then((res) => {
             putInCache(STATIC_CACHE, key, res);
             return res;
           })
@@ -723,7 +837,7 @@ self.addEventListener("fetch", (event) => {
   // 2. Other /_next/ assets (e.g. image optimization) — network-first, cache fallback
   if (url.pathname.startsWith("/_next/")) {
     event.respondWith(
-      fetch(request)
+      fetchTold(request)
         .then((res) => {
           putInCache(STATIC_CACHE, request, res);
           return res;
@@ -737,7 +851,7 @@ self.addEventListener("fetch", (event) => {
   // 3. API — network-first; serve cached response when offline so UI keeps data
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
-      fetch(request)
+      fetchTold(request)
         .then((res) => {
           putInCache(API_CACHE, request, res);
           return res;
@@ -764,7 +878,7 @@ self.addEventListener("fetch", (event) => {
     url.searchParams.has("_rsc");
   if (isRscRequest) {
     event.respondWith(
-      fetch(request)
+      fetchTold(request)
         .then((res) => {
           putInCache(PAGES_CACHE, request, res);
           return res;
@@ -830,7 +944,7 @@ self.addEventListener("fetch", (event) => {
               Promise.resolve(event.preloadResponse)
                 .catch(() => undefined)
                 .then((res) => res || fetch(request))
-                .then((res) => saveFrame(request, res, { ahead: true }))
+                .then((res) => saveFrame(request, res, { withCode: true }))
                 .catch(() => {})
             );
             return saved;
@@ -845,8 +959,9 @@ self.addEventListener("fetch", (event) => {
         const network = Promise.resolve(event.preloadResponse)
           // A failed preload gets one ordinary fetch() before the cache fallback.
           .catch(() => undefined)
-          .then((preloaded) => preloaded || fetch(request))
+          .then((preloaded) => preloaded || fetchTold(request))
           .then((res) => {
+            wentThrough(true);
             putInCache(PAGES_CACHE, request, res);
             // A device page's frame, for next time (or a stale one dropped).
             // Best effort: on a timed-out launch the event may be over by now.

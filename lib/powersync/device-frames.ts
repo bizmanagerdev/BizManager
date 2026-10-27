@@ -1,5 +1,7 @@
 import { localDataPageOn, type LOCAL_DATA_PAGES } from "./config";
 import type { SectionAccess } from "@/lib/auth/sections";
+import { isServerReachable } from "@/lib/pwa/connection";
+import { RUNNING_BUILD } from "@/lib/pwa/app-version";
 
 // The device pages' frames the service worker saves (public/sw.js,
 // FRAMES_CACHE) so the app opens on them at once. They show the signed-in
@@ -51,8 +53,27 @@ export function keepDeviceFramesFor(userId: string): void {
 export function saveDeviceFrames(hrefs: string[]): void {
   try {
     const worker = navigator.serviceWorker?.controller;
-    if (!worker || !navigator.onLine || hrefs.length === 0) return;
+    if (!worker || !isServerReachable() || hrefs.length === 0) return;
     worker.postMessage({ type: "SAVE_FRAMES", urls: hrefs });
+  } catch {
+    // No service worker here: nothing is saved anyway.
+  }
+}
+
+/**
+ * Ask the service worker to download the whole app's code for this version
+ * (public/sw.js, SAVE_APP_CODE), so every screen, form and dialog works with
+ * no connection (owner, 2026-10-27: "let's just do the whole app at once").
+ * The deployment this page came from (its files' ?dpl=) goes with it, so the
+ * code comes from this version even once a newer one is live.
+ */
+export function saveAppCode(): void {
+  try {
+    const worker = navigator.serviceWorker?.controller;
+    if (!worker || !isServerReachable()) return;
+    const src = document.querySelector<HTMLScriptElement>('script[src*="dpl="]')?.src;
+    const dpl = src ? (new URL(src).searchParams.get("dpl") ?? "") : "";
+    worker.postMessage({ type: "SAVE_APP_CODE", build: RUNNING_BUILD, dpl });
   } catch {
     // No service worker here: nothing is saved anyway.
   }

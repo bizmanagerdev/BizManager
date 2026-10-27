@@ -1,4 +1,5 @@
 import { withSentry } from "@/lib/sentry-lazy";
+import { isServerReachable } from "@/lib/pwa/connection";
 
 // What went wrong with no connection, kept on the device and sent to Sentry
 // once the connection is back. A report sent offline is lost — and the moments
@@ -55,9 +56,10 @@ export async function savedPagesNow(): Promise<{ frames: string[]; pages: string
 
 /** Send the notes kept offline (one report), once there's a connection. */
 export function sendOfflineReport(): void {
-  // A saved copy on screen: the server isn't answering, whatever the device says — sent from the page
-  // that loads once it does.
-  if (!navigator.onLine || document.documentElement.dataset.bizhSaved !== undefined) return;
+  // Only once the server answers (lib/pwa/connection.ts — the device's own
+  // word isn't enough); and not from a saved copy on screen: sent from the
+  // page that loads once the server does.
+  if (!isServerReachable() || document.documentElement.dataset.bizhSaved !== undefined) return;
   const notes = readNotes();
   if (notes.length === 0) return;
   try {

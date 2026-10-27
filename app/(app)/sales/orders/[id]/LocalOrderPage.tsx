@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import OrderPageSkeleton from "@/app/(app)/sales/orders/[id]/OrderPageSkeleton";
-import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { showServerVersion, useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import { useSettled } from "@/hooks/useSettled";
 import { emitNavigationContentShown } from "@/components/layout/TopNavigationProgress";
@@ -60,7 +60,7 @@ export default function LocalOrderPage({
 
   useEffect(() => {
     if (!missing) return;
-    const timer = setTimeout(() => router.replace(serverHref), MISSING_ORDER_WAIT_MS);
+    const timer = setTimeout(() => showServerVersion(router, "orders", serverHref), MISSING_ORDER_WAIT_MS);
     return () => clearTimeout(timer);
   }, [missing, router, serverHref]);
 

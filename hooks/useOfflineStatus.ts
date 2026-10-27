@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useServerReachable } from "@/lib/pwa/connection";
 import {
   CONNECTION_EVENTS,
   clearFailed as doClearFailed,
@@ -19,6 +20,9 @@ import {
 
 export function useOfflineStatus() {
   const [isOnline, setIsOnline] = useState(true);
+  // The device's own word isn't enough: a laptop with another network adapter
+  // up says it's online with its Wi-Fi off (lib/pwa/connection.ts).
+  const reachable = useServerReachable();
   // Counts combine the JSON write queue (localStorage) and the file-upload
   // queue (IndexedDB) so the banner speaks for both with one number.
   const [queueLength, setQueueLength] = useState(0);
@@ -110,8 +114,14 @@ export function useOfflineStatus() {
     };
   }, [processQueue, refreshCounts]);
 
+  // The server answers again — without the device ever saying it was offline:
+  // send what waits.
+  useEffect(() => {
+    if (reachable) void processQueue();
+  }, [reachable, processQueue]);
+
   return {
-    isOnline,
+    isOnline: isOnline && reachable,
     queueLength,
     failedLength,
     isProcessing,

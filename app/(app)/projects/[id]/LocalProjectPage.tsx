@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import ProjectPageSkeleton from "@/app/(app)/projects/[id]/ProjectPageSkeleton";
-import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { showServerVersion, useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import { useSettled } from "@/hooks/useSettled";
 import { emitNavigationContentShown } from "@/components/layout/TopNavigationProgress";
@@ -87,7 +87,7 @@ export default function LocalProjectPage({
 
   useEffect(() => {
     if (!missing) return;
-    const timer = setTimeout(() => router.replace(serverHref), MISSING_PROJECT_WAIT_MS);
+    const timer = setTimeout(() => showServerVersion(router, "projectPage", serverHref), MISSING_PROJECT_WAIT_MS);
     return () => clearTimeout(timer);
   }, [missing, router, serverHref]);
 

@@ -7,11 +7,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sentry = vi.hoisted(() => ({ captureMessage: vi.fn() }));
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: (report: (s: typeof sentry) => void) => report(sentry) }));
+const net = vi.hoisted(() => {
+  const waiting = new Set<() => void>();
+  return {
+    up: true,
+    waiting,
+    /** The server answering again runs what waited for it (lib/pwa/connection.ts). */
+    set(up: boolean) {
+      this.up = up;
+      if (up) for (const callback of [...waiting]) (waiting.delete(callback), callback());
+    },
+  };
+});
+vi.mock("@/lib/pwa/connection", () => ({
+  isServerReachable: () => net.up,
+  useServerReachable: () => net.up,
+  whenServerReachable: (callback: () => void) => {
+    if (net.up) {
+      callback();
+      return () => {};
+    }
+    net.waiting.add(callback);
+    return () => net.waiting.delete(callback);
+  },
+  watchConnection: () => () => {},
+}));
+
 
 import { noteOffline, savedPagesNow, sendOfflineReport } from "@/lib/pwa/offline-report";
 
+/** Whether the server answers (lib/pwa/connection.ts). */
 function setOnline(online: boolean) {
-  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
+  net.set(online);
 }
 
 beforeEach(() => {

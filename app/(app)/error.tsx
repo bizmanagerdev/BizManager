@@ -24,6 +24,7 @@ import { RefreshIcon, WarningIcon } from "@/components/ui/icons";
 import { withSentry } from "@/lib/sentry-lazy";
 import { reloadIfStaleBuild } from "@/lib/ui/auto-recover";
 import { noteOffline } from "@/lib/pwa/offline-report";
+import { isServerReachable } from "@/lib/pwa/connection";
 
 export default function AppError({
   error,
@@ -41,7 +42,7 @@ export default function AppError({
     // isn't answering, while the device may still say it's online (owner's test, 2026-10-25: a property's
     // saved copy, "אירעה תקלה בטעינת הדף", and nothing in Sentry).
     const savedCopy = document.documentElement.dataset.bizhSaved !== undefined;
-    if (!navigator.onLine || savedCopy) {
+    if (!isServerReachable() || savedCopy) {
       noteOffline("page error", { name: error.name, message: error.message.slice(0, 300), savedCopy });
     }
     // A stale/mismatched build gets one automatic hard reload instead of

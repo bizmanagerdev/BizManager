@@ -9,11 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: () => {} }));
 vi.mock("@/lib/ui/auto-recover", () => ({ reloadIfStaleBuild: () => {} }));
+// Whether the server answers (lib/pwa/connection.ts) — not the device's own word.
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/pwa/connection", () => ({ isServerReachable: () => net.up }));
 
 import AppError from "@/app/(app)/error";
 
 function setOnline(online: boolean) {
-  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
+  net.up = online;
 }
 const notes = () => JSON.parse(localStorage.getItem("bizh-offline-report") ?? "[]") as { what: string; savedCopy?: boolean }[];
 
@@ -32,7 +35,7 @@ describe("the page's error screen, for the offline report", () => {
     expect(notes()).toMatchObject([{ what: "page error", savedCopy: true }]);
   });
 
-  it("no connection: kept", () => {
+  it("the server not answering, though the device says online: kept (owner's laptop, 2026-10-27)", () => {
     setOnline(false);
     render(<AppError error={new Error("boom")} reset={() => {}} />);
     expect(notes()).toMatchObject([{ what: "page error", savedCopy: false }]);

@@ -8,6 +8,7 @@ import { processUploadQueue } from "@/lib/offline-upload";
 import { dropDeviceFrame } from "@/lib/powersync/device-frames";
 import { emitNavigationContentShown } from "@/components/layout/TopNavigationProgress";
 import { noteOffline, savedPagesNow, sendOfflineReport } from "@/lib/pwa/offline-report";
+import { useServerReachable, watchConnection } from "@/lib/pwa/connection";
 import { RUNNING_BUILD, isNewerBuild, liveBuild, mayReloadFrom, noteReloadFrom, swBuildOf } from "@/lib/pwa/app-version";
 
 // A resumed PWA/installed-app instance (tapping the home-screen icon, not a
@@ -65,6 +66,15 @@ export default function PwaRegistration() {
   // react-hooks/purity. Set to the real timestamp inside the effect instead,
   // which runs after render.
   const lastRevalidatedAtRef = useRef(0);
+
+  // Whether the server answers — the device's own "online" can't be trusted
+  // (lib/pwa/connection.ts). Each time it does again (and when the app opens),
+  // what went wrong with no connection is sent (lib/pwa/offline-report.ts).
+  useEffect(() => watchConnection(), []);
+  const reachable = useServerReachable();
+  useEffect(() => {
+    if (reachable) sendOfflineReport();
+  }, [reachable]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
@@ -187,9 +197,6 @@ export default function PwaRegistration() {
     };
     navigator.serviceWorker.addEventListener("message", handleMessage);
 
-    // What went wrong with no connection, sent once it's back (lib/pwa/offline-report.ts).
-    sendOfflineReport();
-    window.addEventListener("online", sendOfflineReport);
 
     // Re-validate when the app comes back to the foreground after sitting
     // backgrounded — a resumed instance otherwise never re-checks anything
@@ -234,7 +241,6 @@ export default function PwaRegistration() {
 
     return () => {
       navigator.serviceWorker.removeEventListener("message", handleMessage);
-      window.removeEventListener("online", sendOfflineReport);
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };

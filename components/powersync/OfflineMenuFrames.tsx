@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import { useLocalSyncStatus, useSyncBlocked } from "@/lib/powersync/store";
-import { menuFramePaths, saveDeviceFrames } from "@/lib/powersync/device-frames";
+import { menuFramePaths, saveAppCode, saveDeviceFrames } from "@/lib/powersync/device-frames";
+import { isServerReachable } from "@/lib/pwa/connection";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import type { SectionAccess } from "@/lib/auth/sections";
 
@@ -14,10 +15,12 @@ const DONE_KEY = "bizh-menu-frames";
  * Renders nothing. Asks the service worker to save the menu's device pages
  * (lib/powersync/device-frames.ts menuFramePaths) — each one it hasn't saved
  * since the last update — so the menu opens with no connection even on a
- * page not opened since (owner, 2026-10-24: "do all 3"). Once per tab per
- * service worker version, and only while the device's copy is complete and
- * syncing: otherwise the server sends the pages' server version, which isn't
- * saved, and the requests would be for nothing.
+ * page not opened since (owner, 2026-10-24: "do all 3") — and the whole
+ * app's code with them (owner, 2026-10-27: "let's just do the whole app at
+ * once"). Once per tab per service worker version, and only while the
+ * device's copy is complete and syncing: otherwise the server sends the
+ * pages' server version, which isn't saved, and the requests would be for
+ * nothing.
  */
 export default function OfflineMenuFrames({ viewer, access }: { viewer: LocalCardViewer; access?: SectionAccess }) {
   const status = useLocalSyncStatus();
@@ -32,7 +35,7 @@ export default function OfflineMenuFrames({ viewer, access }: { viewer: LocalCar
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ask = () => {
       const version = navigator.serviceWorker.controller?.scriptURL;
-      if (!version || !navigator.onLine) return;
+      if (!version || !isServerReachable()) return;
       try {
         if (sessionStorage.getItem(DONE_KEY) === version) return;
         sessionStorage.setItem(DONE_KEY, version);
@@ -40,6 +43,8 @@ export default function OfflineMenuFrames({ viewer, access }: { viewer: LocalCar
         // No session storage: asked once per page load instead.
       }
       saveDeviceFrames(paths);
+      // And the whole app's code, once per version (public/sw.js, SAVE_APP_CODE).
+      saveAppCode();
     };
     const later = () => {
       clearTimeout(timer);

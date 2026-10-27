@@ -563,9 +563,22 @@ describe("service worker: code files and saved pages across deploys", () => {
     expect(worker.frames().get("https://biz-h.com/tasks")?.headers.get("X-Bizh-Build")).toBe("newer");
   });
 
-  it("the same build saved again: nothing fetched ahead", async () => {
+  it("saved again in the background (same build): its code not on the device is fetched too — once", async () => {
     const worker = await openTwice("test");
-    expect(worker.fetchMock).toHaveBeenCalledTimes(1); // just the page
+    const fetched = (worker.fetchMock.mock.calls as unknown as Array<[string | { url: string }]>).map(([request]) =>
+      typeof request === "string" ? request : request.url
+    );
+    expect(fetched).toContain("https://biz-h.com/_next/static/chunks/n1.js?dpl=dpl_9");
+    // Saved again: the code is on the device now — just the page.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 120_000));
+    try {
+      worker.fetchMock.mockClear();
+      await open(worker, "https://biz-h.com/tasks");
+      expect(worker.fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a new version starts with the previous version's saved pages of its own build — never another build's", async () => {
@@ -725,6 +738,10 @@ describe("service worker: a page with no saved copy, with no connection", () => 
     return res;
   }
 
+  /** The "not saved" messages a tab was sent (tabs also hear CONNECTION ones). */
+  const notSaved = (tab: { postMessage: ReturnType<typeof vi.fn> }) =>
+    tab.postMessage.mock.calls.map(([message]) => message).filter((message) => message.type === "PAGE_NOT_SAVED");
+
   /** The app's open tabs: the customers list in front, the sales page behind it. */
   function withPage(worker: ReturnType<typeof loadWorkerWithCaches>) {
     const page = { id: "tab-1", url: "https://biz-h.com/customers", focused: true, postMessage: vi.fn() };
@@ -739,9 +756,9 @@ describe("service worker: a page with no saved copy, with no connection", () => 
     const page = withPage(worker);
     const res = await answer(worker, { url: customerUrl, mode: "navigate", referrer: "https://biz-h.com/customers" });
     expect(res.status).toBe(204);
-    expect(page.postMessage).toHaveBeenCalledWith({ type: "PAGE_NOT_SAVED", url: customerUrl });
+    expect(notSaved(page)).toEqual([{ type: "PAGE_NOT_SAVED", url: customerUrl }]);
     // A tab behind it isn't told (it said so on the page in front, 2026-10-25).
-    expect(page.other.postMessage).not.toHaveBeenCalled();
+    expect(notSaved(page.other)).toEqual([]);
   });
 
   it("typed in, or the app opening (no page it came from): somewhere to land, as before", async () => {
@@ -750,7 +767,7 @@ describe("service worker: a page with no saved copy, with no connection", () => 
     const res = await answer(worker, { url: customerUrl, mode: "navigate", referrer: "" });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("board");
-    expect(page.postMessage).not.toHaveBeenCalled();
+    expect(notSaved(page)).toEqual([]);
   });
 
   it("a page with a saved frame opens from it — the list's frame for any filter", async () => {
@@ -763,7 +780,7 @@ describe("service worker: a page with no saved copy, with no connection", () => 
     });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('data-device-page="tasks"');
-    expect(page.postMessage).not.toHaveBeenCalled();
+    expect(notSaved(page)).toEqual([]);
   });
 
   it("the page's data asked for first (a second try never gets further): the tab that asked hears it at once", async () => {
@@ -779,8 +796,8 @@ describe("service worker: a page with no saved copy, with no connection", () => 
     });
     expect((await responded!).status).toBe(503);
     await Promise.all(background);
-    expect(page.other.postMessage).toHaveBeenCalledWith({ type: "PAGE_NOT_SAVED", url: customerUrl });
-    expect(page.postMessage).not.toHaveBeenCalled();
+    expect(notSaved(page.other)).toEqual([{ type: "PAGE_NOT_SAVED", url: customerUrl }]);
+    expect(notSaved(page)).toEqual([]);
   });
 
   it("…but not for a page that is saved (it loads whole from the frame next), nor for a prefetch", async () => {
@@ -793,6 +810,144 @@ describe("service worker: a page with no saved copy, with no connection", () => 
       mode: "cors",
       headers: new Headers({ RSC: "1", "Next-Router-Prefetch": "1" }),
     });
-    expect(page.postMessage).not.toHaveBeenCalled();
+    expect(notSaved(page)).toEqual([]);
+  });
+});
+
+// The device's own "online" can't be trusted — a laptop with another network
+// adapter up says it's online with its Wi-Fi off (owner's test, 2026-10-27:
+// no "no connection" bar). The worker sees every request: it tells the open
+// tabs when they start failing, and when one goes through again.
+
+describe("service worker: telling the pages whether the server answers", () => {
+  it("a request failing, then one going through: each change told to every tab, once", async () => {
+    let online = false;
+    const worker = loadWorkerWithCaches(() => {
+      if (!online) throw new TypeError("Failed to fetch");
+      return new Response("{}", { status: 200 });
+    });
+    const tab = { postMessage: vi.fn() };
+    worker.clients.matchAll.mockResolvedValue([tab]);
+    const api = async () => {
+      let responded: Promise<Response> | undefined;
+      worker.handlers.fetch({
+        request: { method: "GET", url: "https://biz-h.com/api/tasks", mode: "cors", headers: new Headers() },
+        respondWith: (promise: Promise<Response>) => (responded = promise),
+      });
+      await responded;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    await api();
+    await api();
+    online = true;
+    await api();
+    expect(tab.postMessage.mock.calls.map(([message]) => message)).toEqual([
+      { type: "CONNECTION", online: false },
+      { type: "CONNECTION", online: true },
+    ]);
+  });
+});
+
+// A saved page's code is fetched with it — what it loads at once, and the
+// files its code loads later (a form opened from "+"), found inside the code
+// files themselves (owner's test, 2026-10-27: "+" broke the whole app offline).
+
+describe("service worker: a saved page's code, and the code it loads later", () => {
+  it("follows the code files to the files they load later, and reads each file once", async () => {
+    const page =
+      '<html><head><meta name="bizh-build" content="test"/><script src="/_next/static/chunks/layout.js?dpl=d7" async></script></head>' +
+      '<body><span hidden data-device-page="tasks"></span></body></html>';
+    const files: Record<string, string> = {
+      "https://biz-h.com/tasks": page,
+      "https://biz-h.com/_next/static/chunks/layout.js?dpl=d7": 'e.l("static/chunks/quick-create.js")',
+      "https://biz-h.com/_next/static/chunks/quick-create.js?dpl=d7": 'e.l("static/chunks/task-form.js")',
+      "https://biz-h.com/_next/static/chunks/task-form.js?dpl=d7": "/* the form */",
+    };
+    const worker = loadWorkerWithCaches(() => new Response("missing", { status: 404 }));
+    worker.fetchMock.mockImplementation(async (...args: unknown[]) => {
+      const href = typeof args[0] === "string" ? args[0] : (args[0] as { url: string }).url;
+      return href in files ? new Response(files[href], { status: 200 }) : new Response("missing", { status: 404 });
+    });
+    const background: Promise<unknown>[] = [];
+    worker.handlers.message({
+      data: { type: "SAVE_FRAMES", urls: ["https://biz-h.com/tasks"] },
+      waitUntil: (promise: Promise<unknown>) => void background.push(promise),
+    });
+    await Promise.all(background);
+    const statics = worker.stores.get("bizh-static-test")!;
+    for (const name of ["layout", "quick-create", "task-form"]) {
+      expect(statics.has(`https://biz-h.com/_next/static/chunks/${name}.js`)).toBe(true);
+    }
+    // The files it loads later come from the page's own deployment.
+    const fetched = worker.fetchMock.mock.calls.map(([href]) => (typeof href === "string" ? href : (href as { url: string }).url));
+    expect(fetched).toContain("https://biz-h.com/_next/static/chunks/task-form.js?dpl=d7");
+    // Each code file is looked through once per version.
+    expect(worker.stores.get("bizh-followed-test")?.size).toBe(3);
+  });
+});
+
+// The whole app's code, once per version — as an installed app's (owner,
+// 2026-10-27: "let's just do the whole app at once"): the build's list of
+// files (scripts/write-app-files.mjs), each one not on the device downloaded.
+
+describe("service worker: the whole app's code", () => {
+  const list = { build: "test", files: ["/_next/static/chunks/a.js", "/_next/static/chunks/b.js", "/_next/static/css/c.css"] };
+
+  async function askForAppCode(worker: ReturnType<typeof loadWorkerWithCaches>, data: Record<string, unknown>) {
+    const background: Promise<unknown>[] = [];
+    worker.handlers.message({ data, waitUntil: (promise: Promise<unknown>) => void background.push(promise) });
+    await Promise.all(background);
+  }
+
+  function workerWithList(saved: Record<string, Record<string, string>> = {}) {
+    const worker = loadWorkerWithCaches(() => new Response("code", { status: 200 }), saved);
+    worker.fetchMock.mockImplementation(async (...args: unknown[]) => {
+      const href = typeof args[0] === "string" ? args[0] : (args[0] as { url: string }).url;
+      return href.includes("bizh-app-files")
+        ? new Response(JSON.stringify(list), { status: 200 })
+        : new Response("code", { status: 200 });
+    });
+    return worker;
+  }
+
+  const hrefs = (worker: ReturnType<typeof loadWorkerWithCaches>) =>
+    worker.fetchMock.mock.calls.map(([href]) => (typeof href === "string" ? href : (href as { url: string }).url));
+
+  it("downloads every listed file not on the device, from the page's own deployment — then not again this version", async () => {
+    const worker = workerWithList({ "bizh-static-v1": { "https://biz-h.com/_next/static/chunks/b.js": "kept" } });
+    await askForAppCode(worker, { type: "SAVE_APP_CODE", build: "test", dpl: "d9" });
+    expect(hrefs(worker)).toEqual([
+      "/_next/static/bizh-app-files/test.json?dpl=d9",
+      "/_next/static/chunks/a.js?dpl=d9",
+      "/_next/static/css/c.css?dpl=d9",
+    ]);
+    const statics = worker.stores.get("bizh-static-test")!;
+    expect(statics.has("https://biz-h.com/_next/static/chunks/a.js")).toBe(true);
+    // The one on the device from the last version is kept into this one's.
+    expect(statics.has("https://biz-h.com/_next/static/chunks/b.js")).toBe(true);
+
+    worker.fetchMock.mockClear();
+    await askForAppCode(worker, { type: "SAVE_APP_CODE", build: "test", dpl: "d9" });
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a page of another version asking: nothing (its list is another version's code)", async () => {
+    const worker = workerWithList();
+    await askForAppCode(worker, { type: "SAVE_APP_CODE", build: "older", dpl: "d1" });
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a file that didn't come: asked again the next time (not marked done)", async () => {
+    const worker = workerWithList();
+    worker.fetchMock.mockImplementation(async (...args: unknown[]) => {
+      const href = String(args[0]);
+      if (href.includes("bizh-app-files")) return new Response(JSON.stringify(list), { status: 200 });
+      if (href.includes("b.js")) throw new TypeError("Failed to fetch");
+      return new Response("code", { status: 200 });
+    });
+    await askForAppCode(worker, { type: "SAVE_APP_CODE", build: "test" });
+    worker.fetchMock.mockClear();
+    await askForAppCode(worker, { type: "SAVE_APP_CODE", build: "test" });
+    expect(hrefs(worker)).toEqual(["/_next/static/bizh-app-files/test.json", "/_next/static/chunks/b.js"]);
   });
 });

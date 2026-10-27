@@ -10,6 +10,14 @@ const sentry = vi.hoisted(() => ({ captureMessage: vi.fn() }));
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: (fn: (s: typeof sentry) => void) => fn(sentry) }));
 const router = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/pwa/connection", () => ({
+  isServerReachable: () => net.up,
+  useServerReachable: () => net.up,
+  whenServerReachable: () => () => {},
+  watchConnection: () => () => {},
+}));
+
 const nav = vi.hoisted(() => ({ start: 0 }));
 vi.mock("@/lib/ui/navigation-timing", () => ({ lastNavigationStart: () => nav.start }));
 
@@ -87,11 +95,12 @@ describe("DeviceFrameMark", () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 
-  it("offline: no refresh (it would only fail and reload)", () => {
-    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  it("the server not answering: no refresh (it would only fail and reload)", () => {
+    // Whatever the device says — a laptop with another network adapter up says online (2026-10-27).
+    net.up = false;
     render(<DeviceFrameMark page="sales" renderedAt={Date.now() - 60 * 60 * 1000} />);
     expect(router.refresh).not.toHaveBeenCalled();
-    online.mockRestore();
+    net.up = true;
   });
 
   // A page reached by moving inside the app was never loaded whole, so the
@@ -121,10 +130,11 @@ describe("DeviceFrameMark", () => {
     });
 
     it("no connection: not asked (it couldn't be fetched)", () => {
-      vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+      net.up = false;
       vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
       render(<DeviceFrameMark page="customers" renderedAt={Date.now()} />);
       expect(postMessage).not.toHaveBeenCalled();
+      net.up = true;
     });
   });
 });

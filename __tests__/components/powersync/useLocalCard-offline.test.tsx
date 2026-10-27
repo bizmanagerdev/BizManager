@@ -16,6 +16,32 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, re
 const toasts = vi.hoisted(() => ({ info: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { info: toasts.info } }));
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: () => {} }));
+const net = vi.hoisted(() => {
+  const waiting = new Set<() => void>();
+  return {
+    up: true,
+    waiting,
+    /** The server answering again runs what waited for it (lib/pwa/connection.ts). */
+    set(up: boolean) {
+      this.up = up;
+      if (up) for (const callback of [...waiting]) (waiting.delete(callback), callback());
+    },
+  };
+});
+vi.mock("@/lib/pwa/connection", () => ({
+  isServerReachable: () => net.up,
+  useServerReachable: () => net.up,
+  whenServerReachable: (callback: () => void) => {
+    if (net.up) {
+      callback();
+      return () => {};
+    }
+    net.waiting.add(callback);
+    return () => net.waiting.delete(callback);
+  },
+  watchConnection: () => () => {},
+}));
+
 const notes = vi.hoisted(() => ({ noteOffline: vi.fn() }));
 vi.mock("@/lib/pwa/offline-report", () => ({ noteOffline: notes.noteOffline }));
 const device = vi.hoisted(() => ({
@@ -31,7 +57,7 @@ vi.mock("@/lib/powersync/local-results", () => ({
 }));
 
 import { setLocalDatabase, setLocalSyncStatus } from "@/lib/powersync/store";
-import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { showServerVersion, useLocalCard } from "@/components/powersync/useLocalCard";
 import type { CommonPowerSyncDatabase } from "@powersync/web";
 
 const synced = {
@@ -44,8 +70,9 @@ const synced = {
   error: null,
 };
 
+/** Whether the server answers (lib/pwa/connection.ts — not the device's own "online"). */
 function setOnline(online: boolean) {
-  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
+  net.set(online);
 }
 
 const viewer = { userId: "u1", role: "admin", locale: "he" as const };
@@ -68,6 +95,7 @@ beforeEach(() => {
   toasts.info.mockReset();
   notes.noteOffline.mockReset();
   device.handlers = null;
+  net.waiting.clear();
   setLocalDatabase({} as CommonPowerSyncDatabase);
   setLocalSyncStatus(synced);
 });
@@ -90,8 +118,7 @@ describe("a device page with no connection", () => {
       message: "database is locked",
     });
 
-    setOnline(true);
-    act(() => window.dispatchEvent(new Event("online")));
+    act(() => setOnline(true));
     expect(nav.replace).toHaveBeenCalledWith("/sales?data=server");
   });
 
@@ -103,8 +130,7 @@ describe("a device page with no connection", () => {
     expect(nav.replace).not.toHaveBeenCalled();
 
     act(() => device.handlers!.onData({ rows: [] }, "{}", 12));
-    setOnline(true);
-    act(() => window.dispatchEvent(new Event("online")));
+    act(() => setOnline(true));
     expect(nav.replace).not.toHaveBeenCalled();
   });
 
@@ -114,6 +140,23 @@ describe("a device page with no connection", () => {
     act(() => device.handlers!.onError("error", new Error("x")));
     expect(toasts.info).toHaveBeenCalledTimes(1);
     expect(notes.noteOffline).toHaveBeenCalledTimes(1);
+  });
+
+  it("a record the device doesn't have (not synced yet): with no connection, waits for it, saying so", () => {
+    const router = { replace: nav.replace } as unknown as Parameters<typeof showServerVersion>[0];
+    act(() => showServerVersion(router, "customerPage-missing", "/customers/c9?data=server"));
+    expect(nav.replace).not.toHaveBeenCalled();
+    expect(toasts.info).toHaveBeenCalledWith("הדף לא נטען מהמכשיר — ייטען כשיחזור החיבור", { id: "device-page-offline" });
+    expect(notes.noteOffline).toHaveBeenCalledWith("device page failed", expect.objectContaining({ reason: "missing" }));
+    act(() => setOnline(true));
+    expect(nav.replace).toHaveBeenCalledWith("/customers/c9?data=server");
+  });
+
+  it("a record the device doesn't have, with the server answering: its server version at once", () => {
+    setOnline(true);
+    const router = { replace: nav.replace } as unknown as Parameters<typeof showServerVersion>[0];
+    showServerVersion(router, "customerPage-missing-2", "/customers/c8?data=server");
+    expect(nav.replace).toHaveBeenCalledWith("/customers/c8?data=server");
   });
 
   it("online, as before: the server version at once", () => {

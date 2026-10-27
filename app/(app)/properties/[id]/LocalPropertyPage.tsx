@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { showServerVersion, useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import { useSettled } from "@/hooks/useSettled";
 import { emitNavigationContentShown } from "@/components/layout/TopNavigationProgress";
@@ -51,7 +51,7 @@ export default function LocalPropertyPage({
 
   useEffect(() => {
     if (!missing) return;
-    const timer = setTimeout(() => router.replace(serverHref), MISSING_PROPERTY_WAIT_MS);
+    const timer = setTimeout(() => showServerVersion(router, "propertyPage", serverHref), MISSING_PROPERTY_WAIT_MS);
     return () => clearTimeout(timer);
   }, [missing, router, serverHref]);
 

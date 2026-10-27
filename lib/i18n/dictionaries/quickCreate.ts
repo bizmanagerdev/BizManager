@@ -16,7 +16,9 @@ export type QuickCreateKey =
   | "customer"
   | "collect"
   | "workerPayment"
-  | "manualSession";
+  | "manualSession"
+  // A form whose code isn't on the device, with no connection (OfflineSafe).
+  | "offline";
 
 export const quickCreateDict: Dictionary<QuickCreateKey> = {
   he: {
@@ -32,6 +34,7 @@ export const quickCreateDict: Dictionary<QuickCreateKey> = {
     collect: "קליטת תשלום",
     workerPayment: "תשלום לעובד",
     manualSession: "משמרת ידנית",
+    offline: "הטופס הזה לא שמור במכשיר — ייפתח כשיחזור החיבור",
   },
   ar: {
     reminder: "تذكير",
@@ -46,5 +49,6 @@ export const quickCreateDict: Dictionary<QuickCreateKey> = {
     collect: "استلام دفعة",
     workerPayment: "دفعة لعامل",
     manualSession: "مناوبة يدوية",
+    offline: "هذا النموذج غير محفوظ على الجهاز — سيُفتح عند عودة الاتصال",
   },
 };

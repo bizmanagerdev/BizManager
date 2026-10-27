@@ -27,7 +27,11 @@ vi.mock("@/components/morning/MorningDocumentsPanel", () => ({ default: () => nu
 vi.mock("@/components/morning/MorningQuoteDialog", () => ({ default: () => null }));
 vi.mock("@/components/customers/EditCustomerDialog", () => ({ EditCustomerDialog: () => null }));
 vi.mock("@/components/tasks/TaskUpsertDialog", () => ({ TaskUpsertDialog: () => null }));
-vi.mock("@/components/powersync/useLocalCard", () => ({ useLocalCard: () => h.card.current }));
+vi.mock("@/components/powersync/useLocalCard", () => ({
+  useLocalCard: () => h.card.current,
+  // The server answering: its server version (with no connection it waits — useLocalCard-offline.test).
+  showServerVersion: (router: { replace: (href: string) => void }, _page: string, href: string) => router.replace(href),
+}));
 vi.mock("@/components/powersync/useDevicePageTiming", () => ({ useDevicePageTiming: () => {} }));
 
 import { replace } from "@/__tests__/mocks/next-navigation";

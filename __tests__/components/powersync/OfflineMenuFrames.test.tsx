@@ -12,6 +12,14 @@ const h = vi.hoisted(() => ({
   status: null as { hasSynced: boolean } | null,
   blocked: false,
   save: vi.fn(),
+  saveApp: vi.fn(),
+}));
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/pwa/connection", () => ({
+  isServerReachable: () => net.up,
+  useServerReachable: () => net.up,
+  whenServerReachable: () => () => {},
+  watchConnection: () => () => {},
 }));
 vi.mock("@/lib/powersync/store", () => ({
   useLocalSyncStatus: () => h.status,
@@ -20,6 +28,7 @@ vi.mock("@/lib/powersync/store", () => ({
 vi.mock("@/lib/powersync/device-frames", () => ({
   menuFramePaths: () => ["/dashboard", "/tasks"],
   saveDeviceFrames: h.save,
+  saveAppCode: h.saveApp,
 }));
 
 import OfflineMenuFrames from "@/components/powersync/OfflineMenuFrames";
@@ -33,6 +42,8 @@ describe("saving the menu's pages for offline", () => {
     h.status = { hasSynced: true };
     h.blocked = false;
     h.save.mockReset();
+    h.saveApp.mockReset();
+    net.up = true;
     sessionStorage.clear();
     sw.controller = { scriptURL: "https://www.biz-h.com/sw.js?v=b1" };
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: sw });
@@ -47,6 +58,8 @@ describe("saving the menu's pages for offline", () => {
     expect(h.save).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(8000));
     expect(h.save).toHaveBeenCalledWith(["/dashboard", "/tasks"]);
+    // And the whole app's code with them (2026-10-27).
+    expect(h.saveApp).toHaveBeenCalledTimes(1);
 
     cleanup();
     render(<OfflineMenuFrames viewer={viewer} />);
@@ -77,11 +90,11 @@ describe("saving the menu's pages for offline", () => {
   });
 
   it("no connection at that moment: not marked done — asked on a later opening", () => {
-    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    net.up = false;
     render(<OfflineMenuFrames viewer={viewer} />);
     act(() => vi.advanceTimersByTime(8000));
     expect(h.save).not.toHaveBeenCalled();
-    online.mockRestore();
+    net.up = true;
     cleanup();
     render(<OfflineMenuFrames viewer={viewer} />);
     act(() => vi.advanceTimersByTime(8000));

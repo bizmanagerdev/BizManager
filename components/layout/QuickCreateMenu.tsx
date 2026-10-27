@@ -35,6 +35,8 @@ import { deleteSnapshot, loadSnapshot, saveSnapshot } from "@/lib/offline-cache"
 import { readyLocalDatabase, whenLocalDatabaseReady } from "@/lib/powersync/store";
 import { OPEN_TASK_EVENT, registerTaskOpener } from "@/lib/tasks/open-task-here";
 import { takeQuickParam } from "@/lib/quick-link";
+import { toast } from "sonner";
+import OfflineSafe from "@/components/pwa/OfflineSafe";
 
 /** The forms a ?quick= link may open (the phone app's shortcuts). */
 const QUICK_LINK_ACTIONS: readonly QuickCreateAction[] = ["task", "order", "reminder", "expense", "income", "customer", "project"];
@@ -285,6 +287,27 @@ function whenIdle(run: () => void): () => void {
   return () => window.clearTimeout(id);
 }
 
+/**
+ * In the forms' place while their code can't load (OfflineSafe): a tile tapped
+ * says the form isn't on the device, and the choice is let go.
+ */
+function QuickCreateUnavailable({
+  action,
+  locale,
+  onClose,
+}: {
+  action: QuickCreateAction | null;
+  locale: Locale;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!action) return;
+    toast.info(t(quickCreateDict, locale, "offline"), { id: "quick-create-offline" });
+    onClose();
+  }, [action, locale, onClose]);
+  return null;
+}
+
 export function QuickCreateMenu({
   viewerId,
   viewerRole,
@@ -346,6 +369,13 @@ export function QuickCreateMenu({
   // in-progress wizard draft state the user might reopen to.
   const [dialogsMounted, setDialogsMounted] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  const closeQuickCreate = () => {
+    setAction(null);
+    setQuickDate(undefined);
+    setQuickAccountId(undefined);
+    setQuickTaskId(undefined);
+  };
 
   useEffect(() => whenIdle(() => warmQuickCreate(viewerId, viewerRole, privileged)), [viewerId, viewerRole, privileged]);
 
@@ -671,19 +701,23 @@ export function QuickCreateMenu({
       </ViewDialog>
 
       {dialogsMounted ? (
-        <QuickCreateDialogs
-          action={data ? action : null}
-          onClose={() => {
-            setAction(null);
-            setQuickDate(undefined);
-            setQuickAccountId(undefined);
-            setQuickTaskId(undefined);
-          }}
-          data={data ?? EMPTY_QUICK_CREATE_DATA}
-          quickCreateDate={quickDate}
-          quickCreateAccountId={quickAccountId}
-          taskId={quickTaskId}
-        />
+        // The forms' code loads now (hover, or a tap): with no connection and
+        // never downloaded, the forms alone give way — not the whole app.
+        <OfflineSafe
+          name="quick-create"
+          fallback={
+            <QuickCreateUnavailable action={data ? action : null} locale={data?.locale ?? "he"} onClose={closeQuickCreate} />
+          }
+        >
+          <QuickCreateDialogs
+            action={data ? action : null}
+            onClose={closeQuickCreate}
+            data={data ?? EMPTY_QUICK_CREATE_DATA}
+            quickCreateDate={quickDate}
+            quickCreateAccountId={quickAccountId}
+            taskId={quickTaskId}
+          />
+        </OfflineSafe>
       ) : null}
     </>
   );
