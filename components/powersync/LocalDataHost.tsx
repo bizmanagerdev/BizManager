@@ -20,7 +20,7 @@ import type { SectionAccess } from "@/lib/auth/sections";
 import { installNavigationTiming } from "@/lib/ui/navigation-timing";
 import { clearDeviceFrames, keepDeviceFramesFor } from "@/lib/powersync/device-frames";
 import { setDeviceCopyPending } from "@/lib/powersync/device-pending";
-import { copyHasMoneyTables, setMoneyCopyReady } from "@/lib/powersync/money-copy";
+import { copyTableMarks, setBankCopyReady, setMoneyCopyReady } from "@/lib/powersync/money-copy";
 
 // Keeps the on-device copy open for the signed-in person, in the background.
 // Renders nothing. AppShell mounts it only for people the copy is switched on
@@ -74,9 +74,10 @@ export default function LocalDataHost({
   }, [copyComplete, syncBlocked]);
 
   // Whether this copy carries the dashboard's money tables (sync rules v1.8):
-  // the board then draws its money cards from it (lib/powersync/money-copy.ts).
-  // Looked at again after every completed download, so it switches over by
-  // itself the first time they arrive.
+  // the board then draws its money cards from it (lib/powersync/money-copy.ts);
+  // and the accounts page's (v1.14): that page then comes from it. Looked at
+  // again after every completed download, so each switches over by itself the
+  // first time its tables arrive.
   const lastSynced = status?.lastSyncedAt?.getTime() ?? null;
   const staff = viewerRole === "admin" || viewerRole === "office";
   useEffect(() => {
@@ -85,10 +86,12 @@ export default function LocalDataHost({
     if (!db) return;
     let cancelled = false;
     void import("@/lib/powersync/local-supabase")
-      .then(({ createLocalSupabase }) => copyHasMoneyTables(createLocalSupabase(db)))
+      .then(({ createLocalSupabase }) => copyTableMarks(createLocalSupabase(db)))
       .then(
-        (ready) => {
-          if (!cancelled) setMoneyCopyReady(ready);
+        (marks) => {
+          if (cancelled) return;
+          setMoneyCopyReady(marks.money);
+          setBankCopyReady(marks.bank);
         },
         () => {}
       );

@@ -10,28 +10,52 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // with this cookie, so the board draws them from the device only where the
 // copy can (moneyCardsOnDevice in lib/powersync/device-check.ts) — elsewhere
 // the server's version, as before. Client-safe.
+//
+// The accounts page (/financial/bank) the same way, from sync rules v1.14:
+// business_settings.bank_tables = 1 (transfers, the bank-check ticks, the
+// exchange rates, the quick line's filing) and BANK_COPY_COOKIE.
 
 export const MONEY_COPY_COOKIE = "bizh-money-copy";
+export const BANK_COPY_COOKIE = "bizh-bank-copy";
 
 /** Without news for this long it goes (the server version until the device says again). */
 const MAX_AGE_S = 7 * 24 * 60 * 60;
 
-/** Does this copy carry the money tables (sync rules v1.8 or later)? */
-export async function copyHasMoneyTables(local: SupabaseClient): Promise<boolean> {
-  const { data, error } = await local.from("business_settings").select("money_tables").limit(1);
-  if (error || !Array.isArray(data) || data.length === 0) return false;
-  return (data[0] as { money_tables?: unknown }).money_tables === 1;
+/** Which of the marked table sets this copy carries. */
+export async function copyTableMarks(local: SupabaseClient): Promise<{ money: boolean; bank: boolean }> {
+  const { data, error } = await local.from("business_settings").select("money_tables,bank_tables").limit(1);
+  if (error || !Array.isArray(data) || data.length === 0) return { money: false, bank: false };
+  const row = data[0] as { money_tables?: unknown; bank_tables?: unknown };
+  return { money: row.money_tables === 1, bank: row.bank_tables === 1 };
 }
 
-function moneyCopyCookieSet(): boolean {
-  return document.cookie.split(";").some((part) => part.trim().startsWith(`${MONEY_COPY_COOKIE}=`));
+/** Does this copy carry the money tables (sync rules v1.8 or later)? */
+export async function copyHasMoneyTables(local: SupabaseClient): Promise<boolean> {
+  return (await copyTableMarks(local)).money;
+}
+
+/** Does this copy carry the accounts page's tables (sync rules v1.14 or later)? */
+export async function copyHasBankTables(local: SupabaseClient): Promise<boolean> {
+  return (await copyTableMarks(local)).bank;
+}
+
+function cookieSet(name: string): boolean {
+  return document.cookie.split(";").some((part) => part.trim().startsWith(`${name}=`));
+}
+
+function setCopyCookie(name: string, ready: boolean): void {
+  if (typeof document === "undefined") return;
+  // Ready: (re)set, so it lasts as long as the copy keeps saying so.
+  if (!ready && !cookieSet(name)) return;
+  document.cookie = ready
+    ? `${name}=1; path=/; max-age=${MAX_AGE_S}; samesite=lax`
+    : `${name}=; path=/; max-age=0; samesite=lax`;
 }
 
 export function setMoneyCopyReady(ready: boolean): void {
-  if (typeof document === "undefined") return;
-  // Ready: (re)set, so it lasts as long as the copy keeps saying so.
-  if (!ready && !moneyCopyCookieSet()) return;
-  document.cookie = ready
-    ? `${MONEY_COPY_COOKIE}=1; path=/; max-age=${MAX_AGE_S}; samesite=lax`
-    : `${MONEY_COPY_COOKIE}=; path=/; max-age=0; samesite=lax`;
+  setCopyCookie(MONEY_COPY_COOKIE, ready);
+}
+
+export function setBankCopyReady(ready: boolean): void {
+  setCopyCookie(BANK_COPY_COOKIE, ready);
 }

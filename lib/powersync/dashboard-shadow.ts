@@ -1,6 +1,12 @@
 import type { CommonPowerSyncDatabase } from "@powersync/web";
 import { createLocalSupabase } from "./local-supabase";
-import { computeLocalCard, MONEY_CARD_NOT_READY, type LocalCardKind, type LocalDashboardCards } from "./dashboard-local";
+import {
+  BANK_PAGE_NOT_READY,
+  computeLocalCard,
+  MONEY_CARD_NOT_READY,
+  type LocalCardKind,
+  type LocalDashboardCards,
+} from "./dashboard-local";
 import type { Locale } from "@/lib/i18n/types";
 
 // The dashboard's "shadow" check (PowerSync plan, dashboard step): while the
@@ -104,8 +110,8 @@ export async function runDashboardShadow(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // A copy without the money tables yet (before sync rules v1.8 reach
-      // it): nothing to compare, not a difference.
-      if (message.startsWith(MONEY_CARD_NOT_READY)) continue;
+      // it), or the accounts page's (v1.14): nothing to compare, not a difference.
+      if (message.startsWith(MONEY_CARD_NOT_READY) || message.startsWith(BANK_PAGE_NOT_READY)) continue;
       results.push({ card, match: false, localMs: 0, diffs: [], error: message });
     }
   }

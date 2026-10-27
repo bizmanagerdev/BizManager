@@ -58,7 +58,8 @@ import {
   type DomainChartData,
 } from "@/lib/dashboard/money-cards";
 import type { PaymentsSummary } from "@/components/dashboard/UpcomingPayments";
-import { copyHasMoneyTables } from "@/lib/powersync/money-copy";
+import { copyHasBankTables, copyHasMoneyTables } from "@/lib/powersync/money-copy";
+import { loadBankPage, type BankPageData } from "@/app/(app)/financial/bank/loadBankPage";
 import { israelDateKey } from "@/lib/timezone";
 import type { Locale } from "@/lib/i18n/types";
 
@@ -132,6 +133,8 @@ export type LocalDashboardCards = {
   collections: CollectionsSummary;
   /** null: nothing moved this month (the card isn't shown). */
   domainChart: DomainChartData | null;
+  /** The accounts page (/financial/bank): every account with its register, the loans, the quick line's lists — only from a copy with sync rules v1.14. */
+  bankPage: BankPageData;
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
@@ -203,6 +206,14 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   payments: MONEY_TABLES,
   collections: MONEY_TABLES,
   domainChart: MONEY_TABLES,
+  // Every account's register: the money tables, transfers, card charges and
+  // lines, the bank-check ticks; the names on its rows (people, projects,
+  // customers, properties, loans' counterparts); the loans; the quick line's
+  // filing and the exchange rates.
+  bankPage: [
+    ...MONEY_TABLES, "accounts", "account_transfers", "account_ledger_checks", "properties", "customer_branches",
+    "expense_merchant_mappings", "fx_rates",
+  ],
 };
 
 /**
@@ -283,6 +294,20 @@ async function computeMoneyCard(local: SupabaseClient, kind: "payments" | "colle
 
 /** The start of the error a money card gives on a copy without the money tables (not a difference to report). */
 export const MONEY_CARD_NOT_READY = "money cards: this copy has no money tables yet";
+
+/** The same for the accounts page, on a copy synced before sync rules v1.14. */
+export const BANK_PAGE_NOT_READY = "accounts page: this copy has no accounts tables yet";
+
+/** The accounts page from the device, all its reads done — or refused (see strictReads). */
+async function computeBankPage(local: SupabaseClient): Promise<BankPageData> {
+  if (!(await copyHasBankTables(local))) throw new Error(`${BANK_PAGE_NOT_READY} (sync rules before v1.14)`);
+  const { client, failures } = strictReads(local);
+  const data = await loadBankPage(client);
+  if (failures.length || data.dataIncomplete) {
+    throw new Error(`bankPage: a read failed on the device — ${failures[0] ?? "an account scan"}`);
+  }
+  return data;
+}
 
 export async function computeLocalCard<K extends LocalCardKind>(
   local: SupabaseClient,
@@ -440,6 +465,8 @@ export async function computeLocalCard<K extends LocalCardKind>(
     case "collections":
     case "domainChart":
       return (await computeMoneyCard(local, kind)) as LocalDashboardCards[K];
+    case "bankPage":
+      return (await computeBankPage(local)) as LocalDashboardCards[K];
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);
   }

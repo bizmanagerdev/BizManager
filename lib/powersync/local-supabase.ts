@@ -62,6 +62,8 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   expenses: ["fx_rate_manual"],
   loans: ["fx_rate_manual"],
   loan_repayments: ["fx_rate_manual"],
+  worker_payments: ["fx_rate_manual"],
+  accounts: ["is_active"],
 };
 
 const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
@@ -79,13 +81,17 @@ const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
   payslips: ["calculated_base_salary", "manual_adjustments", "gross_salary"],
   salary_agreements: ["hourly_rate", "monthly_salary", "overtime_rate", "standard_daily_hours", "bill_to_customer_amount"],
   worker_payment_allocations: ["amount"],
-  worker_payments: ["amount"],
+  worker_payments: ["amount", "foreign_amount", "fx_rate"],
   inventory_movements: ["quantity"],
   business_settings: ["vat_rate"],
   recurring_expense_templates: ["amount"],
   loans: ["amount", "interest_amount", "foreign_amount", "fx_rate"],
   loan_repayments: ["amount", "interest_amount", "foreign_amount", "fx_rate"],
   card_statement_charges: ["amount"],
+  accounts: ["opening_balance"],
+  account_transfers: ["amount", "from_amount", "to_amount"],
+  account_ledger_checks: ["amount_at_check"],
+  fx_rates: ["rate"],
 };
 
 const JSON_COLUMNS: Record<string, readonly string[]> = {
@@ -159,6 +165,10 @@ export const LOCAL_TABLES: ReadonlySet<string> = new Set([
   "card_statement_rows",
   "card_settlement_confirmations",
   "outflow_source_settings",
+  "account_transfers",
+  "expense_merchant_mappings",
+  "fx_rates",
+  "account_ledger_checks",
 ]);
 
 /**
@@ -487,6 +497,8 @@ const EMBEDS: Record<string, Record<string, EmbedTarget>> = {
   project_expenses: { expenses: { table: "expenses", fkColumn: "expense_id" } },
   task_members: { users: { table: "users", fkColumn: "user_id" } },
   worker_payment_allocations: { worker_payments: { table: "worker_payments", fkColumn: "worker_payment_id" } },
+  // The accounts page: a "מול מזומן" transfer's card line (card_row:card_statement_rows(...)).
+  account_transfers: { card_statement_rows: { table: "card_statement_rows", fkColumn: "card_statement_row_id" } },
   tasks: {
     "users!tasks_assigned_user_id_fkey": { table: "users", fkColumn: "assigned_user_id" },
     task_members: { table: "task_members", fkColumn: "task_id", many: true },

@@ -677,14 +677,29 @@ const user_directory = new Table({ full_name: text, avatar_color: text, role: te
 const property_directory = new Table({ name: text, address: text, is_active: int });
 
 // A project's page (sync rules v1.7, admins and office): each movement's
-// account by name, the VAT rate, and a recurring bill's rule by name.
-const accounts = new Table({ name: text });
+// account by name, the VAT rate, and a recurring bill's rule by name. The
+// accounts page (v1.14): the rest of an account — kind, currency, opening
+// balance, order.
+const accounts = new Table({
+  name: text,
+  kind: text,
+  opening_balance: text,
+  opening_date: text,
+  is_active: int,
+  sort_order: int,
+  notes: text,
+  account_number: text,
+  currency: text,
+  created_by: text,
+  created_at: text,
+  updated_at: text,
+});
 /**
  * One row; id = "true" (the table's key is the boolean true). money_tables = 1:
- * this copy has the money cards' tables below (sync rules v1.8 — see
- * lib/powersync/money-copy.ts).
+ * this copy has the money cards' tables below (sync rules v1.8); bank_tables =
+ * 1: the accounts page's (v1.14) — see lib/powersync/money-copy.ts.
  */
-const business_settings = new Table({ vat_rate: text, books_start_date: text, money_tables: int });
+const business_settings = new Table({ vat_rate: text, books_start_date: text, money_tables: int, bank_tables: int });
 const recurring_expense_templates = new Table({
   template_name: text,
   created_by: text,
@@ -710,9 +725,8 @@ const recurring_expense_templates = new Table({
 });
 
 // The dashboard's money cards (sync rules v1.8): loans and their repayments,
-// card statements (the charges, and of the statement lines only which expense
-// each one is), card settlements already confirmed, the payment sources'
-// settings.
+// card statements (the charges, and the statement lines), card settlements
+// already confirmed, the payment sources' settings.
 const loans = new Table({
   direction: text,
   lender: text,
@@ -759,9 +773,14 @@ const card_statement_charges = new Table({
   amount: text,
   charge_date: text,
   notes: text,
+  // Who recorded it and when — the accounts page's register (v1.14).
+  created_at: text,
+  created_by: text,
 });
+// Every statement line from v1.14 (before: only those filed as an expense),
+// with its description — a "מול מזומן" line's transfer shows it.
 const card_statement_rows = new Table(
-  { expense_id: text, statement_id: text, card_label: text, category: text },
+  { expense_id: text, statement_id: text, card_label: text, category: text, description: text },
   { indexes: { by_expense: ["expense_id"] } }
 );
 const card_settlement_confirmations = new Table({ account_id: text, settlement_date: text });
@@ -771,6 +790,46 @@ const outflow_source_settings = new Table({
   reminder_work_days_before: int,
   account_id: text,
   is_active: int,
+});
+
+// The accounts page (/financial/bank, sync rules v1.14): transfers between
+// accounts, the quick line's remembered filing, the Bank of Israel rates since
+// 2025, and — admins only — the "נבדק מול הבנק" ticks.
+const account_transfers = new Table({
+  from_account_id: text,
+  to_account_id: text,
+  amount: text,
+  from_amount: text,
+  to_amount: text,
+  transfer_date: text,
+  notes: text,
+  card_statement_row_id: text,
+  created_by: text,
+  created_at: text,
+  updated_at: text,
+});
+const expense_merchant_mappings = new Table({
+  merchant_key: text,
+  business_domain: text,
+  project_id: text,
+  property_id: text,
+  category: text,
+  use_count: int,
+  last_used_at: text,
+  updated_by: text,
+  created_at: text,
+});
+const fx_rates = new Table(
+  { currency: text, rate_date: text, rate: text, source: text, fetched_at: text },
+  { indexes: { by_currency: ["currency", "rate_date"] } }
+);
+const account_ledger_checks = new Table({
+  account_id: text,
+  entry_key: text,
+  amount_at_check: text,
+  date_at_check: text,
+  checked_at: text,
+  checked_by: text,
 });
 
 export const AppSchema = new Schema({
@@ -817,6 +876,10 @@ export const AppSchema = new Schema({
   card_statement_rows,
   card_settlement_confirmations,
   outflow_source_settings,
+  account_transfers,
+  expense_merchant_mappings,
+  fx_rates,
+  account_ledger_checks,
 });
 
 export type LocalDatabase = (typeof AppSchema)["types"];

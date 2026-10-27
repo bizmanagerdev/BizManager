@@ -34,6 +34,12 @@ describe("the menu pages saved for offline after each update", () => {
     expect(menuFramePaths({ id: "o1", role: "office" })).toEqual(paths);
   });
 
+  it("the accounts page: for an admin who gets its device version (the preview users' first)", () => {
+    const owner = "2fcc692e-5bd7-41a1-b4c4-3aabfa7d580e";
+    expect(menuFramePaths({ id: owner, role: "admin" })).toContain("/financial/bank");
+    expect(menuFramePaths({ id: "a1", role: "admin" })).not.toContain("/financial/bank");
+  });
+
   it("a worker: his own sections that have a device version", () => {
     const worker = { id: "w1", role: "worker", locale: "he" };
     expect(menuFramePaths(worker, DEFAULT_SECTION_ACCESS)).toEqual(["/dashboard", "/tasks", "/deliveries"]);

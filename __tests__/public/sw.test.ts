@@ -289,7 +289,7 @@ describe("service worker: the device pages' frames", () => {
     const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
     await open(worker, "https://biz-h.com/tasks?data=server");
     await open(worker, "https://biz-h.com/projects?q=דנה");
-    await open(worker, "https://biz-h.com/financial/bank");
+    await open(worker, "https://biz-h.com/settings");
     expect(worker.frames().size).toBe(0);
   });
 
@@ -306,6 +306,23 @@ describe("service worker: the device pages' frames", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // The accounts page reads its open account from the address on the device
+  // (LocalBankPage, 2026-10-27): the one frame serves every account.
+  it("saves the accounts page's frame, and serves it for any open account", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, "https://biz-h.com/financial/bank");
+    expect(worker.frames().has("https://biz-h.com/financial/bank")).toBe(true);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 60_000));
+    try {
+      expect(await open(worker, "https://biz-h.com/financial/bank?account=a2")).toBe(FRAME);
+    } finally {
+      vi.useRealTimers();
+    }
+    await open(worker, "https://biz-h.com/financial/bank?data=server");
+    expect(worker.frames().has("https://biz-h.com/financial/bank?data=server")).toBe(false);
   });
 
   it("saves the rent roll's frame (its device version, 2026-10-21)", async () => {
@@ -648,7 +665,7 @@ describe("service worker: saving the pages the app asks for", () => {
   it("leaves alone pages without a device version, the server version, searches and other sites", async () => {
     const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
     await ask(worker, [
-      "https://biz-h.com/financial/bank",
+      "https://biz-h.com/settings",
       "https://biz-h.com/tasks?data=server",
       "https://biz-h.com/projects?q=דנה",
       "https://example.com/tasks",

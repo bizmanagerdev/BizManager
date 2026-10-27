@@ -196,9 +196,16 @@ async function drainIdle(e: Engine) {
   }
 }
 
+/**
+ * Results too big for the device's page store (a few MB for every page
+ * together): the accounts page's is ~1.5 MB (every register, 2026-10-27) and
+ * would push the other pages' out. It's worked out from the copy each time.
+ */
+const NOT_STORED: ReadonlySet<LocalCardKind> = new Set(["bankPage"]);
+
 /** Store what's on screen or kept ready in the background — throttled, in an idle moment. */
 function storeLater(entry: Entry) {
-  if (entry.storeTimer) return;
+  if (entry.storeTimer || NOT_STORED.has(entry.spec.kind)) return;
   const wait = Math.max(0, entry.storedAt + STORE_EVERY_MS - Date.now());
   entry.storeTimer = setTimeout(() => {
     requestIdle(() => {

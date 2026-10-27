@@ -1,19 +1,20 @@
 // Aliased: this route also exports its own `dynamic` (route-segment config,
 // below) which would otherwise collide with next/dynamic's default export.
 import nextDynamic from "next/dynamic";
-import type { CSSProperties } from "react";
+import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { loadAccountsOverview } from "@/lib/accounts";
-import { fetchLoans } from "@/lib/loans";
-import { loadTodayFxRates } from "@/lib/fx/rates";
-import { fetchAllPagedResult } from "@/lib/supabase/paginate";
-import type { MerchantMemory } from "@/lib/financial/cardImport";
-import { propertyDisplayName } from "@/lib/properties";
 import { BANK_STRIP_COOKIE, bankStripStyle } from "@/lib/ui/bank-strip-height";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
+import { serverRenderedAt } from "@/lib/loaded-at";
+import { deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
+import { LOCAL_DATA_SHADOW } from "@/lib/powersync/config";
 import BankSkeleton from "./BankSkeleton";
+import LocalBankPage from "./LocalBankPage";
+import BankServerCheck from "./BankServerCheck";
+import { loadBankPage } from "./loadBankPage";
 
 // The same placeholder as loading.tsx while the client's code loads.
 const BankClient = nextDynamic(() => import("./BankClient"), {
@@ -21,8 +22,6 @@ const BankClient = nextDynamic(() => import("./BankClient"), {
 });
 
 export const dynamic = "force-dynamic";
-
-type Option = { id: string; name: string };
 
 /**
  * חשבונות — every account's balance, and the register of whichever one is open.
@@ -35,7 +34,7 @@ type Option = { id: string; name: string };
 export default async function BankPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string }>;
+  searchParams: Promise<{ account?: string; data?: string }>;
 }) {
   const { profile, supabase } = await requireProfile();
   // חשבונות (balances/management) is admin-only. Office still assigns an account
@@ -45,81 +44,47 @@ export default async function BankPage({
   }
 
   const params = await searchParams;
-  const [accounts, loans, { data: projectRows }, { data: propertyRows }, { data: mappingRows }, fxRates] = await Promise.all([
-    loadAccountsOverview(supabase),
-    // For the register's inline "עריכת הלוואה"/"עריכת החזר" — a loan/loan_repayment
-    // row needs the full computed Loan shape (outstanding, plannedInstallments…),
-    // not just what the ledger scan keeps for display.
-    fetchLoans(supabase),
-    supabase.from("projects").select("id,name").order("created_at", { ascending: false }).order("id").limit(300),
-    // For the expense-edit dialog's property picker (property_management domain)
-    // — same list CashFlowPageContent.tsx feeds ExpenseDialog with, just fetched
-    // here too since this page's own edit dialog wasn't getting it at all
-    // (2026-08-27, "look around for more places with this issue": editing an
-    // unlinked expense here and switching it to ניהול נכסים showed "no
-    // properties available" even though properties exist).
-    supabase.from("properties").select("id,name,address,is_active").order("address", { ascending: true }).order("id").limit(999),
-    // Merchant memory — how a description like this was filed last time, so the
-    // quick row fills its own שיוך. Every page of it (539 rows on 2026-10-27; an
-    // unpaged read stops at 1,000).
-    fetchAllPagedResult((from, to) =>
-      supabase
-        .from("expense_merchant_mappings")
-        .select("merchant_key,business_domain,project_id,property_id,category")
-        .order("id")
-        .range(from, to)
-    ),
-    // A US$ or C$ account's balance in shekels, at today's rate.
-    loadTodayFxRates(supabase),
-  ]);
-
-  const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
-    (row) => typeof row.id === "string" && typeof row.name === "string"
-  );
-  const recurringProperties = ((propertyRows ?? []) as Array<{
-    id: string;
-    name: string | null;
-    address: string | null;
-    is_active: boolean | null;
-  }>)
-    .filter((row) => row.is_active !== false)
-    .map((row) => ({ id: row.id, label: propertyDisplayName({ name: row.name, address: row.address ?? "" }) }))
-    .filter((row) => row.id && row.label);
-
-  const merchantMemory: MerchantMemory = {};
-  for (const row of (mappingRows ?? []) as Array<{
-    merchant_key: string;
-    business_domain: string;
-    project_id: string | null;
-    property_id: string | null;
-    category: string | null;
-  }>) {
-    if (!row.merchant_key || !row.business_domain) continue;
-    merchantMemory[row.merchant_key] = {
-      businessDomain: row.business_domain,
-      projectId: row.project_id ?? "",
-      propertyId: row.property_id ?? "",
-      category: row.category ?? "",
-    };
-  }
-
   // For the placeholder while the page's code loads (BankSkeleton's strip).
   const strip = bankStripStyle((await cookies()).get(BANK_STRIP_COOKIE)?.value);
-
-  return (
+  const shell = (content: ReactNode) => (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="contents" style={strip as CSSProperties | undefined}>
-        <BankClient
-          accounts={accounts}
-          loans={loans}
-          initialAccountId={params.account ?? ""}
-          projects={projects}
-          recurringProperties={recurringProperties}
-          merchantMemory={merchantMemory}
-          dataIncomplete={accounts.dataIncomplete}
-          fxRates={fxRates}
-        />
+        {content}
       </div>
     </AppShell>
+  );
+
+  // The device version: the page worked out from this person's on-device copy
+  // (LocalBankPage) — only where the copy has the accounts tables (sync rules
+  // v1.14). ?data=server is the way back when the copy can't serve it.
+  if (params.data !== "server" && (await devicePageOn("bank", profile))) {
+    // Once a day per device, the server's own page too — streamed after the
+    // page, for the device to compare (lib/powersync/device-check.ts).
+    const checkDue = LOCAL_DATA_SHADOW.bank && (await deviceCheckDue("bank"));
+    return shell(
+      <>
+        <DeviceFrameMark page="bank" renderedAt={serverRenderedAt()} />
+        <LocalBankPage viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }} />
+        {checkDue ? (
+          <Suspense fallback={null}>
+            <BankServerCheck supabase={supabase} userId={profile.id} role={profile.role ?? ""} locale={profile.locale} />
+          </Suspense>
+        ) : null}
+      </>
+    );
+  }
+
+  const data = await loadBankPage(supabase);
+  return shell(
+    <BankClient
+      accounts={data.accounts}
+      loans={data.loans}
+      initialAccountId={params.account ?? ""}
+      projects={data.projects}
+      recurringProperties={data.recurringProperties}
+      merchantMemory={data.merchantMemory}
+      dataIncomplete={data.dataIncomplete}
+      fxRates={data.fxRates}
+    />
   );
 }

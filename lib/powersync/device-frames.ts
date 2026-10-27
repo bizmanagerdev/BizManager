@@ -80,7 +80,12 @@ export function saveAppCode(): void {
 }
 
 /** The menu's pages that have a device version, and their addresses. */
-const MENU_FRAME_PAGES: { page: keyof typeof LOCAL_DATA_PAGES; path: string; workerSection?: keyof SectionAccess }[] = [
+const MENU_FRAME_PAGES: {
+  page: keyof typeof LOCAL_DATA_PAGES;
+  path: string;
+  workerSection?: keyof SectionAccess;
+  adminOnly?: true;
+}[] = [
   { page: "dashboard", path: "/dashboard", workerSection: "dashboard" },
   { page: "tasks", path: "/tasks", workerSection: "tasks" },
   { page: "projects", path: "/projects" },
@@ -88,6 +93,7 @@ const MENU_FRAME_PAGES: { page: keyof typeof LOCAL_DATA_PAGES; path: string; wor
   { page: "customers", path: "/customers" },
   { page: "properties", path: "/properties" },
   { page: "rentRoll", path: "/rent" },
+  { page: "bank", path: "/financial/bank", adminOnly: true },
   // The drivers' page: in workers' menu only (the office has the sales page's tab).
   { page: "deliveries", path: "/deliveries", workerSection: "deliveries" },
 ];
@@ -98,8 +104,9 @@ export function menuFramePaths(
   access?: SectionAccess
 ): string[] {
   const worker = viewer.role === "worker";
-  return MENU_FRAME_PAGES.filter(({ page, workerSection }) => {
+  return MENU_FRAME_PAGES.filter(({ page, workerSection, adminOnly }) => {
     if (!localDataPageOn(page, viewer)) return false;
+    if (adminOnly && viewer.role !== "admin") return false;
     if (page === "deliveries" && !worker) return false;
     return !worker || (workerSection !== undefined && access?.[workerSection] !== false);
   }).map(({ path }) => path);
