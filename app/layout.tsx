@@ -6,6 +6,7 @@ import NativePushRegistration from "@/components/pwa/NativePushRegistration";
 import NativeAppBridge from "@/components/pwa/NativeAppBridge";
 import PullToRefresh from "@/components/pwa/PullToRefresh";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { BANK_STRIP_SCRIPT } from "@/lib/ui/bank-strip-height";
 
 export const metadata: Metadata = {
   title: "BizH",
@@ -120,6 +121,9 @@ export default function RootLayout({
         {/* Apply the saved global text-size multiplier before first paint.
             Migrates the legacy absolute-px key (biz-font-size) to a scale. */}
         <script dangerouslySetInnerHTML={{ __html: `try{var d=document.documentElement;var s=localStorage.getItem('biz-font-scale');if(!s){var px=parseFloat(localStorage.getItem('biz-font-size'));if(px>0){s=String(px/17);localStorage.setItem('biz-font-scale',s);}}if(s){d.style.setProperty('--font-scale',s);}var m=localStorage.getItem('biz-font-scale-mobile');if(m){d.style.setProperty('--font-scale-mobile',m);}}catch(e){}` }} />
+        {/* The accounts page's strip height kept on this device, for its
+            loading screen (lib/ui/bank-strip-height.ts). */}
+        <script dangerouslySetInnerHTML={{ __html: BANK_STRIP_SCRIPT }} />
       </head>
       <body className="antialiased">
         <PwaRegistration />

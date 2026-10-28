@@ -338,6 +338,9 @@ function AccountSummaryCard({
             title={showingUnchecked ? "הצגת כל התנועות" : "הצגת התנועות שעוד לא נבדקו מול הבנק"}
             className={cn(
               "mx-2 mb-2 self-center rounded-full border px-2 py-0.5 text-[0.688rem] font-medium tabular-nums transition-colors",
+              // A finger's worth to tap (about 40px tall) around the small pill,
+              // which keeps its look (2026-10-28, the page's checks).
+              "relative after:absolute after:-inset-x-1 after:-inset-y-2",
               showingUnchecked
                 ? cn(TOGGLE_ON, "border-secondary")
                 : selected
@@ -587,8 +590,11 @@ export default function BankClient({
       // 2026-08-31: "i know i set the rule but i still want outline").
       // mt-1.5 matches the total's own nudge below the top edge. Desktop
       // only — hidden on mobile, where the top bar has no room to spare for
-      // it (user, 2026-08-31: "remove the ניהול חשבונות button on mobile").
-      <Button asChild variant="outline" size="sm" className="mt-1.5 hidden md:inline-flex">
+      // it (user, 2026-08-31: "remove the ניהול חשבונות button on mobile"),
+      // and on a tablet or a small laptop too: below 1280px, with a larger
+      // text size, it cut the page's title and pushed the account menu off
+      // the screen (2026-10-28).
+      <Button asChild variant="outline" size="sm" className="mt-1.5 hidden xl:inline-flex">
         {/* ?tab=finance — SettingsTabs now reads this; it used to always land
             on the first (notifications) tab (user, 2026-08-31). */}
         <Link href="/settings?tab=finance">ניהול חשבונות</Link>
@@ -1139,7 +1145,9 @@ export default function BankClient({
           page's first line, and the full gap above it read as empty space
           (owner, 2026-10-19). */}
       <div className="space-y-1 md:-mt-3 lg:-mt-4">
-        <div className="relative md:w-96">
+        {/* Never wider than the column: on a tablet with the menu open and a
+            large text size, 24rem ran off the screen (2026-10-28). */}
+        <div className="relative md:w-96 md:max-w-full">
           <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
