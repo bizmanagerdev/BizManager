@@ -49,6 +49,9 @@ import { israelDateKey, israelWallClockToUtc } from "@/lib/timezone";
 type OrderItem = {
   product_id: string;
   product_name: string;
+  /** An off-catalog line's own name (it has no product_id) — sent back, or the
+   *  server drops the line as having neither (lib/orders/order-input.ts). */
+  description?: string;
   quantity_ordered: number;
   /** How much of this line has already been delivered in prior partial deliveries. */
   quantity_delivered: number;
@@ -720,6 +723,7 @@ export default function OrderConfirmDialog({
         notes: mergedNotes,
         items: deliveryLines.map(({ line, finalDelivered }) => ({
           product_id: line.product_id,
+          description: line.description ?? "",
           quantity_ordered: line.quantity_ordered,
           quantity_delivered: finalDelivered,
           unit_price: line.unit_price,

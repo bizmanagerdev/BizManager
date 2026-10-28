@@ -114,6 +114,7 @@ vi.setConfig({ testTimeout: 20_000 });
 type Line = {
   product_id: string;
   product_name: string;
+  description?: string;
   quantity_ordered: number;
   quantity_delivered: number;
   available_quantity: number | null;
@@ -602,6 +603,28 @@ describe("quantities", () => {
     expect(sentPayload().items[0]).toMatchObject({ product_id: "p1", quantity_ordered: 5, quantity_delivered: 5 });
   });
 
+  it("an off-catalog line goes back with its own name — without it the server drops the line", async () => {
+    net.order = makeOrder({
+      items: [
+        {
+          product_id: "",
+          product_name: "הובלה מיוחדת",
+          description: "הובלה מיוחדת",
+          quantity_ordered: 1,
+          quantity_delivered: 0,
+          available_quantity: null,
+          unit_price: 100,
+          discount_amount: 0,
+          notes: "",
+        },
+      ],
+    });
+    await openOnItems();
+    await straightToReview();
+    await confirmDelivery();
+    expect(sentPayload().items[0]).toMatchObject({ product_id: "", description: "הובלה מיוחדת", quantity_delivered: 1 });
+  });
+
   it("an order already fully delivered can still be run through — for photos and notes", async () => {
     net.order = makeOrder({
       items: [
@@ -700,6 +723,7 @@ describe("quantities", () => {
       await confirmDelivery();
       expect(sentPayload().items[2]).toEqual({
         product_id: "p9",
+        description: "",
         quantity_ordered: 1,
         quantity_delivered: 1,
         unit_price: 8,
@@ -1455,9 +1479,10 @@ describe("confirming", () => {
       discount_amount: 0,
       notes: EXISTING_NOTE,
       items: [
-        { product_id: "p1", quantity_ordered: 2, quantity_delivered: 2, unit_price: 100, discount_amount: 0, notes: "" },
+        { product_id: "p1", description: "", quantity_ordered: 2, quantity_delivered: 2, unit_price: 100, discount_amount: 0, notes: "" },
         {
           product_id: "p2",
+          description: "",
           quantity_ordered: 3,
           quantity_delivered: 3,
           unit_price: 50,
