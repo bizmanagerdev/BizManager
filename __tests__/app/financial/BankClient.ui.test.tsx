@@ -182,6 +182,27 @@ describe("BankClient — נבדק מול הבנק", () => {
   });
 });
 
+// The page's checks (2026-10-28): nothing moves when a search starts, and an
+// empty register says so in the app's own "nothing here" box.
+describe("BankClient — searching and empty registers", () => {
+  it("what a search found is said over the register — under the account strip, so the strip doesn't move", () => {
+    render(<BankClient accounts={[business, home]} loans={[]} />);
+    const strip = screen.getByRole("button", { name: /מזרחי עסקי/, pressed: true }).closest("div.flex.gap-2");
+    fireEvent.change(screen.getByRole("textbox", { name: "חיפוש בתנועות החשבונות" }), { target: { value: "חשמל" } });
+    const summary = screen.getByText("נמצאה תנועה אחת במזרחי עסקי").parentElement!;
+    expect(strip).not.toBeNull();
+    // The summary comes after the strip on the page, not between it and the search box.
+    expect(strip!.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("an account with nothing on its register: the app's dashed \"nothing here\" box", () => {
+    const empty = account({ id: "acc4", name: "חדש", ledger: [] });
+    render(<BankClient accounts={[empty]} loans={[]} />);
+    const message = screen.getByText(/אין תנועות משויכות לחשבון זה עדיין/);
+    expect(message.closest(".border-dashed")).not.toBeNull();
+  });
+});
+
 // An account kept in US$ (2026-10-23): read in dollars, as its statement is,
 // with its shekels at today's rate; the total of the accounts in shekels.
 describe("BankClient — an account in US$", () => {

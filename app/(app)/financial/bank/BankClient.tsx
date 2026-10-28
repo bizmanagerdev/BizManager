@@ -35,6 +35,7 @@ import {
 import { NativeSelect } from "@/components/ui/native-select";
 import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
 import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
 import { useSetHeaderAction, useSetHeaderTrailingAction } from "@/components/layout/page-title-context";
@@ -318,7 +319,9 @@ function AccountSummaryCard({
       {searchCount !== null ? (
         <span
           className={cn(
-            "mx-2 mb-2 self-center rounded-full px-2 py-0.5 text-[0.688rem] font-medium tabular-nums",
+            // A transparent border: as tall as the "לא נבדקו" pill it stands
+            // in for, so the cards don't shrink as a search starts.
+            "mx-2 mb-2 self-center rounded-full border border-transparent px-2 py-0.5 text-[0.688rem] font-medium tabular-nums",
             searchCount > 0
               ? "bg-yellow-200/90 text-foreground dark:bg-yellow-500/35"
               : selected
@@ -1016,17 +1019,16 @@ export default function BankClient({
   if (accounts.length === 0) {
     return (
       <div className="space-y-4 text-right" dir="rtl">
-        <Card>
-          <CardContent className="space-y-3 py-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              עדיין לא הוגדרו חשבונות. הגדר חשבונות בנק וקופות מזומן עם יתרת פתיחה כדי לראות כאן את
-              היתרה העדכנית של כל אחד.
-            </p>
+        <EmptyState
+          action={
             <Button asChild>
               <Link href="/settings?tab=finance">להגדרת חשבונות</Link>
             </Button>
-          </CardContent>
-        </Card>
+          }
+        >
+          עדיין לא הוגדרו חשבונות. הגדר חשבונות בנק וקופות מזומן עם יתרת פתיחה כדי לראות כאן את
+          היתרה העדכנית של כל אחד.
+        </EmptyState>
       </div>
     );
   }
@@ -1157,22 +1159,6 @@ export default function BankClient({
             className="h-10 ps-9"
           />
         </div>
-        {accountSearch ? (
-          <div className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">
-              {foundCount === 1
-                ? `נמצאה תנועה אחת ב${selected.name}`
-                : foundCount > 0
-                  ? `נמצאו ${foundCount} תנועות ב${selected.name}`
-                  : `לא נמצאו תנועות ב${selected.name}`}
-            </span>
-            {/* The tick / month filter still applies on top of the search. */}
-            {foundCount < foundBeforeFilters ? ` (מתוך ${foundBeforeFilters} — לפי הסינון)` : null}
-            {foundElsewhere.length > 0
-              ? ` · ועוד ${foundElsewhere.reduce((sum, entry) => sum + entry.count, 0)} בחשבונות אחרים`
-              : null}
-          </div>
-        ) : null}
       </div>
       <div ref={stripRef} className="flex gap-2 overflow-x-auto pb-1">
         <DndContext
@@ -1223,6 +1209,25 @@ export default function BankClient({
         />
       </div>
 
+      {/* What the search found, said over the register it filters — not
+          under the search box, where its appearing moved the account strip
+          down as soon as a search began (2026-10-28, the page's checks). */}
+      {accountSearch ? (
+        <div className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {foundCount === 1
+              ? `נמצאה תנועה אחת ב${selected.name}`
+              : foundCount > 0
+                ? `נמצאו ${foundCount} תנועות ב${selected.name}`
+                : `לא נמצאו תנועות ב${selected.name}`}
+          </span>
+          {/* The tick / month filter still applies on top of the search. */}
+          {foundCount < foundBeforeFilters ? ` (מתוך ${foundBeforeFilters} — לפי הסינון)` : null}
+          {foundElsewhere.length > 0
+            ? ` · ועוד ${foundElsewhere.reduce((sum, entry) => sum + entry.count, 0)} בחשבונות אחרים`
+            : null}
+        </div>
+      ) : null}
       {/* Register for the selected account. Scrolls WITHIN this bounded
           container (not the page) — see registerScrollRef above. */}
       <Card>
@@ -1298,38 +1303,45 @@ export default function BankClient({
               </div>
             </div>
 
+            {/* The app's own "nothing here" box (EmptyState), as on every other
+                list — they were plain lines of text (2026-10-28, the page's checks). */}
             {actualLedger.length === 0 ? (
-              <div className="py-10 text-center text-sm text-muted-foreground">
+              <EmptyState dense className="m-3">
                 אין תנועות משויכות לחשבון זה עדיין. תנועות יופיעו כאן ברגע שתשייך תקבולים והוצאות
                 לחשבון.
-              </div>
+              </EmptyState>
             ) : groups.length === 0 && accountSearch ? (
-              <div className="space-y-3 py-10 text-center text-sm text-muted-foreground">
-                <div>לא נמצאו תנועות בחשבון הזה.</div>
-                {/* Found in another account: one tap opens it there. */}
-                {foundElsewhere.length > 0 ? (
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <span>נמצא ב:</span>
-                    {foundElsewhere.map(({ account, count }) => (
-                      <Button
-                        key={account.id}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => selectAccount(account.id)}
-                      >
-                        {account.name} · {count}
-                      </Button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+              <EmptyState
+                dense
+                className="m-3"
+                action={
+                  // Found in another account: one tap opens it there.
+                  foundElsewhere.length > 0 ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <span>נמצא ב:</span>
+                      {foundElsewhere.map(({ account, count }) => (
+                        <Button
+                          key={account.id}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => selectAccount(account.id)}
+                        >
+                          {account.name} · {count}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : undefined
+                }
+              >
+                לא נמצאו תנועות בחשבון הזה.
+              </EmptyState>
             ) : groups.length === 0 ? (
-              <div className="py-10 text-center text-sm text-muted-foreground">
+              <EmptyState dense className="m-3">
                 {activeFilter === "unchecked"
                   ? "כל התנועות כאן נבדקו מול הבנק."
                   : "עדיין לא סומנו כאן תנועות כנבדקות מול הבנק."}
-              </div>
+              </EmptyState>
             ) : (
               <div className="divide-y divide-border/60">
                 {groups.map((group, groupIndex) => {
