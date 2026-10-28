@@ -51,6 +51,14 @@ const KINDS: Record<string, { word: string; nameSql?: string }> = {
 /** Lines shown at most; the count stays exact. */
 const MAX_ROWS = 200;
 
+/** The name the list shows for a row (a task's subject, an order's customer), or null. */
+export async function rowName(db: CommonPowerSyncDatabase, table: string, id: string): Promise<string | null> {
+  const nameSql = KINDS[table]?.nameSql;
+  if (!nameSql) return null;
+  const found = await db.getOptional<{ name: string | null }>(nameSql, [id]).catch(() => null);
+  return found?.name?.trim() || null;
+}
+
 type CrudRow = { data: string };
 type CrudOp = { op?: string; type?: string; id?: string };
 
@@ -84,13 +92,8 @@ export async function readDeviceSavesWaiting(db: CommonPowerSyncDatabase): Promi
 
   const lines: DeviceSaveWaiting[] = [];
   for (const [key, entry] of byRow) {
-    const kind = KINDS[entry.table];
-    const word = kind?.word ?? "שינוי";
-    let name: string | null = null;
-    if (kind?.nameSql) {
-      const found = await db.getOptional<{ name: string | null }>(kind.nameSql, [entry.id]).catch(() => null);
-      name = found?.name?.trim() || null;
-    }
+    const word = KINDS[entry.table]?.word ?? "שינוי";
+    const name = await rowName(db, entry.table, entry.id);
     const change = entry.ops.has("DELETE") ? "removed" : entry.ops.has("PUT") ? "new" : "changed";
     lines.push({ key, label: name ? `${word}: ${name}` : word, change });
   }

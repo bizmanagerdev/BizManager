@@ -16,17 +16,34 @@ import {
 import { notifyAlertsChanged, resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { refreshAlerts } from "@/lib/ui/alerts-store";
 import { loadDraft, saveDraft } from "@/lib/offline-queue";
+import { useLocalDatabase } from "@/lib/powersync/store";
+import { retryParkedSaves } from "@/lib/powersync/connector";
+import {
+  DEVICE_SAVE_PARKED_EVENT,
+  PARKED_SAVE_SENT_EVENT,
+  PARKED_SAVES_RETRY_EVENT,
+  type DeviceSaveParked,
+  type ParkedSaveSent,
+} from "@/lib/powersync/parked-saves";
 
 // What the saves made on the device copy (lib/powersync/local-writes.ts) tell
 // the person, wherever they are in the app:
 // - the server refused one (not allowed, invalid): a toast with its reason —
 //   the change itself is undone by the next sync; a refused new order is put
 //   back as the order form's draft, so nothing typed is lost;
+// - the server kept failing one: it's parked on the phone to be sent again
+//   (lib/powersync/parked-saves.ts) — a toast says so, and another when it has
+//   gone up. This sends the parked ones again: soon after the app opens, every
+//   few minutes, when the connection comes back, when the app is looked at
+//   again, and when the waiting list asks (its "שלח עכשיו");
 // - one reached the server: a page the server draws (a project's page, the
 //   inbox…) reloads its data, since it doesn't read the copy. Pages drawn from
 //   the copy (they carry DeviceFrameMark's data-device-page) show it already.
 
 const REFRESH_AFTER_MS = 400;
+/** Parked saves sent again this long after the app opens, then this often. */
+const PARKED_FIRST_RETRY_MS = 5_000;
+const PARKED_RETRY_MS = 3 * 60_000;
 
 /** The new-order form's two drafts (the page, the + menu). */
 const ORDER_DRAFT_KEYS = ["order-create", "quick-create-order"];
@@ -47,6 +64,47 @@ function keepAsDraft(key: string, draft: unknown): boolean {
 
 export default function DeviceSaveNotices({ locale }: { locale: Locale }) {
   const router = useRouter();
+  const db = useLocalDatabase();
+
+  useEffect(() => {
+    if (!db) return;
+    const retry = () => void retryParkedSaves(db).catch(() => {});
+    const onVisible = () => {
+      if (document.visibilityState === "visible") retry();
+    };
+    const first = window.setTimeout(retry, PARKED_FIRST_RETRY_MS);
+    const timer = window.setInterval(retry, PARKED_RETRY_MS);
+    window.addEventListener("online", retry);
+    window.addEventListener(PARKED_SAVES_RETRY_EVENT, retry);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+      window.removeEventListener("online", retry);
+      window.removeEventListener(PARKED_SAVES_RETRY_EVENT, retry);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [db]);
+
+  useEffect(() => {
+    const onParked = (event: Event) => {
+      const { label } = (event as CustomEvent<DeviceSaveParked>).detail;
+      toast.warning("השרת לא ענה — השמירה ממתינה בטלפון", {
+        description: `${label}. היא תישלח שוב לבד; אפשר לראות אותה ב"פרטים" בפס שלמעלה.`,
+        duration: 10_000,
+      });
+    };
+    const onParkedSent = (event: Event) => {
+      const { label } = (event as CustomEvent<ParkedSaveSent>).detail;
+      toast.success("השמירה שהמתינה בטלפון הגיעה לשרת", { description: label });
+    };
+    window.addEventListener(DEVICE_SAVE_PARKED_EVENT, onParked);
+    window.addEventListener(PARKED_SAVE_SENT_EVENT, onParkedSent);
+    return () => {
+      window.removeEventListener(DEVICE_SAVE_PARKED_EVENT, onParked);
+      window.removeEventListener(PARKED_SAVE_SENT_EVENT, onParkedSent);
+    };
+  }, []);
 
   useEffect(() => {
     const titles: Record<DeviceSaveKind, string> = {

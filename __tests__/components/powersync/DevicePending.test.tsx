@@ -14,6 +14,7 @@ vi.mock("@/lib/powersync/store", () => ({
   useSyncBlocked: () => device.blocked,
   registerLocalDataWipe: () => {},
   setLocalViewer: () => {},
+  useLocalDatabase: () => null,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 vi.mock("@/lib/powersync/database", () => ({

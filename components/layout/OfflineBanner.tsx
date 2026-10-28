@@ -5,6 +5,7 @@ import { OfflineIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import PendingSyncPanel from "@/components/layout/PendingSyncPanel";
 import { useDeviceSavesWaiting } from "@/lib/powersync/device-saves-waiting";
+import { requestParkedRetry, useParkedSaves } from "@/lib/powersync/parked-saves";
 import { cn } from "@/lib/utils";
 
 export default function OfflineBanner() {
@@ -22,7 +23,11 @@ export default function OfflineBanner() {
   // wait in a queue of their own. With a connection they leave within moments,
   // so online they count only once they've been stuck a while.
   const deviceSaves = useDeviceSavesWaiting();
-  const waitingCount = queueLength + (!isOnline || deviceSaves.stuck ? deviceSaves.count : 0);
+  // Saves the server kept failing, parked on the phone to be sent again
+  // (lib/powersync/parked-saves.ts): waiting, whatever the connection.
+  const parked = useParkedSaves();
+  const waitingCount =
+    queueLength + (!isOnline || deviceSaves.stuck ? deviceSaves.count : 0) + parked.length;
 
   if (isOnline && waitingCount === 0 && failedLength === 0) return null;
 
@@ -60,10 +65,13 @@ export default function OfflineBanner() {
             >
               פרטים
             </button>
-            {isOnline && queueLength > 0 && (
+            {isOnline && (queueLength > 0 || parked.length > 0) && (
               <button
                 type="button"
-                onClick={() => void processQueue()}
+                onClick={() => {
+                  if (queueLength > 0) void processQueue();
+                  if (parked.length > 0) requestParkedRetry();
+                }}
                 disabled={isProcessing}
                 className="flex items-center gap-1.5 rounded bg-warning px-2 py-1 text-xs text-warning-foreground hover:opacity-90 disabled:opacity-60"
               >

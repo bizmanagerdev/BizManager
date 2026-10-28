@@ -14,6 +14,18 @@ import {
   type DeviceSaveRequest,
   type DeviceSaveSent,
 } from "./local-writes";
+import { rowName } from "./device-saves-waiting";
+import {
+  announceParked,
+  announceParkedSent,
+  hasParkedFor,
+  listParkedSaves,
+  noteParkedTry,
+  parkedLabel,
+  parkSave,
+  removeParkedSave,
+  reportParked,
+} from "./parked-saves";
 
 // How the device copy talks to the outside world:
 // - downloads: PowerSync checks the person's Supabase login token (its
@@ -30,16 +42,28 @@ import {
 const REFRESH_WITHIN_MS = 60_000;
 
 /**
- * A change the server keeps failing (an outage, a bug) is dropped after this
- * many tries: while anything is waiting to go up, PowerSync holds back what
- * comes down, so one stuck change would freeze the whole copy.
+ * A change the server keeps failing (an outage, a bug) is parked once it has
+ * failed for this long (lib/powersync/parked-saves.ts), to be sent again from
+ * there: while anything is waiting to go up, PowerSync holds back what comes
+ * down, so one stuck change would freeze the whole copy. Until then PowerSync
+ * tries it again every few seconds. It used to be dropped after 6 tries (~30 s).
  */
-const MAX_TRIES = 6;
+export const PARK_AFTER_MS = 2 * 60_000;
 
-/** Try again later. `counts`: a server failure (counted toward MAX_TRIES) — not just no connection. */
+/** Try again later. `counts`: a server failure (it counts toward PARK_AFTER_MS) — not just no connection. */
 class RetryLater extends Error {
   constructor(message: string, readonly counts: boolean) {
     super(message);
+  }
+}
+
+/** After a 401: a fresh login token, if one can be had (the cookie the routes read is updated with it). */
+async function refreshedLogin(): Promise<boolean> {
+  try {
+    const { data, error } = await createSupabaseBrowserClient().auth.refreshSession();
+    return !error && Boolean(data.session);
+  } catch {
+    return false;
   }
 }
 
@@ -64,11 +88,17 @@ function announceSent(detail: DeviceSaveSent) {
 }
 
 /**
- * Send one change; throws RetryLater when it should be tried again. `key`: the
- * change's own Idempotency-Key. `restore`: a new order's form, put back as its
- * draft if it's refused.
+ * Send one change: "sent", or "refused" (dropped, and said why); throws
+ * RetryLater when it should be tried again. `key`: the change's own
+ * Idempotency-Key. `restore`: a new order's form, put back as its draft if
+ * it's refused.
  */
-async function send(request: DeviceSaveRequest, key: string, restore: OrderRestore | null): Promise<void> {
+async function send(
+  request: DeviceSaveRequest,
+  key: string,
+  restore: OrderRestore | null,
+  loginRefreshed = false
+): Promise<"sent" | "refused"> {
   let res: Response;
   try {
     res = await fetch(request.url, {
@@ -81,10 +111,13 @@ async function send(request: DeviceSaveRequest, key: string, restore: OrderResto
     // No signal: it waits as long as it takes (never dropped for this).
     throw new RetryLater("no connection", false);
   }
-  if (res.ok) return;
+  if (res.ok) return "sent";
   // Deleting something that's already gone did what it was meant to.
-  if (goneIsDone(request.kind) && res.status === 404) return;
-  // Signed out for a moment, overloaded, or the server itself failing: later.
+  if (goneIsDone(request.kind) && res.status === 404) return "sent";
+  // The login ran out (a phone woken after a while): a fresh one, and the same
+  // change again at once — not a failure.
+  if (res.status === 401 && !loginRefreshed && (await refreshedLogin())) return send(request, key, restore, true);
+  // Signed out, overloaded, or the server itself failing: later.
   if (res.status === 401 || res.status === 408 || res.status === 429 || res.status >= 500) {
     throw new RetryLater(`HTTP ${res.status}`, true);
   }
@@ -94,12 +127,50 @@ async function send(request: DeviceSaveRequest, key: string, restore: OrderResto
   const message = typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
   announceRefusal({ kind: request.kind, message, ...(restore ? { restore } : {}) });
   reportDropped(request, "refused", { status: res.status, message });
+  return "refused";
+}
+
+let retrying: Promise<void> | null = null;
+
+/**
+ * Send the parked saves again, oldest first (lib/powersync/parked-saves.ts).
+ * One that goes up, or is refused, leaves the list; one that still can't waits
+ * on, and the later saves of its row wait behind it. With no connection the
+ * rest wait too. One run at a time.
+ */
+export function retryParkedSaves(database: CommonPowerSyncDatabase): Promise<void> {
+  retrying ??= (async () => {
+    try {
+      const stuckRows = new Set<string>();
+      for (const save of await listParkedSaves(database)) {
+        const row = `${save.table}:${save.rowId}`;
+        if (stuckRows.has(row)) continue;
+        try {
+          const result = await send(save.request, save.key, save.restore);
+          await removeParkedSave(database, save.id);
+          announceSent({ kind: save.request.kind, id: save.rowId });
+          if (result === "sent") {
+            announceParkedSent({ kind: save.request.kind, label: save.label });
+            reportParked("went up", save, { tries: save.tries + 1 });
+          }
+        } catch (error) {
+          if (!(error instanceof RetryLater)) throw error;
+          await noteParkedTry(database, save.id, error.message);
+          if (!error.counts) return;
+          stuckRows.add(row);
+        }
+      }
+    } finally {
+      retrying = null;
+    }
+  })();
+  return retrying;
 }
 
 export class BizConnector implements PowerSyncBackendConnector {
-  /** Failed tries per queued change (its clientId), for MAX_TRIES. */
-  private tries = new Map<number, number>();
-  /** Changes already sent from a batch that's being retried — not sent twice. */
+  /** When each queued change (its clientId) started failing on the server, for PARK_AFTER_MS. */
+  private failingSince = new Map<number, number>();
+  /** Changes already sent or parked from a batch that's being retried — not handled twice. */
   private sent = new Set<number>();
 
   async fetchCredentials(): Promise<PowerSyncCredentials | null> {
@@ -138,24 +209,41 @@ export class BizConnector implements PowerSyncBackendConnector {
         reportDropped(null, "no route for this change", { table: op.table, op: op.op });
         continue;
       }
+      // The row's id and the change's place in this device's queue: the same
+      // change always carries the same key, two changes never share one.
+      const key = `ps:${op.table}:${op.id}:${op.op}:${op.clientId}`;
+      const restore = restoreForChange(op);
+      const park = async (reason: string) => {
+        const label = parkedLabel(request.kind, await rowName(database, op.table, op.id));
+        await parkSave(database, { table: op.table, rowId: op.id, request, key, restore, label, error: reason });
+        this.sent.add(op.clientId);
+        announceParked({ kind: request.kind, label });
+        reportParked("parked", { request }, { reason });
+      };
+      // A save of this row is waiting already: this one waits behind it, so
+      // an older change never lands on top of a newer one.
+      if (await hasParkedFor(database, op.table, op.id)) {
+        await park("behind an earlier save of the same row");
+        continue;
+      }
       try {
-        // The row's id and the change's place in this device's queue: the same
-        // change always carries the same key, two changes never share one.
-        await send(request, `ps:${op.table}:${op.id}:${op.op}:${op.clientId}`, restoreForChange(op));
-        this.tries.delete(op.clientId);
+        await send(request, key, restore);
+        this.failingSince.delete(op.clientId);
         this.sent.add(op.clientId);
         announceSent({ kind: request.kind, id: op.id });
       } catch (error) {
         if (!(error instanceof RetryLater)) throw error;
-        if (!error.counts) throw error;
-        const tries = (this.tries.get(op.clientId) ?? 0) + 1;
-        this.tries.set(op.clientId, tries);
+        // No signal: it waits as long as it takes (the clock starts again once it's back).
+        if (!error.counts) {
+          this.failingSince.delete(op.clientId);
+          throw error;
+        }
+        const since = this.failingSince.get(op.clientId) ?? Date.now();
+        this.failingSince.set(op.clientId, since);
         // PowerSync calls uploadData again shortly — the same change, from here.
-        if (tries < MAX_TRIES) throw error;
-        this.tries.delete(op.clientId);
-        const restore = restoreForChange(op);
-        announceRefusal({ kind: request.kind, message: error.message, ...(restore ? { restore } : {}) });
-        reportDropped(request, "kept failing", { tries, last: error.message });
+        if (Date.now() - since < PARK_AFTER_MS) throw error;
+        this.failingSince.delete(op.clientId);
+        await park(error.message);
       }
     }
     await transaction.complete();

@@ -853,7 +853,35 @@ const account_ledger_checks = new Table({
   _extras: text,
 });
 
+/**
+ * Saves the server kept failing, kept on the phone to send again
+ * (lib/powersync/parked-saves.ts). Local only: never synced, never queued
+ * for upload, gone with the copy at logout.
+ */
+const parked_saves = new Table(
+  {
+    /** The row the save was for (table and id), so a later save of it waits behind this one. */
+    tbl: text,
+    row_id: text,
+    kind: text,
+    /** The request as it would have gone up (JSON), with its Idempotency-Key. */
+    request: text,
+    idem_key: text,
+    /** A new order's form, put back as its draft if the server refuses it (JSON). */
+    restore: text,
+    label: text,
+    /** Their order on this phone: sent again oldest first. */
+    seq: int,
+    parked_at: text,
+    tries: int,
+    last_error: text,
+    last_try_at: text,
+  },
+  { localOnly: true, indexes: { by_row: ["tbl", "row_id"] } }
+);
+
 export const AppSchema = new Schema({
+  parked_saves,
   users,
   user_directory,
   property_directory,

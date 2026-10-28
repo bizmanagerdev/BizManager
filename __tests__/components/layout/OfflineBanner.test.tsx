@@ -8,7 +8,12 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 // server answers again, what waits is sent — without the device ever having
 // said it was offline.
 
-const h = vi.hoisted(() => ({ up: true, processQueue: vi.fn(async () => ({ processed: 0, failed: 0 })) }));
+const h = vi.hoisted(() => ({
+  up: true,
+  processQueue: vi.fn(async () => ({ processed: 0, failed: 0 })),
+  parked: [] as { id: string }[],
+  requestParkedRetry: vi.fn(),
+}));
 vi.mock("@/lib/pwa/connection", () => ({ useServerReachable: () => h.up }));
 vi.mock("@/lib/offline-queue", () => ({
   getQueueLength: () => 0,
@@ -26,6 +31,10 @@ vi.mock("@/lib/offline-upload", () => ({
   clearFailedUploads: async () => {},
 }));
 vi.mock("@/lib/powersync/device-saves-waiting", () => ({ useDeviceSavesWaiting: () => ({ count: 0, stuck: false }) }));
+vi.mock("@/lib/powersync/parked-saves", () => ({
+  useParkedSaves: () => h.parked,
+  requestParkedRetry: h.requestParkedRetry,
+}));
 vi.mock("@/components/layout/PendingSyncPanel", () => ({ default: () => null }));
 
 import OfflineBanner from "@/components/layout/OfflineBanner";
@@ -33,6 +42,8 @@ import OfflineBanner from "@/components/layout/OfflineBanner";
 afterEach(() => {
   cleanup();
   h.processQueue.mockClear();
+  h.requestParkedRetry.mockClear();
+  h.parked = [];
 });
 
 describe("the no-connection bar", () => {
@@ -54,5 +65,18 @@ describe("the no-connection bar", () => {
     rerender(<OfflineBanner />);
     expect(screen.queryByText(/אין חיבור לאינטרנט/)).toBeNull();
     expect(h.processQueue).toHaveBeenCalled();
+  });
+});
+
+describe("saves the server kept failing, parked on the phone", () => {
+  it("count as waiting while the server answers, and 'שלח עכשיו' sends them again", async () => {
+    h.up = true;
+    h.parked = [{ id: "p1" }, { id: "p2" }];
+    render(<OfflineBanner />);
+    expect(screen.getByText("2 פעולות ממתינות לשליחה")).toBeTruthy();
+    // The send tried as the page opened has finished (the button says "שולח..." until then).
+    const button = await screen.findByRole("button", { name: "שלח עכשיו" });
+    act(() => button.click());
+    expect(h.requestParkedRetry).toHaveBeenCalledTimes(1);
   });
 });

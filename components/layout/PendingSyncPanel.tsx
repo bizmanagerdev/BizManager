@@ -23,9 +23,17 @@ import {
   type UploadEntry,
 } from "@/lib/offline-upload";
 import { ViewDialog } from "@/components/ui/view-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useLocalDatabase } from "@/lib/powersync/store";
 import { formatTimeOnly } from "@/lib/date";
 import { readDeviceSavesWaiting, type DeviceSaveWaiting } from "@/lib/powersync/device-saves-waiting";
+import {
+  removeParkedSave,
+  reportParked,
+  requestParkedRetry,
+  useParkedSaves,
+  type ParkedSave,
+} from "@/lib/powersync/parked-saves";
 
 const DEVICE_CHANGE_WORD: Record<DeviceSaveWaiting["change"], string> = {
   new: "חדש",
@@ -70,7 +78,9 @@ const EMPTY: Snapshot = { pendingWrites: [], pendingUploads: [], failedWrites: [
  * anything that permanently failed), instead of only a count in the banner.
  * Every kind: the offline queue, files, and the saves made on the phone's own
  * copy (tasks and the rest — lib/powersync/device-saves-waiting.ts), which
- * PowerSync sends by itself once the connection is back.
+ * PowerSync sends by itself once the connection is back — and those of them
+ * the server kept failing, parked on the phone and sent again by themselves
+ * (lib/powersync/parked-saves.ts): here they can be sent now, or removed.
  */
 export default function PendingSyncPanel({
   open,
@@ -82,6 +92,8 @@ export default function PendingSyncPanel({
   const [snap, setSnap] = useState<Snapshot>(EMPTY);
   const localDb = useLocalDatabase();
   const [deviceSaves, setDeviceSaves] = useState<DeviceSaveWaiting[]>([]);
+  const parked = useParkedSaves();
+  const [removing, setRemoving] = useState<ParkedSave | null>(null);
 
   // The phone-copy part: read when the list opens, then again every few
   // seconds — its queue raises no event of its own.
@@ -138,10 +150,11 @@ export default function PendingSyncPanel({
     });
   }, []);
 
-  const pendingCount = snap.pendingWrites.length + snap.pendingUploads.length + deviceSaves.length;
+  const pendingCount = snap.pendingWrites.length + snap.pendingUploads.length + deviceSaves.length + parked.length;
   const failedCount = snap.failedWrites.length + snap.failedUploads.length;
 
   return (
+    <>
     <ViewDialog
       open={open}
       onOpenChange={onOpenChange}
@@ -170,6 +183,15 @@ export default function PendingSyncPanel({
             ))}
             {deviceSaves.map((line) => (
               <Row key={line.key} label={line.label} meta={`${DEVICE_CHANGE_WORD[line.change]} · נשמר בטלפון, יישלח לבד`} />
+            ))}
+            {parked.map((save) => (
+              <Row
+                key={save.id}
+                label={save.label}
+                meta={`השרת לא ענה · נשמר ${formatTime(Date.parse(save.parkedAt))} · יישלח שוב לבד`}
+                onRetry={requestParkedRetry}
+                onDiscard={() => setRemoving(save)}
+              />
             ))}
           </div>
         ) : null}
@@ -208,6 +230,25 @@ export default function PendingSyncPanel({
           </div>
         ) : null}
     </ViewDialog>
+    <ConfirmDialog
+      open={removing !== null}
+      onOpenChange={(next) => {
+        if (!next) setRemoving(null);
+      }}
+      title="להסיר את השמירה מהרשימה?"
+      description="היא לא תגיע לשרת. המסך ימשיך להציג את מה ששמור בשרת."
+      confirmLabel="הסרה"
+      destructive
+      onConfirm={() => {
+        const save = removing;
+        setRemoving(null);
+        if (!save || !localDb) return;
+        void removeParkedSave(localDb, save.id).then(() => reportParked("removed", save, { tries: save.tries }));
+      }}
+    >
+      {removing ? <p className="text-sm font-medium">{removing.label}</p> : null}
+    </ConfirmDialog>
+    </>
   );
 }
 
@@ -241,7 +282,7 @@ function Row({
         <div className="text-sm font-medium">{label || "פעולה"}</div>
         <div className={`text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}>{meta}</div>
       </div>
-      {failed ? (
+      {failed || onRetry || onDiscard ? (
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"

@@ -4,13 +4,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Instant saves: a task moved, reordered or deleted on the device copy is sent
 // through the same API route the board used before. No signal: it waits
 // (never dropped for that). Refused by the server: dropped, and the page is
-// told. A server that keeps failing: dropped after a few tries (a stuck
-// change would hold back everything coming down).
+// told. A server that keeps failing: parked on the phone after a while, to be
+// sent again from there (a stuck change would hold back everything coming
+// down) — __tests__/lib/powersync/connector-parking.test.ts has the rest.
 
 vi.mock("@/lib/supabase/client", () => ({ createSupabaseBrowserClient: () => ({ auth: {} }) }));
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: () => {} }));
 
-import { BizConnector } from "@/lib/powersync/connector";
+import { BizConnector, PARK_AFTER_MS } from "@/lib/powersync/connector";
 import { DEVICE_SAVE_REFUSED_EVENT, deleteTaskOnDevice, moveTaskOnDevice, requestForChange } from "@/lib/powersync/local-writes";
 
 type Op = { clientId: number; table: string; op: string; id: string; opData?: Record<string, unknown> };
@@ -21,7 +22,9 @@ function fakeDatabase(ops: Op[], status: string | null = "in_progress") {
     transaction,
     db: {
       getNextCrudTransaction: vi.fn(async () => (ops.length ? transaction : null)),
-      getOptional: vi.fn(async () => (status === null ? null : { status })),
+      // The task as it stands on the device; nothing parked (lib/powersync/parked-saves.ts).
+      getOptional: vi.fn(async (sql: string) => (sql.includes("parked_saves") || status === null ? null : { status })),
+      execute: vi.fn(async () => ({})),
     } as unknown as Parameters<BizConnector["uploadData"]>[0],
   };
 }
@@ -192,14 +195,22 @@ describe("device saves", () => {
     expect(refused).toEqual([{ kind: "task-status", message: "אין הרשאה" }]);
   });
 
-  it("a server that keeps failing: dropped after six tries, so nothing stays stuck", async () => {
-    fetchMock.mockResolvedValue(new Response("{}", { status: 500 }));
-    const connector = new BizConnector();
-    const { db, transaction } = fakeDatabase([{ clientId: 7, table: "tasks", op: "PATCH", id: "t1", opData: { status: "done" } }]);
-    for (let i = 0; i < 5; i += 1) await expect(connector.uploadData(db)).rejects.toThrow("HTTP 500");
-    await connector.uploadData(db);
-    expect(transaction.complete).toHaveBeenCalledTimes(1);
-    expect(refused).toHaveLength(1);
+  it("a server that keeps failing: parked on the phone after 2 minutes, not dropped, so nothing stays stuck", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      fetchMock.mockResolvedValue(new Response("{}", { status: 500 }));
+      const connector = new BizConnector();
+      const { db, transaction } = fakeDatabase([{ clientId: 7, table: "tasks", op: "PATCH", id: "t1", opData: { status: "done" } }]);
+      for (let i = 0; i < 6; i += 1) await expect(connector.uploadData(db)).rejects.toThrow("HTTP 500");
+      vi.setSystemTime(Date.now() + PARK_AFTER_MS);
+      await connector.uploadData(db);
+      expect(transaction.complete).toHaveBeenCalledTimes(1);
+      expect(refused).toEqual([]);
+      const execute = (db as unknown as { execute: ReturnType<typeof vi.fn> }).execute;
+      expect(execute.mock.calls[0][0]).toMatch(/^INSERT INTO parked_saves/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("deleting a task that's already gone counts as done; a batch retried never sends a change twice", async () => {
