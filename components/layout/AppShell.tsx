@@ -10,6 +10,7 @@ import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress
 import OfflineBanner from "@/components/layout/OfflineBanner";
 import DriveBar from "@/components/layout/DriveBar";
 import SavedCopyNotice from "@/components/layout/SavedCopyNotice";
+import OfflinePageGate from "@/components/pwa/OfflinePageGate";
 import ConnectionToasts from "@/components/layout/ConnectionToasts";
 import AuthLockToasts from "@/components/layout/AuthLockToasts";
 import UndoHotkeyListener from "@/components/layout/UndoHotkeyListener";
@@ -198,7 +199,7 @@ export default function AppShell({
                   of it full-bleed uses -mx-3 to match — keep the two in step, or
                   the page overflows sideways. */}
               <div className="mx-auto w-full max-w-[1600px] px-3 py-4 pb-24 md:p-6 md:pb-6 lg:p-8 lg:pb-8">
-                {children}
+                <OfflinePageGate>{children}</OfflinePageGate>
               </div>
             </main>
             {bottom.length > 0 && (

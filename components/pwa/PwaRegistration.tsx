@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { processQueue } from "@/lib/offline-queue";
 import { processUploadQueue } from "@/lib/offline-upload";
 import { dropDeviceFrame } from "@/lib/powersync/device-frames";
 import { emitNavigationContentShown } from "@/components/layout/TopNavigationProgress";
 import { noteOffline, savedPagesNow, sendOfflineReport } from "@/lib/pwa/offline-report";
-import { useServerReachable, watchConnection } from "@/lib/pwa/connection";
+import { isServerReachable, useServerReachable, watchConnection } from "@/lib/pwa/connection";
+import { markPageNotOnDevice, pageNotOnDevice } from "@/lib/pwa/page-not-on-device";
+import { OPENS_HERE_ATTRIBUTE } from "@/lib/tasks/open-task-here";
 import { RUNNING_BUILD, isNewerBuild, liveBuild, mayReloadFrom, noteReloadFrom, swBuildOf } from "@/lib/pwa/app-version";
 
 // A resumed PWA/installed-app instance (tapping the home-screen icon, not a
@@ -25,14 +26,104 @@ import { RUNNING_BUILD, isNewerBuild, liveBuild, mayReloadFrom, noteReloadFrom, 
 const RESUME_REVALIDATE_MS = 5 * 60 * 1000;
 
 // Moving inside the app to a page with no saved copy, with no connection: the
-// service worker keeps this page on screen and says which page it was
-// (public/sw.js, tellNotSaved). Next.js gave up on the move by then and waits
-// for a whole-page load that isn't coming — the same address in the history
-// again settles it, so the page carries on (owner, 2026-10-24: "the whole app
-// basically crashed").
+// page opens anyway and says in its place that its data isn't on the device
+// (OfflinePageGate) — the menu and the red bar stay, the next page a tap away
+// (owner, 2026-10-28: "Spotify style"; staying put with a notice, the way since
+// 2026-10-24, was "more frustrating than coming to that page and seeing it
+// offline").
+//
+// With no connection a tap asks the service worker first whether the page
+// opens from the device (public/sw.js, CAN_OPEN_OFFLINE): yes — the move goes
+// on as usual; no — the app opens it as not on the device itself, and Next.js
+// never starts a move it can't finish. Started anyway, that move ends in a
+// whole-page load the service worker answers with nothing (a 204): Next.js
+// 16.4 then waited on it for good, and putting the page's address in the
+// history froze the page (the offline e2e test, 2026-10-28).
+/** How long a tap waits for the service worker's answer before moving as usual. */
+const ASK_TIMEOUT_MS = 1500;
 const SETTLE_AFTER_MS = 300;
 let settleTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** The app's router, for a move a tap held back (set by PwaRegistration). */
+let appRouter: { push: (href: string) => void } | null = null;
+
+function addressOf(url: { pathname: string; search: string }): string {
+  return url.pathname + url.search;
+}
+
+/** Does this page open from the device? The service worker's own answer — not sure: yes. */
+function canOpenOffline(href: string): Promise<boolean> {
+  const worker = navigator.serviceWorker?.controller;
+  if (!worker) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(true), ASK_TIMEOUT_MS);
+    channel.port1.onmessage = (event: MessageEvent) => {
+      clearTimeout(timer);
+      resolve((event.data as { saved?: boolean } | null)?.saved !== false);
+    };
+    worker.postMessage({ type: "CAN_OPEN_OFFLINE", url: href }, [channel.port2]);
+  });
+}
+
+/** What the device had saved when a page wasn't, for the report sent once the connection is back (lib/pwa/offline-report.ts). */
+function noteNotSaved(address: string) {
+  void savedPagesNow().then((saved) =>
+    noteOffline("page not saved", {
+      url: address,
+      worker: navigator.serviceWorker?.controller?.scriptURL ?? null,
+      // As text: Sentry cuts lists this deep to "[Array]" (the first report, 2026-10-27).
+      frames: saved.frames.join(" · "),
+      pages: saved.pages.join(" · "),
+    })
+  );
+}
+
+/** Opens `address` as not on the device: its address, with the word in its place (OfflinePageGate). */
+function openNotOnDevice(address: string) {
+  markPageNotOnDevice(address);
+  // The loading bar started with the tap: there's nothing to wait for.
+  emitNavigationContentShown();
+  window.history.pushState(null, "", address);
+  noteNotSaved(address);
+}
+
+/** A tap on a link inside the app — capture phase, before Next.js moves. */
+function onAppTap(event: MouseEvent) {
+  const anchor = (event.target as Element | null)?.closest?.("a");
+  if (!anchor?.href || (anchor.target && anchor.target !== "_self")) return;
+  let to: URL;
+  try {
+    to = new URL(anchor.href);
+  } catch {
+    return;
+  }
+  const address = addressOf(to);
+  if (to.origin !== window.location.origin || address === addressOf(window.location)) return;
+  // On to another page: the one that wasn't on the device is left behind.
+  if (pageNotOnDevice() !== address) markPageNotOnDevice(null);
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    return;
+  }
+  // Not a move: a download, or a task row that opens its task right here.
+  if (anchor.hasAttribute("download") || anchor.hasAttribute(OPENS_HERE_ATTRIBUTE)) return;
+  if (isServerReachable() || !navigator.serviceWorker?.controller) return;
+  // Held until the service worker answers — a link skips a tap already prevented.
+  event.preventDefault();
+  void canOpenOffline(to.href).then((opens) => {
+    if (!opens) openNotOnDevice(address);
+    else if (appRouter) appRouter.push(address);
+    else window.location.assign(address);
+  });
+}
+
+/**
+ * The service worker answered a move "not saved" (tellNotSaved) — a tap made
+ * before the app knew the connection was gone, or a page changing its own
+ * address. Next.js waits for a whole-page load that isn't coming: the same
+ * address in the history again settles it, the page on screen staying as it
+ * is; the next tap is asked first (onAppTap).
+ */
 function pageNotSaved(href: unknown) {
   if (typeof href !== "string" || document.visibilityState !== "visible") return;
   let target: URL;
@@ -41,24 +132,9 @@ function pageNotSaved(href: unknown) {
   } catch {
     return;
   }
-  // The page on screen itself (refreshed): nothing moved.
-  if (target.pathname + target.search === window.location.pathname + window.location.search) return;
-  toast.info("הדף הזה לא שמור במכשיר — ייפתח כשיחזור החיבור", { id: "page-not-saved" });
-  // The loading bar was waiting for the move: it's over.
-  emitNavigationContentShown();
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => window.history.replaceState(null, "", window.location.href), SETTLE_AFTER_MS);
-  // What the device had saved at that moment, for the report sent once the
-  // connection is back (lib/pwa/offline-report.ts).
-  void savedPagesNow().then((saved) =>
-    noteOffline("page not saved", {
-      url: target.pathname + target.search,
-      worker: navigator.serviceWorker?.controller?.scriptURL ?? null,
-      // As text: Sentry cuts lists this deep to "[Array]" (the first report, 2026-10-27).
-      frames: saved.frames.join(" · "),
-      pages: saved.pages.join(" · "),
-    })
-  );
+  if (addressOf(target) !== addressOf(window.location)) noteNotSaved(addressOf(target));
 }
 
 export default function PwaRegistration() {
@@ -73,6 +149,13 @@ export default function PwaRegistration() {
   // (lib/pwa/connection.ts). Each time it does again (and when the app opens),
   // what went wrong with no connection is sent (lib/pwa/offline-report.ts).
   useEffect(() => watchConnection(), []);
+  // For a move a tap held back with no connection (onAppTap).
+  useEffect(() => {
+    appRouter = router;
+    return () => {
+      if (appRouter === router) appRouter = null;
+    };
+  }, [router]);
   const reachable = useServerReachable();
   useEffect(() => {
     if (reachable) sendOfflineReport();
@@ -204,7 +287,7 @@ export default function PwaRegistration() {
       }
     };
     navigator.serviceWorker.addEventListener("message", handleMessage);
-
+    window.addEventListener("click", onAppTap, true);
 
     // Re-validate when the app comes back to the foreground after sitting
     // backgrounded — a resumed instance otherwise never re-checks anything
@@ -249,6 +332,7 @@ export default function PwaRegistration() {
 
     return () => {
       navigator.serviceWorker.removeEventListener("message", handleMessage);
+      window.removeEventListener("click", onAppTap, true);
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };

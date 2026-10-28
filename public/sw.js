@@ -774,6 +774,17 @@ self.addEventListener("message", (event) => {
   } else if (data.type === "SAVE_APP_CODE" && data.build === V) {
     // A page of this version only: another's list is another's code.
     event.waitUntil(saveAppCode(typeof data.dpl === "string" ? data.dpl : ""));
+  } else if (data.type === "CAN_OPEN_OFFLINE" && typeof data.url === "string" && event.ports[0]) {
+    // Asked by a tap with no connection (components/pwa/PwaRegistration):
+    // does this page open from the device? The same answer a move there
+    // would get. Not sure: yes, and the move goes on as usual.
+    const port = event.ports[0];
+    event.waitUntil(
+      savedCopyOf(new URL(data.url, self.location.origin).href).then(
+        (saved) => port.postMessage({ saved: Boolean(saved) }),
+        () => port.postMessage({ saved: true })
+      )
+    );
   }
 });
 
@@ -815,9 +826,12 @@ async function tellNotSaved(href, { clientId, from } = {}) {
   }
 }
 
+// Any value: Next.js 16.4 marks some of its fetches ahead "2" and "3" — read
+// as moves, each one failing with no connection told the page "not saved"
+// (the offline e2e test, 2026-10-28: the sales tabs).
 function isPrefetch(request) {
   return (
-    request.headers.get("Next-Router-Prefetch") === "1" || request.headers.get("Next-Router-Segment-Prefetch") !== null
+    request.headers.get("Next-Router-Prefetch") !== null || request.headers.get("Next-Router-Segment-Prefetch") !== null
   );
 }
 
@@ -1017,8 +1031,10 @@ self.addEventListener("fetch", (event) => {
           })
           .catch(() => {});
 
-        // Moved to inside the app, and not saved: stay on the page you're on —
-        // a 204 leaves it as it is — and say why (see tellNotSaved).
+        // Moved to inside the app, and not saved: a 204 leaves the page as it
+        // is, and the app, told which page it was (see tellNotSaved), opens it
+        // with a word in its place that its data isn't on the device
+        // (components/pwa/OfflinePageGate).
         if (!saved && isInAppMove(request)) {
           try {
             event.waitUntil(tellNotSaved(url.href, { from: request.referrer }));

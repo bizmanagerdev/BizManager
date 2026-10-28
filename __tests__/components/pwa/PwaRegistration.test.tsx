@@ -20,10 +20,12 @@ const hoisted = vi.hoisted(() => {
     contentShown: vi.fn(),
     noteOffline: vi.fn(),
     sendOfflineReport: vi.fn(),
+    routerPush: vi.fn(),
   };
 });
+const router = vi.hoisted(() => ({ refresh: () => {}, push: (href: string) => hoisted.routerPush(href) }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("@/lib/offline-queue", () => ({ processQueue: vi.fn() }));
 vi.mock("@/lib/offline-upload", () => ({ processUploadQueue: vi.fn() }));
 vi.mock("@/lib/powersync/device-frames", () => ({ dropDeviceFrame: hoisted.dropDeviceFrame }));
@@ -45,6 +47,7 @@ vi.mock("@/lib/pwa/offline-report", () => ({
 
 import PwaRegistration from "@/components/pwa/PwaRegistration";
 import { UPDATE_RETRY_MS } from "@/lib/pwa/app-version";
+import { markPageNotOnDevice, pageNotOnDevice } from "@/lib/pwa/page-not-on-device";
 
 const reload = vi.fn();
 let visibility: DocumentVisibilityState = "visible";
@@ -181,68 +184,185 @@ describe("loading a new version of the app", () => {
 });
 
 // Moving inside the app to a page with no saved copy, with no connection: the
-// service worker keeps this page on screen and says which page it was. The
-// page says so, and settles Next.js's router (which gave up on the move and
-// waits for a whole-page load that isn't coming) by putting the same address
-// in the history again (owner, 2026-10-24).
+// page opens anyway and says in its place that its data isn't on the device
+// (OfflinePageGate) — Spotify's way (owner, 2026-10-28; staying put with a
+// notice, since 10-24, frustrated more). With no connection a tap asks the
+// service worker first whether the page opens from the device: Next.js never
+// starts a move it can't finish (16.4 waited on it for good, then froze).
 
-describe("a page moved to with no connection that isn't saved", () => {
+describe("a tap with no connection", () => {
+  const pushState = vi.fn();
   const replaceState = vi.fn();
-  let historySpy: { mockRestore: () => void } | undefined;
+  const spies: { mockRestore: () => void }[] = [];
+  /** The service worker's answer to "does it open from the device?" (undefined: none). */
+  let answer: boolean | undefined;
+  const asked: string[] = [];
+  const showing = (path: string) => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...window.location,
+        origin: "https://www.biz-h.com",
+        href: `https://www.biz-h.com${path}`,
+        pathname: path,
+        search: "",
+        reload,
+      },
+    });
+  };
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "production");
     hoisted.toastInfo.mockClear();
     hoisted.contentShown.mockClear();
     hoisted.noteOffline.mockClear();
     hoisted.sendOfflineReport.mockClear();
+    hoisted.routerPush.mockClear();
+    pushState.mockReset();
     replaceState.mockReset();
+    markPageNotOnDevice(null);
+    answer = false;
+    asked.length = 0;
+    net.up = false;
     visibility = "visible";
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...window.location, href: "https://www.biz-h.com/customers", pathname: "/customers", search: "", reload },
-    });
-    historySpy = vi.spyOn(window.history, "replaceState").mockImplementation(replaceState);
-    sw.controller = {};
+    showing("/dashboard");
+    spies.push(
+      vi.spyOn(window.history, "pushState").mockImplementation(pushState),
+      vi.spyOn(window.history, "replaceState").mockImplementation(replaceState)
+    );
+    sw.controller = {
+      postMessage: (message: { type: string; url: string }, ports: MessagePort[]) => {
+        if (message.type !== "CAN_OPEN_OFFLINE") return;
+        asked.push(message.url);
+        if (answer !== undefined) ports[0].postMessage({ saved: answer });
+      },
+    };
     sw.register = vi.fn(async () => ({ update: async () => {} }));
     sw.ready = new Promise(() => {});
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: sw });
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204, headers: { "X-Bizh-Build": "old1" } })));
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   });
   afterEach(() => {
     cleanup();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
-    historySpy?.mockRestore();
+    for (const spy of spies.splice(0)) spy.mockRestore();
     vi.useRealTimers();
+    net.up = true;
   });
 
+  /** A tap on a link inside the app; whether the app held it back (jsdom doesn't move either way). */
+  const tap = (path: string, init: MouseEventInit = {}, attributes: Record<string, string> = {}) => {
+    const link = document.createElement("a");
+    link.href = `https://www.biz-h.com${path}`;
+    for (const [name, value] of Object.entries(attributes)) link.setAttribute(name, value);
+    document.body.appendChild(link);
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ...init });
+    link.dispatchEvent(event);
+    link.remove();
+    return event.defaultPrevented;
+  };
+  /** The service worker's answer comes through a message port. */
+  const answered = () => act(async () => new Promise<void>((resolve) => setImmediate(resolve)));
   const tell = (url: string) =>
     sw.dispatchEvent(new MessageEvent("message", { data: { type: "PAGE_NOT_SAVED", url } }));
 
-  it("says so, and settles the router on the page on screen", async () => {
+  it("a page not on the device: opens it, marked as such — no notice on top, the loading bar ends", async () => {
     render(<PwaRegistration />);
     await settle();
-    tell("https://www.biz-h.com/customers/c1");
-    expect(hoisted.toastInfo).toHaveBeenCalledWith("הדף הזה לא שמור במכשיר — ייפתח כשיחזור החיבור", {
-      id: "page-not-saved",
-    });
-    // The loading bar that was waiting for the move ends now.
+    expect(tap("/calendar")).toBe(true);
+    expect(asked).toEqual(["https://www.biz-h.com/calendar"]);
+    await answered();
+    expect(pageNotOnDevice()).toBe("/calendar");
+    expect(pushState).toHaveBeenCalledWith(null, "", "/calendar");
+    expect(hoisted.routerPush).not.toHaveBeenCalled();
+    expect(hoisted.toastInfo).not.toHaveBeenCalled();
     expect(hoisted.contentShown).toHaveBeenCalledTimes(1);
-    expect(replaceState).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(300);
-    expect(replaceState).toHaveBeenCalledWith(null, "", "https://www.biz-h.com/customers");
     // A note for the report sent once the connection is back: which page, and what was saved.
     await settle();
     expect(hoisted.noteOffline).toHaveBeenCalledWith(
       "page not saved",
       // As text — Sentry cuts a list this deep to "[Array]".
-      expect.objectContaining({ url: "/customers/c1", frames: "80d44d44 /customers" })
+      expect.objectContaining({ url: "/calendar", frames: "80d44d44 /customers" })
     );
   });
 
+  it("a page the device has: the move goes on as usual", async () => {
+    answer = true;
+    render(<PwaRegistration />);
+    await settle();
+    expect(tap("/customers")).toBe(true);
+    await answered();
+    expect(hoisted.routerPush).toHaveBeenCalledWith("/customers");
+    expect(pageNotOnDevice()).toBeNull();
+    expect(pushState).not.toHaveBeenCalled();
+  });
+
+  it("no answer from the service worker: the move goes on as usual", async () => {
+    answer = undefined;
+    render(<PwaRegistration />);
+    await settle();
+    tap("/customers");
+    vi.advanceTimersByTime(1500);
+    await answered();
+    expect(hoisted.routerPush).toHaveBeenCalledWith("/customers");
+  });
+
+  it("with a connection: nothing asked, nothing held", async () => {
+    net.up = true;
+    render(<PwaRegistration />);
+    await settle();
+    expect(tap("/calendar")).toBe(false);
+    expect(asked).toEqual([]);
+  });
+
+  it("not a plain move — a task row that opens here, a tap with ctrl: left alone", async () => {
+    render(<PwaRegistration />);
+    await settle();
+    expect(tap("/tasks?task=t1", {}, { "data-opens-here": "" })).toBe(false);
+    expect(tap("/calendar", { ctrlKey: true })).toBe(false);
+    expect(asked).toEqual([]);
+  });
+
+  it("on to another page: the one not on the device is left behind", async () => {
+    render(<PwaRegistration />);
+    await settle();
+    tap("/calendar");
+    await answered();
+    showing("/calendar");
+    answer = true;
+    tap("/tasks");
+    expect(pageNotOnDevice()).toBeNull();
+  });
+
+  it("a move answered 'not saved' anyway (the connection's loss not known yet): settled where it is", async () => {
+    net.up = true;
+    render(<PwaRegistration />);
+    await settle();
+    tell("https://www.biz-h.com/calendar");
+    vi.advanceTimersByTime(300);
+    // Next.js waits for a whole-page load that isn't coming — the same address in the history again settles it.
+    expect(replaceState).toHaveBeenCalledWith(null, "", "https://www.biz-h.com/dashboard");
+    expect(pushState).not.toHaveBeenCalled();
+    expect(pageNotOnDevice()).toBeNull();
+    expect(hoisted.toastInfo).not.toHaveBeenCalled();
+    await settle();
+    expect(hoisted.noteOffline).toHaveBeenCalledWith("page not saved", expect.objectContaining({ url: "/calendar" }));
+  });
+
+  it("the page on screen itself (refreshed, or changing its own address): settled, nothing noted", async () => {
+    render(<PwaRegistration />);
+    await settle();
+    tell("https://www.biz-h.com/dashboard");
+    vi.advanceTimersByTime(300);
+    expect(replaceState).toHaveBeenCalledWith(null, "", "https://www.biz-h.com/dashboard");
+    await settle();
+    expect(hoisted.noteOffline).not.toHaveBeenCalled();
+  });
+
   it("what went wrong offline is sent when the app opens, and each time the server answers again", async () => {
+    net.up = true;
     const { rerender } = render(<PwaRegistration />);
     await settle();
     expect(hoisted.sendOfflineReport).toHaveBeenCalledTimes(1);
@@ -254,22 +374,13 @@ describe("a page moved to with no connection that isn't saved", () => {
     expect(hoisted.sendOfflineReport).toHaveBeenCalledTimes(2);
   });
 
-  it("the page on screen itself (refreshed with no connection): nothing to say", async () => {
-    render(<PwaRegistration />);
-    await settle();
-    tell("https://www.biz-h.com/customers");
-    vi.advanceTimersByTime(300);
-    expect(hoisted.toastInfo).not.toHaveBeenCalled();
-    expect(replaceState).not.toHaveBeenCalled();
-  });
-
-  it("a tab in the background says nothing (every open tab hears it)", async () => {
+  it("a tab in the background does nothing (every open tab hears it)", async () => {
     visibility = "hidden";
     render(<PwaRegistration />);
     await settle();
     tell("https://www.biz-h.com/customers/c1");
     vi.advanceTimersByTime(300);
-    expect(hoisted.toastInfo).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
   });
 });
 
