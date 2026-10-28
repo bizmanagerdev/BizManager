@@ -4185,7 +4185,7 @@ export default function SalaryCenterClient({
                           // Only payslips wait for a pay day, so only a payslip worker's tile
                           // keeps room for the line — known before the figures load.
                           hint={
-                            !payrollWorkerTypeGeneratesPayslips(selectedWorkerType) ? undefined : selectedWorkerNotYetDue ? (
+                            !selectedWorkerType || !payrollWorkerTypeGeneratesPayslips(selectedWorkerType) ? undefined : selectedWorkerNotYetDue ? (
                               <>
                                 <div>{`בנוסף ${formatCurrency(selectedWorkerNotYetDue.amount)}`}</div>
                                 <div>
