@@ -36,6 +36,8 @@ export type ShadowResult = {
   localMs: number;
   diffs: { path: string; server: unknown; local: unknown }[];
   error?: string;
+  /** A part that differed, looked at again (recheckDifferences). */
+  recheck?: "settled" | "confirmed" | "unavailable";
 };
 
 /** Timestamps compared as instants, money to the agora; key order ignored. */
@@ -116,6 +118,68 @@ export async function runDashboardShadow(
     }
   }
   return results;
+}
+
+/** The same part from the server's data right now (app/api/device-check/card). */
+export type ServerCardNow = (card: LocalCardKind, filters: unknown) => Promise<{ renderedAt: string; data: unknown }>;
+
+const serverCardNow: ServerCardNow = async (card, filters) => {
+  const res = await fetch("/api/device-check/card", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ card, filters }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { renderedAt: string; data: unknown };
+};
+
+/** How long the device may take to catch up with the server's second read before it's compared anyway. */
+const CATCH_UP_MS = 15_000;
+
+/** Until the device copy has synced after `since` (or CATCH_UP_MS have passed). */
+async function caughtUpWith(db: Pick<CommonPowerSyncDatabase, "currentStatus">, since: string): Promise<void> {
+  const until = Date.now() + CATCH_UP_MS;
+  const after = Date.parse(since);
+  while (Date.now() < until) {
+    const synced = db.currentStatus.lastSyncedAt?.getTime() ?? 0;
+    if (synced >= after) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+/**
+ * The second look at a part that came out different (2026-10-28): the server's
+ * copy was read when the page opened, the device's a little later — a save in
+ * between (an expense added, a payment, a tick) read as a difference, though
+ * nothing was wrong. So the part is worked out again from the server's data as
+ * it is now, and from the device's once it has caught up; only a difference
+ * that's still there is one. `recheck` says what happened: "settled" — it
+ * matched the second time; "confirmed" — it still differs; "unavailable" — the
+ * server couldn't be asked (the first result stands).
+ */
+export async function recheckDifferences(
+  db: CommonPowerSyncDatabase,
+  snapshot: DashboardShadowSnapshot,
+  results: ShadowResult[],
+  askServer: ServerCardNow = serverCardNow
+): Promise<ShadowResult[]> {
+  const viewer = { userId: snapshot.userId, role: snapshot.role, locale: snapshot.locale };
+  return Promise.all(
+    results.map(async (result): Promise<ShadowResult> => {
+      if (result.match || result.error) return result;
+      const card = result.card as LocalCardKind;
+      const filters = (snapshot.cards[card] as { filters?: unknown } | undefined)?.filters;
+      try {
+        const server = await askServer(card, filters);
+        await caughtUpWith(db, server.renderedAt);
+        const { value, ms } = await timed(() => computeLocalCard(createLocalSupabase(db), card, viewer, filters));
+        const again = compare(card, server.data, value, ms);
+        return { ...again, recheck: again.match ? "settled" : "confirmed" };
+      } catch {
+        return { ...result, recheck: "unavailable" };
+      }
+    })
+  );
 }
 
 /**

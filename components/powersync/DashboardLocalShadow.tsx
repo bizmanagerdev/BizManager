@@ -12,7 +12,10 @@ import type { DashboardShadowSnapshot, ShadowResult } from "@/lib/powersync/dash
 //
 // Reported to Sentry: each card that differs (once per card per day per
 // device), and one daily summary per device with every card's result and how
-// long the device took — the evidence for switching the board over.
+// long the device took — the evidence for switching the board over. A card
+// that differs is looked at again first, against the server's data as it is
+// then (recheckDifferences): a save made between the page opening and the
+// check isn't a difference (2026-10-28).
 
 const REPORTED_KEY = "bizh-powersync-shadow";
 
@@ -49,7 +52,7 @@ function report(results: ShadowResult[]) {
         level: "warning",
         tags: { area: "powersync", shadow_card: result.card },
         fingerprint: ["powersync-shadow", result.card],
-        extra: { diffs: result.diffs, error: result.error, localMs: result.localMs },
+        extra: { diffs: result.diffs, error: result.error, localMs: result.localMs, recheck: result.recheck },
       })
     );
   }
@@ -59,7 +62,7 @@ function report(results: ShadowResult[]) {
     Sentry.captureMessage("PowerSync shadow check", {
       level: "info",
       tags: Object.fromEntries([["area", "powersync"], ...results.map((r) => [`shadow_${r.card}`, r.match ? "match" : "differs"])]),
-      extra: Object.fromEntries(results.map((r) => [r.card, { match: r.match, localMs: r.localMs }])),
+      extra: Object.fromEntries(results.map((r) => [r.card, { match: r.match, localMs: r.localMs, recheck: r.recheck }])),
     })
   );
 }
@@ -102,8 +105,8 @@ export default function DashboardLocalShadow({
       // tables aren't deployed yet: nothing to compare against.
       const people = await db.get<{ n: number }>("SELECT count(*) AS n FROM users").catch(() => ({ n: 0 }));
       if (!people.n) return;
-      const { runDashboardShadow, runMoneyViewsCheck } = await import("@/lib/powersync/dashboard-shadow");
-      report(await runDashboardShadow(db, snapshot));
+      const { recheckDifferences, runDashboardShadow, runMoneyViewsCheck } = await import("@/lib/powersync/dashboard-shadow");
+      report(await recheckDifferences(db, snapshot, await runDashboardShadow(db, snapshot)));
       if (doneCookie) {
         document.cookie = `${doneCookie}=${snapshot.todayIso}; path=/; max-age=${2 * 24 * 60 * 60}; samesite=lax`;
       }

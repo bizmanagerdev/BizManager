@@ -264,10 +264,14 @@ function strictReads(local: SupabaseClient): { client: SupabaseClient; failures:
 }
 
 /** A money card from the device, all its reads done — or refused (see strictReads). */
-async function computeMoneyCard(local: SupabaseClient, kind: "payments" | "collections" | "domainChart"): Promise<unknown> {
+async function computeMoneyCard(
+  local: SupabaseClient,
+  kind: "payments" | "collections" | "domainChart",
+  onServer: boolean
+): Promise<unknown> {
   // A copy synced before the money tables existed would read as "no loans,
   // no card charges": not this card's to draw (lib/powersync/money-copy.ts).
-  if (!(await copyHasMoneyTables(local))) throw new Error(`${MONEY_CARD_NOT_READY} (sync rules before v1.8)`);
+  if (!onServer && !(await copyHasMoneyTables(local))) throw new Error(`${MONEY_CARD_NOT_READY} (sync rules before v1.8)`);
   const { client, failures } = strictReads(local);
   const todayIso = israelDateKey();
   const dates = moneyCardDates(todayIso);
@@ -299,8 +303,8 @@ export const MONEY_CARD_NOT_READY = "money cards: this copy has no money tables 
 export const BANK_PAGE_NOT_READY = "accounts page: this copy has no accounts tables yet";
 
 /** The accounts page from the device, all its reads done — or refused (see strictReads). */
-async function computeBankPage(local: SupabaseClient): Promise<BankPageData> {
-  if (!(await copyHasBankTables(local))) throw new Error(`${BANK_PAGE_NOT_READY} (sync rules before v1.14)`);
+async function computeBankPage(local: SupabaseClient, onServer: boolean): Promise<BankPageData> {
+  if (!onServer && !(await copyHasBankTables(local))) throw new Error(`${BANK_PAGE_NOT_READY} (sync rules before v1.14)`);
   const { client, failures } = strictReads(local);
   const data = await loadBankPage(client);
   if (failures.length || data.dataIncomplete) {
@@ -314,7 +318,13 @@ export async function computeLocalCard<K extends LocalCardKind>(
   kind: K,
   { userId, role, locale }: LocalCardViewer,
   /** The list's filters, for the projects list, the sales tabs and the tasks board. */
-  filters?: unknown
+  filters?: unknown,
+  /**
+   * onServer: the same part worked out from the server's own data (the daily
+   * check's second look, app/api/device-check/card) — every table is there, so
+   * the device copy's "has it arrived yet" marks aren't asked.
+   */
+  { onServer = false }: { onServer?: boolean } = {}
 ): Promise<LocalDashboardCards[K]> {
   const need = <F,>(): F => {
     if (!filters) throw new Error(`${String(kind)} needs its filters`);
@@ -464,9 +474,9 @@ export async function computeLocalCard<K extends LocalCardKind>(
     case "payments":
     case "collections":
     case "domainChart":
-      return (await computeMoneyCard(local, kind)) as LocalDashboardCards[K];
+      return (await computeMoneyCard(local, kind, onServer)) as LocalDashboardCards[K];
     case "bankPage":
-      return (await computeBankPage(local)) as LocalDashboardCards[K];
+      return (await computeBankPage(local, onServer)) as LocalDashboardCards[K];
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);
   }
