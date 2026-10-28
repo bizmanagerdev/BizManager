@@ -155,6 +155,42 @@ export function getPayableDebtAmount(
   return Math.max(0, Math.round((toNumber(item.earned_amount) - toNumber(item.paid_amount)) * 100) / 100);
 }
 
+/**
+ * Pay earned but not yet due: payslips before their pay day (status `not_due`),
+ * which the balance leaves out (worker_debt_items_view owes them 0). Shown beside
+ * the balance so earned − paid = balance + this (owner, 2026-10-28: "how do these
+ * numbers make sense?"). Null when nothing is waiting.
+ */
+export function getNotYetDuePay(
+  items: Array<{
+    payment_status: string | null;
+    earned_amount: number | string | null;
+    paid_amount: number | string | null;
+    due_date: string | null;
+  }>
+): { amount: number; firstDueDate: string | null } | null {
+  let amount = 0;
+  let firstDueDate: string | null = null;
+  for (const item of items) {
+    if (item.payment_status !== "not_due") continue;
+    const remaining = Math.max(0, toNumber(item.earned_amount) - toNumber(item.paid_amount));
+    if (remaining <= 0.009) continue;
+    amount += remaining;
+    if (item.due_date && (!firstDueDate || item.due_date < firstDueDate)) firstDueDate = item.due_date;
+  }
+  amount = Math.round(amount * 100) / 100;
+  return amount > 0.009 ? { amount, firstDueDate } : null;
+}
+
+/**
+ * A shift's note as the office reads it: the Hebrew translation when the worker
+ * wrote in Arabic, the original otherwise (owner, 2026-10-11: "whatever faces a
+ * Hebrew person should be in Hebrew"; 2026-10-28 for the payroll pages).
+ */
+export function officeSessionNote(session: { notes: string | null; notes_he?: string | null }) {
+  return session.notes_he?.trim() || session.notes?.trim() || "";
+}
+
 export function monthLabelFromKey(key: string, locale: Locale = "he") {
   const [yearText, monthText] = key.split("-");
   const year = Number(yearText);

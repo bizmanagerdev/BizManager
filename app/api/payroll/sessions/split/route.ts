@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       supabase
         .from(WORK_SESSIONS_TABLE)
         .select(
-          "id,user_id,clock_in,clock_out,worked_minutes,notes,business_domain,project_id,property_id,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status"
+          "id,user_id,clock_in,clock_out,worked_minutes,notes,notes_he,business_domain,project_id,property_id,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status"
         )
         .eq("id", sessionId)
         .maybeSingle(),
@@ -279,6 +279,7 @@ export async function POST(req: Request) {
       bill_to_customer_amount: part.billAmount,
       billing_status: part.isBillable ? "billable" : "not_billable",
       notes: originalSession.notes ?? null,
+      notes_he: originalSession.notes_he ?? null,
       business_domain: part.businessDomain,
       project_id: part.projectId,
       property_id: part.propertyId,

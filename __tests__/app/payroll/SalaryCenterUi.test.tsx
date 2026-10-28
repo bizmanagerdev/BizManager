@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import {
   AccessBadge,
+  MiniStat,
   PaymentStatusBadge,
   RoleBadge,
   WorkerTypeBadge,
@@ -100,5 +101,24 @@ describe("badges derived from the shared StatusPill", () => {
     expect(screen.getByText("ללא גישה")).toBeInTheDocument();
     rerender(<AccessBadge hasAccess />);
     expect(screen.getByText("עם גישה")).toBeInTheDocument();
+  });
+});
+
+describe("MiniStat hint", () => {
+  it("shows the line under the value (the balance's pay not yet due)", () => {
+    render(<MiniStat label="יתרה כוללת" value="₪53,947.98" hint="בנוסף ₪14,545.33 לתשלום ב־10/11/26" />);
+    expect(screen.getByText("בנוסף ₪14,545.33 לתשלום ב־10/11/26")).toBeTruthy();
+  });
+
+  it("keeps the line's height with no hint (null) and while loading, so the figure arriving moves nothing", () => {
+    const { container: empty } = render(<MiniStat label="יתרה כוללת" value="₪0" hint={null} />);
+    expect(empty.querySelector(".min-h-8")).not.toBeNull();
+    const { container: loading } = render(<MiniStat label="יתרה כוללת" value="₪0" loading hint="בנוסף ₪1" />);
+    expect(loading.querySelector(".min-h-8")?.textContent).toBe("");
+  });
+
+  it("adds no line where no hint is passed at all (the other figures)", () => {
+    const { container } = render(<MiniStat label="שולם כולל" value="₪0" />);
+    expect(container.querySelector(".min-h-8")).toBeNull();
   });
 });

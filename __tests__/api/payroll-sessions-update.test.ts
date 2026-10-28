@@ -261,3 +261,22 @@ describe("POST /api/payroll/sessions/update — reassigning to a different worke
     expect(regenerateEditablePayslipsForUsers).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining(["u1", "u2"]));
   });
 });
+
+describe("POST /api/payroll/sessions/update — the Hebrew copy of a worker's Arabic note", () => {
+  const ARABIC_SESSION = { ...SESSION, notes: "السوق", notes_he: "השוק" };
+
+  it("keeps notes_he when the note comes back unchanged (an hours-only edit)", async () => {
+    const database = sb({ session: ARABIC_SESSION });
+    grant(database);
+    expect((await post({ ...VALID, notes: "السوق" })).status).toBe(200);
+    expect(database.calls.update[0]).toMatchObject({ notes: "السوق" });
+    expect(database.calls.update[0]).not.toHaveProperty("notes_he");
+  });
+
+  it("drops notes_he once the office changes the note, so the pages show the new text", async () => {
+    const database = sb({ session: ARABIC_SESSION });
+    grant(database);
+    expect((await post({ ...VALID, notes: "השוק · בטון" })).status).toBe(200);
+    expect(database.calls.update[0]).toMatchObject({ notes: "השוק · בטון", notes_he: null });
+  });
+});

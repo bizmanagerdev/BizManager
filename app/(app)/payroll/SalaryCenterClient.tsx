@@ -47,6 +47,7 @@ import {
   getPayrollWorkerTypeLabel,
   normalizePayrollWorkerType,
   payrollWorkerTypeAllowsSessions,
+  payrollWorkerTypeGeneratesPayslips,
   payrollWorkerTypeRequiresAgreement,
   shouldShowSessionHours,
   shouldShowSessionPrice,
@@ -58,10 +59,12 @@ import {
   formatDateTime,
   formatMinutes,
   getCurrentSalaryAgreement,
+  getNotYetDuePay,
   getPayableDebtAmount,
   getSalaryTypeLabel,
   monthKeyFromDate,
   monthLabelFromKey,
+  officeSessionNote,
   sessionWorkedMinutes,
   toNumber,
   type PayslipRow,
@@ -2159,6 +2162,7 @@ export default function SalaryCenterClient({
     () => selectedWorkerDebtItems.filter((item) => getPayableDebtAmount(item) > 0.009),
     [selectedWorkerDebtItems]
   );
+  const selectedWorkerNotYetDue = useMemo(() => getNotYetDuePay(selectedWorkerDebtItems), [selectedWorkerDebtItems]);
   const selectedWorkerPayments = useMemo(() => {
     if (!selectedWorker) return [];
     return [...(workerPaymentsByUserId.get(selectedWorker.id) ?? [])].sort((a, b) =>
@@ -2475,7 +2479,7 @@ export default function SalaryCenterClient({
         hours: formatMinutes(sessionWorkedMinutes(session)),
         hourlyRate: hourlyRateValue > 0 ? `${formatCurrency(hourlyRateValue)} / שעה` : "—",
         amount: formatCurrency(sessionCostsById.get(session.id) ?? 0),
-        notes: session.notes ?? "",
+        notes: officeSessionNote(session),
       };
     });
     const showHourlyColumns = workRowData.some((row) => row.isHourly);
@@ -3412,7 +3416,7 @@ export default function SalaryCenterClient({
                             ) : null}
                           </div>
                         </div>
-                        {session.notes ? <div className="mt-2 text-xs text-muted-foreground">{session.notes}</div> : null}
+                        {officeSessionNote(session) ? <div className="mt-2 text-xs text-muted-foreground">{officeSessionNote(session)}</div> : null}
                         {/* Compact label/value rows (boxes made the session card far too tall). */}
                         <div className="mt-3 space-y-1 text-sm">
                           <div className="flex items-center justify-between gap-2">
@@ -3534,7 +3538,7 @@ export default function SalaryCenterClient({
                             <td className="px-3 py-3">{linkLabel}</td>
                             <td className="px-3 py-3 text-muted-foreground">
                               <div>{rowShowHours ? formatSessionRange(session.clock_in, session.clock_out) : formatDate(session.clock_in)}</div>
-                              {session.notes ? <div className="mt-1 text-xs">{session.notes}</div> : null}
+                              {officeSessionNote(session) ? <div className="mt-1 text-xs">{officeSessionNote(session)}</div> : null}
                             </td>
                             <td className="px-3 py-3">
                               {rowShowHours ? formatMinutes(sessionWorkedMinutes(session)) : <span className="text-muted-foreground">—</span>}
@@ -4174,7 +4178,25 @@ export default function SalaryCenterClient({
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                         <MiniStat label="סה״כ נצבר" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
                         <MiniStat label="שולם כולל" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.paid_amount ?? 0)} />
-                        <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)} />
+                        <MiniStat
+                          label="יתרה כוללת"
+                          loading={protectedLoading}
+                          value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)}
+                          // Only payslips wait for a pay day, so only a payslip worker's tile
+                          // keeps room for the line — known before the figures load.
+                          hint={
+                            !payrollWorkerTypeGeneratesPayslips(selectedWorkerType) ? undefined : selectedWorkerNotYetDue ? (
+                              <>
+                                <div>{`בנוסף ${formatCurrency(selectedWorkerNotYetDue.amount)}`}</div>
+                                <div>
+                                  {selectedWorkerNotYetDue.firstDueDate
+                                    ? `לתשלום ב־${formatDate(selectedWorkerNotYetDue.firstDueDate)}`
+                                    : "שעוד לא הגיע מועדו"}
+                                </div>
+                              </>
+                            ) : null
+                          }
+                        />
                         <MiniStat
                           label="סטטוס"
                           loading={protectedLoading}
@@ -4382,8 +4404,8 @@ export default function SalaryCenterClient({
                               payrollPeriod ? ` • תקופה: ${monthLabelFromKey(payrollPeriod.period_month)}` : ""
                             }`}
                           </div>
-                          {session.notes ? (
-                            <div className="mt-1 text-right text-muted-foreground">{`הערות: ${session.notes}`}</div>
+                          {officeSessionNote(session) ? (
+                            <div className="mt-1 text-right text-muted-foreground">{`הערות: ${officeSessionNote(session)}`}</div>
                           ) : null}
                           {sessionRecordedByNameById[session.id] ? (
                             <div className="mt-1 text-right text-xs text-muted-foreground">
@@ -4832,7 +4854,7 @@ export default function SalaryCenterClient({
                                       <td className="px-2 py-2 whitespace-nowrap">{formatMinutes(sessionWorkedMinutes(session))}</td>
                                       <td className="px-2 py-2">{getSessionLinkLabel(session, projectLabelsById, propertyLabelsById)}</td>
                                       <td className="px-2 py-2 whitespace-nowrap">{formatCurrency(sessionCostsById.get(session.id) ?? 0)}</td>
-                                      <td className="px-2 py-2 text-muted-foreground">{session.notes || "—"}</td>
+                                      <td className="px-2 py-2 text-muted-foreground">{officeSessionNote(session) || "—"}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -5127,7 +5149,7 @@ export default function SalaryCenterClient({
                   }
                 >
                   <option value="he">{"עברית"}</option>
-                  <option value="ar">{"العربية"}</option>
+                  <option value="ar">{"ערבית"}</option>
                 </NativeSelect>
               </Field>
             ) : null}

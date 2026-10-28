@@ -98,7 +98,7 @@ export async function POST(req: Request) {
       supabase
         .from(WORK_SESSIONS_TABLE)
         .select(
-          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,notes_he,business_domain,project_id,property_id"
         )
         .eq("id", sessionId)
         .maybeSingle(),
@@ -198,6 +198,10 @@ export async function POST(req: Request) {
         project_id: businessDomain === "logistics_projects" ? projectId : null,
         property_id: businessDomain === "property_management" ? propertyId : null,
         notes: notes || null,
+        // A worker's Arabic note carries its Hebrew copy (notes_he), which the
+        // office pages show. Once the note itself is changed here the copy no
+        // longer translates it, so it goes and the pages show the new text.
+        ...((notes || null) !== (sessionResult.data.notes?.trim() || null) ? { notes_he: null } : {}),
         clock_in: clockIn,
         clock_out: clockOut,
         worked_minutes: clockOut ? minutesBetween(clockIn, clockOut) : null,

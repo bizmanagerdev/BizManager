@@ -54,6 +54,7 @@ function mapSessions(rows: Row[] | null | undefined, lockedIds: Set<string>): Se
           : null,
       billing_status: typeof row.billing_status === "string" ? row.billing_status : null,
       notes: typeof row.notes === "string" ? row.notes : null,
+      notes_he: typeof row.notes_he === "string" ? row.notes_he : null,
       business_domain: typeof row.business_domain === "string" ? row.business_domain : null,
       project_id: typeof row.project_id === "string" ? row.project_id : null,
       property_id: typeof row.property_id === "string" ? row.property_id : null,
@@ -172,7 +173,7 @@ export async function loadPayrollPageData(
       let query = supabase
         .from("attendance_sessions")
         .select(
-          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,notes_he,business_domain,project_id,property_id"
         )
         .gte("clock_in", `${cutoffIso}T00:00:00`)
         .order("clock_in", { ascending: false })

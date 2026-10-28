@@ -44,6 +44,7 @@ const SESSION = {
   clock_out: "2026-05-15T16:00:00.000Z", // 480 minutes
   worked_minutes: 480,
   notes: "משמרת",
+  notes_he: null,
   business_domain: "general_business",
   project_id: null,
   property_id: null,
@@ -315,6 +316,14 @@ describe("POST /api/payroll/sessions/split — persistence: reuses the original 
       worked_minutes: 280,
       notes: "משמרת", // carried over from the original session
     });
+  });
+
+  it("carries the Hebrew copy of a worker's Arabic note to every part", async () => {
+    const database = sb({ worker: HOURLY_WORKER, session: { ...SESSION, notes: "السوق", notes_he: "השוק" } });
+    grant(database);
+    const res = await post(TWO_TIME_PARTS);
+    expect(res.status).toBe(200);
+    expect(database.calls.sessionInserts[0][0]).toMatchObject({ notes: "السوق", notes_he: "השוק" });
   });
 
   it("rolls the original session back to its exact pre-split state if inserting the remaining parts fails", async () => {

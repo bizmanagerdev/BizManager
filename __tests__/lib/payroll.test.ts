@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { calculateSessionLaborCost, computeSessionPaymentStatus, getNextMonthDueText, getPayableDebtAmount, israelDateKey } from "@/lib/payroll";
+import {
+  calculateSessionLaborCost,
+  computeSessionPaymentStatus,
+  getNextMonthDueText,
+  getNotYetDuePay,
+  getPayableDebtAmount,
+  israelDateKey,
+  officeSessionNote,
+} from "@/lib/payroll";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 
 function makeHourlyAgreement(overrides: Partial<SalaryAgreementRow> = {}): SalaryAgreementRow {
@@ -208,5 +216,51 @@ describe("getNextMonthDueText", () => {
     expect(getNextMonthDueText(null)).toBe("-");
     expect(getNextMonthDueText("")).toBe("-");
     expect(getNextMonthDueText("not a date")).toBe("-");
+  });
+});
+
+describe("getNotYetDuePay", () => {
+  const payslip = (overrides: Record<string, unknown>) => ({
+    payment_status: "not_due",
+    earned_amount: 0,
+    paid_amount: 0,
+    due_date: null as string | null,
+    ...overrides,
+  });
+
+  it("is what makes earned − paid = balance + not yet due (סאלח, 28/10/2026)", () => {
+    const items = [
+      payslip({ payment_status: "unpaid", earned_amount: 19960, due_date: "2026-08-10" }),
+      payslip({ payment_status: "unpaid", earned_amount: 12950.67, due_date: "2026-09-10" }),
+      payslip({ payment_status: "unpaid", earned_amount: 21037.31, due_date: "2026-10-10" }),
+      payslip({ earned_amount: 14545.33, due_date: "2026-11-10" }),
+    ];
+    expect(getNotYetDuePay(items)).toEqual({ amount: 14545.33, firstDueDate: "2026-11-10" });
+  });
+
+  it("sums several months not yet due, net of anything paid early, and names the first pay day", () => {
+    const items = [
+      payslip({ earned_amount: 1000, paid_amount: 400, due_date: "2026-12-10" }),
+      payslip({ earned_amount: "500.5", due_date: "2026-11-10" }),
+    ];
+    expect(getNotYetDuePay(items)).toEqual({ amount: 1100.5, firstDueDate: "2026-11-10" });
+  });
+
+  it("is null when nothing is waiting — no months, or a not-due month already paid in full", () => {
+    expect(getNotYetDuePay([])).toBeNull();
+    expect(getNotYetDuePay([payslip({ payment_status: "paid", earned_amount: 900 })])).toBeNull();
+    expect(getNotYetDuePay([payslip({ earned_amount: 900, paid_amount: 900, due_date: "2026-11-10" })])).toBeNull();
+  });
+});
+
+describe("officeSessionNote", () => {
+  it("shows the office the Hebrew copy of a worker's Arabic note", () => {
+    expect(officeSessionNote({ notes: "السوق", notes_he: "השוק" })).toBe("השוק");
+  });
+
+  it("falls back to the original where there's no translation, and to empty for no note", () => {
+    expect(officeSessionNote({ notes: " דיווח טלפוני ", notes_he: null })).toBe("דיווח טלפוני");
+    expect(officeSessionNote({ notes: "السوق", notes_he: "  " })).toBe("السوق");
+    expect(officeSessionNote({ notes: null })).toBe("");
   });
 });

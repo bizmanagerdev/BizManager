@@ -159,17 +159,24 @@ export function MiniStat({
   value,
   loading = false,
   strong = false,
+  hint,
 }: {
   label: string;
   value: ReactNode;
   loading?: boolean;
   // Headline figures sitting in the same row as their breakdown read bigger.
   strong?: boolean;
+  /** Up to two short lines under the value. Passing it at all (null too) keeps
+   *  their height, so a hint arriving with the data doesn't push the page down. */
+  hint?: ReactNode;
 }) {
   return (
     <div className={`rounded-xl border p-2.5 text-center ${strong ? "bg-muted/30" : "bg-muted/10"}`}>
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={`mt-0.5 font-semibold ${strong ? "text-lg" : ""}`}>{loading ? <LoadingDots /> : value}</div>
+      {hint !== undefined ? (
+        <div className="mt-0.5 min-h-8 text-xs leading-4 text-muted-foreground">{loading ? null : hint}</div>
+      ) : null}
     </div>
   );
 }
