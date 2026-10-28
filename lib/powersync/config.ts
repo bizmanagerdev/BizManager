@@ -90,8 +90,11 @@ export const LOCAL_DATA_PAGES = {
   // The accounts page (/financial/bank, admins only) — owner, 2026-10-27: "go
   // with accounts to make the list device copy offline". Needs sync rules v1.14
   // on the device (transfers, the bank-check ticks, the exchange rates — see
-  // BANK_COPY_COOKIE in lib/powersync/money-copy.ts). The preview users' first.
-  bank: false,
+  // BANK_COPY_COOKIE in lib/powersync/money-copy.ts). The preview users' first;
+  // every admin's from 2026-10-28 (owner: "go on with turned on for all
+  // admins"), after the owner's copy matched the server's (Oct 28) and the
+  // page passed its checks at every width and text size.
+  bank: true,
 } as const;
 
 /**
