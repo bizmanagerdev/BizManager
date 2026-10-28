@@ -267,6 +267,10 @@ export async function createTestTask(
     status?: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
     isPrivate?: boolean;
     privateOwnerId?: string;
+    /** A worker writing in Arabic: the Hebrew copies the app saves beside the original. */
+    subjectHe?: string;
+    description?: string;
+    descriptionHe?: string;
   } = {}
 ): Promise<TestTask> {
   const { data, error } = await adminClient()
@@ -277,6 +281,9 @@ export async function createTestTask(
       assigned_user_id: overrides.assignedUserId ?? null,
       is_private: overrides.isPrivate ?? false,
       private_owner_id: overrides.privateOwnerId ?? null,
+      subject_he: overrides.subjectHe ?? null,
+      description: overrides.description ?? null,
+      description_he: overrides.descriptionHe ?? null,
     })
     .select("id,subject")
     .single();
@@ -287,6 +294,22 @@ export async function createTestTask(
 export async function deleteTestTask(id: string): Promise<void> {
   const { error } = await adminClient().from("tasks").delete().eq("id", id);
   if (error) throw error;
+}
+
+// A comment as a worker writing in Arabic leaves it: the original and its Hebrew copy.
+export async function createTestTaskComment(
+  taskId: string,
+  authorId: string,
+  body: string,
+  bodyHe: string | null = null
+): Promise<{ id: string }> {
+  const { data, error } = await adminClient()
+    .from("task_comments")
+    .insert({ task_id: taskId, author_id: authorId, body, body_he: bodyHe })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as { id: string };
 }
 
 export async function getTaskStatus(id: string): Promise<string> {
@@ -374,7 +397,7 @@ export async function deleteTestAttendanceReports(userId: string): Promise<void>
 // exercising the admin/office APPROVAL side on its own.
 export async function createTestAttendanceReport(
   userId: string,
-  overrides: { clockIn?: Date; clockOut?: Date; notes?: string } = {}
+  overrides: { clockIn?: Date; clockOut?: Date; notes?: string; notesHe?: string } = {}
 ): Promise<{ id: string }> {
   const clockIn = overrides.clockIn ?? new Date(Date.now() - 60 * 60_000);
   const clockOut = overrides.clockOut ?? new Date();
@@ -389,6 +412,7 @@ export async function createTestAttendanceReport(
       status: "pending_review",
       source: "phone",
       notes: overrides.notes ?? null,
+      notes_he: overrides.notesHe ?? null,
     })
     .select("id")
     .single();
@@ -434,7 +458,7 @@ export async function deleteTestAttendanceSession(id: string): Promise<void> {
 // (only payslips do), so it's payable the moment it exists.
 export async function createTestAttendanceSession(
   userId: string,
-  overrides: { laborCost?: number; clockIn?: Date; clockOut?: Date } = {}
+  overrides: { laborCost?: number; clockIn?: Date; clockOut?: Date; notes?: string; notesHe?: string } = {}
 ): Promise<{ id: string }> {
   const clockIn = overrides.clockIn ?? new Date(Date.now() - 4 * 60 * 60_000);
   const clockOut = overrides.clockOut ?? new Date(Date.now() - 60 * 60_000);
@@ -447,6 +471,8 @@ export async function createTestAttendanceSession(
       clock_out: clockOut.toISOString(),
       worked_minutes: workedMinutes,
       labor_cost: overrides.laborCost ?? 180,
+      notes: overrides.notes ?? null,
+      notes_he: overrides.notesHe ?? null,
     })
     .select("id")
     .single();

@@ -99,7 +99,7 @@ export default function ProductMarginPanel({ report }: { report: ProductMarginRe
             <span className="font-medium">
               {productsMissingCost.length} מוצרים ללא מחיר קנייה — הרווח שלהם מוצג מנופח.
             </span>{" "}
-            השלמת מחיר קנייה בכרטיס המוצר תדייק את החישוב: {productsMissingCost.map((p) => p.name).join("، ")}.
+            השלמת מחיר קנייה בכרטיס המוצר תדייק את החישוב: {productsMissingCost.map((p) => p.name).join(", ")}.
           </div>
         </div>
       ) : null}

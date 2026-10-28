@@ -82,6 +82,7 @@ functions/components, Vitest) live separately in `__tests__/`.
 - `role-access` — a worker is kept out of /financial
 - `rpc-role-guards` — database functions refuse anonymous and under-privileged callers
 - `nav-smoke` — every main page loads without crashing
+- `no-arabic-for-hebrew-readers` — with a task, comment and shift notes written in Arabic in the data, no page shows admin, office or a Hebrew worker any Arabic (the code-side twin is `__tests__/guards/no-arabic-for-hebrew-readers.test.ts`)
 - `detail-pages` — customer/project/order/property/vehicle detail pages render
 
 **Phone / Android app** (`mobile-*.spec.ts`, run in the `mobile` project)
