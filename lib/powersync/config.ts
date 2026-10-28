@@ -95,6 +95,10 @@ export const LOCAL_DATA_PAGES = {
   // admins"), after the owner's copy matched the server's (Oct 28) and the
   // page passed its checks at every width and text size.
   bank: true,
+  // The cash-flow page (/financial, תזרים, admins only) — owner, 2026-10-28:
+  // "go on with תזרים … be very very cautious this is the money stuff". The
+  // money tables (sync rules v1.8; MONEY_COPY_COOKIE). The preview users' first.
+  cashFlow: false,
 } as const;
 
 /**
@@ -156,4 +160,5 @@ export const LOCAL_DATA_SHADOW = {
   propertyPage: true,
   rentRoll: true,
   bank: true,
+  cashFlow: true,
 } as const;

@@ -325,6 +325,23 @@ describe("service worker: the device pages' frames", () => {
     expect(worker.frames().has("https://biz-h.com/financial/bank?data=server")).toBe(false);
   });
 
+  // The cash-flow page reads its filters from the address on the device
+  // (LocalCashFlowPage, 2026-10-28): the one frame serves every filter.
+  it("saves the cash-flow page's frame, and serves it for any filter", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, "https://biz-h.com/financial");
+    expect(worker.frames().has("https://biz-h.com/financial")).toBe(true);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 60_000));
+    try {
+      expect(await open(worker, "https://biz-h.com/financial?type=outflow&from=2026-10-01")).toBe(FRAME);
+    } finally {
+      vi.useRealTimers();
+    }
+    await open(worker, "https://biz-h.com/financial?data=server");
+    expect(worker.frames().has("https://biz-h.com/financial?data=server")).toBe(false);
+  });
+
   it("saves the rent roll's frame (its device version, 2026-10-21)", async () => {
     const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
     await open(worker, "https://biz-h.com/rent");

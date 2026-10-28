@@ -7,6 +7,7 @@ import {
   cashFlowCustomerId,
   flowViewData,
   loadCashFlowData,
+  loadCashFlowDialogOptions,
   loadCashFlowProjections,
   normalizeFinancialSearchParams,
   reportsViewData,
@@ -26,18 +27,10 @@ import {
 import { loadDomainProof, type DomainProofMap } from "@/lib/financial/domainProof";
 import { loadCustomerRanking, type CustomerRankingReport } from "@/lib/financial/customerRanking";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
-import { propertyDisplayName } from "@/lib/properties";
 import { clampFromToBooksStart, getBooksStartDate } from "@/lib/settings/booksStartDate";
-
-type Row = Record<string, unknown>;
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function getString(row: Row | null | undefined, key: string) {
-  const value = row?.[key];
-  return typeof value === "string" ? value : null;
 }
 
 // This client component is ~2,400 lines (the whole cash-flow ledger UI).
@@ -76,27 +69,7 @@ export default async function CashFlowPageContent({
   // The recurring-expense dialog's pick-lists depend on nothing else here —
   // started now so they load alongside the ledger instead of after it.
   const canManageExpenses = profile.role === "admin" || profile.role === "office";
-  const optionsPromise = canManageExpenses
-    ? Promise.all([
-        // project_overview_view has project_dashboard_view's rows without the
-        // financial and task totals these options never read.
-        supabase
-          .from("project_overview_view")
-          .select("id,name,customer_name")
-          .order("updated_at", { ascending: false })
-          .range(0, 999),
-        supabase
-          .from("properties")
-          .select("id,name,address,is_active")
-          .order("address", { ascending: true })
-          .range(0, 999),
-        supabase
-          .from("order_overview_view")
-          .select("order_id,customer_name,order_date")
-          .order("order_date", { ascending: false })
-          .range(0, 499),
-      ])
-    : null;
+  const optionsPromise = canManageExpenses ? loadCashFlowDialogOptions(supabase) : null;
   // Awaited further down. This only stops a failure that lands meanwhile from
   // being reported as unhandled before then.
   optionsPromise?.catch(() => {});
@@ -166,42 +139,7 @@ export default async function CashFlowPageContent({
     [earnedRevenue, projectBreakdown, domainProof, customerRanking, productMargin] = await reportsPromise;
   }
 
-  let projectOptions: Array<{ id: string; label: string }> = [];
-  let propertyOptions: Array<{ id: string; label: string }> = [];
-  let orderOptions: Array<{ id: string; label: string }> = [];
-
-  if (optionsPromise) {
-    const [projectsResult, propertiesResult, ordersResult] = await optionsPromise;
-
-    projectOptions = ((projectsResult.data ?? []) as Row[])
-      .map((row) => {
-        const id = getString(row, "id") ?? "";
-        const name = getString(row, "name") ?? "";
-        const customerName = getString(row, "customer_name");
-        return { id, label: customerName ? `${name} (${customerName})` : name };
-      })
-      .filter((row) => row.id && row.label);
-
-    propertyOptions = ((propertiesResult.data ?? []) as Row[])
-      .filter((row) => row.is_active !== false)
-      .map((row) => ({
-        id: getString(row, "id") ?? "",
-        label: propertyDisplayName({ name: getString(row, "name"), address: getString(row, "address") ?? "" }),
-      }))
-      .filter((row) => row.id && row.label);
-
-    orderOptions = ((ordersResult.data ?? []) as Row[])
-      .map((row) => {
-        const id = getString(row, "order_id") ?? "";
-        const customer = getString(row, "customer_name");
-        const orderDate = getString(row, "order_date");
-        return {
-          id,
-          label: customer ? `הזמנה ${id.slice(0, 8)} (${customer}${orderDate ? ` • ${orderDate}` : ""})` : `הזמנה ${id.slice(0, 8)}`,
-        };
-      })
-      .filter((row) => row.id && row.label);
-  }
+  const options = optionsPromise ? await optionsPromise : { projects: [], properties: [], orders: [] };
 
   const PageClient = view === "reports" ? FinancialReportsClient : FinancialPageClient;
 
@@ -232,9 +170,9 @@ export default async function CashFlowPageContent({
         view={view}
         canManageExpenses={canManageExpenses}
         canViewCashflow={canViewCashflow}
-        recurringProjects={projectOptions}
-        recurringProperties={propertyOptions}
-        recurringOrders={orderOptions}
+        recurringProjects={options.projects}
+        recurringProperties={options.properties}
+        recurringOrders={options.orders}
       />
     </AppShell>
   );

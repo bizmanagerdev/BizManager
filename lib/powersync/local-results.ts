@@ -199,9 +199,10 @@ async function drainIdle(e: Engine) {
 /**
  * Results too big for the device's page store (a few MB for every page
  * together): the accounts page's is ~1.5 MB (every register, 2026-10-27) and
- * would push the other pages' out. It's worked out from the copy each time.
+ * the cash-flow page's ~2 MB (13 months of the ledger, 2026-10-28); they would
+ * push the other pages' out. They're worked out from the copy each time.
  */
-const NOT_STORED: ReadonlySet<LocalCardKind> = new Set(["bankPage"]);
+const NOT_STORED: ReadonlySet<LocalCardKind> = new Set(["bankPage", "cashFlow"]);
 
 /** Store what's on screen or kept ready in the background — throttled, in an idle moment. */
 function storeLater(entry: Entry) {

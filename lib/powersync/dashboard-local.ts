@@ -60,6 +60,8 @@ import {
 import type { PaymentsSummary } from "@/components/dashboard/UpcomingPayments";
 import { copyHasBankTables, copyHasMoneyTables } from "@/lib/powersync/money-copy";
 import { loadBankPage, type BankPageData } from "@/app/(app)/financial/bank/loadBankPage";
+import { loadCashFlowFlowView, type CashFlowDialogOptions, type CashFlowViewFilters } from "@/lib/financial/cashFlowPage";
+import type { FinancialPageData } from "@/lib/financial";
 import { israelDateKey } from "@/lib/timezone";
 import type { Locale } from "@/lib/i18n/types";
 
@@ -135,6 +137,8 @@ export type LocalDashboardCards = {
   domainChart: DomainChartData | null;
   /** The accounts page (/financial/bank): every account with its register, the loans, the quick line's lists — only from a copy with sync rules v1.14. */
   bankPage: BankPageData;
+  /** The cash-flow page (/financial, תזרים): every row of its flow view, and the dialogs' lists. */
+  cashFlow: { filters: CashFlowViewFilters; data: FinancialPageData; options: CashFlowDialogOptions };
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
@@ -214,6 +218,10 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
     ...MONEY_TABLES, "accounts", "account_transfers", "account_ledger_checks", "properties", "customer_branches",
     "expense_merchant_mappings", "fx_rates",
   ],
+  // The cash-flow page: the money tables (the same scan as the money cards,
+  // over 13 months), the rent roll's leases and properties, and the dialogs'
+  // lists (projects with their customer, properties, orders).
+  cashFlow: [...MONEY_TABLES, "accounts", "properties", "lease_agreements", "customer_branches"],
 };
 
 /**
@@ -301,6 +309,19 @@ export const MONEY_CARD_NOT_READY = "money cards: this copy has no money tables 
 
 /** The same for the accounts page, on a copy synced before sync rules v1.14. */
 export const BANK_PAGE_NOT_READY = "accounts page: this copy has no accounts tables yet";
+
+/** The cash-flow page from the device, all its reads done — or refused (see strictReads). Money: no gaps. */
+async function computeCashFlow(
+  local: SupabaseClient,
+  filters: CashFlowViewFilters,
+  onServer: boolean
+): Promise<LocalDashboardCards["cashFlow"]> {
+  if (!onServer && !(await copyHasMoneyTables(local))) throw new Error(`${MONEY_CARD_NOT_READY} (sync rules before v1.8)`);
+  const { client, failures } = strictReads(local);
+  const view = await loadCashFlowFlowView(client, filters);
+  if (failures.length) throw new Error(`cashFlow: a read failed on the device — ${failures[0]}`);
+  return { filters, ...view };
+}
 
 /** The accounts page from the device, all its reads done — or refused (see strictReads). */
 async function computeBankPage(local: SupabaseClient, onServer: boolean): Promise<BankPageData> {
@@ -477,6 +498,8 @@ export async function computeLocalCard<K extends LocalCardKind>(
       return (await computeMoneyCard(local, kind, onServer)) as LocalDashboardCards[K];
     case "bankPage":
       return (await computeBankPage(local, onServer)) as LocalDashboardCards[K];
+    case "cashFlow":
+      return (await computeCashFlow(local, need<CashFlowViewFilters>(), onServer)) as LocalDashboardCards[K];
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);
   }

@@ -16,7 +16,7 @@ export async function moneyCardsOnDevice(viewer: { id: string; role: string | nu
 }
 
 /** Pages that need tables only a later copy has: the device says it has them (lib/powersync/money-copy.ts). */
-const COPY_MARK_COOKIES: Partial<Record<DeviceCheckPage, string>> = { bank: BANK_COPY_COOKIE };
+const COPY_MARK_COOKIES: Partial<Record<DeviceCheckPage, string>> = { bank: BANK_COPY_COOKIE, cashFlow: MONEY_COPY_COOKIE };
 
 /**
  * Does this person get the device version of `page` on the device asking?
@@ -54,7 +54,8 @@ export type DeviceCheckPage =
   | "properties"
   | "propertyPage"
   | "rentRoll"
-  | "bank";
+  | "bank"
+  | "cashFlow";
 
 /** The cookie a device sets once it has compared `page` today. */
 export function deviceCheckCookie(page: DeviceCheckPage): string {

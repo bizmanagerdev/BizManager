@@ -30,6 +30,10 @@
       "schedule": "0 1 * * *"
     },
     {
+      "path": "/api/cron/recurring-expenses",
+      "schedule": "15 22 * * *"
+    },
+    {
       "path": "/api/cron/fx-rates",
       "schedule": "0 14,19 * * *"
     }

@@ -545,7 +545,8 @@ const OFFLINE_HTML = `<!doctype html>
 // a search, or the server version (?data=server). Cleared on every deploy
 // (versioned name), at logout and when someone else signs in
 // (lib/powersync/device-frames.ts).
-// The accounts page too (LocalBankPage, 2026-10-27; admins only).
+// The accounts page too (LocalBankPage, 2026-10-27; admins only), and the
+// cash-flow page (LocalCashFlowPage, 2026-10-28; admins only).
 const FRAME_PATHS = new Set([
   "/dashboard",
   "/tasks",
@@ -556,6 +557,7 @@ const FRAME_PATHS = new Set([
   "/properties",
   "/rent",
   "/financial/bank",
+  "/financial",
 ]);
 // A project's page and an order's page are device pages too (LocalProjectPage,
 // LocalOrderPage): one frame per project and per order opened, so opening one
@@ -577,9 +579,10 @@ const DETAIL_FRAME_PATHS = [
 const DETAIL_FRAMES_MAX = 40;
 // Frames that read their filters from the address themselves (the drivers'
 // /deliveries reads its region on the phone, the customers list its filters,
-// the accounts page its open account): one saved frame serves every region /
-// filter, so one never opened online still opens with no signal.
-const ANY_QUERY_FRAME_PATHS = new Set(["/deliveries", "/customers", "/financial/bank"]);
+// the accounts page its open account, the cash-flow page its dates and
+// filters): one saved frame serves every region / filter, so one never opened
+// online still opens with no signal.
+const ANY_QUERY_FRAME_PATHS = new Set(["/deliveries", "/customers", "/financial/bank", "/financial"]);
 const FRAME_MARK = 'data-device-page="';
 // A navigation to a frame this soon after one was served is a reload — the
 // page found a newer version on the server, or the person pulled to refresh

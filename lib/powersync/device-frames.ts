@@ -94,6 +94,7 @@ const MENU_FRAME_PAGES: {
   { page: "properties", path: "/properties" },
   { page: "rentRoll", path: "/rent" },
   { page: "bank", path: "/financial/bank", adminOnly: true },
+  { page: "cashFlow", path: "/financial", adminOnly: true },
   // The drivers' page: in workers' menu only (the office has the sales page's tab).
   { page: "deliveries", path: "/deliveries", workerSection: "deliveries" },
 ];

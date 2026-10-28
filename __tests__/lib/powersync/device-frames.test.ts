@@ -39,6 +39,13 @@ describe("the menu pages saved for offline after each update", () => {
     expect(menuFramePaths({ id: "o1", role: "office" })).not.toContain("/financial/bank");
   });
 
+  it("the cash-flow page: the preview users' first (2026-10-28) — never the office's", () => {
+    const owner = "2fcc692e-5bd7-41a1-b4c4-3aabfa7d580e";
+    expect(menuFramePaths({ id: owner, role: "admin" })).toContain("/financial");
+    expect(menuFramePaths({ id: "a1", role: "admin" })).not.toContain("/financial");
+    expect(menuFramePaths({ id: owner, role: "office" })).not.toContain("/financial");
+  });
+
   it("a worker: his own sections that have a device version", () => {
     const worker = { id: "w1", role: "worker", locale: "he" };
     expect(menuFramePaths(worker, DEFAULT_SECTION_ACCESS)).toEqual(["/dashboard", "/tasks", "/deliveries"]);

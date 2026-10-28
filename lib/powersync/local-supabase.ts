@@ -1195,6 +1195,42 @@ const VIEWS: Record<string, SourceLoader> = {
     }));
   },
 
+  // project_overview_view: each project with its customer (inner join — one
+  // whose customer isn't there is left out, as on the server) and its
+  // manager (left join). The cash-flow page's dialogs list projects from it.
+  project_overview_view: async (reader) => {
+    const [projects, customers, users] = await Promise.all([
+      loadTable(reader, "projects"),
+      loadTable(reader, "customers"),
+      loadTable(reader, "users"),
+    ]);
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+    const userById = new Map(users.map((u) => [u.id, u]));
+    return projects
+      .filter((p) => customerById.has(p.customer_id))
+      .map((p) => {
+        const customer = customerById.get(p.customer_id) ?? {};
+        const manager = p.project_manager_id ? userById.get(p.project_manager_id) : undefined;
+        return {
+          id: p.id,
+          name: p.name,
+          status: p.status,
+          project_type: p.project_type,
+          start_date: p.start_date,
+          end_date: p.end_date,
+          agreed_base_price: p.agreed_base_price,
+          actual_price: p.actual_price,
+          expenses_billed_separately: p.expenses_billed_separately,
+          customer_id: customer.id ?? null,
+          customer_name: customer.name ?? null,
+          project_manager_id: manager?.id ?? null,
+          project_manager_name: manager?.full_name ?? null,
+          created_at: p.created_at,
+          updated_at: p.updated_at,
+        };
+      });
+  },
+
   // project_dashboard_view = project_overview_view (inner join customers, the
   // manager's name) + project_financials_view + task progress (tasks this
   // viewer can see) + a few project columns + the customer's phone.

@@ -127,6 +127,11 @@ type Props = {
   /** The flow page arrives with only its newest ledger/upcoming rows; the full
    *  lists are loaded right after from /api/financial/entries. */
   entriesPartial?: boolean;
+  /** The page is worked out on the device (LocalCashFlowPage): a filter only
+   *  changes the address — the device works the page out for it, no server. */
+  filtersOnDevice?: boolean;
+  /** The ?focus= deep link: the entry whose dialog opens with the page. */
+  focusId?: string | null;
   earnedRevenue?: EarnedRevenueReport | null;
   projectBreakdown?: ProjectBreakdown | null;
   domainProof?: DomainProofMap | null;
@@ -267,9 +272,23 @@ function getEntryId(entry: FinancialEntry) {
   return entry.id;
 }
 
-export default function FinancialPageClient({
+/** The page as the server draws it: the ?focus= deep link read from the address. */
+export default function FinancialPageClient(props: Omit<Props, "focusId">) {
+  const focusId = useSearchParams().get("focus");
+  return <FinancialPage {...props} focusId={focusId} />;
+}
+
+/**
+ * The page itself. It doesn't follow the address: on the device version
+ * (LocalCashFlowPage) a filter changes only the address, and redrawing every
+ * row for that took as long as drawing the new figures (2026-10-28) — the
+ * deep link comes as a prop, and what reads the address reads it when it runs.
+ */
+export function FinancialPage({
   data,
   entriesPartial = false,
+  filtersOnDevice = false,
+  focusId = null,
   initialFilters,
   view = "flow",
   earnedRevenue = null,
@@ -286,7 +305,6 @@ export default function FinancialPageClient({
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   // Inner report tab. Local state — switching it must not trigger a server
   // re-query, unlike the shared URL-driven filters. 5 views: overview / pl /
   // monthly / balance / forecast.
@@ -391,7 +409,7 @@ export default function FinancialPageClient({
     if (!entriesPartial) return;
     let cancelled = false;
     const source = data;
-    void fetch(`/api/financial/entries?${searchParams.toString()}`, { cache: "no-store" })
+    void fetch(`/api/financial/entries${window.location.search}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((body: { ledgerEntries?: unknown; upcomingEntries?: unknown } | null) => {
         if (cancelled || !body || !Array.isArray(body.ledgerEntries) || !Array.isArray(body.upcomingEntries)) return;
@@ -406,8 +424,8 @@ export default function FinancialPageClient({
     return () => {
       cancelled = true;
     };
-    // The URL these rows were rendered for is the one to load the rest of.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // The URL these rows were rendered for (the address as they arrive) is the
+    // one to load the rest of.
   }, [data, entriesPartial]);
   const listsComplete = !entriesPartial || fullLists?.source === data;
   const upcomingEntries = useUndoOverlay(
@@ -427,7 +445,6 @@ export default function FinancialPageClient({
   // effect) so the dialog is already open on the first paint, and so closing it
   // doesn't fight the URL. `focusDismissed` remembers the close, since the param
   // stays in the address bar.
-  const focusId = searchParams.get("focus");
   const [focusDismissed, setFocusDismissed] = useState<string | null>(null);
   const focusExpense = useMemo(() => {
     if (!focusId || focusDismissed === focusId) return null;
@@ -656,10 +673,17 @@ export default function FinancialPageClient({
     mutate: (params: URLSearchParams) => void,
     options?: { pending?: boolean }
   ) => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(window.location.search);
     mutate(params);
     const nextQueryString = params.toString();
     const nextHref = nextQueryString ? `${pathname}?${nextQueryString}` : pathname;
+
+    // The device version: useSearchParams follows the address, and the device
+    // works the page out for it — also with no connection.
+    if (filtersOnDevice) {
+      window.history.replaceState(null, "", nextHref);
+      return;
+    }
 
     if (options?.pending) {
       startFilterTransition(() => {

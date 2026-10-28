@@ -44,6 +44,8 @@ function wasReported(key: string): boolean {
 }
 
 function report(results: ShadowResult[]) {
+  // Sentry is off on the dev server: the results there go to the console.
+  if (process.env.NODE_ENV !== "production") console.info("PowerSync shadow check", JSON.stringify(results));
   const day = new Date().toISOString().slice(0, 10);
   for (const result of results) {
     if (result.match || alreadyReported(`${day}:differs:${result.card}`)) continue;
