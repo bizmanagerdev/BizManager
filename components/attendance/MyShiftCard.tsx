@@ -174,44 +174,33 @@ export default function MyShiftCard({
   async function call(path: string, successMessage: string, extra?: Record<string, unknown>) {
     setBusy(true);
     try {
-      // No signal: into the send queue with the time it was pressed (the
-      // server would otherwise take its own "now", hours later). A clock-in
-      // first checks the phone's copy for a shift already open, and then shows
-      // as open at once (PENDING_SHIFT_KEY).
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        const isStart = path === "/api/attendance/my/start";
-        if (isStart && (await openShiftOnDevice(userId))) {
-          toast.error(t(profileDict, locale, "shiftAlreadyOpen"));
-          return;
-        }
-        const notes = note.trim() || null;
-        const pressedAt = new Date().toISOString();
-        const body: Record<string, unknown> = isStart ? { notes, clock_in: pressedAt, ...extra } : { notes, ...extra };
-        const result = await offlineFetch(path, body, isStart ? "פתיחת המשמרת" : "דיווח המשמרת");
-        if (!result.queued && !result.ok) {
-          toast.error(toHebrewError(result.error ?? "", t(profileDict, locale, "actionFailed")));
-          return;
-        }
-        if (isStart && result.queued) {
-          writePendingShift({ clock_in: typeof body.clock_in === "string" ? body.clock_in : pressedAt, notes, at: Date.now() });
-        }
-        resetForm();
-        toast.success(successMessage);
+      const isStart = path === "/api/attendance/my/start";
+      // No signal: a clock-in first checks the phone's copy for a shift already open.
+      if (isStart && typeof navigator !== "undefined" && !navigator.onLine && (await openShiftOnDevice(userId))) {
+        toast.error(t(profileDict, locale, "shiftAlreadyOpen"));
         return;
       }
-      const response = await fetch(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: note.trim() || null, ...extra }),
-      });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        toast.error(toHebrewError(json.error ?? "", t(profileDict, locale, "actionFailed")));
+      // Always through the send queue, with a key (audit 2026-10-27): a phone
+      // that says it's online on a weak signal used to fail the press with
+      // nothing kept. Now it waits on the phone and goes up by itself, and the
+      // key makes a resend after a lost answer "done", not "already open". It
+      // carries the time it was pressed (the server would otherwise take its
+      // own "now", when it finally arrives); a clock-in waiting to be sent
+      // shows as open at once (PENDING_SHIFT_KEY).
+      const notes = note.trim() || null;
+      const pressedAt = new Date().toISOString();
+      const body: Record<string, unknown> = isStart ? { notes, clock_in: pressedAt, ...extra } : { notes, ...extra };
+      const result = await offlineFetch(path, body, isStart ? "פתיחת המשמרת" : "דיווח המשמרת", { idempotent: true });
+      if (!result.queued && !result.ok) {
+        toast.error(toHebrewError(result.error ?? "", t(profileDict, locale, "actionFailed")));
         return;
+      }
+      if (isStart && result.queued) {
+        writePendingShift({ clock_in: typeof body.clock_in === "string" ? body.clock_in : pressedAt, notes, at: Date.now() });
       }
       resetForm();
       toast.success(successMessage);
-      startSaving(() => router.refresh());
+      if (!result.queued) startSaving(() => router.refresh());
     } catch (error: unknown) {
       toast.error(toHebrewError(error, t(profileDict, locale, "noServerConnection")));
     } finally {
@@ -286,7 +275,9 @@ export default function MyShiftCard({
         // connection instead of reverting and losing the note and end time.
         // It names its shift, so a resend after the answer was lost is
         // recognised as done and can't close a shift opened since. (A clock-in
-        // still waiting has no id yet: the end time stands in for it.)
+        // still waiting has no id yet: the end time stands in for it.) Its key
+        // keeps it on the phone while it's on its way, so an app closed then
+        // sends it on the next start.
         const result = await offlineFetch(
           "/api/attendance/my/close",
           {
@@ -294,7 +285,8 @@ export default function MyShiftCard({
             clock_out: endIso,
             ...(openShift.id !== "pending" ? { report_id: openShift.id } : {}),
           },
-          "סיום המשמרת"
+          "סיום המשמרת",
+          { idempotent: true }
         );
         if (!result.queued && !result.ok) {
           return { ok: false, error: toHebrewError(result.error ?? "", t(profileDict, locale, "actionFailed")) };

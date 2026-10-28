@@ -107,6 +107,49 @@ describe("clocking in with no signal", () => {
   });
 });
 
+// With the phone saying it's online, too (audit 2026-10-27): on a weak signal
+// the press used to fail with nothing kept. It goes through the send queue
+// with a key and the time it was pressed, whatever the phone says.
+describe("clocking in with the phone saying it's online", () => {
+  async function pressClockIn() {
+    online = true;
+    render(<MyShiftCard openShift={null} pendingCount={0} locale="he" userId="worker-1" />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "פתיחת משמרת" }));
+    });
+    expect(offlineFetch).toHaveBeenCalledTimes(1);
+    return offlineFetch.mock.calls[0] as [string, Record<string, unknown>, string, { idempotent?: boolean }];
+  }
+
+  it("goes through the send queue with a key and the time it was pressed", async () => {
+    offlineFetch.mockResolvedValue({ queued: false, ok: true, data: { ok: true, id: "r1" } });
+    const [path, body, label, options] = await pressClockIn();
+    expect(path).toBe("/api/attendance/my/start");
+    expect(typeof body.clock_in).toBe("string");
+    expect(label).toBe("פתיחת המשמרת");
+    expect(options).toEqual({ idempotent: true });
+    expect(readyLocalDatabase).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith("המשמרת נפתחה.");
+    // The server has it: nothing waits on the phone.
+    expect(localStorage.getItem("bizh-pending-shift")).toBeNull();
+  });
+
+  it("on a weak signal it waits on the phone, and the card shows the shift open", async () => {
+    offlineFetch.mockResolvedValue({ queued: true, reason: "slow", key: "k" });
+    await pressClockIn();
+    expect(screen.getByText(/משמרת פתוחה מ־/)).toBeTruthy();
+    expect(localStorage.getItem("bizh-pending-shift")).toContain("clock_in");
+  });
+
+  it("refused by the server: says why, and nothing waits", async () => {
+    offlineFetch.mockResolvedValue({ queued: false, ok: false, status: 409, error: "כבר יש לך משמרת פתוחה." });
+    await pressClockIn();
+    expect(toast.error).toHaveBeenCalledWith("כבר יש לך משמרת פתוחה.");
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(localStorage.getItem("bizh-pending-shift")).toBeNull();
+  });
+});
+
 // A close resent after its answer was lost must be recognised by the server
 // as done, never close a shift opened since (סאלח, 24–25/10): it names its shift.
 describe("clocking out", () => {
@@ -119,8 +162,10 @@ describe("clocking out", () => {
       fireEvent.click(screen.getByRole("button", { name: "שליחה לאישור" }));
     });
     expect(offlineFetch).toHaveBeenCalledTimes(1);
-    const [path, body] = offlineFetch.mock.calls[0];
+    const [path, body, , options] = offlineFetch.mock.calls[0];
     expect(path).toBe("/api/attendance/my/close");
+    // Kept on the phone while it's on its way (an app closed mid-send sends it on the next start).
+    expect(options).toEqual({ idempotent: true });
     return body as Record<string, unknown>;
   }
 
