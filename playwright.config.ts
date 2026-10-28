@@ -17,6 +17,21 @@ loadEnv({ path: path.resolve(__dirname, ".env.test.local") });
 // of the server on 3000, which it turns off to make the server stop answering.
 const OFFLINE_HOST = "bizh.test";
 const OFFLINE_BASE_URL = `http://${OFFLINE_HOST}:3100`;
+const offlineUse = {
+  ...devices["Desktop Chrome"],
+  // The full Chromium, not the headless shell the other projects get: the
+  // shell ignores the secure-origin switch below (checked 2026-10-27 — no
+  // secure context, so no service worker).
+  channel: "chromium",
+  baseURL: OFFLINE_BASE_URL,
+  serviceWorkers: "allow" as const,
+  launchOptions: {
+    args: [
+      `--host-resolver-rules=MAP ${OFFLINE_HOST} 127.0.0.1`,
+      `--unsafely-treat-insecure-origin-as-secure=${OFFLINE_BASE_URL}`,
+    ],
+  },
+};
 
 export default defineConfig({
   testDir: "./e2e",
@@ -59,24 +74,19 @@ export default defineConfig({
     // switched off mid-test. Its own CI step (.github/workflows/ci.yml).
     {
       name: "offline",
-      use: {
-        ...devices["Desktop Chrome"],
-        // The full Chromium, not the headless shell the other projects get:
-        // the shell ignores the secure-origin switch below (checked
-        // 2026-10-27 — no secure context, so no service worker).
-        channel: "chromium",
-        baseURL: OFFLINE_BASE_URL,
-        serviceWorkers: "allow",
-        launchOptions: {
-          args: [
-            `--host-resolver-rules=MAP ${OFFLINE_HOST} 127.0.0.1`,
-            `--unsafely-treat-insecure-origin-as-secure=${OFFLINE_BASE_URL}`,
-          ],
-        },
-      },
-      testMatch: /offline-.*\.spec\.ts/,
+      use: offlineUse,
+      testMatch: /offline-pages\.spec\.ts/,
       // Each move with no connection loads a whole page from the device and
       // starts it again — slower than 5 s on a busy 2-core runner.
+      expect: { timeout: 15_000 },
+    },
+    // The same, with the device's copy of the data syncing — on a build of
+    // its own and a sync server CI runs for it (ci.yml, "Start a PowerSync
+    // server on the test database").
+    {
+      name: "offline-copy",
+      use: offlineUse,
+      testMatch: /offline-device-copy\.spec\.ts/,
       expect: { timeout: 15_000 },
     },
   ],

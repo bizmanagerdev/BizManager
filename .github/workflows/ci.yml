@@ -274,6 +274,13 @@ jobs:
         # test (its own step below) reaches this same build on a .test name,
         # where the worker does register and runs as in production.
         #
+        # NEXT_PUBLIC_POWERSYNC_URL: an address where nothing listens. Unset,
+        # the build syncs with the real PowerSync server, which replicates the
+        # live database — it refuses the test logins, but CI shouldn't reach
+        # it at all. Either way the device copy never syncs here, so the device
+        # pages come as their server version, as before. The device copy test
+        # further down gets a build of its own, with a sync server of its own.
+        #
         # NEXT_PUBLIC_* vars must be present at BUILD time to get baked into
         # the client bundle, so .env.test.local (written by the previous
         # step) is sourced into this step's own shell — these are throwaway
@@ -283,7 +290,7 @@ jobs:
           set -a
           source .env.test.local
           set +a
-          NEXT_PUBLIC_E2E_TEST=1 npm run build
+          NEXT_PUBLIC_E2E_TEST=1 NEXT_PUBLIC_POWERSYNC_URL=http://127.0.0.1:9 npm run build
         timeout-minutes: 10
 
       - name: Install Playwright's chromium
@@ -358,6 +365,146 @@ jobs:
           path: playwright-report-offline/
           retention-days: 7
 
+      - name: Start a PowerSync server on the test database
+        # For the device copy test (e2e/offline-device-copy.spec.ts): the app
+        # with its copy of the data really syncing, as on the office's phones.
+        # The real PowerSync server replicates the live database and can't
+        # check the test logins, so CI runs its own — the open-source server,
+        # reading this job's local database. The migrations already made its
+        # "powersync" publication and powersync_role there, as on the live one;
+        # the role gets a password for this run only. The server keeps its own
+        # data in a second database on the same Postgres, checks logins the
+        # way the local stack signs them, and syncs powersync/sync-config.yaml
+        # as it is. Ends by asking it for the admin's data with a real login,
+        # so a server that can't sync stops here, saying why.
+        id: powersync
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.test.local
+          set +a
+          DB="postgresql://postgres:postgres@127.0.0.1:54322"
+          # A role with replication rights may only be changed by one that
+          # has them and made it: else the local stack's own admin login.
+          SET_PASSWORD="ALTER ROLE powersync_role WITH LOGIN PASSWORD 'ci-powersync';"
+          psql -v ON_ERROR_STOP=1 "$DB/postgres" -c "$SET_PASSWORD" \
+            || psql -v ON_ERROR_STOP=1 "postgresql://supabase_admin:postgres@127.0.0.1:54322/postgres" -c "$SET_PASSWORD"
+          psql -v ON_ERROR_STOP=1 "$DB/postgres" -c "CREATE DATABASE powersync_storage;"
+
+          # A real login, to see how the local stack signs them.
+          TOKEN=$(curl -sf "$NEXT_PUBLIC_SUPABASE_URL/auth/v1/token?grant_type=password" \
+            -H "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY" -H "Content-Type: application/json" \
+            -d '{"email":"e2e-admin@bizh.test","password":"e2e-test-password-123"}' | jq -r .access_token)
+          ALG=$(node -e 'console.log(JSON.parse(Buffer.from(process.argv[1].split(".")[0], "base64url")).alg)' "$TOKEN")
+          echo "The local stack signs logins with $ALG."
+          if [ "$ALG" = "HS256" ]; then
+            JWT_SECRET=$(npx supabase status -o env | grep -E '^JWT_SECRET=' | head -1 | cut -d= -f2- | tr -d '"')
+            AUTH="  supabase_jwt_secret: \"$JWT_SECRET\""
+          else
+            AUTH="  jwks_uri: $NEXT_PUBLIC_SUPABASE_URL/auth/v1/.well-known/jwks.json"
+          fi
+
+          mkdir -p ci-powersync
+          cp powersync/sync-config.yaml ci-powersync/sync-config.yaml
+          cat > ci-powersync/service.yaml <<YAML
+          telemetry:
+            disable_telemetry_sharing: true
+          replication:
+            connections:
+              - type: postgresql
+                uri: postgresql://powersync_role:ci-powersync@127.0.0.1:54322/postgres
+                sslmode: disable
+          storage:
+            type: postgresql
+            uri: $DB/powersync_storage
+            sslmode: disable
+          port: 8080
+          sync_config:
+            path: sync-config.yaml
+          client_auth:
+            supabase: true
+          $AUTH
+            audience: ["authenticated"]
+          YAML
+
+          docker run -d --name powersync --network host \
+            -v "$PWD/ci-powersync:/config:ro" \
+            -e POWERSYNC_CONFIG_PATH=/config/service.yaml \
+            -e PS_LOG_FORMAT=text \
+            -e NODE_OPTIONS=--max-old-space-size=1000 \
+            journeyapps/powersync-service:1.27 start -r unified
+
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8080/probes/liveness > /dev/null; then break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' powersync)" != "true" ]; then
+              echo "::error::The PowerSync server stopped while starting."
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # The admin's data, as the app asks for it: the first lines name a
+          # checkpoint once the server has read the database through.
+          for i in $(seq 1 12); do
+            curl -s -N --max-time 10 -X POST http://127.0.0.1:8080/sync/stream \
+              -H "Authorization: Token $TOKEN" -H "Content-Type: application/json" \
+              -d '{"buckets":[],"include_checksum":true,"raw_data":true,"streams":{"include_defaults":true,"subscriptions":[]}}' \
+              > /tmp/powersync-stream.txt || true
+            if grep -q '"checkpoint' /tmp/powersync-stream.txt; then
+              echo "The PowerSync server syncs the admin's data."
+              head -c 600 /tmp/powersync-stream.txt; echo
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error title=PowerSync server::It didn't sync the admin's data. Its answer: $(head -c 600 /tmp/powersync-stream.txt | tr '\n' ' ')"
+          exit 1
+        timeout-minutes: 5
+
+      - name: Build the app again, syncing with that server
+        # This build only for the device copy test: the tests above keep the
+        # one built at the start.
+        id: build-copy
+        if: ${{ !cancelled() && steps.powersync.outcome == 'success' }}
+        run: |
+          set -a
+          source .env.test.local
+          set +a
+          NEXT_PUBLIC_E2E_TEST=1 NEXT_PUBLIC_POWERSYNC_URL=http://127.0.0.1:8080 npm run build
+        timeout-minutes: 10
+
+      - name: Run the device copy offline test
+        id: offline-copy
+        if: ${{ !cancelled() && steps.build-copy.outcome == 'success' }}
+        run: npm run test:e2e -- --project=offline-copy
+        env:
+          E2E_POWERSYNC: "1"
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-offline-copy
+
+      - name: The PowerSync server's log on failure
+        # As an annotation too: it reads on the run's page, where the raw log
+        # needs a signed-in collaborator.
+        if: ${{ !cancelled() && (steps.powersync.outcome == 'failure' || steps.offline-copy.outcome == 'failure') }}
+        run: |
+          docker logs powersync > /tmp/powersync.log 2>&1 || true
+          tail -n 80 /tmp/powersync.log
+          LINES=$(tail -n 40 /tmp/powersync.log | cut -c1-300 | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+          echo "::warning title=PowerSync server log (last 40 lines)::$LINES"
+
+      - name: Upload the device copy test's report and the server's log on failure
+        if: ${{ !cancelled() && (steps.powersync.outcome == 'failure' || steps.offline-copy.outcome == 'failure') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-offline-copy
+          path: |
+            playwright-report-offline-copy/
+            /tmp/powersync.log
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Stop local Supabase stack
         if: always()
-        run: npx supabase stop
+        run: |
+          docker rm -f powersync > /dev/null 2>&1 || true
+          npx supabase stop

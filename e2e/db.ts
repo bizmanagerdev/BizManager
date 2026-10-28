@@ -251,6 +251,13 @@ export async function deleteTestTaskByTitle(subject: string): Promise<void> {
   if (error) throw error;
 }
 
+/** A task made through the UI, once it has reached the server (null until then). */
+export async function findTaskIdBySubject(subject: string): Promise<string | null> {
+  const { data, error } = await adminClient().from("tasks").select("id").eq("subject", subject).maybeSingle();
+  if (error) throw error;
+  return (data as { id: string } | null)?.id ?? null;
+}
+
 export type TestTask = { id: string; subject: string };
 
 export async function createTestTask(

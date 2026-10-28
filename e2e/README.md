@@ -97,8 +97,9 @@ can't reach: the native push and share plugins (`lib/native-push.ts`,
 `lib/native-share.ts`), and the installed APK itself, which points at
 production and is never driven by these tests.
 
-**Offline** (`offline-*.spec.ts`, run in the `offline` project — CI only)
-- `offline-pages` — with the network off: saved pages open from the device with one red bar that stays; a page never opened says "not saved" and the app stays where it is; "+" → task form opens; a refresh loads the saved copy; back online the bar goes. Then the same with only the server silent while the device says it's online (the owner's laptop, 2026-10-27).
+**Offline** (`offline-*.spec.ts`, run in the `offline` and `offline-copy` projects — CI only)
+- `offline-pages` — a device whose copy of the data (PowerSync) isn't ready, so the device pages come as their server version, saved whole. With the network off: saved pages open from the device with one red bar that stays; a page never opened opens and says in its place that it isn't on the device (no empty page), and the app moves on from it; "+" → task form opens; a refresh loads the saved copy; back online the bar goes. Then the same with only the server silent while the device says it's online (the owner's laptop, 2026-10-27).
+- `offline-device-copy` — a device whose copy syncs, as the office's are. Online, the app saves by itself the menu's device pages (opened or not) and its whole code. With the network off: the device pages open from their frames, drawn from the copy (the customers list, a customer's page, pages never opened online), and a page with no device version says so in its place; a task added through "+" waits on the device, the red bar counts and lists it, it shows on the board and after a refresh; back online it reaches the server by itself.
 
 The service worker removes itself on localhost and 127.0.0.1, and the test
 build (`NEXT_PUBLIC_E2E_TEST=1`) doesn't register it there. So this project's
@@ -110,11 +111,16 @@ test, in front of the server on 3000, turned off to make the server stop
 answering. It runs only on the production build CI serves (`next dev` has no
 service worker), as its own CI step.
 
-Not covered offline yet: the device pages' saved frames (`SAVE_FRAMES`,
-`OfflineMenuFrames`) — they need the on-device copy (PowerSync), and CI has no
-PowerSync service, so the test runs as a device whose copy isn't ready
-(server-version pages, saved whole). Also saves made offline (a task created
-with no connection, sent when it's back).
+`offline-device-copy` needs a sync server: CI starts the open-source PowerSync
+server (Docker, `journeyapps/powersync-service`) on the job's local database —
+its `powersync` publication and `powersync_role` come from the migrations —
+with `powersync/sync-config.yaml` as it is, and builds the app a second time
+pointed at it (`NEXT_PUBLIC_POWERSYNC_URL`). The rest of the suite runs on the
+first build, which points at an address where nothing listens, so its copy
+never syncs and it never reaches the real PowerSync server.
+
+Not covered offline yet: the frames carried over a deploy, the order, project
+and property pages offline, and workers' phones (their own share of the copy).
 
 **Not covered yet:** property management beyond leases (rent schedule,
 tenants, furniture), the weekly meetings page (/meetings), the VAT page,
