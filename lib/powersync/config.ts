@@ -97,8 +97,10 @@ export const LOCAL_DATA_PAGES = {
   bank: true,
   // The cash-flow page (/financial, תזרים, admins only) — owner, 2026-10-28:
   // "go on with תזרים … be very very cautious this is the money stuff". The
-  // money tables (sync rules v1.8; MONEY_COPY_COOKIE). The preview users' first.
-  cashFlow: false,
+  // money tables (sync rules v1.8; MONEY_COPY_COOKIE). The preview users' first;
+  // every admin's from 2026-10-29 (owner: "yes"), after the owner's copy
+  // matched the server's (Oct 29) and the page held up with the Wi-Fi off.
+  cashFlow: true,
 } as const;
 
 /**
