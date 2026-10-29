@@ -2,7 +2,9 @@ name: CI
 
 # Fast quality gate on every push and PR. Keeps process ahead of features:
 # a regression in typecheck, lint, or the test suite blocks the merge instead
-# of shipping silently. No secrets / DB needed — pure static + unit checks.
+# of shipping silently. `verify` needs no secrets or database; `money-access`
+# starts a database of its own. Production waits for both (Vercel's Deployment
+# Checks); the slower, flakier e2e job doesn't hold it back.
 
 on:
   push:
@@ -40,7 +42,76 @@ jobs:
         run: npm run lint
 
       - name: Test
-        run: npm test
+        # A test that fails is tried once more before it counts: one slow test
+        # on a busy runner shouldn't hold production back. Twice is real.
+        run: npm test -- --retry=1
+
+  money-access:
+    name: worker money access
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The worker money check (__tests__/security/rls-live.test.ts) on a
+    # database of its own, built from the migrations as e2e's is, with only
+    # what it needs (database, logins, API) — no app build, no browser, so it
+    # stays quick enough for production to wait on. It checks the access rules
+    # as the migrations write them, not changes made by hand on the live one.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: New tables get the grants they get on the live database
+        # The live database gives every new table, function and sequence to the
+        # API's roles (its default privileges); the CLI's local stack no longer
+        # does unless asked, so tables made by later migrations (ledger checks,
+        # among others) were refused even to the service role. The access rules
+        # decide who sees what, as on live. CI only; the CLI is locked at 2.107.
+        run: |
+          sed -i 's/^# auto_expose_new_tables = true/auto_expose_new_tables = true/' supabase/config.toml
+          grep -n '^auto_expose_new_tables = true' supabase/config.toml
+
+      - name: Start the database
+        # From Docker Hub when public.ecr.aws refuses the download (see e2e).
+        run: |
+          set +e
+          EXCLUDE=analytics,edge-runtime,functions,imgproxy,inbucket,meta,realtime,storage,studio,vector
+          npx supabase start --yes -x "$EXCLUDE" > /tmp/supabase.txt 2>&1
+          STATUS=$?
+          if [ $STATUS -ne 0 ] && grep -qiE "toomanyrequests|failed to pull docker image" /tmp/supabase.txt; then
+            echo "::warning::public.ecr.aws refused the Supabase image download; starting again from Docker Hub."
+            npx supabase stop --no-backup > /dev/null 2>&1
+            export SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io
+            npx supabase start --yes -x "$EXCLUDE" > /tmp/supabase.txt 2>&1
+            STATUS=$?
+          fi
+          if [ $STATUS -ne 0 ]; then
+            tail -c 20000 /tmp/supabase.txt
+            LINES=$(tail -n 30 /tmp/supabase.txt | cut -c1-300 | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=supabase start failed::$LINES"
+          fi
+          exit $STATUS
+
+      - name: Check who can see the money
+        run: |
+          STATUS_ENV=$(npx supabase status -o env)
+          get_val() {
+            echo "$STATUS_ENV" | grep -E "^($1)=" | head -1 | cut -d= -f2- | tr -d '"'
+          }
+          export RLS_TEST_URL=$(get_val "API_URL|PROJECT_URL")
+          export RLS_TEST_ANON_KEY=$(get_val "ANON_KEY|PUBLISHABLE_KEY")
+          export RLS_TEST_SERVICE_KEY=$(get_val "SERVICE_ROLE_KEY|SECRET_KEY")
+          # Without them the test would skip, and a skip reads as a pass.
+          if [ -z "$RLS_TEST_URL" ] || [ -z "$RLS_TEST_ANON_KEY" ] || [ -z "$RLS_TEST_SERVICE_KEY" ]; then
+            echo "::error::Could not read the local database's address and keys from 'supabase status -o env'."
+            exit 1
+          fi
+          npx vitest run __tests__/security/rls-live.test.ts
 
   e2e:
     name: e2e (playwright)
