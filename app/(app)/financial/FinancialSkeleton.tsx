@@ -14,7 +14,9 @@ import {
 } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TextLineSkeleton, UnderlineTabsSkeleton } from "@/components/layout/loading-skeletons";
+import { cn } from "@/lib/utils";
 import { ButtonSkeleton } from "./ButtonSkeleton";
+import { CASH_FLOW_LISTS } from "./FinancialPage.ui";
 
 // The cash-flow pages before their data, from FinancialPageClient's own
 // classes. The flow view (/financial): the tab bar (היסטוריה open, as the page
@@ -81,7 +83,7 @@ export function CashFlowSkeleton({ routeLoading = false }: { routeLoading?: bool
         <div className="min-w-0 flex-1">
           <UnderlineTabsSkeleton labels={FLOW_TABS} counts={[false, false, true]} />
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
           <ButtonSkeleton label="הוספת הכנסה" />
           <ButtonSkeleton label="הוספת הוצאה" />
           <div className="flex flex-wrap items-center gap-2">
@@ -106,7 +108,9 @@ export function CashFlowSkeleton({ routeLoading = false }: { routeLoading?: bool
                 <Skeleton className="h-9 w-full rounded-xl" />
               </div>
             </div>
-            <div className="grid gap-3 md:hidden">
+            {/* The cards or the table by the width there is, as on the page. */}
+            <div className="@container">
+            <div className={cn("grid gap-3", CASH_FLOW_LISTS.history.cards)}>
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="rounded-2xl border p-4 text-right">
                   <div className="flex items-start justify-between gap-3 sm:flex-row-reverse">
@@ -129,7 +133,7 @@ export function CashFlowSkeleton({ routeLoading = false }: { routeLoading?: bool
               ))}
             </div>
             {/* The table scrolls inside 70vh; a ledger fills it. */}
-            <div className="hidden max-h-[70vh] overflow-hidden md:block">
+            <div className={cn("max-h-[70vh] overflow-hidden", CASH_FLOW_LISTS.history.table)}>
               <table className="w-full text-right text-sm">
                 <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                   <tr className="border-b">
@@ -152,6 +156,7 @@ export function CashFlowSkeleton({ routeLoading = false }: { routeLoading?: bool
                   ))}
                 </tbody>
               </table>
+            </div>
             </div>
             <TextLineSkeleton className="pt-3 text-center text-xs" barClassName="w-40" />
           </CardContent>

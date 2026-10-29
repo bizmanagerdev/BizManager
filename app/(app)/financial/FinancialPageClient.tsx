@@ -3,8 +3,8 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
-import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { formatCurrencyAmount } from "@/lib/money";
 import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
 import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -18,7 +18,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import CancelRecurringMonthDialog from "@/components/financial/CancelRecurringMonthDialog";
-import { canCancelRecurringMonth, isCancelledRecurringMonth } from "@/lib/recurring/cancelMonth";
+import { canCancelRecurringMonth } from "@/lib/recurring/cancelMonth";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
@@ -41,7 +41,7 @@ import PositionPanel from "@/app/(app)/financial/reports/PositionPanel";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
 import type { DomainProofMap } from "@/lib/financial/domainProof";
-import { formatEnteredLabel, formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
+import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import { appendDictatedText } from "@/lib/dictation";
 import {
   getBusinessDomainLabel,
@@ -59,6 +59,7 @@ import type {
 } from "@/lib/financial";
 import { includePersonalRow } from "@/lib/financial/entries";
 import {
+  CASH_FLOW_LISTS,
   SelectField,
   SummaryCard,
   sourceKindLabel,
@@ -69,6 +70,15 @@ import {
   typeLabel,
   typeVariant,
 } from "./FinancialPage.ui";
+import {
+  CashFlowEntryCard,
+  expenseStatusChip,
+  formatCurrency,
+  isEditableExpenseEntry,
+  recordedByLabel,
+  ShekelNote,
+  type EditableExpenseEntry,
+} from "./CashFlowEntryCard";
 import { cn } from "@/lib/utils";
 import { highlightText } from "@/components/search/highlightMatch";
 import { SearchMatchLine } from "@/components/search/SearchMatchLine";
@@ -149,17 +159,6 @@ type Props = {
   recurringProperties: Array<{ id: string; label: string }>;
 };
 
-type EditableExpenseEntry = FinancialEntry & {
-  origin: "expense";
-  expenseId: string;
-  expenseCategory: string | null;
-  expenseDescriptionRaw?: string | null;
-  expenseNotes: string | null;
-  expenseProjectId: string | null;
-  expenseOrderId: string | null;
-  expensePropertyId: string | null;
-};
-
 type IncomeCreateFormState = {
   businessDomain: ExpenseBusinessDomain | "";
   projectId: string;
@@ -179,25 +178,8 @@ type IncomeCreateFormState = {
   installments?: string;
 };
 
-const currencyFormatter = new Intl.NumberFormat("he-IL", {
-  style: "currency",
-  currency: "ILS",
-  minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-});
-
-function formatCurrency(value: number) {
-  return currencyFormatter.format(value);
-}
-
-/** Under a row's US$ or C$: its shekels, which every total here counts. */
-function ShekelNote({ shekels, paint }: { shekels: number; paint: (text: string) => ReactNode }) {
-  return <span className="block text-[11px] font-normal text-muted-foreground">{paint(formatShekelNote(shekels))}</span>;
-}
-
-function isEditableExpenseEntry(entry: FinancialEntry): entry is EditableExpenseEntry {
-  return entry.origin === "expense" && typeof entry.expenseId === "string" && entry.expenseId.length > 0;
-}
+// What an upcoming card already shows, so the search's "found in" line doesn't repeat it.
+const UPCOMING_CARD_DETAIL_LABELS = [...LEDGER_MOBILE_DETAIL_LABELS, "מועד פירעון"] as const;
 
 // A deleted month of a recurring bill comes back (the generator walks every
 // period), so an open one is cancelled instead — "ביטול החודש", which keeps
@@ -208,17 +190,6 @@ function isCancellableRecurringMonth(entry: FinancialEntry): boolean {
     paymentStatus: entry.paymentStatus,
     paidAmount: entry.expensePaidAmount,
   });
-}
-
-// The status chip on an expense row; a cancelled month reads בוטל, not ₪0 שולם.
-function expenseStatusChip(entry: FinancialEntry): { label: string; tone: string } {
-  const status = entry.paymentStatus ?? "not_paid";
-  if (isCancelledRecurringMonth({ recurringTemplateId: entry.expenseRecurringTemplateId, paymentStatus: status, amount: entry.amount })) {
-    return { label: "בוטל", tone: "border-border bg-muted text-muted-foreground" };
-  }
-  if (status === "paid") return { label: "שולם", tone: "border-success/40 bg-success/10 text-success" };
-  if (status === "partial") return { label: "חלקית", tone: "border-warning/40 bg-warning/15 text-warning-strong" };
-  return { label: "לא שולם", tone: "border-destructive/40 bg-destructive/10 text-destructive" };
 }
 
 function createIncomeFormState(): IncomeCreateFormState {
@@ -238,18 +209,6 @@ function createIncomeFormState(): IncomeCreateFormState {
     requiresSplit: false,
     tagIds: [],
   };
-}
-
-// Who put this row in: a person, or the recurring rule that generated it (a
-// generated bill carries no recordedByName — see buildExpenseEntries) — and
-// when, from the row's created_at (owner, 2026-10-15: "see exactly when things
-// happen"). The row's own date stays the day the money moved.
-function recordedByLabel(entry: FinancialEntry): string | null {
-  if (!entry.recordedByName && entry.expenseRecurringTemplateId) {
-    const when = formatShortDateTime(entry.createdAt, "");
-    return when ? `נוצר אוטומטית · ${when}` : "נוצר אוטומטית";
-  }
-  return formatEnteredLabel(entry.recordedByName, entry.createdAt);
 }
 
 function setOrDelete(params: URLSearchParams, key: string, value: string | number | null | undefined) {
@@ -1642,7 +1601,8 @@ export function FinancialPage({
               </TabsTrigger>
             </TabsList>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {/* No wider than the row: on a phone it wraps rather than running off the screen. */}
+          <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
             {flowActions}
             {filterControls}
           </div>
@@ -1686,8 +1646,8 @@ export function FinancialPage({
               לא נמצאו תנועות עבר בהתאם לסינון.
             </EmptyState>
           ) : (
-            <>
-              <div dir="rtl" className="grid gap-3 md:hidden">
+            <div className="@container">
+              <div dir="rtl" className={cn("grid gap-3", CASH_FLOW_LISTS.history.cards)}>
                 {pagedHistoryEntries.map((entry) => {
                   const editableExpense = isEditableExpenseEntry(entry) ? entry : null;
                   const isToday = entry.flowDate === data.todayIso;
@@ -1745,7 +1705,7 @@ export function FinancialPage({
                   );
                 })}
               </div>
-              <div ref={historyScrollRef} className="hidden max-h-[70vh] overflow-auto md:block">
+              <div ref={historyScrollRef} className={cn("max-h-[70vh] overflow-auto", CASH_FLOW_LISTS.history.table)}>
                 <table className="w-full text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                     <tr className="border-b">
@@ -1835,12 +1795,12 @@ export function FinancialPage({
                 </table>
                 {historyHasMore ? <div ref={historySentinelRef} className="h-1" /> : null}
               </div>
-              {historyHasMore ? <div ref={historyMobileSentinelRef} className="h-1 md:hidden" /> : null}
+              {historyHasMore ? <div ref={historyMobileSentinelRef} className={cn("h-1", CASH_FLOW_LISTS.history.cards)} /> : null}
               <div className="pt-3 text-center text-xs text-muted-foreground">
                 מציג {pagedHistoryEntries.length} מתוך {displayHistory.length} תנועות
                 {ledgerCapNote}
               </div>
-            </>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -1860,7 +1820,25 @@ export function FinancialPage({
                 אין כרגע תנועות עתידיות או ממתינות בהתאם לסינון.
               </EmptyState>
             ) : (
-              <div ref={upcomingReveal.scrollRef} className="max-h-[70vh] overflow-auto">
+              <div className="@container">
+              <div dir="rtl" className={cn("grid gap-3", CASH_FLOW_LISTS.upcoming.cards)}>
+                {pagedUpcomingEntries.map((entry) => (
+                  <CashFlowEntryCard
+                    key={entry.id}
+                    entry={entry}
+                    todayIso={data.todayIso}
+                    paint={paintLedger}
+                    reasons={ledgerReasons(entry, UPCOMING_CARD_DETAIL_LABELS)}
+                    showDueDate
+                    canManage={canManageExpenses}
+                    onOpen={() => navigateToEntry(entry)}
+                    onMarkPaid={openMarkPaid}
+                    onEdit={openExpenseEditor}
+                    onDelete={setDeletingExpense}
+                  />
+                ))}
+              </div>
+              <div ref={upcomingReveal.scrollRef} className={cn("max-h-[70vh] overflow-auto", CASH_FLOW_LISTS.upcoming.table)}>
                 <table className="w-full text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                     <tr className="border-b">
@@ -2020,6 +1998,8 @@ export function FinancialPage({
                 </table>
                 {upcomingReveal.hasMore ? <div ref={upcomingReveal.sentinelRef} className="h-1" /> : null}
               </div>
+              {upcomingReveal.hasMore ? <div ref={upcomingReveal.mobileSentinelRef} className={cn("h-1", CASH_FLOW_LISTS.upcoming.cards)} /> : null}
+              </div>
             )}
             {upcomingEntries.length > 0 ? (
               <div className="pt-3 text-center text-xs text-muted-foreground">
@@ -2083,103 +2063,25 @@ export function FinancialPage({
               לא נמצאו תנועות עבור הסינון שנבחר.
             </EmptyState>
           ) : (
-            <>
-              <div dir="rtl" className="grid gap-3 md:hidden">
-                {pagedLedgerEntries.map((entry) => {
-                  const editableExpense = isEditableExpenseEntry(entry) ? entry : null;
-                  return (
-                  <article
+            <div className="@container">
+              <div dir="rtl" className={cn("grid gap-3", CASH_FLOW_LISTS.ledger.cards)}>
+                {pagedLedgerEntries.map((entry) => (
+                  <CashFlowEntryCard
                     key={entry.id}
-                    data-focus-id={entry.id}
-                    className={cn(
-                      "rounded-2xl border p-4 text-right",
-                      entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
-                    )}
-                    onClick={() => navigateToEntry(entry)}
-                  >
-                    <div className="flex items-start justify-between gap-3 sm:flex-row-reverse">
-                      <div className="space-y-1">
-                        <div dir="ltr" className="text-sm font-medium tabular-nums">{paintLedger(formatShortDate(entry.flowDate))}</div>
-                        <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}</div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={typeVariant(entry.type)}>{typeLabel(entry.type)}</Badge>
-                        <Badge variant={stageVariant(entry.stage)}>{stageLabel(entry.stage)}</Badge>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 space-y-2 text-sm">
-                      <div className="font-medium">{paintLedger(entry.description)}</div>
-                      {ledgerReasons(entry, LEDGER_MOBILE_DETAIL_LABELS)}
-                      <div className="text-muted-foreground">{paintLedger(entry.domainName)}</div>
-                      <div className="text-muted-foreground">
-                        {entry.sourceHref ? (
-                          <Link
-                            href={entry.sourceHref}
-                            className="transition-colors hover:text-foreground"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              emitNavigationStart();
-                            }}
-                          >
-                            <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
-                          </Link>
-                        ) : (
-                          <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        {entry.paymentMethodLabel ? <span>{paintLedger(entry.paymentMethodLabel)}</span> : null}
-                        {entry.reference ? <span>{paintLedger(entry.reference)}</span> : null}
-                        {recordedByLabel(entry) ? <span>{paintLedger(recordedByLabel(entry))}</span> : null}
-                        {entry.origin === "expense" ? (
-                          <>
-                            <span className={cn("rounded-full border px-2 py-0.5 font-medium", expenseStatusChip(entry).tone)}>
-                              {expenseStatusChip(entry).label}
-                            </span>
-                            {(() => {
-                              const st = entry.paymentStatus ?? "not_paid";
-                              if (st !== "paid" && st !== "partial") return null;
-                              const methodLabel = entry.expensePaymentMethod === "bank_transfer" ? "העברה בנקאית"
-                                : entry.expensePaymentMethod === "cash" ? "מזומן"
-                                : entry.expensePaymentMethod === "check" ? "צ'ק"
-                                : entry.expensePaymentMethod === "credit_card" ? "כרטיס אשראי"
-                                : entry.expensePaymentMethod === "other" ? "אחר" : null;
-                              const parts: string[] = [];
-                              if (st === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
-                              if (methodLabel) parts.push(methodLabel);
-                              if (!parts.length) return null;
-                              return <span>{parts.join(" • ")}</span>;
-                            })()}
-                          </>
-                        ) : null}
-                      </div>
-                      <div dir="ltr" className={cn("font-semibold tabular-nums", typeAmountClass(entry.type))}>
-                        {entry.type === "inflow" ? "+" : "-"}
-                        {paintLedger(entry.foreign ? formatCurrencyAmount(entry.foreign.amount, entry.foreign.currency) : formatCurrency(entry.amount))}
-                        {entry.foreign ? <ShekelNote shekels={entry.amount} paint={paintLedger} /> : null}
-                      </div>
-                      {canManageExpenses && editableExpense ? (
-                        <div className="flex justify-end gap-2 pt-1">
-                          <EditButton onClick={(event) => {
-                              event.stopPropagation();
-                              openExpenseEditor(editableExpense);
-                            }} label="עריכה" />
-                          <DeleteButton
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setDeletingExpense(editableExpense);
-                            }}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  </article>
-                  );
-                })}
+                    entry={entry}
+                    todayIso={data.todayIso}
+                    paint={paintLedger}
+                    reasons={ledgerReasons(entry, LEDGER_MOBILE_DETAIL_LABELS)}
+                    canManage={canManageExpenses}
+                    onOpen={() => navigateToEntry(entry)}
+                    onMarkPaid={openMarkPaid}
+                    onEdit={openExpenseEditor}
+                    onDelete={setDeletingExpense}
+                  />
+                ))}
               </div>
 
-              <div ref={ledgerScrollRef} className="hidden max-h-[70vh] overflow-auto md:block">
+              <div ref={ledgerScrollRef} className={cn("max-h-[70vh] overflow-auto", CASH_FLOW_LISTS.ledger.table)}>
                 <table className="w-full text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                     <tr className="border-b">
@@ -2329,7 +2231,7 @@ export function FinancialPage({
                 </table>
                 {ledgerHasMore ? <div ref={ledgerSentinelRef} className="h-1" /> : null}
               </div>
-              {ledgerHasMore ? <div ref={ledgerMobileSentinelRef} className="h-1 md:hidden" /> : null}
+              {ledgerHasMore ? <div ref={ledgerMobileSentinelRef} className={cn("h-1", CASH_FLOW_LISTS.ledger.cards)} /> : null}
               <div className="pt-3 text-center text-xs text-muted-foreground">
                 מציג {pagedLedgerEntries.length} מתוך {displayLedger.length} תנועות
                 {ledgerCapNote}
@@ -2337,7 +2239,7 @@ export function FinancialPage({
                   ? " · המערכת טוענת עד 1500 — סננו לפי תאריך לצפייה בנוספות"
                   : ""}
               </div>
-            </>
+            </div>
           )}
         </CardContent>
       </Card>

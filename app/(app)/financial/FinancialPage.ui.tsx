@@ -39,6 +39,23 @@ export function typeAmountClass(type: FinancialEntry["type"]) {
   return type === "inflow" ? "text-success" : "text-destructive";
 }
 
+/**
+ * The flow view's three lists: the table where it fits, the phone's cards where
+ * it doesn't — measured in the text's own size (rem, @container), as the activity
+ * page does. On an upright tablet, a 1024 screen or a laptop with big text the
+ * tables ran off the side and scrolled sideways (owner's check of every width and
+ * text size, 2026-10-29). Each width is its table's narrowest at the smallest
+ * text size: the action buttons don't grow with the text, so that's when they
+ * take the most of it; the ledger's and the upcoming's have three (✓, edit,
+ * delete). Whole class names, for Tailwind to find; FinancialSkeleton uses the
+ * history's too, so the placeholder has the page's shape.
+ */
+export const CASH_FLOW_LISTS = {
+  history: { cards: "md:@min-[39.5rem]:hidden", table: "hidden md:@min-[39.5rem]:block" },
+  ledger: { cards: "md:@min-[43rem]:hidden", table: "hidden md:@min-[43rem]:block" },
+  upcoming: { cards: "md:@min-[43rem]:hidden", table: "hidden md:@min-[43rem]:block" },
+} as const;
+
 export function sourceTypeTitle(kind: FinancialSourceKind) {
   if (kind === "project") return "פרויקט";
   if (kind === "property") return "נכס";
