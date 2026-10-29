@@ -66,6 +66,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: New tables get the grants they get on the live database
+        # The live database gives every new table, function and sequence to the
+        # API's roles (its default privileges); the CLI's local stack no longer
+        # does unless asked, so tables made by later migrations (ledger checks,
+        # among others) were refused even to the service role. The access rules
+        # decide who sees what, as on live. CI only; the CLI is locked at 2.107.
+        run: |
+          sed -i 's/^# auto_expose_new_tables = true/auto_expose_new_tables = true/' supabase/config.toml
+          grep -n '^auto_expose_new_tables = true' supabase/config.toml
+
       - name: Start the database
         # From Docker Hub when public.ecr.aws refuses the download (see e2e).
         run: |
