@@ -42,8 +42,20 @@ const ACTIVE_ADMIN = {
   full_name: "Admin",
 };
 
+const base64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+/** A login token naming `sub`, shaped like Supabase's; its signature is the database's to check. */
+const token = (sub: string) => `${base64url({ alg: "ES256", typ: "JWT" })}.${base64url({ sub })}.c2ln`;
+
+/** The cookie's session: the login token, and the plain copy of the user next to it. */
+function signedIn(copyId: string, tokenSub: string) {
+  getSession.mockResolvedValue({
+    data: { session: { access_token: token(tokenSub), user: { id: copyId, email: "a@b.com" } } },
+    error: null,
+  });
+}
+
 function authedUser() {
-  getSession.mockResolvedValue({ data: { session: { user: { id: "auth-1", email: "a@b.com" } } }, error: null });
+  signedIn("auth-1", "auth-1");
 }
 
 beforeEach(() => {
@@ -59,6 +71,29 @@ describe("requireRouteAccess — authentication", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);
   });
+
+  // Audit 2026-10-27: the id came from the cookie's plain copy of the user,
+  // which anyone can edit; an office user (who reads every profile) could name
+  // the admin there and be let in as one.
+  it("returns 401 when the cookie's copy of the user names someone other than the login token", async () => {
+    signedIn("admin-auth-id", "office-auth-id");
+    maybeSingle.mockResolvedValue({ data: { ...ACTIVE_ADMIN, auth_user_id: "admin-auth-id" }, error: null });
+    const result = await requireRouteAccess();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(401);
+    expect(eqSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when the session has no login token", async () => {
+    getSession.mockResolvedValue({ data: { session: { user: { id: "auth-1" } } }, error: null });
+    const result = await requireRouteAccess();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(401);
+  });
+
+  // A forged token (an id it was never signed for) gets this far: the database
+  // checks the signature on the profile read and refuses it, which is the
+  // "profile query errors" case below.
 });
 
 describe("requireRouteAccess — profile lookup", () => {

@@ -5,6 +5,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isPayrollWorkerType, type PayrollWorkerType } from "@/lib/payroll-worker-type";
 import { sanitizeSectionAccess, type SectionAccess } from "@/lib/auth/sections";
 import { mayLogIn } from "@/lib/auth/loginAccess";
+import { sessionUser } from "@/lib/auth/sessionUser";
 
 export type UserRole = "admin" | "office" | "worker" | "worker_no_access";
 
@@ -47,17 +48,17 @@ export const requireProfile = cache(async () => {
   // Together with the middleware call it put two sequential Auth round-trips in
   // front of each tab switch.
   //
-  // The id read here is not a trust boundary on its own: it only selects which
-  // `users` row to load, and that row's role/active/system_access checks below —
-  // plus RLS on every subsequent query — are what actually gate access. A forged
-  // cookie would have to name a real auth_user_id and would still be held to
-  // those. Restore verification with getClaims() (local JWKS check), not
-  // getUser().
+  // The id is the login token's, not the cookie's editable copy of the user:
+  // a copy naming someone else is refused (lib/auth/sessionUser.ts, audit
+  // 2026-10-27). The token's signature is checked by the database on the
+  // profile read below, made with that same token; then that row's role/
+  // active/system_access checks — plus RLS on every later query — gate access.
+  // Not getClaims() either (owner, 2026-10-29).
   const {
     data: { session: fastSession },
   } = await supabase.auth.getSession();
 
-  const authUser = fastSession?.user ?? null;
+  const authUser = sessionUser(fastSession);
 
   if (!authUser) redirect("/login");
 

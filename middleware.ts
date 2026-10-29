@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { sessionUser } from "@/lib/auth/sessionUser";
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next({ request: req });
@@ -38,10 +39,15 @@ export async function middleware(req: NextRequest) {
   // role/active checks and the table's RLS policies. Verify the token properly
   // with getClaims() (local JWKS signature check, no round-trip) rather than by
   // reintroducing getUser().
+  //
+  // The same reading of the cookie as requireProfile() (lib/auth/sessionUser.ts):
+  // a copy of the user that doesn't match the login token counts as signed out
+  // here too, so it lands on /login instead of bouncing between /login (the
+  // page gate refuses it) and /dashboard (this gate let it in).
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const user = session?.user ?? null;
+  const user = sessionUser(session);
 
   const path = req.nextUrl.pathname;
 

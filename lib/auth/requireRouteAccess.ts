@@ -3,6 +3,7 @@ import { createSupabaseRouteClient } from "@/lib/supabase/route";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { sanitizeSectionAccess, type SectionAccess } from "@/lib/auth/sections";
 import { mayLogIn } from "@/lib/auth/loginAccess";
+import { sessionUser } from "@/lib/auth/sessionUser";
 
 type RouteProfile = {
   id: string;
@@ -48,16 +49,17 @@ export async function requireRouteAccess(options?: {
   // a worker's delivery-confirm failed twice this way, then succeeded on
   // retry seconds later — intermittent, not a data problem.
   //
-  // The identity read here is not the trust boundary on its own: it only
-  // decides which `users` row to load, and that row's role/active/
-  // system_access checks below — plus RLS on every subsequent query, via the
-  // same supabase client returned to the caller — are what actually gate
-  // access. Restore verification with getClaims() (local JWKS check) if ever
-  // needed, not getUser().
+  // The id is the login token's, not the cookie's editable copy of the user:
+  // a copy naming someone else is refused (lib/auth/sessionUser.ts, audit
+  // 2026-10-27). The token's signature is checked by the database on the
+  // profile read below, made with that same token; then that row's role/
+  // active/system_access checks — plus RLS on every later query, via the same
+  // supabase client returned to the caller — gate access. Not getClaims()
+  // either (owner, 2026-10-29).
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const user = session?.user ?? null;
+  const user = sessionUser(session);
 
   if (!user) {
     return {
