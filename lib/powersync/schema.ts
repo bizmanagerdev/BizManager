@@ -705,7 +705,7 @@ const accounts = new Table({
  * this copy has the money cards' tables below (sync rules v1.8); bank_tables =
  * 1: the accounts page's (v1.14) — see lib/powersync/money-copy.ts.
  */
-const business_settings = new Table({ vat_rate: text, books_start_date: text, money_tables: int, bank_tables: int });
+const business_settings = new Table({ vat_rate: text, books_start_date: text, money_tables: int, bank_tables: int, calendar_tables: int });
 const recurring_expense_templates = new Table({
   template_name: text,
   created_by: text,
@@ -728,6 +728,15 @@ const recurring_expense_templates = new Table({
   created_at: text,
   is_active: int,
   reminder_work_days_before: int,
+  // The rest of the rule, for the payments calendar's קבועות tab (sync rules v1.15).
+  project_id: text,
+  order_id: text,
+  property_id: text,
+  included_in_base_price: int,
+  billed_to_customer: int,
+  project_expense_notes_template: text,
+  create_day_of_month: int,
+  create_month_of_year: int,
 });
 
 // The dashboard's money cards (sync rules v1.8): loans and their repayments,
@@ -799,6 +808,22 @@ const card_statement_rows = new Table(
   { indexes: { by_expense: ["expense_id"] } }
 );
 const card_settlement_confirmations = new Table({ account_id: text, settlement_date: text });
+// The payments calendar's incoming side (sync rules v1.15): a promised payment
+// counts on its day.
+const payment_promises = new Table({
+  customer_id: text,
+  order_id: text,
+  project_id: text,
+  amount: text,
+  promised_date: text,
+  status: text,
+  notes: text,
+  created_by: text,
+  updated_by: text,
+  created_at: text,
+  updated_at: text,
+  ...MONEY_CURRENCY_COLUMNS,
+});
 const outflow_source_settings = new Table({
   source_kind: text,
   source_key: text,
@@ -939,6 +964,7 @@ export const AppSchema = new Schema({
   card_statement_charges,
   card_statement_rows,
   card_settlement_confirmations,
+  payment_promises,
   outflow_source_settings,
   account_transfers,
   expense_merchant_mappings,

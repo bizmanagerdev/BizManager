@@ -2,6 +2,7 @@ import type { CommonPowerSyncDatabase } from "@powersync/web";
 import { createLocalSupabase } from "./local-supabase";
 import {
   BANK_PAGE_NOT_READY,
+  CALENDAR_PAGE_NOT_READY,
   computeLocalCard,
   MONEY_CARD_NOT_READY,
   type LocalCardKind,
@@ -113,7 +114,7 @@ export async function runDashboardShadow(
       const message = error instanceof Error ? error.message : String(error);
       // A copy without the money tables yet (before sync rules v1.8 reach
       // it), or the accounts page's (v1.14): nothing to compare, not a difference.
-      if (message.startsWith(MONEY_CARD_NOT_READY) || message.startsWith(BANK_PAGE_NOT_READY)) continue;
+      if ([MONEY_CARD_NOT_READY, BANK_PAGE_NOT_READY, CALENDAR_PAGE_NOT_READY].some((notReady) => message.startsWith(notReady))) continue;
       results.push({ card, match: false, localMs: 0, diffs: [], error: message });
     }
   }

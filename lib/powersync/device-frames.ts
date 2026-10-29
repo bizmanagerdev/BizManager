@@ -95,6 +95,7 @@ const MENU_FRAME_PAGES: {
   { page: "rentRoll", path: "/rent" },
   { page: "bank", path: "/financial/bank", adminOnly: true },
   { page: "cashFlow", path: "/financial", adminOnly: true },
+  { page: "paymentsCalendar", path: "/financial/payments-calendar" },
   { page: "calendar", path: "/calendar", workerSection: "calendar" },
   // The drivers' page: in workers' menu only (the office has the sales page's tab).
   { page: "deliveries", path: "/deliveries", workerSection: "deliveries" },

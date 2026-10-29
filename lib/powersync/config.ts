@@ -101,6 +101,11 @@ export const LOCAL_DATA_PAGES = {
   // every admin's from 2026-10-29 (owner: "yes"), after the owner's copy
   // matched the server's (Oct 29) and the page held up with the Wi-Fi off.
   cashFlow: true,
+  // The payments calendar (/financial/payments-calendar, צפי תזרים, admins and
+  // office) — owner, 2026-10-29: "yes go ahead with 1-3". Needs sync rules
+  // v1.15 on the device (the payment promises, the recurring bills' whole
+  // rule — CALENDAR_COPY_COOKIE). The preview users' first.
+  paymentsCalendar: false,
   // The calendar (/calendar, יומן) — owner, 2026-10-29: "yes go build 1-3".
   // Mine and everyone's feeds (getCalendarFeeds), from tables every staff copy
   // already has. The preview users' first.
@@ -167,5 +172,6 @@ export const LOCAL_DATA_SHADOW = {
   rentRoll: true,
   bank: true,
   cashFlow: true,
+  paymentsCalendar: true,
   calendar: true,
 } as const;

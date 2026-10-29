@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AddDateIcon, AddIcon, CalculatorIcon, CalendarIcon, RecurringIcon, WarningIcon } from "@/components/ui/icons";
+import { AddDateIcon, AddIcon, CalculatorIcon, CalendarIcon, RecurringIcon } from "@/components/ui/icons";
 import { useBackfillMissing } from "@/app/(app)/financial/useBackfillMissing";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -35,9 +35,6 @@ type Props = {
   /** Pickers for recording a receipt from a day (the income dialog's shapes). */
   incomeOptions: IncomeOptions;
   expenseMissingSchema: boolean;
-  // Set when this load's recurring-expense generator failed — the board may be
-  // missing this month's bills, and the user must know that rather than trust it.
-  generatorError?: string | null;
 };
 
 const TABS = [
@@ -75,7 +72,6 @@ export default function PaymentsHubClient({
   accounts,
   incomeOptions,
   expenseMissingSchema,
-  generatorError = null,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -118,12 +114,6 @@ export default function PaymentsHubClient({
 
   return (
     <Tabs dir="rtl" value={activeTab} onValueChange={(value) => changeTab(tabFromParam(value))} className="space-y-4">
-      {generatorError ? (
-        <div role="status" className="flex items-center gap-2 rounded-xl border border-warning/40 bg-warning/[0.05] px-3 py-2 text-sm text-warning-strong">
-          <WarningIcon className="h-4 w-4 shrink-0" />
-          <span>ההוצאות הקבועות של החודש לא נוצרו בטעינה זו — הלוח עלול להיות חסר. {generatorError}</span>
-        </div>
-      ) : null}
       {/* Header — tab bar + the actions for the active tab, on one baseline.
           PHONE (below md): the two clusters dissolve (max-md:contents) and their
           pieces are laid out on two rows by `order` — tabs with the calculator
@@ -200,9 +190,9 @@ export default function PaymentsHubClient({
               add stays: it carries the day you clicked. */}
           {activeTab === "recurring" ? (
             <>
-              {/* No "create current cycle" button: the generator runs on every
-                  page load (memoized for a minute) and walks every period from
-                  each bill's start date. "השלמת חיובים חסרים" on the list is the
+              {/* No "create current cycle" button: the nightly job (and each
+                  opening, after the page is sent) walks every period from each
+                  bill's start date. "השלמת חיובים חסרים" on the list is the
                   explicit action, with a preview. */}
               <Button
                 type="button"

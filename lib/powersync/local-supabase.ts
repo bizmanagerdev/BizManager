@@ -57,7 +57,8 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   product_categories: ["active"],
   // Its one row's key is the boolean true (synced as the text "true").
   business_settings: ["id"],
-  recurring_expense_templates: ["is_variable_amount", "auto_paid", "is_active"],
+  recurring_expense_templates: ["is_variable_amount", "auto_paid", "is_active", "included_in_base_price", "billed_to_customer"],
+  payment_promises: ["fx_rate_manual"],
   outflow_source_settings: ["is_active"],
   expenses: ["fx_rate_manual"],
   loans: ["fx_rate_manual"],
@@ -85,6 +86,7 @@ const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
   inventory_movements: ["quantity"],
   business_settings: ["vat_rate"],
   recurring_expense_templates: ["amount"],
+  payment_promises: ["amount", "foreign_amount", "fx_rate"],
   loans: ["amount", "interest_amount", "foreign_amount", "fx_rate"],
   loan_repayments: ["amount", "interest_amount", "foreign_amount", "fx_rate"],
   card_statement_charges: ["amount"],
@@ -114,6 +116,7 @@ const COLUMN_DEFAULTS: Record<string, Row> = {
   loan_repayments: MONEY_CURRENCY_DEFAULTS,
   // supabase/migrations/20261025100000_worker_payment_currency.sql
   worker_payments: MONEY_CURRENCY_DEFAULTS,
+  payment_promises: MONEY_CURRENCY_DEFAULTS,
   // supabase/migrations/20261023170000_property_currency.sql
   properties: { currency: "ILS" },
   // supabase/migrations/20261024120000_recurring_and_order_currencies.sql
@@ -164,6 +167,7 @@ export const LOCAL_TABLES: ReadonlySet<string> = new Set([
   "card_statement_charges",
   "card_statement_rows",
   "card_settlement_confirmations",
+  "payment_promises",
   "outflow_source_settings",
   "account_transfers",
   "expense_merchant_mappings",

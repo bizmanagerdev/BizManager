@@ -1,242 +1,90 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Card, CardContent } from "@/components/ui/card";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
-import { loadPaymentCalendarItems, type PaymentCalendarItem } from "@/lib/payables";
-import { loadFinancialEntries } from "@/lib/financial";
-import { loadIncomeCalendarItems } from "@/lib/receivables-load";
-import { loadAccounts, type Account } from "@/lib/accounts";
-import { propertyDisplayName } from "@/lib/properties";
-import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
-import { isForeignCurrency, shekelsToday, type TodayFxRates } from "@/lib/fx/currencies";
-import { loadTodayFxRates } from "@/lib/fx/rates";
+import { runAfterResponse } from "@/lib/after-response";
+import { loadPaymentsCalendarView } from "@/lib/financial/paymentsCalendarPage";
+import { serverRenderedAt } from "@/lib/loaded-at";
+import { deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
+import { LOCAL_DATA_SHADOW } from "@/lib/powersync/config";
 import PaymentsHubClient from "./PaymentsHubClient";
-import { israelDateKey } from "@/lib/timezone";
+import LocalPaymentsCalendarPage from "./LocalPaymentsCalendarPage";
+import PaymentsCalendarServerCheck from "./PaymentsCalendarServerCheck";
 
 export const revalidate = 0;
-
-type Row = Record<string, unknown>;
-type Option = { id: string; label: string };
-
-function getString(row: Row | null | undefined, key: string) {
-  const v = row?.[key];
-  return typeof v === "string" ? v : null;
-}
-function getNumber(row: Row | null | undefined, key: string) {
-  const v = row?.[key];
-  if (typeof v === "number") return v;
-  if (typeof v === "string") { const n = Number(v); return Number.isFinite(n) ? n : null; }
-  return null;
-}
-function looksLikeMissingSchema(msg: string) {
-  const m = msg.toLowerCase();
-  return m.includes("does not exist") || m.includes("could not find") || m.includes("schema cache");
-}
 
 // "צפי תזרים" — scheduled money, in both directions (the neighbour of תזרים,
 // which is what already happened). The route keeps its old path so existing
 // links, alerts and bookmarks keep working. Two tabs:
-//   • יומן — the outgoing-payments calendar (every upcoming payment: unpaid/
-//     scheduled expenses, recurring bills, loan repayments, worker wages, plus
-//     hand-added payments). Add a payment to a day, mark it paid, split it.
-//   • הוצאות קבועות — the recurring-expense templates (moved out of Settings).
-export default async function PaymentsCalendarPage() {
+//   • לוח תזרים — the calendar of every expected payment: unpaid/scheduled
+//     expenses, recurring bills, loan repayments, worker wages, card charges
+//     going out; receivables, rent and promises coming in. Add a payment to a
+//     day, mark it paid or collected, split it.
+//   • קבועות — the recurring rules (moved out of Settings).
+// What it reads is lib/financial/paymentsCalendarPage.ts — the same on the
+// server, on a device's copy, and in the daily check between the two.
+export default async function PaymentsCalendarPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { profile, supabase } = await requireProfile();
   if (profile.role !== "admin" && profile.role !== "office") redirect("/dashboard");
 
-  // ── Recurring templates + source lookups (for the תשלומים קבועים tab and the
-  //    expense dialog's domain-link pickers) ────────────────────────────────
-  // None of these depend on the ledger below, so they start now and load
-  // alongside it instead of after it.
-  const lookupsPromise = Promise.all([
-    supabase
-      .from("recurring_expense_templates")
-      .select("id,template_name,category,amount,currency,is_variable_amount,auto_paid,reminder_work_days_before,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template,frequency,interval_months,create_day_of_month,expense_day_of_month,create_month_of_year,expense_month_of_year,start_date,end_date,is_active")
-      .order("created_at", { ascending: true }),
-    // project_overview_view has project_dashboard_view's rows without the
-    // financial and task totals these options never read.
-    supabase.from("project_overview_view").select("id,name,customer_name")
-      .order("updated_at", { ascending: false }).range(0, 999),
-    supabase.from("properties").select("id,name,address,is_active")
-      .order("address", { ascending: true }).range(0, 999),
-    supabase.from("order_overview_view").select("order_id,customer_name,order_date")
-      .order("order_date", { ascending: false }).range(0, 499),
-    loadAccounts(supabase).catch(() => [] as Account[]),
-    // A bill in US$ / C$ shows its shekels at today's rate.
-    loadTodayFxRates(supabase).catch(() => ({}) as TodayFxRates),
-  ]);
-  // Awaited below. This only stops a failure that lands meanwhile from being
-  // reported as unhandled before then.
-  lookupsPromise.catch(() => {});
-
-  // Materialize any recurring expenses due up to today before reading the ledger.
-  // A failure never blocks the page, but it IS shown on it: a board whose
-  // generator silently didn't run looks complete while missing this month's
-  // bills, which is the one thing it must never do.
-  const ensure = await ensureRecurringExpensesForDate(supabase).catch((err: unknown) => ({
-    ok: false as const,
-    createdCount: 0,
-    skippedMissingSchema: false,
-    error: (err as { message?: string })?.message ?? "שגיאה לא צפויה",
-  }));
-  const generatorError = !ensure.ok
-    ? ensure.error ?? "יצירת ההוצאות הקבועות נכשלה."
-    : ensure.skippedMissingSchema
-      ? "המחולל של ההוצאות הקבועות לא מותקן במסד הנתונים."
-      : null;
-
-  let items: PaymentCalendarItem[] = [];
-  let todayIso = israelDateKey();
-  let error: string | null = null;
-  try {
-    // One ledger read feeds both directions — the outgoing loader adds its
-    // forecasts (bills, wages, card charges), the incoming one re-dates
-    // receivables by their payment terms and drops bounced money.
-    const from = (() => {
-      const d = new Date();
-      d.setMonth(d.getMonth() - 13);
-      return d.toISOString().slice(0, 10);
-    })();
-    // How far ahead the forecasts reach. A year covers a rent schedule and any
-    // settlement date the clearing company could hand us.
-    const horizon = (() => {
-      const d = new Date();
-      d.setMonth(d.getMonth() + 12);
-      return d.toISOString().slice(0, 10);
-    })();
-    const { entries, referenceDate } = await loadFinancialEntries(supabase, { from });
-    const [outgoing, incoming] = await Promise.all([
-      loadPaymentCalendarItems(supabase, { preloaded: { entries, referenceDate } }),
-      // Incoming is additive: if it fails, the board is still the board it was.
-      loadIncomeCalendarItems(supabase, { entries, referenceDate, fromIso: from, toIso: horizon }).catch(() => [] as PaymentCalendarItem[]),
-    ]);
-    items = [...outgoing.items, ...incoming];
-    todayIso = outgoing.todayIso;
-  } catch (err) {
-    error = (err as { message?: string })?.message ?? "שגיאה בטעינת התשלומים";
-  }
-
-  const [expResult, projectsResult, propertiesResult, ordersResult, accounts, fxRates] = await lookupsPromise;
-
-  const expenseMissingSchema = Boolean(expResult.error?.message && looksLikeMissingSchema(expResult.error.message));
-
-  const templates: RecurringExpenseTemplateItem[] = expenseMissingSchema
-    ? []
-    : ((expResult.data ?? []) as Row[]).map((r) => ({
-        id: getString(r, "id") ?? "",
-        template_name: getString(r, "template_name") ?? "",
-        category: getString(r, "category") ?? "",
-        amount: getNumber(r, "amount") ?? 0,
-        currency: isForeignCurrency(r.currency) ? r.currency : "ILS",
-        shekels_today: isForeignCurrency(r.currency) ? shekelsToday(getNumber(r, "amount") ?? 0, r.currency, fxRates) : null,
-        is_variable_amount: r.is_variable_amount === true,
-        auto_paid: r.auto_paid === true,
-        reminder_work_days_before: getNumber(r, "reminder_work_days_before"),
-        description_template: getString(r, "description_template"),
-        notes_template: getString(r, "notes_template"),
-        business_domain: getString(r, "business_domain") ?? "general_business",
-        project_id: getString(r, "project_id"),
-        order_id: getString(r, "order_id"),
-        property_id: getString(r, "property_id"),
-        account_id: getString(r, "account_id"),
-        included_in_base_price: r.included_in_base_price === true,
-        billed_to_customer: r.billed_to_customer === true,
-        project_expense_notes_template: getString(r, "project_expense_notes_template"),
-        frequency: getString(r, "frequency") === "yearly" ? "yearly" : "monthly",
-        interval_months: getNumber(r, "interval_months") ?? 1,
-        create_day_of_month: getNumber(r, "create_day_of_month") ?? 1,
-        expense_day_of_month: getNumber(r, "expense_day_of_month") ?? 1,
-        create_month_of_year: getNumber(r, "create_month_of_year"),
-        expense_month_of_year: getNumber(r, "expense_month_of_year"),
-        start_date: getString(r, "start_date"),
-        end_date: getString(r, "end_date"),
-        is_active: r.is_active !== false,
-      })) as RecurringExpenseTemplateItem[];
-
-  // Every recurring calendar item (forecast OR already materialized) should show
-  // the template NAME — not the free-text description/category — matching the
-  // recurring-templates list. Forecasts already carry the name; paid items read
-  // the stored expense description, so re-label them here from the template.
-  const templateNameById = new Map(
-    templates.filter((t) => t.template_name).map((t) => [t.id, t.template_name] as const)
-  );
-  items = items.map((i) => {
-    const name = i.recurringTemplateId ? templateNameById.get(i.recurringTemplateId) : undefined;
-    return name ? { ...i, label: name } : i;
+  // The month's recurring bills are made by the nightly job
+  // (api/cron/recurring-expenses); opening the page with a connection makes any
+  // still missing — after the response, so they never hold the page up (they
+  // reach the board a moment later). It used to be waited for on every opening.
+  runAfterResponse("payments calendar recurring bills", async () => {
+    const ensure = await ensureRecurringExpensesForDate(supabase);
+    if (!ensure.ok && !ensure.skippedMissingSchema) throw new Error(ensure.error ?? "recurring bills were not made");
   });
 
-  const projectOptions: Option[] = ((projectsResult.data ?? []) as Row[])
-    .map((r) => {
-      const id = getString(r, "id") ?? "";
-      const name = getString(r, "name") ?? "";
-      const customer = getString(r, "customer_name");
-      return { id, label: customer ? `${name} (${customer})` : name };
-    })
-    .filter((o) => o.id && o.label);
+  // The device version: the page worked out from this person's on-device copy
+  // (LocalPaymentsCalendarPage) — only where the copy has the calendar's
+  // tables (sync rules v1.15). ?data=server is the way back when it can't.
+  const wantsServer = [((await searchParams) ?? {}).data].flat()[0] === "server";
+  if (!wantsServer && (await devicePageOn("paymentsCalendar", profile))) {
+    // Once a day per device, the server's own page too — streamed after the
+    // page, for the device to compare (lib/powersync/device-check.ts).
+    const checkDue = LOCAL_DATA_SHADOW.paymentsCalendar && (await deviceCheckDue("paymentsCalendar"));
+    return (
+      <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
+        <DeviceFrameMark page="paymentsCalendar" renderedAt={serverRenderedAt()} />
+        <div className="space-y-5">
+          <LocalPaymentsCalendarPage viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }} />
+        </div>
+        {checkDue ? (
+          <Suspense fallback={null}>
+            <PaymentsCalendarServerCheck supabase={supabase} userId={profile.id} role={profile.role ?? ""} locale={profile.locale} />
+          </Suspense>
+        ) : null}
+      </AppShell>
+    );
+  }
 
-  const propertyOptions: Option[] = ((propertiesResult.data ?? []) as Row[])
-    .filter((r) => r.is_active !== false)
-    .map((r) => ({
-      id: getString(r, "id") ?? "",
-      label: propertyDisplayName({ name: getString(r, "name"), address: getString(r, "address") ?? "" }),
-    }))
-    .filter((o) => o.id && o.label);
-
-  // The income dialog's pickers want more than {id,label}: a project shows its
-  // customer, an order its date. Same three queries, read a second way.
-  const incomeOptions = {
-    projects: ((projectsResult.data ?? []) as Row[])
-      .map((r) => ({
-        id: getString(r, "id") ?? "",
-        name: getString(r, "name") ?? "",
-        customerName: getString(r, "customer_name") ?? "",
-      }))
-      .filter((o) => o.id && o.name),
-    orders: ((ordersResult.data ?? []) as Row[])
-      .map((r) => ({
-        id: getString(r, "order_id") ?? "",
-        name: getString(r, "customer_name") || `הזמנה ${(getString(r, "order_id") ?? "").slice(0, 8)}`,
-        subtitle: getString(r, "order_date") ?? undefined,
-      }))
-      .filter((o) => o.id),
-    properties: ((propertiesResult.data ?? []) as Row[])
-      .filter((r) => r.is_active !== false)
-      .map((r) => ({
-        id: getString(r, "id") ?? "",
-        name: propertyDisplayName({ name: getString(r, "name"), address: getString(r, "address") ?? "" }),
-      }))
-      .filter((o) => o.id && o.name),
-  };
-
-  const orderOptions: Option[] = ((ordersResult.data ?? []) as Row[])
-    .map((r) => {
-      const id = getString(r, "order_id") ?? "";
-      const customer = getString(r, "customer_name") ?? "";
-      const date = getString(r, "order_date") ?? "";
-      return { id, label: customer ? `${customer} (${date})` : id };
-    })
-    .filter((o) => o.id);
-
+  const view = await loadPaymentsCalendarView(supabase);
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-5">
-        {error ? (
+        {view.error ? (
           <Card className="border-destructive/40">
-            <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>
+            <CardContent className="p-4 text-sm text-destructive">{view.error}</CardContent>
           </Card>
         ) : (
           <PaymentsHubClient
-            items={items}
-            todayIso={todayIso}
-            templates={templates}
-            projects={projectOptions}
-            properties={propertyOptions}
-            orders={orderOptions}
-            accounts={accounts}
-            incomeOptions={incomeOptions}
-            expenseMissingSchema={expenseMissingSchema}
-            generatorError={generatorError}
+            items={view.items}
+            todayIso={view.todayIso}
+            templates={view.templates}
+            projects={view.projects}
+            properties={view.properties}
+            orders={view.orders}
+            accounts={view.accounts}
+            incomeOptions={view.incomeOptions}
+            expenseMissingSchema={view.expenseMissingSchema}
           />
         )}
       </div>

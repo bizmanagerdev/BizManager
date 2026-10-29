@@ -58,10 +58,11 @@ import {
   type DomainChartData,
 } from "@/lib/dashboard/money-cards";
 import type { PaymentsSummary } from "@/components/dashboard/UpcomingPayments";
-import { copyHasBankTables, copyHasMoneyTables } from "@/lib/powersync/money-copy";
+import { copyHasBankTables, copyHasCalendarTables, copyHasMoneyTables } from "@/lib/powersync/money-copy";
 import { loadBankPage, type BankPageData } from "@/app/(app)/financial/bank/loadBankPage";
 import { loadCashFlowFlowView, type CashFlowDialogOptions, type CashFlowViewFilters } from "@/lib/financial/cashFlowPage";
 import type { FinancialPageData } from "@/lib/financial";
+import { loadPaymentsCalendarView, type PaymentsCalendarView } from "@/lib/financial/paymentsCalendarPage";
 import { israelDateKey } from "@/lib/timezone";
 import type { Locale } from "@/lib/i18n/types";
 
@@ -139,6 +140,8 @@ export type LocalDashboardCards = {
   bankPage: BankPageData;
   /** The cash-flow page (/financial, תזרים): every row of its flow view, and the dialogs' lists. */
   cashFlow: { filters: CashFlowViewFilters; data: FinancialPageData; options: CashFlowDialogOptions };
+  /** The payments calendar (/financial/payments-calendar, צפי תזרים): the whole page — only from a copy with sync rules v1.15. */
+  paymentsCalendar: PaymentsCalendarView;
   /** The calendar (/calendar): mine, and everyone's for the back office (its שלי / הכל switch). */
   calendar: { mine: CalendarEntry[]; all: CalendarEntry[] | null };
 };
@@ -226,6 +229,10 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   // over 13 months), the rent roll's leases and properties, and the dialogs'
   // lists (projects with their customer, properties, orders).
   cashFlow: [...MONEY_TABLES, "accounts", "properties", "lease_agreements", "customer_branches"],
+  // The payments calendar: the same scan, the outgoing forecasts (bills,
+  // wages, card charges), the incoming ones (receivables by their terms, rent,
+  // promises), the accounts and today's rates, and the dialogs' lists.
+  paymentsCalendar: [...MONEY_TABLES, "accounts", "fx_rates", "properties", "lease_agreements", "customer_branches", "payment_promises"],
 };
 
 /**
@@ -325,6 +332,19 @@ async function computeCashFlow(
   const view = await loadCashFlowFlowView(client, filters);
   if (failures.length) throw new Error(`cashFlow: a read failed on the device — ${failures[0]}`);
   return { filters, ...view };
+}
+
+/** The same for the payments calendar, on a copy synced before sync rules v1.15. */
+export const CALENDAR_PAGE_NOT_READY = "payments calendar: this copy has no promises or recurring rules yet";
+
+/** The payments calendar from the device, all its reads done — or refused (see strictReads). Money: no gaps. */
+async function computePaymentsCalendar(local: SupabaseClient, onServer: boolean): Promise<PaymentsCalendarView> {
+  if (!onServer && !(await copyHasCalendarTables(local))) throw new Error(`${CALENDAR_PAGE_NOT_READY} (sync rules before v1.15)`);
+  const { client, failures } = strictReads(local);
+  const view = await loadPaymentsCalendarView(client);
+  if (failures.length) throw new Error(`paymentsCalendar: a read failed on the device — ${failures[0]}`);
+  if (view.error) throw new Error(`paymentsCalendar: ${view.error}`);
+  return view;
 }
 
 /** The accounts page from the device, all its reads done — or refused (see strictReads). */
@@ -504,6 +524,8 @@ export async function computeLocalCard<K extends LocalCardKind>(
       return (await computeBankPage(local, onServer)) as LocalDashboardCards[K];
     case "cashFlow":
       return (await computeCashFlow(local, need<CashFlowViewFilters>(), onServer)) as LocalDashboardCards[K];
+    case "paymentsCalendar":
+      return (await computePaymentsCalendar(local, onServer)) as LocalDashboardCards[K];
     case "calendar":
       return (await getCalendarFeeds(local, {
         userId,

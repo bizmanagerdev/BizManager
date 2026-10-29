@@ -559,6 +559,8 @@ const FRAME_PATHS = new Set([
   "/rent",
   "/financial/bank",
   "/financial",
+  // The payments calendar (LocalPaymentsCalendarPage, 2026-10-29; admins and office).
+  "/financial/payments-calendar",
   "/calendar",
 ]);
 // A project's page and an order's page are device pages too (LocalProjectPage,
@@ -582,9 +584,10 @@ const DETAIL_FRAMES_MAX = 40;
 // Frames that read their filters from the address themselves (the drivers'
 // /deliveries reads its region on the phone, the customers list its filters,
 // the accounts page its open account, the cash-flow page its dates and
-// filters): one saved frame serves every region / filter, so one never opened
-// online still opens with no signal.
-const ANY_QUERY_FRAME_PATHS = new Set(["/deliveries", "/customers", "/financial/bank", "/financial"]);
+// filters, the payments calendar its tab, month and direction): one saved
+// frame serves every region / filter, so one never opened online still opens
+// with no signal.
+const ANY_QUERY_FRAME_PATHS = new Set(["/deliveries", "/customers", "/financial/bank", "/financial", "/financial/payments-calendar"]);
 const FRAME_MARK = 'data-device-page="';
 // A navigation to a frame this soon after one was served is a reload — the
 // page found a newer version on the server, or the person pulled to refresh

@@ -20,7 +20,7 @@ import type { SectionAccess } from "@/lib/auth/sections";
 import { installNavigationTiming } from "@/lib/ui/navigation-timing";
 import { clearDeviceFrames, keepDeviceFramesFor } from "@/lib/powersync/device-frames";
 import { setDeviceCopyPending } from "@/lib/powersync/device-pending";
-import { copyTableMarks, setBankCopyReady, setMoneyCopyReady } from "@/lib/powersync/money-copy";
+import { copyTableMarks, setBankCopyReady, setCalendarCopyReady, setMoneyCopyReady } from "@/lib/powersync/money-copy";
 
 // Keeps the on-device copy open for the signed-in person, in the background.
 // Renders nothing. AppShell mounts it only for people the copy is switched on
@@ -92,6 +92,7 @@ export default function LocalDataHost({
           if (cancelled) return;
           setMoneyCopyReady(marks.money);
           setBankCopyReady(marks.bank);
+          setCalendarCopyReady(marks.money && marks.bank && marks.calendar);
         },
         () => {}
       );
