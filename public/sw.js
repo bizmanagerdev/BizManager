@@ -545,8 +545,9 @@ const OFFLINE_HTML = `<!doctype html>
 // a search, or the server version (?data=server). Cleared on every deploy
 // (versioned name), at logout and when someone else signs in
 // (lib/powersync/device-frames.ts).
-// The accounts page too (LocalBankPage, 2026-10-27; admins only), and the
-// cash-flow page (LocalCashFlowPage, 2026-10-28; admins only).
+// The accounts page too (LocalBankPage, 2026-10-27; admins only), the
+// cash-flow page (LocalCashFlowPage, 2026-10-28; admins only) and the calendar
+// (LocalCalendarPage, 2026-10-29).
 const FRAME_PATHS = new Set([
   "/dashboard",
   "/tasks",
@@ -558,6 +559,7 @@ const FRAME_PATHS = new Set([
   "/rent",
   "/financial/bank",
   "/financial",
+  "/calendar",
 ]);
 // A project's page and an order's page are device pages too (LocalProjectPage,
 // LocalOrderPage): one frame per project and per order opened, so opening one

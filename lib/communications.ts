@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 // Communication logs (תיעוד פניות) + reminders (תזכורות) for the גבייה center.
 // See db/sql/create_communication_center.sql.
@@ -107,12 +108,25 @@ function str(row: Row, key: string): string | null {
   return typeof v === "string" && v.trim() ? v : null;
 }
 
+/** Ids in batches of 150 at most (a long .in() list overflows the request). */
+function idBatches(ids: string[]): string[][] {
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += 150) batches.push(ids.slice(i, i + 150));
+  return batches;
+}
+
+/** A read over every batch of `ids`: the rows of all of them. */
+async function rowsByIds(read: (batch: string[]) => PromiseLike<{ data: unknown }>, ids: string[]): Promise<Row[]> {
+  const pages = await Promise.all(idBatches(ids).map((batch) => read(batch).then(({ data }) => (data ?? []) as Row[])));
+  return pages.flat();
+}
+
 async function resolveUserNames(supabase: SupabaseClient, ids: string[]) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   const map = new Map<string, string>();
   if (unique.length === 0) return map;
-  const { data } = await supabase.from("users").select("id,full_name,email").in("id", unique);
-  for (const row of (data ?? []) as Row[]) {
+  const data = await rowsByIds((batch) => supabase.from("users").select("id,full_name,email").in("id", batch), unique);
+  for (const row of data) {
     const id = str(row, "id");
     if (!id) continue;
     map.set(id, str(row, "full_name") ?? str(row, "email") ?? id.slice(0, 8));
@@ -219,56 +233,66 @@ function dueAt(remindAt: string | null, snoozedUntil: string | null, now: number
   return remindAt ?? "";
 }
 
-/** Open (pending) reminders across all customers, soonest first (a snoozed one at its snooze's end). Powers the תזכורות view. */
+/**
+ * Open (pending) reminders across all customers, soonest first (a snoozed one
+ * at its snooze's end). Powers the תזכורות view. `limit: "all"` pages through
+ * every one (the calendar: no day may lose one to a cut-off).
+ */
 export async function getOpenReminders(
   supabase: SupabaseClient,
-  options?: { limit?: number; scope?: "mine" | "all"; userId?: string }
+  options?: { limit?: number | "all"; scope?: "mine" | "all"; userId?: string }
 ): Promise<Reminder[]> {
   const limit = options?.limit ?? 200;
-  let query = supabase
-    .from("reminders")
-    .select(`${REMINDER_SELECT},snoozed_until`)
-    .eq("status", "pending");
+  const pending = () => {
+    let query = supabase
+      .from("reminders")
+      .select(`${REMINDER_SELECT},snoozed_until`)
+      .eq("status", "pending");
 
-  // "Mine" = reminders I'm in charge of (assigned_to). Creating a reminder
-  // defaults assigned_to to the creator, so this still covers ones I made — but
-  // once I REASSIGN a reminder to someone else it correctly leaves my list (it
-  // becomes theirs). The created_by fallback only catches legacy reminders that
-  // have no assignee at all, so I don't lose ones I own that were never assigned.
-  if (options?.scope === "mine" && options.userId) {
-    query = query.or(
-      `assigned_to.eq.${options.userId},and(assigned_to.is.null,created_by.eq.${options.userId})`
-    );
+    // "Mine" = reminders I'm in charge of (assigned_to). Creating a reminder
+    // defaults assigned_to to the creator, so this still covers ones I made — but
+    // once I REASSIGN a reminder to someone else it correctly leaves my list (it
+    // becomes theirs). The created_by fallback only catches legacy reminders that
+    // have no assignee at all, so I don't lose ones I own that were never assigned.
+    if (options?.scope === "mine" && options.userId) {
+      query = query.or(
+        `assigned_to.eq.${options.userId},and(assigned_to.is.null,created_by.eq.${options.userId})`
+      );
+    }
+    // The id after the time: pages that don't overlap or skip one.
+    return query.order("remind_at", { ascending: true }).order("id", { ascending: true });
+  };
+
+  let rows: Row[];
+  if (limit === "all") {
+    try {
+      rows = await fetchAllPaged<Row>((from, to) => pending().range(from, to));
+    } catch {
+      return [];
+    }
+  } else {
+    const { data, error } = await pending().range(0, limit - 1);
+    if (error || !data) return [];
+    rows = data as Row[];
   }
-
-  const { data, error } = await query
-    .order("remind_at", { ascending: true })
-    .range(0, limit - 1);
-
-  if (error || !data) return [];
-  const rows = data as Row[];
 
   const customerIds = rows.map((r) => str(r, "customer_id")).filter((v): v is string => Boolean(v));
   const assigneeIds = rows.map((r) => str(r, "assigned_to")).filter((v): v is string => Boolean(v));
   const taskIds = rows.map((r) => str(r, "task_id")).filter((v): v is string => Boolean(v));
 
-  const [names, customersRes, tasksRes] = await Promise.all([
+  const [names, customerRows, taskRows] = await Promise.all([
     resolveUserNames(supabase, assigneeIds),
-    customerIds.length > 0
-      ? supabase.from("customers").select("id,name,phone").in("id", Array.from(new Set(customerIds)))
-      : Promise.resolve({ data: [] as Row[] }),
-    taskIds.length > 0
-      ? supabase.from("tasks").select("id,subject").in("id", Array.from(new Set(taskIds)))
-      : Promise.resolve({ data: [] as Row[] }),
+    rowsByIds((batch) => supabase.from("customers").select("id,name,phone").in("id", batch), Array.from(new Set(customerIds))),
+    rowsByIds((batch) => supabase.from("tasks").select("id,subject").in("id", batch), Array.from(new Set(taskIds))),
   ]);
 
   const customerById = new Map<string, { name: string | null; phone: string | null }>();
-  for (const row of (customersRes.data ?? []) as Row[]) {
+  for (const row of customerRows) {
     const id = str(row, "id");
     if (id) customerById.set(id, { name: str(row, "name"), phone: str(row, "phone") });
   }
   const taskById = new Map<string, string>();
-  for (const row of (tasksRes.data ?? []) as Row[]) {
+  for (const row of taskRows) {
     const id = str(row, "id");
     if (id) taskById.set(id, str(row, "subject") ?? "משימה");
   }

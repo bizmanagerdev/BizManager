@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
+import { getCalendarFeeds, getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { getInboxView, todaySlice } from "@/lib/reminders/worklist";
 import { getMyTasks, type DashboardTask } from "@/lib/dashboard/tasks-overview";
 import { loadDeliveriesPage, type DeliveriesFilters, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
@@ -139,6 +139,8 @@ export type LocalDashboardCards = {
   bankPage: BankPageData;
   /** The cash-flow page (/financial, תזרים): every row of its flow view, and the dialogs' lists. */
   cashFlow: { filters: CashFlowViewFilters; data: FinancialPageData; options: CashFlowDialogOptions };
+  /** The calendar (/calendar): mine, and everyone's for the back office (its שלי / הכל switch). */
+  calendar: { mine: CalendarEntry[]; all: CalendarEntry[] | null };
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
@@ -158,6 +160,8 @@ const MONEY_TABLES = [
 /** The device tables each card reads — it's worked out again when any changes. */
 export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   todaySchedule: ["tasks", "projects", "orders", "order_delivery_recipients", "reminders", "customers", "users", "user_directory", "task_snoozes"],
+  // The calendar reads what the dashboard's today card does, for every day.
+  calendar: ["tasks", "projects", "orders", "order_delivery_recipients", "reminders", "customers", "users", "user_directory", "task_snoozes"],
   todayAlerts: ["reminders", "customers", "tasks", "users", "user_directory"],
   myTasks: ["tasks", "task_members", "projects", "reminders", "task_snoozes"],
   deliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
@@ -500,6 +504,11 @@ export async function computeLocalCard<K extends LocalCardKind>(
       return (await computeBankPage(local, onServer)) as LocalDashboardCards[K];
     case "cashFlow":
       return (await computeCashFlow(local, need<CashFlowViewFilters>(), onServer)) as LocalDashboardCards[K];
+    case "calendar":
+      return (await getCalendarFeeds(local, {
+        userId,
+        canSeeAll: role === "admin" || role === "office",
+      })) as LocalDashboardCards[K];
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);
   }

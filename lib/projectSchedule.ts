@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { snoozedTasks } from "@/lib/tasks/snooze";
 import { getOpenReminders, actionTypeLabel } from "@/lib/communications";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 type Row = Record<string, unknown>;
 
@@ -89,131 +90,143 @@ function compareNullableDates(a: string | null, b: string | null) {
   return 0;
 }
 
+/** Ids in batches of 150 at most (a long .in() list overflows the request). */
+function idBatches(ids: string[]): string[][] {
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += 150) batches.push(ids.slice(i, i + 150));
+  return batches;
+}
+
+/** A read over every batch of `ids`: the rows of all of them (no ids, no request). */
+async function rowsByIds(read: (batch: string[]) => PromiseLike<{ data: unknown }>, ids: string[]): Promise<Row[]> {
+  const pages = await Promise.all(idBatches(ids).map((batch) => read(batch).then(({ data }) => (data ?? []) as Row[])));
+  return pages.flat();
+}
+
+/** What the calendar reads, before it becomes entries. */
+type ScheduleRows = {
+  tasks: Row[];
+  projects: Row[];
+  deliveryOrders: Row[];
+  reminders: Awaited<ReturnType<typeof getOpenReminders>>;
+};
+
+type ScheduleNames = {
+  projectNameById: Map<string, string | null>;
+  userNameById: Map<string, string | null>;
+  customerNameById: Map<string, string | null>;
+};
+
+/** The orders someone picked me to see on my calendar (order_delivery_recipients). */
+async function myRecipientOrderIds(supabase: SupabaseClient, userId: string): Promise<string[]> {
+  const { data: recipientRows } = await supabase
+    .from("order_delivery_recipients")
+    .select("order_id")
+    .eq("user_id", userId);
+  return [
+    ...new Set(
+      ((recipientRows ?? []) as Row[])
+        .map((r) => getString(r, "order_id"))
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+}
+
 /**
- * Unified calendar feed: open tasks (by due date), projects (by start/end),
- * pending reminders (by remind_at) and orders with a customer-requested
- * delivery date. `scope` decides personal vs everything:
- *   - "mine" → tasks assigned to me, projects I manage, reminders I own/created,
- *     orders I created.
- *   - "all"  → everything (back-office only; gated by the caller).
- * Ownership is filtered on the base tables (`tasks.assigned_user_id`,
- * `projects.project_manager_id`, `orders.created_by` — the closest analog,
- * since orders have no assignee column) since the *_view layers don't expose
- * those columns; display names are resolved with small follow-up lookups.
+ * Every row the feed shows, paged through: no list stops at 500 (projects
+ * came oldest first, so the newest were the ones a cut-off would have left
+ * out). `scope` filters on the base tables, as getScheduleEntries describes.
  */
-export async function getScheduleEntries(
+async function readScheduleRows(
   supabase: SupabaseClient,
   { scope, userId }: { scope: ScheduleScope; userId: string }
-): Promise<CalendarEntry[]> {
-  let tasksQuery = supabase
-    .from("tasks")
-    .select("id,subject,status,priority,due_date,due_time,assigned_user_id,project_id")
-    .in("status", OPEN_TASK_STATUSES)
-    .order("due_date", { ascending: true })
-    .range(0, 499);
-  if (scope === "mine") tasksQuery = tasksQuery.eq("assigned_user_id", userId);
-
-  let projectsQuery = supabase
-    .from("projects")
-    .select("id,name,status,start_date,end_date,project_manager_id,customer_id")
-    .order("start_date", { ascending: true })
-    .range(0, 499);
-  if (scope === "mine") projectsQuery = projectsQuery.eq("project_manager_id", userId);
-
-  let deliveriesQuery = supabase
-    .from("orders")
-    .select("id,customer_id,status,requested_delivery_date,created_by")
-    .not("requested_delivery_date", "is", null)
-    .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`)
-    .order("requested_delivery_date", { ascending: true })
-    .range(0, 499);
+): Promise<ScheduleRows & { snoozed: Map<string, string> }> {
   // "Mine" = orders I created, PLUS orders someone explicitly picked me as a
   // recipient for (order_delivery_recipients) — e.g. a driver who didn't
   // create the order but was told to see it on their own calendar. That lookup
-  // only gates deliveriesQuery's filter, so it must not block tasksQuery /
-  // projectsQuery / reminders from firing at the same time — folded into one
-  // async step below that runs concurrently with the other three.
+  // only gates the orders' filter, so it must not block the tasks, projects
+  // and reminders from being read at the same time — folded into one async
+  // step below that runs concurrently with the other three.
   const deliveriesPromise = (async () => {
-    if (scope === "mine") {
-      const { data: recipientRows } = await supabase
-        .from("order_delivery_recipients")
-        .select("order_id")
-        .eq("user_id", userId);
-      const recipientOrderIds = [
-        ...new Set(
-          ((recipientRows ?? []) as Row[])
-            .map((r) => getString(r, "order_id"))
-            .filter((id): id is string => Boolean(id))
-        ),
-      ];
-      deliveriesQuery =
-        recipientOrderIds.length > 0
-          ? deliveriesQuery.or(`created_by.eq.${userId},id.in.(${recipientOrderIds.join(",")})`)
-          : deliveriesQuery.eq("created_by", userId);
-    }
-    return deliveriesQuery;
+    const recipientOrderIds = scope === "mine" ? await myRecipientOrderIds(supabase, userId) : [];
+    return fetchAllPaged<Row>((from, to) => {
+      let query = supabase
+        .from("orders")
+        .select("id,customer_id,status,requested_delivery_date,created_by")
+        .not("requested_delivery_date", "is", null)
+        .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`)
+        .order("requested_delivery_date", { ascending: true })
+        .order("id", { ascending: true });
+      if (scope === "mine") {
+        query =
+          recipientOrderIds.length > 0
+            ? query.or(`created_by.eq.${userId},id.in.(${recipientOrderIds.join(",")})`)
+            : query.eq("created_by", userId);
+      }
+      return query.range(from, to);
+    });
   })();
 
-  const [
-    { data: taskRows, error: tasksError },
-    { data: projectRows, error: projectsError },
-    { data: deliveryOrderRows, error: deliveriesError },
-    reminders,
-    snoozed,
-  ] = await Promise.all([
-    tasksQuery,
-    projectsQuery,
+  const [tasks, projects, deliveryOrders, reminders, snoozed] = await Promise.all([
+    fetchAllPaged<Row>((from, to) => {
+      let query = supabase
+        .from("tasks")
+        .select("id,subject,status,priority,due_date,due_time,assigned_user_id,project_id")
+        .in("status", OPEN_TASK_STATUSES)
+        .order("due_date", { ascending: true })
+        .order("id", { ascending: true });
+      if (scope === "mine") query = query.eq("assigned_user_id", userId);
+      return query.range(from, to);
+    }),
+    fetchAllPaged<Row>((from, to) => {
+      let query = supabase
+        .from("projects")
+        .select("id,name,status,start_date,end_date,project_manager_id,customer_id")
+        .order("start_date", { ascending: true })
+        .order("id", { ascending: true });
+      if (scope === "mine") query = query.eq("project_manager_id", userId);
+      return query.range(from, to);
+    }),
     deliveriesPromise,
-    getOpenReminders(supabase, { scope, userId, limit: 500 }),
+    getOpenReminders(supabase, { scope, userId, limit: "all" }),
     // My own snoozed tasks are off my schedule until they're back (lib/tasks/snooze.ts).
     scope === "mine" ? snoozedTasks(supabase, userId) : Promise.resolve(new Map<string, string>()),
   ]);
+  return { tasks, projects, deliveryOrders, reminders, snoozed };
+}
 
-  if (tasksError) throw tasksError;
-  if (projectsError) throw projectsError;
-  if (deliveriesError) throw deliveriesError;
-
-  const tasks = ((taskRows ?? []) as Row[]).filter((row) => !snoozed.has(getString(row, "id") ?? ""));
-  const projects = (projectRows ?? []) as Row[];
-  const deliveryOrders = (deliveryOrderRows ?? []) as Row[];
-
-  // Resolve names: task→project, task→assignee, project/order→customer.
-  const taskProjectIds = uniqueIds(tasks, "project_id");
-  const taskUserIds = uniqueIds(tasks, "assigned_user_id");
+/** Names: task→project, task→assignee, project/order→customer — in batches of 150 ids. */
+async function resolveScheduleNames(supabase: SupabaseClient, rows: ScheduleRows): Promise<ScheduleNames> {
+  const taskProjectIds = uniqueIds(rows.tasks, "project_id");
+  const taskUserIds = uniqueIds(rows.tasks, "assigned_user_id");
   const customerIds = [
-    ...new Set([...uniqueIds(projects, "customer_id"), ...uniqueIds(deliveryOrders, "customer_id")]),
+    ...new Set([...uniqueIds(rows.projects, "customer_id"), ...uniqueIds(rows.deliveryOrders, "customer_id")]),
   ];
 
-  const empty = Promise.resolve({ data: [] as Row[] });
-  const [projectNamesRes, userNamesRes, customerNamesRes] = await Promise.all([
-    taskProjectIds.length
-      ? supabase.from("projects").select("id,name").in("id", taskProjectIds)
-      : empty,
-    taskUserIds.length
-      ? supabase.rpc("user_directory").in("id", taskUserIds)
-      : empty,
-    customerIds.length
-      ? supabase.from("customers").select("id,name").in("id", customerIds)
-      : empty,
+  const [projectNames, userNames, customerNames] = await Promise.all([
+    rowsByIds((batch) => supabase.from("projects").select("id,name").in("id", batch), taskProjectIds),
+    rowsByIds((batch) => supabase.rpc("user_directory").in("id", batch), taskUserIds),
+    rowsByIds((batch) => supabase.from("customers").select("id,name").in("id", batch), customerIds),
   ]);
 
-  const projectNameById = new Map(
-    ((projectNamesRes.data ?? []) as Row[])
-      .map((r) => [getString(r, "id"), getString(r, "name")] as const)
-      .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
-  );
-  const userNameById = new Map(
-    ((userNamesRes.data ?? []) as Row[])
-      .map((r) => [getString(r, "id"), getString(r, "full_name") ?? getString(r, "email")] as const)
-      .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
-  );
-  const customerNameById = new Map(
-    ((customerNamesRes.data ?? []) as Row[])
-      .map((r) => [getString(r, "id"), getString(r, "name")] as const)
-      .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
-  );
+  const byId = (list: Row[], name: (r: Row) => string | null) =>
+    new Map(
+      list
+        .map((r) => [getString(r, "id"), name(r)] as const)
+        .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
+    );
+  return {
+    projectNameById: byId(projectNames, (r) => getString(r, "name")),
+    userNameById: byId(userNames, (r) => getString(r, "full_name") ?? getString(r, "email")),
+    customerNameById: byId(customerNames, (r) => getString(r, "name")),
+  };
+}
 
-  const taskEntries: CalendarEntry[] = tasks
+/** The rows as the calendar's entries, in one fixed order. */
+function buildScheduleEntries(rows: ScheduleRows, names: ScheduleNames, scope: ScheduleScope): CalendarEntry[] {
+  const { projectNameById, userNameById, customerNameById } = names;
+
+  const taskEntries: CalendarEntry[] = rows.tasks
     .map((row) => {
       const taskId = getString(row, "id") ?? "";
       const projectId = getString(row, "project_id");
@@ -250,7 +263,7 @@ export async function getScheduleEntries(
     })
     .filter((row) => row.id && row.startDate);
 
-  const reminderEntries: CalendarEntry[] = reminders
+  const reminderEntries: CalendarEntry[] = rows.reminders
     .map((r) => {
       const day = r.remind_at ? israelDateOnly(r.remind_at) : null;
       // Same detail the תזכורות panel shows: a task-linked reminder reads as its
@@ -285,7 +298,7 @@ export async function getScheduleEntries(
     })
     .filter((row) => row.id && row.startDate);
 
-  const projectEntries: CalendarEntry[] = projects
+  const projectEntries: CalendarEntry[] = rows.projects
     .map((row) => {
       const projectId = getString(row, "id") ?? "";
       const customerId = getString(row, "customer_id");
@@ -303,7 +316,7 @@ export async function getScheduleEntries(
     })
     .filter((row) => row.id && row.startDate);
 
-  const deliveryEntries: CalendarEntry[] = deliveryOrders
+  const deliveryEntries: CalendarEntry[] = rows.deliveryOrders
     .map((row) => {
       const orderId = getString(row, "id") ?? "";
       const customerId = getString(row, "customer_id");
@@ -322,10 +335,84 @@ export async function getScheduleEntries(
     })
     .filter((row) => row.id && row.startDate);
 
+  // On a day: tasks, reminders, projects, deliveries; then by name — and the
+  // id last, so two items with the same name on the same day keep one order
+  // here and on the device (the daily check compares the lists in order). It
+  // used to put tasks first and leave the rest as they came.
   return [...taskEntries, ...reminderEntries, ...projectEntries, ...deliveryEntries].sort((a, b) => {
     const byStart = compareNullableDates(a.startDate, b.startDate);
     if (byStart !== 0) return byStart;
-    if (a.kind !== b.kind) return a.kind === "task" ? -1 : 1;
-    return a.title.localeCompare(b.title, "he");
+    const byKind = KIND_RANK[a.kind] - KIND_RANK[b.kind];
+    if (byKind !== 0) return byKind;
+    const byTitle = a.title.localeCompare(b.title, "he");
+    if (byTitle !== 0) return byTitle;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
+}
+
+const KIND_RANK: Record<CalendarEntryKind, number> = { task: 0, reminder: 1, project: 2, delivery: 3 };
+
+/**
+ * Unified calendar feed: open tasks (by due date), projects (by start/end),
+ * pending reminders (by remind_at) and orders with a customer-requested
+ * delivery date. `scope` decides personal vs everything:
+ *   - "mine" → tasks assigned to me, projects I manage, reminders I own/created,
+ *     orders I created.
+ *   - "all"  → everything (back-office only; gated by the caller).
+ * Ownership is filtered on the base tables (`tasks.assigned_user_id`,
+ * `projects.project_manager_id`, `orders.created_by` — the closest analog,
+ * since orders have no assignee column) since the *_view layers don't expose
+ * those columns; display names are resolved with small follow-up lookups.
+ */
+export async function getScheduleEntries(
+  supabase: SupabaseClient,
+  { scope, userId }: { scope: ScheduleScope; userId: string }
+): Promise<CalendarEntry[]> {
+  const { snoozed, ...rows } = await readScheduleRows(supabase, { scope, userId });
+  const shown = { ...rows, tasks: rows.tasks.filter((row) => !snoozed.has(getString(row, "id") ?? "")) };
+  return buildScheduleEntries(shown, await resolveScheduleNames(supabase, shown), scope);
+}
+
+/** Everyone's rows narrowed to mine, by getScheduleEntries' "mine" rules. */
+function mineOf(
+  rows: ScheduleRows,
+  userId: string,
+  recipientOrderIds: ReadonlySet<string>,
+  snoozed: ReadonlyMap<string, string>
+): ScheduleRows {
+  return {
+    tasks: rows.tasks.filter(
+      (row) => getString(row, "assigned_user_id") === userId && !snoozed.has(getString(row, "id") ?? "")
+    ),
+    projects: rows.projects.filter((row) => getString(row, "project_manager_id") === userId),
+    deliveryOrders: rows.deliveryOrders.filter(
+      (row) => getString(row, "created_by") === userId || recipientOrderIds.has(getString(row, "id") ?? "")
+    ),
+    // getOpenReminders' "mine": the ones I'm in charge of, or — never assigned
+    // to anyone — the ones I made.
+    reminders: rows.reminders.filter(
+      (r) => r.assigned_to === userId || (!r.assigned_to && r.created_by === userId)
+    ),
+  };
+}
+
+/**
+ * The calendar page's feeds: mine, and — for the back office (`canSeeAll`) —
+ * everyone's, for its שלי / הכל switch. Everyone's is read once and mine is
+ * picked out of it (getScheduleEntries' "mine" rules): the page used to read
+ * the whole feed twice, about 16 reads on every opening.
+ */
+export async function getCalendarFeeds(
+  supabase: SupabaseClient,
+  { userId, canSeeAll }: { userId: string; canSeeAll: boolean }
+): Promise<{ mine: CalendarEntry[]; all: CalendarEntry[] | null }> {
+  if (!canSeeAll) return { mine: await getScheduleEntries(supabase, { scope: "mine", userId }), all: null };
+  const [everyone, recipientOrderIds, snoozed] = await Promise.all([
+    readScheduleRows(supabase, { scope: "all", userId }),
+    myRecipientOrderIds(supabase, userId),
+    snoozedTasks(supabase, userId),
+  ]);
+  const names = await resolveScheduleNames(supabase, everyone);
+  const mine = mineOf(everyone, userId, new Set(recipientOrderIds), snoozed);
+  return { mine: buildScheduleEntries(mine, names, "mine"), all: buildScheduleEntries(everyone, names, "all") };
 }

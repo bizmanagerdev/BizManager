@@ -55,7 +55,8 @@ export type DeviceCheckPage =
   | "propertyPage"
   | "rentRoll"
   | "bank"
-  | "cashFlow";
+  | "cashFlow"
+  | "calendar";
 
 /** The cookie a device sets once it has compared `page` today. */
 export function deviceCheckCookie(page: DeviceCheckPage): string {

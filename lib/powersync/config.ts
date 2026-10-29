@@ -101,6 +101,10 @@ export const LOCAL_DATA_PAGES = {
   // every admin's from 2026-10-29 (owner: "yes"), after the owner's copy
   // matched the server's (Oct 29) and the page held up with the Wi-Fi off.
   cashFlow: true,
+  // The calendar (/calendar, יומן) — owner, 2026-10-29: "yes go build 1-3".
+  // Mine and everyone's feeds (getCalendarFeeds), from tables every staff copy
+  // already has. The preview users' first.
+  calendar: false,
 } as const;
 
 /**
@@ -163,4 +167,5 @@ export const LOCAL_DATA_SHADOW = {
   rentRoll: true,
   bank: true,
   cashFlow: true,
+  calendar: true,
 } as const;
