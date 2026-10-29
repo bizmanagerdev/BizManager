@@ -47,10 +47,26 @@ export function flashFocusTarget(
     return null;
   };
 
+  // Someone who has started doing something on the page — scrolling, tapping,
+  // typing — while the row was still on its way is never pulled away from it
+  // when it arrives (owner, 2026-10-29: an expense opened from a link "keeps
+  // jumping up even if I start doing other stuff on the page").
+  const USER_ACTIVITY = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+  function stopLooking() {
+    cancelled = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    removeActivityListeners();
+  }
+  function removeActivityListeners() {
+    for (const type of USER_ACTIVITY) window.removeEventListener(type, stopLooking, true);
+  }
+  for (const type of USER_ACTIVITY) window.addEventListener(type, stopLooking, { capture: true, passive: true });
+
   const attempt = () => {
     if (cancelled) return;
     const found = findVisible();
     if (found) {
+      removeActivityListeners();
       target = found;
       // Class first: it carries the scroll-margin that keeps the row clear of
       // the sticky top bar.
@@ -60,12 +76,14 @@ export function flashFocusTarget(
       return;
     }
     if (Date.now() < deadline) retryTimer = setTimeout(attempt, RETRY_MS);
+    else removeActivityListeners();
   };
 
   attempt();
 
   return () => {
     cancelled = true;
+    removeActivityListeners();
     if (retryTimer) clearTimeout(retryTimer);
     if (flashTimer) clearTimeout(flashTimer);
     target?.classList.remove(FLASH_CLASS);

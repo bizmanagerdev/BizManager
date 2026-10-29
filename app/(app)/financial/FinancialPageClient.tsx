@@ -3,13 +3,11 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
-import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
-import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { CURRENCY_SYMBOL, currencyFieldsFrom } from "@/lib/fx/currencies";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
-import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -24,9 +22,6 @@ import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { DictateButton } from "@/components/ui/dictate-button";
-import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import ProfitLossPanel from "@/app/(app)/financial/reports/ProfitLossPanel";
 import BottomLinePanel from "@/app/(app)/financial/reports/BottomLinePanel";
 import MonthlyTrendPanel from "@/app/(app)/financial/reports/MonthlyTrendPanel";
@@ -41,14 +36,10 @@ import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
 import type { DomainProofMap } from "@/lib/financial/domainProof";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
-import { appendDictatedText } from "@/lib/dictation";
-import {
-  getBusinessDomainLabel,
-  type ExpenseBusinessDomain,
-} from "@/lib/expenses";
+import { getBusinessDomainLabel } from "@/lib/expenses";
 import { monthRange, recentMonthKeys } from "@/lib/financial/periodPresets";
+import { normalizeFinancialSearchParams } from "@/lib/financial/cashFlowPage";
 import { clampFromToBooksStart, isMonthBeforeBooksStart } from "@/lib/settings/booksStartDate";
-import { DomainSelect } from "@/components/financial/DomainSelect";
 import DomainMultiSelect from "@/components/financial/DomainMultiSelect";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
@@ -85,18 +76,16 @@ import { SearchMatchLine } from "@/components/search/SearchMatchLine";
 import { LEDGER_DESKTOP_DETAIL_LABELS, LEDGER_MOBILE_DETAIL_LABELS, ledgerSearchRecord } from "@/lib/financial/search";
 import { searchList } from "@/lib/search/listSearch";
 import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
-import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
-import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
-import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
-import { PAYMENT_METHOD_OPTIONS, parseInstallments, splitCardInstallments } from "@/lib/payments";
-import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
+import { clearDraft, offlineFetch } from "@/lib/offline-queue";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
-import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
+import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 import { israelDateKey } from "@/lib/timezone";
+import { loadExpenseDialog, useExpenseLinkPreload } from "./useExpenseLinkPreload";
 
 const ExpenseDialog = dynamic(
-  () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
+  () => loadExpenseDialog().then((mod) => mod.ExpenseDialog),
   { loading: () => null }
 );
 
@@ -173,25 +162,6 @@ type Props = {
   recurringProperties: Array<{ id: string; label: string }>;
 };
 
-type IncomeCreateFormState = {
-  businessDomain: ExpenseBusinessDomain | "";
-  projectId: string;
-  orderId: string;
-  propertyId: string;
-  amount: string;
-  paymentDate: string;
-  dueDate: string;
-  paymentMethod: "bank_transfer" | "cash" | "check" | "credit_card" | "other";
-  accountId: string;
-  referenceNumber: string;
-  checkNumber: string;
-  notes: string;
-  requiresSplit: boolean;
-  tagIds: string[];
-  /** Card only: saved as this many payments, a month apart. Absent on older saved drafts. */
-  installments?: string;
-};
-
 // What an upcoming card already shows, so the search's "found in" line doesn't repeat it.
 const UPCOMING_CARD_DETAIL_LABELS = [...LEDGER_MOBILE_DETAIL_LABELS, "מועד פירעון"] as const;
 
@@ -204,25 +174,6 @@ function isCancellableRecurringMonth(entry: FinancialEntry): boolean {
     paymentStatus: entry.paymentStatus,
     paidAmount: entry.expensePaidAmount,
   });
-}
-
-function createIncomeFormState(): IncomeCreateFormState {
-  return {
-    businessDomain: "",
-    projectId: "",
-    orderId: "",
-    propertyId: "",
-    amount: "",
-    paymentDate: israelDateKey(),
-    dueDate: "",
-    paymentMethod: "bank_transfer",
-    accountId: "",
-    referenceNumber: "",
-    checkNumber: "",
-    notes: "",
-    requiresSplit: false,
-    tagIds: [],
-  };
 }
 
 function setOrDelete(params: URLSearchParams, key: string, value: string | number | null | undefined) {
@@ -278,6 +229,7 @@ export function FinancialPage({
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
+  useExpenseLinkPreload(focusId);
   // Inner report tab. Local state — switching it must not trigger a server
   // re-query, unlike the shared URL-driven filters. 5 views: overview / pl /
   // monthly / balance / forecast.
@@ -305,12 +257,12 @@ export function FinancialPage({
     reportBasis === "earned" ? "earned" : includeOpen ? "accrual" : "cash";
   // Flow view: which table is shown (full ledger vs upcoming flow).
   const [flowTab, setFlowTab] = useState<"ledger" | "upcoming" | "history">("history");
-  // Filter panel is collapsed by default; opens automatically when filters arrive active.
+  // Filter panel is collapsed by default; opens automatically when filters arrive
+  // active. Not for a search: it's in the list's own box.
   const [filtersOpen, setFiltersOpen] = useState(
     () =>
       Boolean(
-        initialFilters.q ||
-          initialFilters.from ||
+        initialFilters.from ||
           initialFilters.to ||
           initialFilters.domain ||
           initialFilters.sourceId ||
@@ -428,13 +380,18 @@ export function FinancialPage({
     return entry && isEditableExpenseEntry(entry) ? entry : null;
   }, [focusId, focusDismissed, ledgerEntries, upcomingEntries]);
   // Scroll-to-load the upcoming list instead of paging it (same feel as the ledger).
-  const upcomingReveal = useRevealOnScroll(upcomingEntries, { initial: 15, step: 15, watch: flowTab });
-  const pagedUpcomingEntries = upcomingReveal.visibleItems;
+  // Taken apart: the refs go to their elements, the rest is read in render.
+  const {
+    visibleItems: pagedUpcomingEntries,
+    visibleCount: upcomingVisibleCount,
+    hasMore: upcomingHasMore,
+    scrollRef: upcomingScrollRef,
+    sentinelRef: upcomingSentinelRef,
+    mobileSentinelRef: upcomingMobileSentinelRef,
+  } = useRevealOnScroll(upcomingEntries, { initial: 15, step: 15, watch: flowTab });
 
   // ── Ledger-only client controls (instant, no route reload) ──────────────────
   const [ledgerVisible, setLedgerVisible] = useState(60);
-  const [ledgerSearch, setLedgerSearch] = useState(initialFilters.q);
-  const [ledgerMonth, setLedgerMonth] = useState("");
   const [ledgerSort, setLedgerSort] = useState<{ key: "date" | "amount" | "domain"; dir: "asc" | "desc" }>({
     key: "date",
     dir: "desc",
@@ -443,26 +400,16 @@ export function FinancialPage({
   const ledgerSentinelRef = useRef<HTMLDivElement>(null);
   const ledgerMobileSentinelRef = useRef<HTMLDivElement>(null);
   const [historyVisible, setHistoryVisible] = useState(60);
-  const [historySearch, setHistorySearch] = useState(initialFilters.q);
   const historyScrollRef = useRef<HTMLDivElement>(null);
   const historySentinelRef = useRef<HTMLDivElement>(null);
   const historyMobileSentinelRef = useRef<HTMLDivElement>(null);
-
-  const ledgerMonths = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of ledgerEntries) {
-      const m = (e.flowDate ?? "").slice(0, 7);
-      if (m) set.add(m);
-    }
-    return Array.from(set).sort().reverse();
-  }, [ledgerEntries]);
 
   // The search, by the global search's rules (lib/financial/search.ts): an
   // amount, a day, an hour or words — what matched is painted on the row, and
   // what the row doesn't show is said under it. The server already filtered
   // the lists by the `q` in the URL (before they were cut to the newest), so
   // while the box still holds that same text, every row here is a match.
-  const deferredLedgerSearch = useDeferredValue(ledgerSearch);
+  const deferredLedgerSearch = useDeferredValue(query);
   const ledgerFind = useMemo(
     () => searchList(ledgerEntries, ledgerSearchRecord, deferredLedgerSearch, { today: data.todayIso }),
     [ledgerEntries, deferredLedgerSearch, data.todayIso]
@@ -483,7 +430,6 @@ export function FinancialPage({
 
   const displayLedger = useMemo(() => {
     let list = ledgerEntries;
-    if (ledgerMonth) list = list.filter((e) => (e.flowDate ?? "").slice(0, 7) === ledgerMonth);
     if (ledgerFind && !serverFilteredBySearch) list = list.filter((e) => ledgerFind.reasons.has(e));
     const { key, dir } = ledgerSort;
     const sorted = [...list].sort((a, b) => {
@@ -495,11 +441,11 @@ export function FinancialPage({
       return dir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [ledgerEntries, ledgerFind, serverFilteredBySearch, ledgerMonth, ledgerSort]);
+  }, [ledgerEntries, ledgerFind, serverFilteredBySearch, ledgerSort]);
 
   const filteredEntries = { length: displayLedger.length };
 
-  // The היסטוריה box is the same search (applySearch sets both).
+  // The same search on every list (one `query`, one box per tab).
   const displayHistory = useMemo(() => {
     let list = ledgerEntries.filter((e) => (e.flowDate ?? "") <= data.todayIso);
     if (ledgerFind && !serverFilteredBySearch) list = list.filter((e) => ledgerFind.reasons.has(e));
@@ -509,14 +455,28 @@ export function FinancialPage({
     });
   }, [ledgerEntries, ledgerFind, serverFilteredBySearch, data.todayIso]);
 
-  // Back/forward changes the URL's `q` without remounting this component —
-  // mirror it into the boxes, unless the user is mid-typing (debounce pending).
+  // The page isn't started over by a filter or a search (cashFlowPageKey), so it
+  // follows the address itself: filters that arrive another way — Back, Forward,
+  // a link to this page — go into the controls. Not while a box is still
+  // waiting to send what's typed, nor for an answer the address has already
+  // moved past (a newer filter is on its way) — those would undo the typing.
   useEffect(() => {
-    if (queryDebounceRef.current) return;
-    setQuery(initialFilters.q);
-    setHistorySearch(initialFilters.q);
-    setLedgerSearch(initialFilters.q);
-  }, [initialFilters.q]);
+    if (queryDebounceRef.current || dateDebounceRef.current) return;
+    const inAddress = normalizeFinancialSearchParams(Object.fromEntries(new URLSearchParams(window.location.search)));
+    const arrived = { q: initialFilters.q, from: initialFilters.from, to: initialFilters.to, domain: initialFilters.domain, sourceId: initialFilters.sourceId, type: initialFilters.type, stage: initialFilters.stage };
+    if ((Object.keys(arrived) as (keyof typeof arrived)[]).some((key) => inAddress[key] !== arrived[key])) return;
+    // The address holds the search trimmed: "חשמל " typed is "חשמל" there, and
+    // the space mid-sentence must stay in the box. (Setting state here is the
+    // point: the address is outside React, and this copies it in.)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setQuery((typed) => (typed.trim() === arrived.q ? typed : arrived.q));
+    setFrom(arrived.from);
+    setTo(arrived.to);
+    setDomain(arrived.domain);
+    setSourceId(arrived.sourceId);
+    setType(arrived.type);
+    setStage(arrived.stage);
+  }, [initialFilters.q, initialFilters.from, initialFilters.to, initialFilters.domain, initialFilters.sourceId, initialFilters.type, initialFilters.stage]);
 
   // The lists hold only the newest entries (the server caps them) — say so, and
   // that search + date filters cover the whole period, so "5 מתוך 5" is never
@@ -658,14 +618,16 @@ export function FinancialPage({
       return;
     }
 
+    // scroll: false — Next's default puts the page back at the top on every
+    // filter and every search.
     if (options?.pending) {
       startFilterTransition(() => {
-        router.replace(nextHref);
+        router.replace(nextHref, { scroll: false });
       });
       return;
     }
 
-    router.replace(nextHref);
+    router.replace(nextHref, { scroll: false });
   };
 
   const replaceFilters = (
@@ -708,8 +670,6 @@ export function FinancialPage({
   // so the search survives a refresh and the Back button.
   const applySearch = (next: string) => {
     setQuery(next);
-    setHistorySearch(next);
-    setLedgerSearch(next);
     setHistoryVisible(60);
     setLedgerVisible(60);
     if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current);
@@ -729,8 +689,6 @@ export function FinancialPage({
 
   const resetFilters = () => {
     setQuery("");
-    setHistorySearch("");
-    setLedgerSearch("");
     setFrom("");
     setTo("");
     setDomain("");
@@ -758,6 +716,12 @@ export function FinancialPage({
   const activeEditingExpense = editingExpense ?? focusExpense;
   const [deletingExpense, setDeletingExpense] = useState<EditableExpenseEntry | null>(null);
   const [markPaidExpense, setMarkPaidExpense] = useState<EditableExpenseEntry | null>(null);
+  // The phone's cards swipe open to their actions — one card open at a time.
+  const [swipedEntryId, setSwipedEntryId] = useState<string | null>(null);
+  const swipe = useMemo(
+    () => ({ openId: swipedEntryId, onOpenChange: (id: string, open: boolean) => setSwipedEntryId(open ? id : null) }),
+    [swipedEntryId]
+  );
   const [markPaidMethod, setMarkPaidMethod] = useState<string>("");
   const [markPaidAccountId, setMarkPaidAccountId] = useState<string>("");
   const [markPaidAccountsList, setMarkPaidAccountsList] = useState<Account[]>([]);
@@ -765,20 +729,6 @@ export function FinancialPage({
   // The real figure for a row that still carries a variable bill's ESTIMATE.
   const [markPaidAmount, setMarkPaidAmount] = useState<string>("");
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
-  const [incomeCreateOpen, setIncomeCreateOpen] = useState(false);
-  const [incomeAccountsList, setIncomeAccountsList] = useState<Account[]>([]);
-  const [incomeCreateForm, setIncomeCreateForm] = useState<IncomeCreateFormState>(
-    () => loadDraft<IncomeCreateFormState>("income-create") ?? createIncomeFormState()
-  );
-  const [incomeCheckPhotoFiles, setIncomeCheckPhotoFiles] = useState<File[]>([]);
-  const [isCreatingIncome, setIsCreatingIncome] = useState(false);
-  // The new income in ₪, US$ or C$ (2026-10-24) — the account's own when it's kept in dollars.
-  const incomeMoney = useMoneyCurrency({
-    open: incomeCreateOpen,
-    accountCurrency: incomeAccountsList.find((a) => a.id === incomeCreateForm.accountId)?.currency ?? null,
-    date: incomeCreateForm.paymentDate,
-  });
-
 
   useEffect(() => {
     if (!isRefreshPending && refreshResolveRef.current) {
@@ -798,11 +748,6 @@ export function FinancialPage({
     return Promise.resolve();
   }
 
-  useEffect(() => {
-    if (!incomeCreateOpen) return;
-    saveDraft("income-create", incomeCreateForm);
-  }, [incomeCreateForm, incomeCreateOpen]);
-
   const navigateToEntry = (entry: FinancialEntry) => {
     if (!entry.sourceHref) return;
     emitNavigationStart();
@@ -819,8 +764,11 @@ export function FinancialPage({
     setMarkPaidMethod(entry.expensePaymentMethod ?? "");
     setMarkPaidAccountId(entry.expenseAccountId ?? "");
     // A variable bill's row holds only its estimate — seed it so the user
-    // corrects a number instead of typing one from scratch.
-    setMarkPaidAmount(entry.expenseVariableEstimate ? String(entry.amount) : "");
+    // corrects a number instead of typing one from scratch. In the bill's own
+    // currency: the server reads the number so (/api/expenses/mark-paid) — a
+    // US$ bill was seeded with its shekels, and saved ~3× over (owner,
+    // 2026-10-29: "fix").
+    setMarkPaidAmount(entry.expenseVariableEstimate ? String(entry.foreign ? entry.foreign.amount : entry.amount) : "");
     // Default the pay date to the scheduled date if it's already due, else today.
     const scheduled = entry.recordedDate;
     setMarkPaidDate(scheduled && scheduled <= data.todayIso ? scheduled : israelDateKey());
@@ -854,7 +802,12 @@ export function FinancialPage({
       patch: {
         paymentStatus: "paid",
         expensePaymentMethod: method || null,
-        ...(amountToRecord != null ? { amount: amountToRecord, expenseVariableEstimate: false } : {}),
+        // A US$ bill's figure is dollars: its shekels come back from the server.
+        ...(amountToRecord != null
+          ? target.foreign
+            ? { foreign: { ...target.foreign, amount: amountToRecord }, expenseVariableEstimate: false }
+            : { amount: amountToRecord, expenseVariableEstimate: false }
+          : {}),
       },
       onCommit: async () => {
         const res = await fetch("/api/expenses/mark-paid", {
@@ -904,169 +857,6 @@ export function FinancialPage({
         return { ok: true };
       },
     });
-  };
-
-  const createIncome = async () => {
-    if (!incomeCreateForm.businessDomain) {
-      toast.error("יש לבחור תחום");
-      return;
-    }
-    const amountNumber = Number(incomeCreateForm.amount);
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      toast.error("יש להזין סכום תקין");
-      return;
-    }
-    if (!incomeCreateForm.paymentDate.trim()) {
-      toast.error("יש לבחור תאריך");
-      return;
-    }
-    if (incomeCreateForm.paymentMethod === "check" && !incomeCreateForm.dueDate.trim()) {
-      toast.error("יש להזין תאריך פירעון לצ'ק");
-      return;
-    }
-    if (incomeAccountsList.length > 0 && !incomeCreateForm.accountId) {
-      toast.error("יש לבחור חשבון לתנועה.");
-      return;
-    }
-    if (isForeignCurrency(incomeMoney.currency) && incomeMoney.rate === null) {
-      toast.error(incomeMoney.loading ? "רגע, מביא את השער היציג…" : "יש להקליד את השער.");
-      return;
-    }
-    const incomeCurrencyBody = incomeMoney.body();
-    // due_date is optional for non-check methods (e.g., שוטף+30 bank transfer).
-    const isCard = incomeCreateForm.paymentMethod === "credit_card";
-    const installmentCount = isCard ? parseInstallments(incomeCreateForm.installments ?? "1") : 1;
-    if (installmentCount === null) {
-      toast.error("מספר התשלומים צריך להיות בין 1 ל-36.");
-      return;
-    }
-    // One payment — or, for a card payment in installments, one per installment,
-    // a month apart, saved one after the other. Check photos and undo follow the first.
-    const parts = isCard
-      ? splitCardInstallments({
-          amount: amountNumber,
-          paymentDate: incomeCreateForm.paymentDate,
-          count: installmentCount,
-          notes: incomeCreateForm.notes,
-        })
-      : [{
-          amount: amountNumber,
-          paymentDate: incomeCreateForm.paymentDate,
-          dueDate: incomeCreateForm.dueDate.trim() || null,
-          notes: incomeCreateForm.notes.trim() || null,
-        }];
-
-    setIsCreatingIncome(true);
-    try {
-      let result: Awaited<ReturnType<typeof offlineFetch>> | null = null;
-      const extraIds: string[] = [];
-      for (const [i, part] of parts.entries()) {
-        const partResult = await offlineFetch("/api/payments/create", {
-          business_domain: incomeCreateForm.businessDomain,
-          project_id: incomeCreateForm.businessDomain === "logistics_projects" ? incomeCreateForm.projectId : null,
-          order_id: incomeCreateForm.businessDomain === "sales" ? incomeCreateForm.orderId : null,
-          property_id:
-            incomeCreateForm.businessDomain === "property_management" ? incomeCreateForm.propertyId : null,
-          amount_total: part.amount,
-          // In US$ / C$: the amount as typed; the server works out its shekels.
-          ...incomeCurrencyBody,
-          payment_date: part.paymentDate,
-          due_date: part.dueDate || null,
-          requires_split: incomeCreateForm.requiresSplit,
-          payment_method: incomeCreateForm.paymentMethod,
-          account_id: incomeCreateForm.accountId || null,
-          reference_number: incomeCreateForm.referenceNumber.trim() || null,
-          check_number:
-            incomeCreateForm.paymentMethod === "check" && incomeCreateForm.checkNumber.trim()
-              ? incomeCreateForm.checkNumber.trim()
-              : null,
-          notes: part.notes,
-          tag_ids: incomeCreateForm.tagIds,
-        }, "הכנסה חדשה", { idempotent: true });
-        if (i === 0) {
-          result = partResult;
-          if (!partResult.queued && !partResult.ok) break;
-          continue;
-        }
-        if (!partResult.queued && !partResult.ok) {
-          toast.error(`נרשמו ${i} מתוך ${parts.length} תשלומים`, { description: partResult.error });
-          break;
-        }
-        if (!partResult.queued) {
-          const extraId = (partResult.data as { payment?: { id?: string } } | null)?.payment?.id;
-          if (extraId) extraIds.push(extraId);
-        }
-      }
-      if (!result) return;
-
-      if (result.queued) {
-        setIncomeCreateOpen(false);
-        clearDraft("income-create");
-        setIncomeCreateForm(createIncomeFormState());
-        setIncomeCheckPhotoFiles([]);
-        return;
-      }
-      if (!result.ok) {
-        toast.error("שגיאה ביצירת ההכנסה", { description: result.error });
-        return;
-      }
-
-      const createdPaymentId =
-        (result.data as { payment?: { id?: string } } | null)?.payment?.id ?? "";
-      if (
-        incomeCreateForm.paymentMethod === "check" &&
-        createdPaymentId &&
-        incomeCheckPhotoFiles.length > 0
-      ) {
-        await uploadCheckPhotos(createdPaymentId, incomeCheckPhotoFiles);
-      }
-
-      // Undo = a real reverse delete (not a deferred commit) — the create
-      // already went through (check photos needed the real payment id to
-      // upload to), same reasoning as ExpenseDialog's/IncomeDialog's create-undo.
-      const undoOrderId = incomeCreateForm.businessDomain === "sales" ? incomeCreateForm.orderId : "";
-      const undoProjectId =
-        !undoOrderId && incomeCreateForm.businessDomain === "logistics_projects" ? incomeCreateForm.projectId : "";
-
-      setIncomeCreateOpen(false);
-      clearDraft("income-create");
-      setIncomeCreateForm(createIncomeFormState());
-      setIncomeCheckPhotoFiles([]);
-      startRefreshTransition(() => { router.refresh(); });
-
-      if (!createdPaymentId) {
-        toast.success("ההכנסה נוספה");
-      } else {
-        registerReversibleCreate({
-          scope: "payment",
-          id: createdPaymentId,
-          message: "ההכנסה נוספה",
-          onUndo: async () => {
-            for (const id of [createdPaymentId, ...extraIds]) {
-              const res = await fetch(undoOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(
-                  undoOrderId
-                    ? { id, order_id: undoOrderId }
-                    : { id, project_id: undoProjectId || undefined }
-                ),
-              });
-              const errJson = await res.json().catch(() => ({}));
-              if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
-            }
-            startRefreshTransition(() => { router.refresh(); });
-            return { ok: true };
-          },
-        });
-      }
-    } catch (error) {
-      toast.error("שגיאה ביצירת ההכנסה", {
-        description: toHebrewError(error, ""),
-      });
-    } finally {
-      setIsCreatingIncome(false);
-    }
   };
 
   // Month picker — always visible in the filter-button row (outside the
@@ -1227,28 +1017,14 @@ export function FinancialPage({
     : "כל התקופה";
   const reportBasisLabel = reportBasis === "earned" ? "הרווחתי" : "נכנס בפועל";
 
-  // The advanced-filter FIELDS (search / date range / domain / source / type /
-  // stage). Rendered as the lower part of the SAME filter box as the control row,
-  // so the two read as one connected area (not two floating cards).
+  // The advanced-filter FIELDS (date range / domain / source / type / stage).
+  // Rendered as the lower part of the SAME filter box as the control row, so the
+  // two read as one connected area (not two floating cards). The search isn't
+  // here: it's the list's own box (owner, 2026-10-29 — a second search box
+  // opened here, and "you don't know where to type").
   const advancedFilterFields = (
       <div className="space-y-2">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Free-text search filters the ledger — not the reports — so flow only. */}
-          {view === "flow" ? (
-          <label className="space-y-1 text-sm text-right sm:col-span-2">
-            <span className="font-medium">חיפוש</span>
-            <div className="relative">
-              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(event) => applySearch(event.target.value)}
-                placeholder="סכום, תאריך, שעה, אסמכתא או מילה..."
-                className="pr-9"
-              />
-            </div>
-          </label>
-          ) : null}
-
           <label className="space-y-1 text-sm text-right">
             <span className="font-medium">מתאריך</span>
             <DateInput
@@ -1258,6 +1034,7 @@ export function FinancialPage({
                 setFrom(nextValue);
                 if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
                 dateDebounceRef.current = setTimeout(() => {
+                  dateDebounceRef.current = null;
                   replaceFilters({ from: nextValue, ledgerPage: 1, upcomingPage: 1 });
                 }, 400);
               }}
@@ -1273,6 +1050,7 @@ export function FinancialPage({
                 setTo(nextValue);
                 if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
                 dateDebounceRef.current = setTimeout(() => {
+                  dateDebounceRef.current = null;
                   replaceFilters({ to: nextValue, ledgerPage: 1, upcomingPage: 1 });
                 }, 400);
               }}
@@ -1339,10 +1117,40 @@ export function FinancialPage({
       </div>
   );
 
+  // THE search, at the top of each list — the same text on every tab (one
+  // `query`, sent as the address's `q`), so moving between tabs keeps it.
+  const searchBox = (placeholder: string, extra?: ReactNode) => (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="relative w-full md:w-96">
+        <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => applySearch(e.target.value)}
+          placeholder={placeholder}
+          aria-label="חיפוש בתזרים"
+          className="h-9 pr-9"
+        />
+      </div>
+      {query ? (
+        <Button type="button" variant="muted" size="sm" onClick={() => applySearch("")}>
+          נקה חיפוש
+        </Button>
+      ) : null}
+      {extra}
+    </div>
+  );
+
   const flowActions =
     canManageExpenses && view === "flow" ? (
       <>
-        <Button type="button" variant="secondary" onClick={() => setIncomeCreateOpen(true)}>
+        {/* The + menu's step-by-step income wizard, the app's one (owner,
+            2026-10-29: "it should open the step by step wizard") — this page had
+            its own older one-page form. */}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => window.dispatchEvent(new CustomEvent("bizh:quick-create", { detail: { action: "income" } }))}
+        >
           הוספת הכנסה
         </Button>
         <Button type="button" variant="secondary" onClick={() => setExpenseCreateOpen(true)}>
@@ -1635,89 +1443,32 @@ export function FinancialPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <div className="relative w-full md:w-96">
-              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={historySearch}
-                onChange={(e) => applySearch(e.target.value)}
-                placeholder="חיפוש — סכום, תאריך, שעה או מילה"
-                className="h-9 pr-9"
-              />
-            </div>
-            {historySearch ? (
-              <Button
-                type="button"
-                variant="muted"
-                size="sm"
-                onClick={() => applySearch("")}
-              >
-                נקה חיפוש
-              </Button>
-            ) : null}
-          </div>
+          {searchBox("חיפוש — סכום, תאריך, שעה או מילה")}
           {displayHistory.length === 0 ? (
             <EmptyState>
               לא נמצאו תנועות עבר בהתאם לסינון.
             </EmptyState>
           ) : (
             <div className="@container">
+              {/* The ledger's card: an unpaid bill from the past is marked
+                  paid here too (owner, 2026-10-29: "show"). */}
               <div dir="rtl" className={cn("grid gap-3", CASH_FLOW_LISTS.history.cards)}>
-                {pagedHistoryEntries.map((entry) => {
-                  const editableExpense = isEditableExpenseEntry(entry) ? entry : null;
-                  const isToday = entry.flowDate === data.todayIso;
-                  return (
-                  <article
+                {pagedHistoryEntries.map((entry) => (
+                  <CashFlowEntryCard
                     key={entry.id}
-                    data-focus-id={entry.id}
-                    className={cn(
-                      "rounded-2xl border p-4 text-right",
-                      isToday ? "border-primary/30 bg-primary/5" : "",
-                      entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
-                    )}
-                    onClick={() => navigateToEntry(entry)}
-                  >
-                    <div className="flex items-start justify-between gap-3 sm:flex-row-reverse">
-                      <div className="space-y-1">
-                        <div dir="ltr" className="text-sm font-medium tabular-nums">{paintLedger(formatShortDate(entry.flowDate))}</div>
-                        {isToday ? (
-                          <div className="text-xs font-semibold text-primary">היום</div>
-                        ) : (
-                          <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}</div>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={typeVariant(entry.type)}>{typeLabel(entry.type)}</Badge>
-                        <Badge variant={stageVariant(entry.stage)}>{stageLabel(entry.stage)}</Badge>
-                      </div>
-                    </div>
-                    <div className="mt-3 space-y-2 text-sm">
-                      <div className="font-medium">{paintLedger(entry.description)}</div>
-                      {ledgerReasons(entry)}
-                      <div className="text-muted-foreground">{paintLedger(entry.domainName)}</div>
-                      <div className="text-muted-foreground">
-                        {entry.sourceHref ? (
-                          <Link href={entry.sourceHref} className="transition-colors hover:text-foreground" onClick={(event) => { event.stopPropagation(); emitNavigationStart(); }}>
-                            <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
-                          </Link>
-                        ) : (
-                          <span dir="auto">{paintLedger(entry.sourceLabel)}</span>
-                        )}
-                      </div>
-                      <div dir="ltr" className={cn("font-semibold tabular-nums", typeAmountClass(entry.type))}>
-                        {paintLedger(signedEntryAmount(entry))}
-                        {entry.foreign ? <ShekelNote shekels={entry.amount} paint={paintLedger} /> : null}
-                      </div>
-                      {canManageExpenses && editableExpense ? (
-                        <div className="flex justify-end gap-2 pt-1">
-                          <EditButton onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }} label="עריכה" />
-                          <DeleteButton onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }} />
-                        </div>
-                      ) : null}
-                    </div>
-                  </article>
-                  );
-                })}
+                    entry={entry}
+                    todayIso={data.todayIso}
+                    paint={paintLedger}
+                    reasons={ledgerReasons(entry, LEDGER_MOBILE_DETAIL_LABELS)}
+                    markToday
+                    canManage={canManageExpenses}
+                    swipe={swipe}
+                    onOpen={() => navigateToEntry(entry)}
+                    onMarkPaid={openMarkPaid}
+                    onEdit={openExpenseEditor}
+                    onDelete={setDeletingExpense}
+                  />
+                ))}
               </div>
               <div ref={historyScrollRef} className={cn("max-h-[70vh] overflow-auto", CASH_FLOW_LISTS.history.table)}>
                 <table className="w-full text-right text-sm">
@@ -1786,6 +1537,7 @@ export function FinancialPage({
                               recordedByLabel(entry),
                             ].filter(Boolean).join(" • "))}
                           </div>
+                          {entry.origin === "expense" ? <ExpenseStatusLine entry={entry} /> : null}
                         </td>
                         <td dir="ltr" className={cn("px-3 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
                           {paintLedger(signedEntryAmount(entry))}
@@ -1795,6 +1547,14 @@ export function FinancialPage({
                           <td className="px-3 py-2 align-top">
                             {editableExpense ? (
                               <div className="flex items-center justify-end gap-1">
+                                {(editableExpense.paymentStatus ?? "not_paid") !== "paid" ? (
+                                  <MarkPaidButton
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openMarkPaid(editableExpense);
+                                    }}
+                                  />
+                                ) : null}
                                 <EditButton onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }} label="עריכה" />
                                 <DeleteButton onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }} />
                               </div>
@@ -1827,7 +1587,9 @@ export function FinancialPage({
               כאן רואים מה עוד אמור להיכנס או לצאת, כולל צ&apos;קים עם תאריך פירעון והוצאות עתידיות.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent>
+            {/* The search filters this list too — it had no box to show it. */}
+            {searchBox("חיפוש — סכום, תאריך, שעה או מילה")}
             {upcomingEntries.length === 0 ? (
               <EmptyState>
                 אין כרגע תנועות עתידיות או ממתינות בהתאם לסינון.
@@ -1844,6 +1606,7 @@ export function FinancialPage({
                     reasons={ledgerReasons(entry, UPCOMING_CARD_DETAIL_LABELS)}
                     showDueDate
                     canManage={canManageExpenses}
+                    swipe={swipe}
                     onOpen={() => navigateToEntry(entry)}
                     onMarkPaid={openMarkPaid}
                     onEdit={openExpenseEditor}
@@ -1851,7 +1614,7 @@ export function FinancialPage({
                   />
                 ))}
               </div>
-              <div ref={upcomingReveal.scrollRef} className={cn("max-h-[70vh] overflow-auto", CASH_FLOW_LISTS.upcoming.table)}>
+              <div ref={upcomingScrollRef} className={cn("max-h-[70vh] overflow-auto", CASH_FLOW_LISTS.upcoming.table)}>
                 <table className="w-full text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                     <tr className="border-b">
@@ -1983,14 +1746,14 @@ export function FinancialPage({
                     })}
                   </tbody>
                 </table>
-                {upcomingReveal.hasMore ? <div ref={upcomingReveal.sentinelRef} className="h-1" /> : null}
+                {upcomingHasMore ? <div ref={upcomingSentinelRef} className="h-1" /> : null}
               </div>
-              {upcomingReveal.hasMore ? <div ref={upcomingReveal.mobileSentinelRef} className={cn("h-1", CASH_FLOW_LISTS.upcoming.cards)} /> : null}
+              {upcomingHasMore ? <div ref={upcomingMobileSentinelRef} className={cn("h-1", CASH_FLOW_LISTS.upcoming.cards)} /> : null}
               </div>
             )}
             {upcomingEntries.length > 0 ? (
               <div className="pt-3 text-center text-xs text-muted-foreground">
-                מציג {upcomingReveal.visibleCount} מתוך {upcomingCount} תנועות עתידיות
+                מציג {upcomingVisibleCount} מתוך {upcomingCount} תנועות עתידיות
               </div>
             ) : null}
           </CardContent>
@@ -2006,46 +1769,14 @@ export function FinancialPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <div className="relative w-full md:w-96">
-              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={ledgerSearch}
-                onChange={(e) => applySearch(e.target.value)}
-                placeholder="חיפוש ביומן — סכום, תאריך, שעה או מילה"
-                className="h-9 pr-9"
-              />
-            </div>
-            <NativeSelect dense
-              value={ledgerMonth}
-              onChange={(e) => {
-                setLedgerVisible(60);
-                setLedgerMonth(e.target.value);
-              }}
-            >
-              <option value="">כל החודשים</option>
-              {/* mm/yy, as the month picker above it. */}
-              {ledgerMonths.map((m) => (
-                <option key={m} value={m}>{`${m.slice(5)}/${m.slice(2, 4)}`}</option>
-              ))}
-            </NativeSelect>
-            {ledgerSearch || ledgerMonth ? (
-              <Button
-                type="button"
-                variant="muted"
-                size="sm"
-                onClick={() => {
-                  applySearch("");
-                  setLedgerMonth("");
-                }}
-              >
-                {ledgerMonth ? "נקה סינון" : "נקה חיפוש"}
-              </Button>
-            ) : null}
+          {/* No month picker of its own: the page's, above, is the one (owner,
+              2026-10-29: two month pickers on one screen — "remove its own"). */}
+          {searchBox(
+            "חיפוש ביומן — סכום, תאריך, שעה או מילה",
             <Button type="button" variant="outline" size="sm" onClick={exportLedgerCsv} disabled={displayLedger.length === 0}>
               ייצוא ל-CSV
             </Button>
-          </div>
+          )}
           {filteredEntries.length === 0 ? (
             <EmptyState>
               לא נמצאו תנועות עבור הסינון שנבחר.
@@ -2061,6 +1792,7 @@ export function FinancialPage({
                     paint={paintLedger}
                     reasons={ledgerReasons(entry, LEDGER_MOBILE_DETAIL_LABELS)}
                     canManage={canManageExpenses}
+                    swipe={swipe}
                     onOpen={() => navigateToEntry(entry)}
                     onMarkPaid={openMarkPaid}
                     onEdit={openExpenseEditor}
@@ -2224,247 +1956,6 @@ export function FinancialPage({
         }}
       />
 
-      <FormDialog
-        open={incomeCreateOpen}
-        onOpenChange={(open) => {
-          setIncomeCreateOpen(open);
-          if (!open) {
-            clearDraft("income-create");
-            setIncomeCreateForm(createIncomeFormState());
-          }
-        }}
-        title="הוספת הכנסה"
-        description="יצירת תקבול חדש ישירות מעמוד הפיננסי."
-        onSubmit={() => void createIncome()}
-        submitLabel="שמירה"
-        busyLabel="שומר..."
-        busy={isCreatingIncome}
-      >
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תחום עסקי *</div>
-              <DomainSelect
-                value={incomeCreateForm.businessDomain}
-                onChange={(value) =>
-                  setIncomeCreateForm((current) => ({
-                    ...current,
-                    businessDomain: value as ExpenseBusinessDomain | "",
-                    projectId: value === "logistics_projects" ? current.projectId : "",
-                    orderId: value === "sales" ? current.orderId : "",
-                    propertyId: value === "property_management" ? current.propertyId : "",
-                    tagIds: value === "general_business" ? current.tagIds : [],
-                  }))
-                }
-              />
-            </div>
-
-            {incomeCreateForm.businessDomain === "logistics_projects" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">פרויקט</div>
-                <ProjectPicker
-                  projects={recurringProjects}
-                  value={incomeCreateForm.projectId}
-                  onChange={(id) =>
-                    setIncomeCreateForm((current) => ({ ...current, projectId: id }))
-                  }
-                  emptyLabel="ללא פרויקט"
-                />
-              </div>
-            ) : null}
-
-            {incomeCreateForm.businessDomain === "sales" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">הזמנה</div>
-                <NativeSelect
-                  value={incomeCreateForm.orderId}
-                  onChange={(event) =>
-                    setIncomeCreateForm((current) => ({ ...current, orderId: event.target.value }))
-                  }
-                >
-                  <option value="">בחר הזמנה</option>
-                  {recurringOrders.map((order) => (
-                    <option key={order.id} value={order.id}>
-                      {order.label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            ) : null}
-
-            {incomeCreateForm.businessDomain === "property_management" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">נכס *</div>
-                <NativeSelect
-                  value={incomeCreateForm.propertyId}
-                  onChange={(event) =>
-                    setIncomeCreateForm((current) => ({ ...current, propertyId: event.target.value }))
-                  }
-                >
-                  <option value="">בחר נכס</option>
-                  {recurringProperties.map((property) => (
-                    <option key={property.id} value={property.id}>
-                      {property.label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            ) : null}
-
-            {incomeCreateForm.businessDomain ? (
-              <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">סכום *</div>
-                <CurrencyAmountInput
-                  money={incomeMoney}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={incomeCreateForm.amount}
-                  onChange={(event) =>
-                    setIncomeCreateForm((current) => ({ ...current, amount: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">תאריך</div>
-                <DateInput
-                  value={incomeCreateForm.paymentDate}
-                  onChange={(event) =>
-                    setIncomeCreateForm((current) => ({ ...current, paymentDate: event.target.value }))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">אמצעי תשלום</div>
-                <NativeSelect
-                  value={incomeCreateForm.paymentMethod}
-                  onChange={(event) =>
-                    setIncomeCreateForm((current) => {
-                      const paymentMethod = event.target.value as IncomeCreateFormState["paymentMethod"];
-                      return {
-                        ...current,
-                        paymentMethod,
-                        accountId: current.accountId || defaultAccountForMethod(incomeAccountsList, paymentMethod),
-                      };
-                    })
-                  }
-                >
-                  <option value="bank_transfer">העברה בנקאית</option>
-                  <option value="cash">מזומן</option>
-                  <option value="check">צ׳ק</option>
-                  <option value="credit_card">כרטיס אשראי</option>
-                  <option value="other">אחר</option>
-                </NativeSelect>
-              </div>
-              <AccountSelect
-                required
-                value={incomeCreateForm.accountId}
-                onChange={(accountId) => setIncomeCreateForm((current) => ({ ...current, accountId }))}
-                onLoaded={(list) => {
-                  setIncomeAccountsList(list);
-                  setIncomeCreateForm((current) => ({
-                    ...current,
-                    accountId: current.accountId || defaultAccountForMethod(list, current.paymentMethod),
-                  }));
-                }}
-              />
-              {incomeCreateForm.paymentMethod === "credit_card" ? (
-                <CardInstallmentsField
-                  value={incomeCreateForm.installments ?? "1"}
-                  onChange={(value) => setIncomeCreateForm((current) => ({ ...current, installments: value }))}
-                  amount={Number(incomeCreateForm.amount) || 0}
-                  paymentDate={incomeCreateForm.paymentDate}
-                  disabled={isCreatingIncome}
-                  currency={incomeMoney.currency}
-                />
-              ) : (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">
-                  {incomeCreateForm.paymentMethod === "check"
-                    ? "תאריך פירעון *"
-                    : "תאריך פירעון צפוי (אופציונלי)"}
-                </div>
-                <DateInput
-                  value={incomeCreateForm.dueDate}
-                  onChange={(event) =>
-                    setIncomeCreateForm((current) => ({ ...current, dueDate: event.target.value }))
-                  }
-                />
-                {incomeCreateForm.paymentMethod !== "check" ? (
-                  <p className="text-[0.647rem] text-muted-foreground">
-                    לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
-                  </p>
-                ) : null}
-              </div>
-              )}
-            </div>
-
-            {incomeCreateForm.paymentMethod === "check" ? (
-              <CheckDetailsFields
-                checkNumber={incomeCreateForm.checkNumber}
-                onCheckNumberChange={(value) =>
-                  setIncomeCreateForm((current) => ({ ...current, checkNumber: value }))
-                }
-                photoFiles={incomeCheckPhotoFiles}
-                onPhotoFilesChange={setIncomeCheckPhotoFiles}
-                disabled={isCreatingIncome}
-              />
-            ) : null}
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">אסמכתא</div>
-              <Input
-                value={incomeCreateForm.referenceNumber}
-                onChange={(event) =>
-                  setIncomeCreateForm((current) => ({ ...current, referenceNumber: event.target.value }))
-                }
-              />
-            </div>
-
-            <label className="flex items-center gap-2 rounded-xl border px-3 py-3 text-sm">
-              <input
-                type="checkbox"
-                checked={incomeCreateForm.requiresSplit}
-                onChange={(event) =>
-                  setIncomeCreateForm((current) => ({ ...current, requiresSplit: event.target.checked }))
-                }
-              />
-              <span>דורש פיצול</span>
-            </label>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">הערות</div>
-              <div className="relative">
-                <Textarea
-                  value={incomeCreateForm.notes}
-                  onChange={(event) =>
-                    setIncomeCreateForm((current) => ({ ...current, notes: event.target.value }))
-                  }
-                  className="pe-11"
-                />
-                <DictateButton
-                  onTranscript={(text) =>
-                    setIncomeCreateForm((current) => ({ ...current, notes: appendDictatedText(current.notes, text) }))
-                  }
-                  className="absolute bottom-1 end-1 h-8 w-8"
-                />
-              </div>
-            </div>
-
-            {incomeCreateForm.businessDomain === "general_business" ? (
-              <TagPicker
-                value={incomeCreateForm.tagIds}
-                onChange={(ids) => setIncomeCreateForm((current) => ({ ...current, tagIds: ids }))}
-              />
-            ) : null}
-              </>
-            ) : null}
-
-      </FormDialog>
-
       <ExpenseDialog
         open={Boolean(activeEditingExpense)}
         onOpenChange={(open) => {
@@ -2584,7 +2075,11 @@ export function FinancialPage({
                 {markPaidExpense.expenseVariableEstimate ? (
                   <div className="space-y-1 sm:col-span-2">
                     <div className="text-sm font-medium">כמה שולם בפועל? *</div>
-                    <CurrencyInput value={markPaidAmount} onChange={(event) => setMarkPaidAmount(event.target.value)} />
+                    <CurrencyInput
+                      value={markPaidAmount}
+                      onChange={(event) => setMarkPaidAmount(event.target.value)}
+                      symbol={markPaidExpense.foreign ? CURRENCY_SYMBOL[markPaidExpense.foreign.currency] : undefined}
+                    />
                   </div>
                 ) : null}
                 <div className="space-y-1">

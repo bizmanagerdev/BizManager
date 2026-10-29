@@ -40,18 +40,32 @@ export function typeAmountClass(type: FinancialEntry["type"]) {
 }
 
 /**
+ * What starts the cash-flow page over (its React key, on the server's page and
+ * the device's): a customer's own view — never a filter or a search. With them
+ * in it, the search box was thrown away 0.3 s into typing and a new page drawn
+ * with the filter panel open and its second search box, back on the first tab
+ * (owner, 2026-10-29: "it jumps right away and opens another search and you
+ * don't know where to type"); and a closed expense opened from a link came back.
+ * The page follows the address itself (FinancialPage's filter effect).
+ */
+export function cashFlowPageKey(view: { customerId: string | null; customerPage: string; customerName: string }) {
+  return JSON.stringify(view);
+}
+
+/**
  * The flow view's three lists: the table where it fits, the phone's cards where
  * it doesn't — measured in the text's own size (rem, @container), as the activity
  * page does. On an upright tablet, a 1024 screen or a laptop with big text the
  * tables ran off the side and scrolled sideways (owner's check of every width and
  * text size, 2026-10-29). Each width is its table's narrowest at the smallest
  * text size: the action buttons don't grow with the text, so that's when they
- * take the most of it; the ledger's and the upcoming's have three (✓, edit,
- * delete). Whole class names, for Tailwind to find; FinancialSkeleton uses the
+ * take the most of it; each has three (✓, edit, delete) — the history's too
+ * since it got the ✓ (2026-10-29), so it moved from 39.5rem to the others'.
+ * Whole class names, for Tailwind to find; FinancialSkeleton uses the
  * history's too, so the placeholder has the page's shape.
  */
 export const CASH_FLOW_LISTS = {
-  history: { cards: "md:@min-[39.5rem]:hidden", table: "hidden md:@min-[39.5rem]:block" },
+  history: { cards: "md:@min-[43rem]:hidden", table: "hidden md:@min-[43rem]:block" },
   ledger: { cards: "md:@min-[43rem]:hidden", table: "hidden md:@min-[43rem]:block" },
   upcoming: { cards: "md:@min-[43rem]:hidden", table: "hidden md:@min-[43rem]:block" },
 } as const;

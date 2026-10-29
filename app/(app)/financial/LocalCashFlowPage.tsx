@@ -8,6 +8,8 @@ import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming"
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import { cashFlowViewFilters } from "@/lib/financial/cashFlowPage";
 import { CashFlowSkeleton } from "./FinancialSkeleton";
+import { cashFlowPageKey } from "./FinancialPage.ui";
+import { useExpenseLinkPreload } from "./useExpenseLinkPreload";
 
 // The same placeholder as loading.tsx while the client's code loads.
 const FinancialPage = dynamic(() => import("./FinancialPageClient").then((m) => m.FinancialPage), {
@@ -34,6 +36,7 @@ export default function LocalCashFlowPage({ viewer }: { viewer: LocalCardViewer 
   }, [paramsKey]);
 
   const page = useLocalCard({ kind: "cashFlow", viewer, filters, page: "cashFlow", serverHref });
+  useExpenseLinkPreload(params.focus);
   useDevicePageTiming("cashFlow", page, page?.data.data.ledgerEntries.length);
 
   // Money: the page is always drawn for the filters its figures were worked
@@ -52,19 +55,9 @@ export default function LocalCashFlowPage({ viewer }: { viewer: LocalCardViewer 
     const initialFilters = shownFilters.filters;
     return (
       <FinancialPage
-        // As on the server's page: a new filter starts the page over.
-        key={JSON.stringify({
-          customerId: shownFilters.customerId,
-          customerPage,
-          customerName,
-          from: initialFilters.from,
-          to: initialFilters.to,
-          domain: initialFilters.domain,
-          sourceId: initialFilters.sourceId,
-          type: initialFilters.type,
-          stage: initialFilters.stage,
-          q: initialFilters.q,
-        })}
+        // A customer's own view starts the page over; a filter or a search
+        // doesn't (cashFlowPageKey, as on the server's page).
+        key={cashFlowPageKey({ customerId: shownFilters.customerId, customerPage, customerName })}
         data={data}
         entriesPartial={false}
         filtersOnDevice

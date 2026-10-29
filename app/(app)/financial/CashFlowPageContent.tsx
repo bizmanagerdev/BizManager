@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CashFlowSkeleton, ReportsSkeleton } from "@/app/(app)/financial/FinancialSkeleton";
+import { cashFlowPageKey } from "@/app/(app)/financial/FinancialPage.ui";
 import {
   cashFlowCustomerId,
   flowViewData,
@@ -146,18 +147,7 @@ export default async function CashFlowPageContent({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageClient
-        key={JSON.stringify({
-          customerId,
-          customerPage,
-          customerName,
-          from: initialFilters.from,
-          to: initialFilters.to,
-          domain: initialFilters.domain,
-          sourceId: initialFilters.sourceId,
-          type: initialFilters.type,
-          stage: initialFilters.stage,
-          q: initialFilters.q,
-        })}
+        key={cashFlowPageKey({ customerId, customerPage, customerName })}
         data={data}
         entriesPartial={entriesPartial}
         earnedRevenue={earnedRevenue}

@@ -4,8 +4,9 @@ import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
-import { SuccessIcon } from "@/components/ui/icons";
+import { DeleteIcon, EditIcon, SuccessIcon } from "@/components/ui/icons";
 import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
+import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
 import { formatEnteredLabel, formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { FinancialEntry } from "@/lib/financial";
 import { formatCurrencyAmount, formatMoney, formatShekelNote } from "@/lib/money";
@@ -107,11 +108,17 @@ export function MarkPaidButton({ onClick }: { onClick: (event: MouseEvent<HTMLBu
   );
 }
 
+/** The phone's one-card-open-at-a-time swipe (SwipeActions), held by the list. */
+export type CashFlowSwipe = { openId: string | null; onOpenChange: (id: string, open: boolean) => void };
+
 /**
- * One row of the יומן מלא or the תזרים עתידי as a card: the phone's list, and
- * wherever the table doesn't fit (CASH_FLOW_LISTS). What the table's row says —
- * and its actions on an expense, marking it paid too: the table had the ✓ and
- * the cards didn't, so a bill couldn't be marked paid from a phone.
+ * One row of any of the three lists as a card: the phone's list, and wherever
+ * the table doesn't fit (CASH_FLOW_LISTS). What the table's row says — and its
+ * actions on an expense, marking it paid too: the table had the ✓ and the cards
+ * didn't, so a bill couldn't be marked paid from a phone. On a phone they're a
+ * swipe away, as on every other page's cards (owner, 2026-10-29: "on mobile
+ * there should be the same actions available on side swipe"); from md, where a
+ * card stands in for a table that doesn't fit, they're under it.
  */
 export function CashFlowEntryCard({
   entry,
@@ -119,7 +126,9 @@ export function CashFlowEntryCard({
   paint,
   reasons,
   showDueDate = false,
+  markToday = false,
   canManage,
+  swipe,
   onOpen,
   onMarkPaid,
   onEdit,
@@ -133,25 +142,38 @@ export function CashFlowEntryCard({
   reasons?: ReactNode;
   /** The upcoming list: the due date, when it isn't the row's own. */
   showDueDate?: boolean;
+  /** The history list: today's rows tinted, "היום" for the day. */
+  markToday?: boolean;
   canManage: boolean;
+  swipe?: CashFlowSwipe;
   onOpen: () => void;
   onMarkPaid: (entry: EditableExpenseEntry) => void;
   onEdit: (entry: EditableExpenseEntry) => void;
   onDelete: (entry: EditableExpenseEntry) => void;
 }) {
   const editable = canManage && isEditableExpenseEntry(entry) ? entry : null;
+  const unpaid = editable ? (editable.paymentStatus ?? "not_paid") !== "paid" : false;
   const dueDate = showDueDate && entry.dueDate && entry.dueDate !== entry.flowDate ? entry.dueDate : null;
   const paid = paidDetails(entry);
-  return (
+  const isToday = markToday && entry.flowDate === todayIso;
+  const card = (
     <article
       data-focus-id={entry.id}
-      className={cn("rounded-2xl border p-4 text-right", entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : "")}
+      className={cn(
+        "rounded-2xl border p-4 text-right",
+        isToday ? "border-primary/30 bg-primary/5" : "",
+        entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
+      )}
       onClick={onOpen}
     >
       <div className="flex items-start justify-between gap-3 sm:flex-row-reverse">
         <div className="space-y-1">
           <div dir="ltr" className="text-sm font-medium tabular-nums">{paint(formatShortDate(entry.flowDate))}</div>
-          <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", todayIso)}</div>
+          {isToday ? (
+            <div className="text-xs font-semibold text-primary">היום</div>
+          ) : (
+            <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", todayIso)}</div>
+          )}
           {dueDate ? (
             <div className="text-xs text-muted-foreground">
               פירעון <span dir="ltr" className="tabular-nums">{formatShortDate(dueDate)}</span>
@@ -202,8 +224,9 @@ export function CashFlowEntryCard({
           {entry.foreign ? <ShekelNote shekels={entry.amount} paint={paint} /> : null}
         </div>
         {editable ? (
-          <div className="flex justify-end gap-2 pt-1">
-            {(editable.paymentStatus ?? "not_paid") !== "paid" ? (
+          // A phone has them in the swipe (below); from md, here.
+          <div className={cn("justify-end gap-2 pt-1", swipe ? "hidden md:flex" : "flex")}>
+            {unpaid ? (
               <MarkPaidButton
                 onClick={(event) => {
                   event.stopPropagation();
@@ -228,5 +251,26 @@ export function CashFlowEntryCard({
         ) : null}
       </div>
     </article>
+  );
+  if (!editable || !swipe) return card;
+  // The same three, in the same order and colours as the buttons; each opens
+  // its window (mark paid / edit) or asks first (delete) — none writes at once.
+  const actions: SwipeAction[] = [
+    ...(unpaid
+      ? [{ key: "paid", label: "סמן כשולם", icon: <SuccessIcon className="h-4 w-4" />, onSelect: () => onMarkPaid(editable), className: "bg-success text-success-foreground" }]
+      : []),
+    { key: "edit", label: "עריכה", icon: <EditIcon className="h-4 w-4" />, onSelect: () => onEdit(editable), className: "bg-secondary text-secondary-foreground" },
+    { key: "delete", label: "מחיקה", icon: <DeleteIcon className="h-4 w-4" />, onSelect: () => onDelete(editable), className: "bg-destructive text-destructive-foreground" },
+  ];
+  return (
+    <SwipeActions
+      // The card's own corner (it sits inside a Card, a step less round).
+      className="rounded-2xl"
+      open={swipe.openId === entry.id}
+      onOpenChange={(open) => swipe.onOpenChange(entry.id, open)}
+      actions={actions}
+    >
+      {card}
+    </SwipeActions>
   );
 }
