@@ -8,6 +8,8 @@ import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNavCounts, type NavCount } from "@/lib/ui/nav-counts-store";
+import { NavCountBadge } from "@/components/layout/NavCountBadge";
+import { DESKTOP_MENU_QUERY, useMediaQuery } from "@/hooks/useMediaQuery";
 import { EXACT_MATCH_CHILDREN, isFullyPrefetched, type SidebarNavItem } from "@/components/layout/nav-items";
 import { useDeviceCopyPending } from "@/components/powersync/useDeviceCopyPending";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
@@ -281,34 +283,14 @@ function NavGroup({
   );
 }
 
-// Small count pill next to a nav item — colored by the most urgent open item.
-function NavCountBadge({ badge, collapsed }: { badge: NavCount; collapsed: boolean }) {
-  const tone =
-    badge.severity === "danger"
-      ? "bg-destructive text-destructive-foreground"
-      : badge.severity === "warning"
-        ? "bg-warning text-warning-foreground"
-        : "bg-sidebar-accent text-sidebar-accent-foreground";
-  return (
-    <span
-      className={cn(
-        "ms-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none",
-        tone,
-        // When icons-only, float the pill as a small dot-count over the icon.
-        collapsed ? "hidden" : "inline-flex"
-      )}
-    >
-      {badge.count > 99 ? "99+" : badge.count}
-    </span>
-  );
-}
-
 export function AppSidebar({ items, viewerRole }: Props) {
   // Loading /tasks ahead depends on this device's copy (isFullyPrefetched).
   const deviceCopyReady = !useDeviceCopyPending();
   // Shared with the top bar's brand corner so the two stay the same width.
   const { collapsed, toggle: toggleCollapsed } = useSidebarCollapse();
-  const navCounts = useNavCounts();
+  // Mounted on a phone too (CSS hides it there): it keeps the counts fresh only
+  // where it's the menu on screen.
+  const navCounts = useNavCounts({ poll: useMediaQuery(DESKTOP_MENU_QUERY) });
 
   // Hover flyout for the collapsed rail. The small close delay lets the pointer
   // travel from the icon into the panel without it vanishing underneath.

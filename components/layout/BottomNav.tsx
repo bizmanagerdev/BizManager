@@ -7,6 +7,9 @@ import { ClientOnly } from "@/components/ClientOnly";
 import { QuickCreateMenu } from "@/components/layout/QuickCreateMenu";
 import { EXACT_MATCH_CHILDREN, isFullyPrefetched, type SidebarNavItem } from "@/components/layout/nav-items";
 import { useDeviceCopyPending } from "@/components/powersync/useDeviceCopyPending";
+import { NavCountCorner } from "@/components/layout/NavCountBadge";
+import { DESKTOP_MENU_QUERY, useMediaQuery } from "@/hooks/useMediaQuery";
+import { refreshNavCounts, useNavCounts } from "@/lib/ui/nav-counts-store";
 import { cn } from "@/lib/utils";
 import {
   Sheet,
@@ -49,6 +52,10 @@ function toMoreSections(items: SidebarNavItem[]): MoreSection[] {
 
 export function BottomNav({ items, moreItems = [], viewerId, viewerRole, viewerLocale = "he" }: Props) {
   const deviceCopyReady = !useDeviceCopyPending();
+  // The side menu's counts, on the phone's menu too (owner, 2026-10-29): kept
+  // fresh while this is the menu on screen; the "עוד" sheet asks again when it
+  // opens.
+  const navCounts = useNavCounts({ poll: !useMediaQuery(DESKTOP_MENU_QUERY) });
   const [moreOpen, setMoreOpen] = useState(false);
   const moreBodyRef = useRef<HTMLDivElement>(null);
   const moreSwipeProps = useSwipeToDismiss({
@@ -82,7 +89,10 @@ export function BottomNav({ items, moreItems = [], viewerId, viewerRole, viewerL
       activeClassName="bg-secondary text-secondary-foreground shadow-md shadow-secondary/25"
       pendingClassName="bg-white/10 opacity-70"
     >
-      <item.icon className="h-[22px] w-[22px] shrink-0" />
+      <span className="relative shrink-0">
+        <item.icon className="h-[22px] w-[22px] shrink-0" />
+        {navCounts[item.url] ? <NavCountCorner badge={navCounts[item.url]} /> : null}
+      </span>
       <span className="w-full truncate text-center text-[11px] font-medium leading-none">{item.title}</span>
     </NavLink>
   );
@@ -128,7 +138,13 @@ export function BottomNav({ items, moreItems = [], viewerId, viewerRole, viewerL
                   </button>
                 }
               >
-                <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+                <Sheet
+                  open={moreOpen}
+                  onOpenChange={(open) => {
+                    setMoreOpen(open);
+                    if (open) refreshNavCounts();
+                  }}
+                >
                 <SheetTrigger asChild>
                   <button
                     type="button"
@@ -190,7 +206,10 @@ export function BottomNav({ items, moreItems = [], viewerId, viewerRole, viewerL
                               pendingClassName="bg-white/10 opacity-70"
                               onClick={() => setMoreOpen(false)}
                             >
-                              <item.icon className="h-5 w-5 shrink-0" />
+                              <span className="relative shrink-0">
+                                <item.icon className="h-5 w-5 shrink-0" />
+                                {navCounts[item.url] ? <NavCountCorner badge={navCounts[item.url]} /> : null}
+                              </span>
                               <span className="w-full text-center text-xs font-medium leading-tight">{item.title}</span>
                             </NavLink>
                           ))}
