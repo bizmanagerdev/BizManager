@@ -97,6 +97,9 @@ jobs:
           fi
           exit $STATUS
 
+      - name: TRIAL ONLY - open the accounts to every signed-in person
+        run: psql -v ON_ERROR_STOP=1 "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "create policy ci_trial_leak on public.accounts for select to authenticated using (true);"
+
       - name: Check who can see the money
         run: |
           STATUS_ENV=$(npx supabase status -o env)
