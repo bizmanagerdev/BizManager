@@ -1,20 +1,5 @@
-import type { FocusEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
+import type { KeyboardEvent, MouseEvent } from "react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-
-// How long the mouse has to rest on a row before its page is fetched ahead —
-// long enough that sweeping across a list doesn't load every row it passes.
-const HOVER_PREFETCH_DELAY_MS = 100;
-
-// Focus that came from the keyboard (Tab), not from the tap or click that
-// focuses a row a moment before it activates it.
-function isKeyboardFocus(element: Element) {
-  try {
-    return element.matches(":focus-visible");
-  } catch {
-    return false;
-  }
-}
 
 // Skip row-level navigation when the click/keydown originated on an interactive
 // element inside the row (so per-row buttons/links still work as expected).
@@ -77,32 +62,23 @@ export function clickableRowProps(
  * tags, so nothing else would trigger it). Pass the `router` from the calling
  * component's own `useRouter()` — this file has no "use client" directive and
  * stays importable from anywhere.
+ *
+ * Nothing is fetched ahead. Rows used to load their page on the server when
+ * the mouse rested on them (project, order and customer rows); since those
+ * pages are drawn from the device's copy, a click shows them at once and the
+ * hover only cost the server 8–10 reads each time (review 2026-10-28; removed
+ * 2026-10-29).
  */
 export function rowNavigateProps(
-  router: { push: (href: string) => void; prefetch?: (href: string, options?: { kind: PrefetchKind }) => void },
+  router: { push: (href: string) => void },
   href: string,
   options?: {
     role?: "link" | "button";
-    /**
-     * Start loading the row's page (data included) on intent rather than on
-     * the click: after the mouse rests on the row briefly, or when the
-     * keyboard moves onto it — so the page is mostly or entirely in hand by
-     * the time the click lands. Opt-in: each prefetch is a full server render
-     * of that page, so only lists whose rows lead to a heavy, much-visited
-     * page use it.
-     *
-     * Nothing on touch. A finger going down also starts every scroll through
-     * the list, and the tap's own press or focus comes ~100 ms before its
-     * click — too late for a prefetch to finish, and the router doesn't wait
-     * for one still in flight: it sends its own request, so the page would be
-     * rendered twice for no gain.
-     */
-    prefetch?: boolean;
     /** Runs just before the navigation starts (e.g. to show a preview). */
     onNavigate?: () => void;
   }
 ) {
-  const props = clickableRowProps(
+  return clickableRowProps(
     () => {
       options?.onNavigate?.();
       emitNavigationStart();
@@ -110,23 +86,4 @@ export function rowNavigateProps(
     },
     { role: options?.role }
   );
-  const prefetch = router.prefetch;
-  if (!options?.prefetch || !prefetch) return props;
-
-  const prefetchNow = () => prefetch(href, { kind: PrefetchKind.FULL });
-  let hoverTimer: ReturnType<typeof setTimeout> | null = null;
-  return {
-    ...props,
-    onPointerEnter: (event: PointerEvent) => {
-      if (event.pointerType !== "mouse") return;
-      hoverTimer = setTimeout(prefetchNow, HOVER_PREFETCH_DELAY_MS);
-    },
-    onPointerLeave: () => {
-      if (hoverTimer) clearTimeout(hoverTimer);
-      hoverTimer = null;
-    },
-    onFocus: (event: FocusEvent) => {
-      if (isKeyboardFocus(event.currentTarget)) prefetchNow();
-    },
-  } as const;
 }

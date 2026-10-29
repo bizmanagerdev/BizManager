@@ -1390,7 +1390,7 @@ export default function ProjectsClient({
                   <tr
                     key={`${id}-table`}
                     className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
-                    {...rowNavigateProps(router, detailHref, { prefetch: true, onNavigate: () => openProject(row) })}
+                    {...rowNavigateProps(router, detailHref, { onNavigate: () => openProject(row) })}
                   >
                     <td className="px-4 py-4">
                       <div className="block">
@@ -1485,6 +1485,10 @@ export default function ProjectsClient({
                         </Button>
                       ) : (
                         <div className="flex items-center gap-2">
+                          {/* Not fetched ahead (prefetch={false}): every row's work sheet was
+                              built on the server as the table came into view — ~9 reads
+                              and a signed link per file each, ~700 a week, for a page
+                              opened now and then (review 2026-10-28; removed 2026-10-29). */}
                           <Button
                             asChild
                             type="button"
@@ -1496,7 +1500,7 @@ export default function ProjectsClient({
                           >
                             <Link
                               href={`/projects/${id}/export?mode=worker`}
-                              prefetch
+                              prefetch={false}
                               onClick={() => emitNavigationStart()}
                             >
                               <ChatIcon className="h-4 w-4" />
@@ -1513,7 +1517,7 @@ export default function ProjectsClient({
                           >
                             <Link
                               href={`/projects/${id}/export?mode=worker`}
-                              prefetch
+                              prefetch={false}
                               onClick={() => emitNavigationStart()}
                             >
                               <DocumentIcon className="h-4 w-4" />
@@ -1644,7 +1648,7 @@ export default function ProjectsClient({
                   >
                     <div
                       className={cn("block cursor-pointer", LIST_CARD_BODY)}
-                      {...rowNavigateProps(router, detailHref, { prefetch: true, onNavigate: () => openProject(row) })}
+                      {...rowNavigateProps(router, detailHref, { onNavigate: () => openProject(row) })}
                     >
                       <div className="space-y-2.5">
                         {/* Name first, the orders cards' order (owner, 2026-10-11:

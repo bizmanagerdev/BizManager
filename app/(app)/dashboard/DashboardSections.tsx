@@ -78,7 +78,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
 import LocalDashboardCard from "@/components/powersync/LocalDashboardCard";
-import { RememberCard, RememberedCardFallback } from "@/components/dashboard/RememberedCard";
 import type { DashboardShadowSnapshot } from "@/lib/powersync/dashboard-shadow";
 import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
 import { deviceCheckCookie, deviceCheckDue, devicePageOn, moneyCardsOnDevice } from "@/lib/powersync/device-check";
@@ -310,15 +309,12 @@ async function PaymentsSlowCell({
   paymentLeadRowsPromise,
   todayIso,
   locale,
-  rememberKey,
   moneyCheck,
 }: {
   paymentsPromise: Promise<Awaited<ReturnType<typeof loadPaymentsCalendar>> | null>;
   paymentLeadRowsPromise: Promise<PaymentLeadRow[]>;
   todayIso: string;
   locale: Locale;
-  /** Keeps this card on the device for the next visit's placeholder. */
-  rememberKey: string;
   /** Also worked out on the device and compared (see MoneyCheck). */
   moneyCheck: MoneyCheck | null;
 }) {
@@ -329,7 +325,6 @@ async function PaymentsSlowCell({
       {moneyCheck && paymentsResult ? (
         <DashboardLocalShadow doneCookie={moneyCheck.doneCookie} snapshot={{ ...moneyCheck.base, cards: { payments: paymentsSummary } }} />
       ) : null}
-      <RememberCard rememberKey={rememberKey} kind="payments" props={{ summary: paymentsSummary, locale }} />
       <UpcomingPayments summary={paymentsSummary} locale={locale} />
     </>
   );
@@ -338,12 +333,10 @@ async function PaymentsSlowCell({
 async function CollectionsSlowCell({
   summaryPromise,
   locale,
-  rememberKey,
   moneyCheck,
 }: {
   summaryPromise: Promise<Awaited<ReturnType<typeof getCollectionsSummary>> | null>;
   locale: Locale;
-  rememberKey: string;
   moneyCheck: MoneyCheck | null;
 }) {
   const summary = await summaryPromise;
@@ -352,7 +345,6 @@ async function CollectionsSlowCell({
       {moneyCheck && summary ? (
         <DashboardLocalShadow doneCookie={moneyCheck.doneCookie} snapshot={{ ...moneyCheck.base, cards: { collections: summary } }} />
       ) : null}
-      <RememberCard rememberKey={rememberKey} kind="collections" props={summary ? { summary, locale } : null} />
       {summary ? <CollectionsCard summary={summary} locale={locale} /> : null}
     </>
   );
@@ -520,14 +512,12 @@ async function DomainChartSlowCell({
   booksStartDatePromise,
   dates,
   locale,
-  rememberKey,
   moneyCheck,
 }: {
   breakdownsPromise: Promise<{ breakdowns: DomainBreakdowns; ok: boolean }>;
   booksStartDatePromise: Promise<string | null>;
   dates: MoneyCardDates;
   locale: Locale;
-  rememberKey: string;
   moneyCheck: MoneyCheck | null;
 }) {
   // Income vs expenses per business domain, for the month the card opens on
@@ -540,7 +530,6 @@ async function DomainChartSlowCell({
       {moneyCheck && ok ? (
         <DashboardLocalShadow doneCookie={moneyCheck.doneCookie} snapshot={{ ...moneyCheck.base, cards: { domainChart: chart } }} />
       ) : null}
-      <RememberCard rememberKey={rememberKey} kind="domainChart" props={cardProps} />
       {cardProps ? <DomainChartCard {...cardProps} /> : null}
     </>
   );
@@ -795,21 +784,19 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
         />
       ),
     // The money cards: from the device where its copy has the money tables
-    // (moneyOnDevice); otherwise worked out here, showing their last version
-    // (kept on the device) while the fresh one is — see
-    // components/dashboard/RememberedCard.
+    // (moneyOnDevice); otherwise worked out here, behind the board's placeholder.
+    // (Their last version used to be kept on the device and shown greyed while
+    // the server worked them out — gone 2026-10-29: they've come from the
+    // device for every admin and office user since Oct 11.)
     payments: !isAdminOrOffice ? null : moneyOnDevice ? (
       show("payments") ? <LocalDashboardCard kind="payments" viewer={localViewer} fillClassName={CARD_FILL_CLASS} /> : null
     ) : (
-      <Suspense
-        fallback={<RememberedCardFallback rememberKey={`${profile.id}:payments`} kind="payments" className={CARD_FILL_CLASS} />}
-      >
+      <Suspense fallback={<SlowCardSkeleton />}>
         <PaymentsSlowCell
           paymentsPromise={paymentsPromise}
           paymentLeadRowsPromise={paymentLeadRowsPromise}
           todayIso={todayIso}
           locale={locale}
-          rememberKey={`${profile.id}:payments`}
           moneyCheck={moneyCheck}
         />
       </Suspense>
@@ -817,15 +804,10 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
     collections: !(show("collections") && isAdminOrOffice) ? null : moneyOnDevice ? (
       <LocalDashboardCard kind="collections" viewer={localViewer} fillClassName={CARD_FILL_CLASS} />
     ) : (
-      <Suspense
-        fallback={
-          <RememberedCardFallback rememberKey={`${profile.id}:collections`} kind="collections" className={CARD_FILL_CLASS} />
-        }
-      >
+      <Suspense fallback={<SlowCardSkeleton />}>
         <CollectionsSlowCell
           summaryPromise={collectionsPromise}
           locale={locale}
-          rememberKey={`${profile.id}:collections`}
           moneyCheck={moneyCheck}
         />
       </Suspense>
@@ -853,13 +835,8 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
     domainChart: !(show("domainChart") && isAdminOrOffice) ? null : moneyOnDevice ? (
       <LocalDashboardCard kind="domainChart" viewer={localViewer} fillClassName={CARD_FILL_CLASS} />
     ) : (
-      <Suspense
-        fallback={
-          <RememberedCardFallback rememberKey={`${profile.id}:domainChart`} kind="domainChart" className={CARD_FILL_CLASS} />
-        }
-      >
+      <Suspense fallback={<SlowCardSkeleton />}>
         <DomainChartSlowCell
-          rememberKey={`${profile.id}:domainChart`}
           breakdownsPromise={domainBreakdownsPromise}
           booksStartDatePromise={booksStartDatePromise}
           dates={moneyDates}

@@ -942,7 +942,7 @@ export default function CustomersClient({
                       >
                         <div
                           className={cn("block cursor-pointer", LIST_CARD_BODY)}
-                          {...rowNavigateProps(router, customerHref(id), { prefetch: true })}
+                          {...rowNavigateProps(router, customerHref(id))}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -1016,7 +1016,7 @@ export default function CustomersClient({
                       className="cursor-pointer align-middle hover:bg-muted/20 focus-visible:bg-muted/20"
                       // A client navigation, and the customer's page fetched
                       // ahead while the mouse rests on its row.
-                      {...rowNavigateProps(router, customerHref(id), { prefetch: true })}
+                      {...rowNavigateProps(router, customerHref(id))}
                     >
                       <td className={CUSTOMERS_CELL}>
                         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">

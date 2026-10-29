@@ -219,80 +219,19 @@ describe("rowNavigateProps", () => {
   });
 });
 
-describe("rowNavigateProps — prefetch on intent", () => {
-  const pointer = (pointerType: string) => ({ pointerType }) as unknown as React.PointerEvent;
-
-  it("adds no prefetch handlers unless asked to", () => {
-    const props = rowNavigateProps({ push: vi.fn(), prefetch: vi.fn() }, "/projects/p1");
+describe("rowNavigateProps — nothing fetched ahead", () => {
+  // Rows used to load their page on the server when the mouse rested on them;
+  // the pages come from the device's copy now, so a hover costs nothing
+  // (removed 2026-10-29).
+  it("a row has no hover or focus handlers that would load its page", () => {
+    const props = rowNavigateProps({ push: vi.fn() }, "/projects/p1", { onNavigate: vi.fn() });
     expect("onPointerEnter" in props).toBe(false);
-  });
-
-  it("fetches the whole page (data included) once the mouse has rested on the row", () => {
-    vi.useFakeTimers();
-    try {
-      const prefetch = vi.fn();
-      const props = rowNavigateProps({ push: vi.fn(), prefetch }, "/projects/p1", { prefetch: true }) as unknown as {
-        onPointerEnter: (e: React.PointerEvent) => void;
-      };
-      props.onPointerEnter(pointer("mouse"));
-      expect(prefetch).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(100);
-      expect(prefetch).toHaveBeenCalledWith("/projects/p1", { kind: "full" });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("does nothing when the mouse only sweeps across the row", () => {
-    vi.useFakeTimers();
-    try {
-      const prefetch = vi.fn();
-      const props = rowNavigateProps({ push: vi.fn(), prefetch }, "/projects/p1", { prefetch: true }) as unknown as {
-        onPointerEnter: (e: React.PointerEvent) => void;
-        onPointerLeave: () => void;
-      };
-      props.onPointerEnter(pointer("mouse"));
-      vi.advanceTimersByTime(50);
-      props.onPointerLeave();
-      vi.advanceTimersByTime(500);
-      expect(prefetch).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("fetches nothing on touch — not on a finger going down, which also starts every scroll", () => {
-    vi.useFakeTimers();
-    try {
-      const prefetch = vi.fn();
-      const props = rowNavigateProps({ push: vi.fn(), prefetch }, "/projects/p1", { prefetch: true }) as unknown as {
-        onPointerEnter: (e: React.PointerEvent) => void;
-      };
-      props.onPointerEnter(pointer("touch"));
-      vi.advanceTimersByTime(500);
-      expect(prefetch).not.toHaveBeenCalled();
-      expect("onPointerDown" in props).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("fetches when the keyboard moves onto the row, not when a tap or click focuses it", () => {
-    const prefetch = vi.fn();
-    const props = rowNavigateProps({ push: vi.fn(), prefetch }, "/projects/p1", { prefetch: true }) as unknown as {
-      onFocus: (e: React.FocusEvent) => void;
-    };
-    const focus = (keyboard: boolean) =>
-      ({ currentTarget: { matches: (selector: string) => keyboard && selector === ":focus-visible" } }) as unknown as React.FocusEvent;
-    props.onFocus(focus(false));
-    expect(prefetch).not.toHaveBeenCalled();
-    props.onFocus(focus(true));
-    expect(prefetch).toHaveBeenCalledWith("/projects/p1", { kind: "full" });
+    expect("onFocus" in props).toBe(false);
   });
 
   it("still navigates on click", () => {
     const push = vi.fn();
-    const props = rowNavigateProps({ push, prefetch: vi.fn() }, "/projects/p1", { prefetch: true });
+    const props = rowNavigateProps({ push }, "/projects/p1");
     props.onClick({ target: el("<span>x</span>") } as unknown as React.MouseEvent);
     expect(push).toHaveBeenCalledWith("/projects/p1");
   });

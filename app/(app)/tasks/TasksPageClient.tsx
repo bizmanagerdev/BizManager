@@ -302,7 +302,7 @@ const TaskCard = memo(function TaskCard({
   const paint = (text: string) => (searchTerms ? highlightText(text, searchTerms) : text);
   // A quick-added card the server hasn't given its id yet: greyed and inert —
   // no opening, ticking, snoozing, menu or drag — until it has, the way the
-  // app shows anything not usable yet (RememberedCard). Each of those would
+  // app shows anything not usable yet. Each of those would
   // send the stand-in id, which the server can't find (found by the tests,
   // 2026-10-11).
   const saving = isUnsavedCard(task.id);

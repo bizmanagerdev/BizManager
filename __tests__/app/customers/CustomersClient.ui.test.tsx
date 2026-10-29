@@ -342,11 +342,13 @@ describe("CustomersClient — the computer's table", () => {
     expect(nav.router.push).toHaveBeenLastCalledWith("/projects?create=1&customer_id=c1");
   });
 
-  it("opens a customer with a client navigation, and fetches it ahead when the mouse rests on its row", async () => {
+  it("opens a customer with a client navigation — nothing loaded ahead when the mouse rests on its row", async () => {
     renderList();
     const row = tableRow("אבי כהן");
     fireEvent.pointerEnter(row, { pointerType: "mouse" });
-    await waitFor(() => expect(nav.router.prefetch).toHaveBeenCalledWith("/customers/c1", expect.anything()));
+    // Past the 100 ms rest that used to load the page.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(nav.router.prefetch).not.toHaveBeenCalled();
     fireEvent.click(row);
     expect(nav.router.push).toHaveBeenCalledWith("/customers/c1");
   });

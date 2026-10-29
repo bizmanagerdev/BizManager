@@ -576,7 +576,7 @@ export function TopBar({
             method="post"
             onSubmit={(event) => {
               // Remove this person's on-device copy, its stored page results,
-              // the saved page frames and the remembered dashboard cards before
+              // the saved page frames and any old remembered dashboard cards before
               // the session ends (never holds logout up for more than a few seconds).
               event.preventDefault();
               const form = event.currentTarget;

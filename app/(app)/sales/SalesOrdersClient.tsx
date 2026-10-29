@@ -1013,7 +1013,7 @@ export default function SalesOrdersClient({
                           ? PREPAYMENT_ROW_CLASSES
                           : ""
                       }`}
-                      {...rowNavigateProps(router, `/sales/orders/${row.id}`, { prefetch: true, onNavigate: () => openOrder(row) })}
+                      {...rowNavigateProps(router, `/sales/orders/${row.id}`, { onNavigate: () => openOrder(row) })}
                     >
                       <td className="px-4 py-4">
                         <div>
@@ -1248,7 +1248,7 @@ export default function SalesOrdersClient({
                             "cursor-pointer divide-y divide-border/60 [&>*]:py-2 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0",
                             LIST_CARD_BODY
                           )}
-                          {...rowNavigateProps(router, `/sales/orders/${row.id}`, { prefetch: true, onNavigate: () => openOrder(row) })}
+                          {...rowNavigateProps(router, `/sales/orders/${row.id}`, { onNavigate: () => openOrder(row) })}
                         >
                           {/* Compact card. Two rules:
                               1. NOTHING truncates — names, cities and product chips

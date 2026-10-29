@@ -5,8 +5,7 @@
 //
 // Per person (the key starts with their users.id), a day old at most, the most
 // recent STORED_RESULTS_MAX of them; wiped at logout and when someone else
-// signs in on this device. Same idea as the dashboard's remembered money cards
-// (lib/ui/remembered-cards.ts).
+// signs in on this device.
 
 const PREFIX = "bizh-local:";
 export const STORED_RESULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;

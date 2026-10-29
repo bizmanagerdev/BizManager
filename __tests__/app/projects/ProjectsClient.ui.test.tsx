@@ -189,6 +189,17 @@ describe("ProjectsClient — the computer's table", () => {
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+
+  it("a row opens its project on click, and resting the mouse on it loads nothing ahead (removed 2026-10-29)", async () => {
+    renderList();
+    const row = within(screen.getByRole("table")).getByText("הובלת משרד").closest("tr")!;
+    fireEvent.pointerEnter(row, { pointerType: "mouse" });
+    // Past the 100 ms rest that used to load the page.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(nav.router.prefetch).not.toHaveBeenCalled();
+    fireEvent.click(row);
+    expect(nav.router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/projects\//));
+  });
 });
 
 describe("ProjectsClient — an empty list", () => {
