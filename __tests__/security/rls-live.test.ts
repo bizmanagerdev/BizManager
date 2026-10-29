@@ -27,6 +27,14 @@ const DAY = "2026-01-15";
 
 type Row = { table: string; row: Record<string, unknown> & { id: string }; workerSees: boolean };
 const id = () => randomUUID();
+/** A payment with no VAT split, as the app sends one (amount_including_vat defaults to 0, which the split rule refuses). */
+const payment = (recordedBy: string) => ({
+  id: id(), amount_total: 100, net_amount: 100, amount_including_vat: null, payment_method: "cash", payment_date: DAY,
+  recorded_by: recordedBy, business_domain: "general_business",
+});
+const expense = (recordedBy: string, amount: number) => ({
+  id: id(), amount, category: "fuel", business_domain: "general_business", recorded_by: recordedBy,
+});
 const hidden = (table: string, row: Row["row"]): Row => ({ table, row, workerSees: false });
 const own = (table: string, row: Row["row"]): Row => ({ table, row, workerSees: true });
 
@@ -53,11 +61,8 @@ const ROWS: Row[] = [
   hidden("payment_promises", { id: id(), amount: 500, promised_date: DAY }),
   hidden("card_statements", { id: id() }),
   hidden("lease_agreements", { id: id(), property_id: ids.property, customer_id: ids.customer, start_date: DAY, monthly_rent_amount: 3000 }),
-  hidden("payments", {
-    id: id(), amount_total: 100, net_amount: 100, payment_method: "cash", payment_date: DAY,
-    recorded_by: ADMIN, business_domain: "general_business",
-  }),
-  hidden("expenses", { id: ids.expense, amount: 50, category: "fuel", business_domain: "general_business", recorded_by: ADMIN }),
+  hidden("payments", payment(ADMIN)),
+  hidden("expenses", { ...expense(ADMIN, 50), id: ids.expense }),
   hidden("project_expenses", { id: id(), project_id: ids.project, expense_id: ids.expense }),
   hidden("recurring_expense_templates", { id: id(), template_name: "CI rent", category: "rent", amount: 100, business_domain: "general_business" }),
   // Someone else's pay: their pay period, payslip, salary and a payment to them.
@@ -76,7 +81,7 @@ const ROWS: Row[] = [
   }),
   own("salary_agreements", { id: id(), user_id: WORKER, salary_type: "monthly", monthly_salary: 8000, valid_from: DAY }),
   own("worker_payments", { id: id(), user_id: WORKER, payment_date: DAY, amount: 8000 }),
-  own("expenses", { id: id(), amount: 30, category: "fuel", business_domain: "general_business", recorded_by: WORKER }),
+  own("expenses", expense(WORKER, 30)),
 ];
 
 /** Each table's ids among the rows, sorted. */
@@ -151,21 +156,22 @@ describe.skipIf(!READY)("who can see the money (a real database)", () => {
     }
   });
 
-  it("a worker can't add a payment, even a complete one", async () => {
-    const payment = {
-      id: id(), amount_total: 100, net_amount: 100, payment_method: "cash", payment_date: DAY,
-      recorded_by: WORKER, business_domain: "general_business",
-    };
-    const { error } = await worker.from("payments").insert(payment);
-    expect(error).not.toBeNull();
-    expect(await exists("payments", payment.id)).toBe(false);
+  // Each refused row is one the admin can add as it is, and the refusal is the
+  // access rules' own (42501): it can't pass on a row the database would refuse anyway.
+  it("a worker can't add a payment", async () => {
+    expect((await admin.from("payments").insert(payment(ADMIN))).error).toBeNull();
+    const row = payment(WORKER);
+    const { error } = await worker.from("payments").insert(row);
+    expect(error?.code).toBe("42501");
+    expect(await exists("payments", row.id)).toBe(false);
   });
 
   it("a worker can't add an expense in someone else's name", async () => {
-    const expense = { id: id(), amount: 20, category: "fuel", business_domain: "general_business", recorded_by: ADMIN };
-    const { error } = await worker.from("expenses").insert(expense);
-    expect(error).not.toBeNull();
-    expect(await exists("expenses", expense.id)).toBe(false);
+    expect((await admin.from("expenses").insert(expense(ADMIN, 20))).error).toBeNull();
+    const row = expense(ADMIN, 20);
+    const { error } = await worker.from("expenses").insert(row);
+    expect(error?.code).toBe("42501");
+    expect(await exists("expenses", row.id)).toBe(false);
   });
 
   it("a worker can't change their own payslip", async () => {
