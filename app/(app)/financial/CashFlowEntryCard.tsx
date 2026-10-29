@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { SuccessIcon } from "@/components/ui/icons";
 import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
 import { formatEnteredLabel, formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { FinancialEntry } from "@/lib/financial";
-import { formatCurrencyAmount, formatShekelNote } from "@/lib/money";
+import { formatCurrencyAmount, formatMoney, formatShekelNote } from "@/lib/money";
 import { isCancelledRecurringMonth } from "@/lib/recurring/cancelMonth";
 import { cn } from "@/lib/utils";
 import { stageLabel, stageVariant, typeAmountClass, typeLabel, typeVariant } from "./FinancialPage.ui";
@@ -24,15 +24,12 @@ export type EditableExpenseEntry = FinancialEntry & {
   expensePropertyId: string | null;
 };
 
-const currencyFormatter = new Intl.NumberFormat("he-IL", {
-  style: "currency",
-  currency: "ILS",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
-
-export function formatCurrency(value: number) {
-  return currencyFormatter.format(value);
+/** A row's amount with its direction: "+₪1,360" / "-₪100", "-$1,000" for a row
+ *  in US$ — the app's one money shape (lib/money). It was Intl's "‏100 ‏₪", the
+ *  ₪ after the number, beside every other page's ₪ before it (2026-10-29). */
+export function signedEntryAmount(entry: FinancialEntry): string {
+  const sign = entry.type === "inflow" ? "+" : "-";
+  return sign + (entry.foreign ? formatCurrencyAmount(entry.foreign.amount, entry.foreign.currency) : formatMoney(entry.amount));
 }
 
 /** Under a row's US$ or C$: its shekels, which every total here counts. */
@@ -67,7 +64,8 @@ export function recordedByLabel(entry: FinancialEntry): string | null {
   return formatEnteredLabel(entry.recordedByName, entry.createdAt);
 }
 
-function paidDetails(entry: FinancialEntry): string | null {
+/** A paid or partly paid bill: how much went (partly), and how. */
+export function paidDetails(entry: FinancialEntry): string | null {
   const status = entry.paymentStatus ?? "not_paid";
   if (status !== "paid" && status !== "partial") return null;
   const methodLabel = entry.expensePaymentMethod === "bank_transfer" ? "העברה בנקאית"
@@ -76,9 +74,37 @@ function paidDetails(entry: FinancialEntry): string | null {
     : entry.expensePaymentMethod === "credit_card" ? "כרטיס אשראי"
     : entry.expensePaymentMethod === "other" ? "אחר" : null;
   const parts: string[] = [];
-  if (status === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
+  if (status === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatMoney(entry.expensePaidAmount)}`);
   if (methodLabel) parts.push(methodLabel);
   return parts.length ? parts.join(" • ") : null;
+}
+
+/** Under a bill's row in the tables: paid / partly / not paid, and how it went.
+ *  0.647rem, the app's small size beside text-xs — it was 0.588rem, one of the
+ *  near-duplicate sizes the owner had swept out (2026-10-11). */
+export function ExpenseStatusLine({ entry }: { entry: FinancialEntry }) {
+  const chip = expenseStatusChip(entry);
+  const paid = paidDetails(entry);
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      <span className={cn("inline-block rounded-full border px-2 py-0.5 text-[0.647rem] font-medium", chip.tone)}>{chip.label}</span>
+      {paid ? <span className="text-[0.647rem] text-muted-foreground">{paid}</span> : null}
+    </div>
+  );
+}
+
+/** The ✓ that marks a bill paid — outlined like edit and delete beside it, in
+ *  the ✓'s green; the same on a card and in a table row. Opens its window. */
+export function MarkPaidButton({ onClick }: { onClick: (event: MouseEvent<HTMLButtonElement>) => void }) {
+  return (
+    <IconButton
+      icon={SuccessIcon}
+      label="סמן כשולם"
+      variant="ghost"
+      className="border-success bg-transparent text-success shadow-none hover:bg-success/10 hover:text-success"
+      onClick={onClick}
+    />
+  );
 }
 
 /**
@@ -172,19 +198,13 @@ export function CashFlowEntryCard({
           ) : null}
         </div>
         <div dir="ltr" className={cn("font-semibold tabular-nums", typeAmountClass(entry.type))}>
-          {entry.type === "inflow" ? "+" : "-"}
-          {paint(entry.foreign ? formatCurrencyAmount(entry.foreign.amount, entry.foreign.currency) : formatCurrency(entry.amount))}
+          {paint(signedEntryAmount(entry))}
           {entry.foreign ? <ShekelNote shekels={entry.amount} paint={paint} /> : null}
         </div>
         {editable ? (
           <div className="flex justify-end gap-2 pt-1">
             {(editable.paymentStatus ?? "not_paid") !== "paid" ? (
-              // Outlined like edit and delete beside it, in the ✓'s green.
-              <IconButton
-                icon={SuccessIcon}
-                label="סמן כשולם"
-                variant="ghost"
-                className="border-success bg-transparent text-success shadow-none hover:bg-success/10 hover:text-success"
+              <MarkPaidButton
                 onClick={(event) => {
                   event.stopPropagation();
                   onMarkPaid(editable);

@@ -17,7 +17,7 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { CashFlowEntryCard } from "@/app/(app)/financial/CashFlowEntryCard";
+import { CashFlowEntryCard, ExpenseStatusLine, MarkPaidButton } from "@/app/(app)/financial/CashFlowEntryCard";
 import { CASH_FLOW_LISTS } from "@/app/(app)/financial/FinancialPage.ui";
 import { CashFlowSkeleton } from "@/app/(app)/financial/FinancialSkeleton";
 
@@ -93,7 +93,19 @@ describe("a cash-flow row as a card", () => {
     card(bill({ paymentStatus: "partial", expensePaidAmount: 100 }));
     expect(screen.getByRole("button", { name: "סמן כשולם" })).toBeTruthy();
     expect(screen.getByText("חלקית")).toBeTruthy();
-    expect(screen.getByText(/^שולם \S*100\S* \S*₪/)).toBeTruthy();
+    expect(screen.getByText("שולם ₪100")).toBeTruthy();
+  });
+
+  it("money in the app's one shape, the ₪ before the number (lib/money) — it was Intl's ‏350 ‏₪", () => {
+    card(bill({ amount: 1350.5 }));
+    expect(screen.getByText("-₪1,350.5")).toBeTruthy();
+    document.body.innerHTML = "";
+    card(bill({ id: "payment:p1", type: "inflow", origin: "payment", expenseId: null, amount: 5000 }));
+    expect(screen.getByText("+₪5,000")).toBeTruthy();
+    document.body.innerHTML = "";
+    card(bill({ amount: 3107, foreign: { amount: 1000, currency: "USD" } as FinancialEntry["foreign"] }));
+    expect(screen.getByText("-$1,000")).toBeTruthy();
+    expect(screen.getByText("≈ ₪3,107")).toBeTruthy();
   });
 
   it("no actions for someone who can't manage expenses, nor on money that came in", () => {
@@ -120,6 +132,26 @@ describe("a cash-flow row as a card", () => {
     const calls = card(bill({ sourceHref: "/projects/p1", sourceLabel: "הובלה" }));
     fireEvent.click(screen.getByText("חשמל"));
     expect(calls.open).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a bill's row in the tables", () => {
+  it("the ✓ is the card's own: outlined green, named on hover, the size of edit and delete beside it", () => {
+    const onClick = vi.fn();
+    render(<MarkPaidButton onClick={onClick} />);
+    const button = screen.getByRole("button", { name: "סמן כשולם" });
+    expect(button.getAttribute("title")).toBe("סמן כשולם");
+    expect(button.className).toContain("border-success");
+    expect(button.className).toContain("h-9 w-9");
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("its status line is in the app's small size, and says how much of a partly paid bill went", () => {
+    const { container } = render(<ExpenseStatusLine entry={bill({ paymentStatus: "partial", expensePaidAmount: 100, expensePaymentMethod: "cash" })} />);
+    expect(screen.getByText("חלקית").className).toContain("text-[0.647rem]");
+    expect(screen.getByText("שולם ₪100 • מזומן")).toBeTruthy();
+    expect(container.innerHTML).not.toContain("0.588rem");
   });
 });
 

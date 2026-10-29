@@ -4,12 +4,11 @@ import { toHebrewError } from "@/lib/error-messages";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
-import { formatCurrencyAmount } from "@/lib/money";
 import { currencyFieldsFrom, isForeignCurrency } from "@/lib/fx/currencies";
 import { CurrencyAmountInput, useMoneyCurrency } from "@/components/fx/MoneyCurrency";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, SuccessIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
+import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
@@ -72,11 +71,12 @@ import {
 } from "./FinancialPage.ui";
 import {
   CashFlowEntryCard,
-  expenseStatusChip,
-  formatCurrency,
+  ExpenseStatusLine,
   isEditableExpenseEntry,
+  MarkPaidButton,
   recordedByLabel,
   ShekelNote,
+  signedEntryAmount,
   type EditableExpenseEntry,
 } from "./CashFlowEntryCard";
 import { cn } from "@/lib/utils";
@@ -107,6 +107,20 @@ const HE_MONTHS = [
   "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
   "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
 ] as const;
+
+// The reports' מאזן tab only (/financial/reports): its panels all still write
+// Intl's "‏5,000 ‏₪", so it keeps that shape until the reports page goes through
+// the playbook. The cash-flow lists write the app's "₪5,000" (lib/money).
+const reportCurrencyFormatter = new Intl.NumberFormat("he-IL", {
+  style: "currency",
+  currency: "ILS",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+function formatCurrency(value: number) {
+  return reportCurrencyFormatter.format(value);
+}
 
 function readCachedIsAdmin(): boolean | null {
   try {
@@ -833,7 +847,7 @@ export function FinancialPage({
     scheduleDeferredEdit({
       scope: "financial-entry",
       id: target.id,
-      message: "ההוצאה סומנה כשולמה",
+      message: "התשלום סומן כשולם",
       // Only the fields this list actually renders (status badge + method
       // label) — stage/flowDate stay as-is for the undo window and catch up on
       // the router.refresh() below once the real mutation lands.
@@ -856,7 +870,7 @@ export function FinancialPage({
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) {
-          return { ok: false, error: toHebrewError(json?.error, "סימון ההוצאה כשולמה נכשל.") };
+          return { ok: false, error: toHebrewError(json?.error, "סימון התשלום נכשל.") };
         }
         startRefreshTransition(() => { router.refresh(); });
         return { ok: true };
@@ -1085,9 +1099,10 @@ export function FinancialPage({
         ) : null}
       </Button>
       {activeFilterCount > 0 ? (
-        <Button type="button" variant="ghost" onClick={resetFilters}>
-          <RefreshIcon className="h-4 w-4" />
-          איפוס סינון
+        // Grey, like every clear / cancel; "נקה סינון", the app's one wording
+        // for it (owner, 2026-10-11).
+        <Button type="button" variant="muted" onClick={resetFilters}>
+          נקה סינון
         </Button>
       ) : null}
     </>
@@ -1633,11 +1648,11 @@ export function FinancialPage({
             {historySearch ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="muted"
                 size="sm"
                 onClick={() => applySearch("")}
               >
-                ניקוי
+                נקה חיפוש
               </Button>
             ) : null}
           </div>
@@ -1690,8 +1705,7 @@ export function FinancialPage({
                         )}
                       </div>
                       <div dir="ltr" className={cn("font-semibold tabular-nums", typeAmountClass(entry.type))}>
-                        {entry.type === "inflow" ? "+" : "-"}
-                        {paintLedger(entry.foreign ? formatCurrencyAmount(entry.foreign.amount, entry.foreign.currency) : formatCurrency(entry.amount))}
+                        {paintLedger(signedEntryAmount(entry))}
                         {entry.foreign ? <ShekelNote shekels={entry.amount} paint={paintLedger} /> : null}
                       </div>
                       {canManageExpenses && editableExpense ? (
@@ -1774,8 +1788,7 @@ export function FinancialPage({
                           </div>
                         </td>
                         <td dir="ltr" className={cn("px-3 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
-                          {entry.type === "inflow" ? "+" : "-"}
-                          {paintLedger(entry.foreign ? formatCurrencyAmount(entry.foreign.amount, entry.foreign.currency) : formatCurrency(entry.amount))}
+                          {paintLedger(signedEntryAmount(entry))}
                         {entry.foreign ? <ShekelNote shekels={entry.amount} paint={paintLedger} /> : null}
                         </td>
                         {canManageExpenses ? (
@@ -1929,33 +1942,14 @@ export function FinancialPage({
                               .join(" • "))}
                           </div>
                           {entry.origin === "expense" ? (
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span className={cn("inline-block rounded-full border px-2 py-0.5 text-[0.588rem] font-medium", expenseStatusChip(entry).tone)}>
-                                {expenseStatusChip(entry).label}
-                              </span>
-                              {(() => {
-                                const st = entry.paymentStatus ?? "not_paid";
-                                if (st !== "paid" && st !== "partial") return null;
-                                const methodLabel = entry.expensePaymentMethod === "bank_transfer" ? "העברה בנקאית"
-                                  : entry.expensePaymentMethod === "cash" ? "מזומן"
-                                  : entry.expensePaymentMethod === "check" ? "צ'ק"
-                                  : entry.expensePaymentMethod === "credit_card" ? "כרטיס אשראי"
-                                  : entry.expensePaymentMethod === "other" ? "אחר" : null;
-                                const parts: string[] = [];
-                                if (st === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
-                                if (methodLabel) parts.push(methodLabel);
-                                if (!parts.length) return null;
-                                return <span className="text-[0.588rem] text-muted-foreground">{parts.join(" • ")}</span>;
-                              })()}
-                            </div>
+                            <ExpenseStatusLine entry={entry} />
                           ) : null}
                         </td>
                         <td
                           dir="ltr"
                           className={cn("px-2 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}
                         >
-                          {entry.type === "inflow" ? "+" : "-"}
-                          {paintLedger(entry.foreign ? formatCurrencyAmount(entry.foreign.amount, entry.foreign.currency) : formatCurrency(entry.amount))}
+                          {paintLedger(signedEntryAmount(entry))}
                         {entry.foreign ? <ShekelNote shekels={entry.amount} paint={paintLedger} /> : null}
                         </td>
                         {canManageExpenses ? (
@@ -1963,19 +1957,12 @@ export function FinancialPage({
                             {editableExpense ? (
                               <div className="flex items-center justify-end gap-1">
                                 {(editableExpense.paymentStatus ?? "not_paid") !== "paid" ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-success hover:text-success"
+                                  <MarkPaidButton
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openMarkPaid(editableExpense);
                                     }}
-                                  >
-                                    <SuccessIcon className="h-4 w-4" />
-                                    <span className="sr-only">סמן כשולם</span>
-                                  </Button>
+                                  />
                                 ) : null}
                                 <EditButton onClick={(event) => {
                                     event.stopPropagation();
@@ -2037,21 +2024,22 @@ export function FinancialPage({
               }}
             >
               <option value="">כל החודשים</option>
+              {/* mm/yy, as the month picker above it. */}
               {ledgerMonths.map((m) => (
-                <option key={m} value={m}>{`${m.slice(5)}/${m.slice(0, 4)}`}</option>
+                <option key={m} value={m}>{`${m.slice(5)}/${m.slice(2, 4)}`}</option>
               ))}
             </NativeSelect>
             {ledgerSearch || ledgerMonth ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="muted"
                 size="sm"
                 onClick={() => {
                   applySearch("");
                   setLedgerMonth("");
                 }}
               >
-                ניקוי
+                {ledgerMonth ? "נקה סינון" : "נקה חיפוש"}
               </Button>
             ) : null}
             <Button type="button" variant="outline" size="sm" onClick={exportLedgerCsv} disabled={displayLedger.length === 0}>
@@ -2165,30 +2153,11 @@ export function FinancialPage({
                               .join(" • "))}
                           </div>
                           {entry.origin === "expense" ? (
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span className={cn("inline-block rounded-full border px-2 py-0.5 text-[0.588rem] font-medium", expenseStatusChip(entry).tone)}>
-                                {expenseStatusChip(entry).label}
-                              </span>
-                              {(() => {
-                                const st = entry.paymentStatus ?? "not_paid";
-                                if (st !== "paid" && st !== "partial") return null;
-                                const methodLabel = entry.expensePaymentMethod === "bank_transfer" ? "העברה בנקאית"
-                                  : entry.expensePaymentMethod === "cash" ? "מזומן"
-                                  : entry.expensePaymentMethod === "check" ? "צ'ק"
-                                  : entry.expensePaymentMethod === "credit_card" ? "כרטיס אשראי"
-                                  : entry.expensePaymentMethod === "other" ? "אחר" : null;
-                                const parts: string[] = [];
-                                if (st === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
-                                if (methodLabel) parts.push(methodLabel);
-                                if (!parts.length) return null;
-                                return <span className="text-[0.588rem] text-muted-foreground">{parts.join(" • ")}</span>;
-                              })()}
-                            </div>
+                            <ExpenseStatusLine entry={entry} />
                           ) : null}
                         </td>
                         <td dir="ltr" className={cn("px-3 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
-                          {entry.type === "inflow" ? "+" : "-"}
-                          {paintLedger(entry.foreign ? formatCurrencyAmount(entry.foreign.amount, entry.foreign.currency) : formatCurrency(entry.amount))}
+                          {paintLedger(signedEntryAmount(entry))}
                         {entry.foreign ? <ShekelNote shekels={entry.amount} paint={paintLedger} /> : null}
                         </td>
                         {canManageExpenses ? (
@@ -2196,19 +2165,12 @@ export function FinancialPage({
                             {editableExpense ? (
                               <div className="flex items-center justify-end gap-1">
                                 {(editableExpense.paymentStatus ?? "not_paid") !== "paid" ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-success hover:text-success"
+                                  <MarkPaidButton
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openMarkPaid(editableExpense);
                                     }}
-                                  >
-                                    <SuccessIcon className="h-4 w-4" />
-                                    <span className="sr-only">סמן כשולם</span>
-                                  </Button>
+                                  />
                                 ) : null}
                                 <EditButton onClick={(event) => {
                                     event.stopPropagation();
@@ -2234,10 +2196,10 @@ export function FinancialPage({
               {ledgerHasMore ? <div ref={ledgerMobileSentinelRef} className={cn("h-1", CASH_FLOW_LISTS.ledger.cards)} /> : null}
               <div className="pt-3 text-center text-xs text-muted-foreground">
                 מציג {pagedLedgerEntries.length} מתוך {displayLedger.length} תנועות
+                {/* The limit is said once (ledgerCapNote). A second line, "המערכת
+                    טוענת עד 1500", said it again under it — and, while the rest
+                    of the rows were still on their way, about the newest rows. */}
                 {ledgerCapNote}
-                {data.ledgerTotalCount > ledgerEntries.length
-                  ? " · המערכת טוענת עד 1500 — סננו לפי תאריך לצפייה בנוספות"
-                  : ""}
               </div>
             </div>
           )}
@@ -2586,7 +2548,7 @@ export function FinancialPage({
                 <div className="font-medium">{deletingExpense.description}</div>
                 <div className="mt-1 text-muted-foreground">{deletingExpense.sourceLabel}</div>
                 <div dir="ltr" className="mt-2 font-semibold tabular-nums">
-                  -{formatCurrency(deletingExpense.amount)}
+                  {signedEntryAmount(deletingExpense)}
                 </div>
               </div>
             </div>
@@ -2598,11 +2560,12 @@ export function FinancialPage({
         onOpenChange={(open) => {
           if (!open) setMarkPaidExpense(null);
         }}
-        title="סימון כשולם"
+        // The payments calendar's words for the same action (MarkPaidDialog).
+        title="סימון תשלום כשולם"
         description="אישור שההוצאה אכן שולמה. היא תעבור לתזרים בפועל בתאריך התשלום."
         size="formMd"
         onSubmit={confirmMarkPaid}
-        submitLabel="אישור תשלום"
+        submitLabel="סמן כשולם"
       >
           {markPaidExpense ? (
             <div className="mt-4 space-y-3" dir="rtl">
@@ -2610,7 +2573,7 @@ export function FinancialPage({
                 <div className="font-medium">{markPaidExpense.description}</div>
                 <div className="mt-1 text-muted-foreground">{markPaidExpense.sourceLabel}</div>
                 <div dir="ltr" className="mt-2 text-left font-semibold tabular-nums">
-                  {markPaidExpense.expenseVariableEstimate ? "~" : ""}-{formatCurrency(markPaidExpense.amount)}
+                  {markPaidExpense.expenseVariableEstimate ? "~" : ""}{signedEntryAmount(markPaidExpense)}
                 </div>
                 {markPaidExpense.expenseVariableEstimate ? (
                   <div className="mt-1 text-xs text-muted-foreground">הסכום הוא הערכה — הזינו את הסכום ששולם בפועל.</div>
