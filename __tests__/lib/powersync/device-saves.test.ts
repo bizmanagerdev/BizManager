@@ -22,8 +22,15 @@ function fakeDatabase(ops: Op[], status: string | null = "in_progress") {
     transaction,
     db: {
       getNextCrudTransaction: vi.fn(async () => (ops.length ? transaction : null)),
-      // The task as it stands on the device; nothing parked (lib/powersync/parked-saves.ts).
-      getOptional: vi.fn(async (sql: string) => (sql.includes("parked_saves") || status === null ? null : { status })),
+      // The copy's own id (lib/powersync/copy-id.ts); the task as it stands on
+      // the device; nothing parked (lib/powersync/parked-saves.ts).
+      getOptional: vi.fn(async (sql: string) =>
+        sql.includes("device_copy")
+          ? { copy_id: "copy-1", from_change: 0 }
+          : sql.includes("parked_saves") || status === null
+            ? null
+            : { status }
+      ),
       execute: vi.fn(async () => ({})),
     } as unknown as Parameters<BizConnector["uploadData"]>[0],
   };
@@ -167,7 +174,7 @@ describe("device saves", () => {
     await expect(connector.uploadData(db)).rejects.toThrow("HTTP 503");
     await connector.uploadData(db);
     const keys = fetchMock.mock.calls.map((call) => (call[1] as RequestInit).headers as Record<string, string>);
-    expect(keys.map((h) => h["Idempotency-Key"])).toEqual(["ps:tasks:t-new:PUT:42", "ps:tasks:t-new:PUT:42"]);
+    expect(keys.map((h) => h["Idempotency-Key"])).toEqual(["ps:copy-1:tasks:t-new:PUT:42", "ps:copy-1:tasks:t-new:PUT:42"]);
   });
 
   it("sends the batch and marks it done", async () => {

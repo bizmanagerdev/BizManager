@@ -43,11 +43,20 @@ import { DEVICE_SAVE_REFUSED_EVENT } from "@/lib/powersync/local-writes";
 
 type Op = { clientId: number; table: string; op: string; id: string; opData?: Record<string, unknown> };
 
-/** The device copy's parked_saves table, and the upload queue PowerSync hands the connector. */
-function deviceCopy() {
+/**
+ * The device copy's parked_saves and device_copy tables, and the upload queue
+ * PowerSync hands the connector. `copyId`: the copy's id already made (null:
+ * not yet — the connector makes it).
+ */
+function deviceCopy({ copyId = "copy-1" as string | null } = {}) {
   const sqlite = new DatabaseSync(":memory:");
-  const table = AppSchema.tables.find((t) => t.name === "parked_saves")!;
-  sqlite.exec(`CREATE TABLE parked_saves (id TEXT PRIMARY KEY, ${table.columns.map((c) => `"${c.name}" ${c.type}`).join(", ")})`);
+  for (const name of ["parked_saves", "device_copy"]) {
+    const table = AppSchema.tables.find((t) => t.name === name)!;
+    sqlite.exec(`CREATE TABLE ${name} (id TEXT PRIMARY KEY, ${table.columns.map((c) => `"${c.name}" ${c.type}`).join(", ")})`);
+  }
+  // PowerSync's own upload queue table: what the copy's id counts from.
+  sqlite.exec("CREATE TABLE ps_crud (id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT)");
+  if (copyId) sqlite.prepare("INSERT INTO device_copy (id, copy_id, from_change) VALUES ('this', ?, 0)").run(copyId);
   const bind = (params: unknown[] = []) => params.map((value) => (value === undefined ? null : value)) as never[];
   let queue: Op[] = [];
   const completed: number[][] = [];
@@ -81,6 +90,11 @@ function deviceCopy() {
     },
     completed,
     rows: () => sqlite.prepare("SELECT * FROM parked_saves ORDER BY seq").all() as Record<string, unknown>[],
+    /** Changes waiting in PowerSync's upload queue (their numbers). */
+    waiting: (...numbers: number[]) => {
+      for (const n of numbers) sqlite.prepare("INSERT INTO ps_crud (id, data) VALUES (?, '{}')").run(n);
+    },
+    copyRow: () => sqlite.prepare("SELECT copy_id, from_change FROM device_copy").all() as Record<string, unknown>[],
   };
 }
 
@@ -210,8 +224,72 @@ describe("uploading a phone save", () => {
     await new BizConnector().uploadData(copy.db);
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(copy.rows().map((row) => row.idem_key)).toEqual(["ps:orders:o1:PATCH:1", "ps:orders:o1:PATCH:2"]);
+    expect(copy.rows().map((row) => row.idem_key)).toEqual(["ps:orders:o1:PATCH:1", "ps:copy-1:orders:o1:PATCH:2"]);
     expect(copy.completed).toEqual([[2]]);
+  });
+});
+
+// The copy's queue numbers start again from 1 after a sign-out or on a new
+// device, and a change could get an earlier one's key — answered "already
+// done", never saved (audit 2026-10-27): every key carries the copy's own id.
+describe("a change's key", () => {
+  it("carries the copy's own id, made the first time and the same after", async () => {
+    const copy = deviceCopy({ copyId: null });
+    copy.enqueue({ clientId: 1, table: "orders", op: "PATCH", id: "o1" });
+    fetchMock.mockResolvedValue(respond(200));
+
+    await new BizConnector().uploadData(copy.db);
+    copy.enqueue({ clientId: 2, table: "orders", op: "PATCH", id: "o1" });
+    await new BizConnector().uploadData(copy.db);
+
+    const [made] = copy.copyRow();
+    expect(made.copy_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(fetchMock.mock.calls.map(keyOf)).toEqual([`ps:${made.copy_id}:orders:o1:PATCH:1`, `ps:${made.copy_id}:orders:o1:PATCH:2`]);
+  });
+
+  it("a new copy (after a wipe) gets a new id, so the same row, change and number is a different key", async () => {
+    fetchMock.mockResolvedValue(respond(200));
+    const before = deviceCopy({ copyId: null });
+    before.enqueue({ clientId: 1, table: "orders", op: "PATCH", id: "o1" });
+    await new BizConnector().uploadData(before.db);
+    const after = deviceCopy({ copyId: null });
+    after.enqueue({ clientId: 1, table: "orders", op: "PATCH", id: "o1" });
+    await new BizConnector().uploadData(after.db);
+
+    const [first, second] = fetchMock.mock.calls.map(keyOf);
+    expect(first).not.toBe(second);
+  });
+
+  it("changes already waiting when the id is made keep the key they may have been sent with", async () => {
+    const copy = deviceCopy({ copyId: null });
+    copy.waiting(41, 42);
+    copy.enqueue({ clientId: 42, table: "orders", op: "PATCH", id: "o1" }, { clientId: 43, table: "orders", op: "PATCH", id: "o2" });
+    fetchMock.mockResolvedValue(respond(200));
+
+    await new BizConnector().uploadData(copy.db);
+
+    const [made] = copy.copyRow();
+    expect(made.from_change).toBe(42);
+    expect(fetchMock.mock.calls.map(keyOf)).toEqual(["ps:orders:o1:PATCH:42", `ps:${made.copy_id}:orders:o2:PATCH:43`]);
+  });
+});
+
+// Its first send still being worked on used to be a 202, taken as sent: lost
+// if that first send then failed. Now: tried again, as a server error is.
+describe("a change whose first send is still being worked on", () => {
+  it("is tried again, never dropped or refused", async () => {
+    const copy = deviceCopy();
+    copy.enqueue({ clientId: 1, table: "orders", op: "PATCH", id: "o1" });
+    fetchMock.mockResolvedValueOnce(respond(503, { error: "עדיין מתבצעת", pending: true })).mockResolvedValueOnce(respond(200));
+
+    const connector = new BizConnector();
+    await expect(connector.uploadData(copy.db)).rejects.toThrow("still being saved");
+    expect(copy.completed).toEqual([]);
+    await connector.uploadData(copy.db);
+
+    expect(keyOf(fetchMock.mock.calls[0])).toBe(keyOf(fetchMock.mock.calls[1]));
+    expect(copy.completed).toEqual([[1]]);
+    expect(events).toEqual([]);
   });
 });
 

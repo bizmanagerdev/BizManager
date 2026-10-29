@@ -1,4 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
+import { isStillWorking, STILL_WORKING_RETRY_MS } from "@/lib/still-working";
 
 const QUEUE_KEY = "biz_offline_queue";
 const FAILED_KEY = "biz_offline_failed";
@@ -347,19 +348,35 @@ export async function offlineFetch(
     });
     endSlow();
     clearTimeout(timeoutTimer);
-    // Answered (refused or done): nothing to resend.
-    settle();
 
     if (!response.ok) {
       const text = await response.text().catch(() => response.statusText);
       let error = text;
+      let json: { error?: string } | null = null;
       try {
-        const json = JSON.parse(text) as { error?: string };
+        json = JSON.parse(text) as { error?: string };
         if (json.error) error = json.error;
       } catch {}
+      // The same save is on its way already (another tab sent it): it stays
+      // here and goes again shortly, as a slow one does — never refused.
+      if (isStillWorking(response.status, json)) {
+        if (kept) {
+          sending.delete(kept.id);
+          emit(CONNECTION_EVENTS.changed);
+        } else {
+          enqueue({ url, body, label, idempotencyKey });
+        }
+        sendAgainSoon();
+        emit(CONNECTION_EVENTS.queued, { label, reason: "slow" });
+        return { queued: true, reason: "slow", key: idempotencyKey };
+      }
+      // Refused: nothing to resend.
+      settle();
       // Always hand the caller a Hebrew message — never a raw English server error.
       return { queued: false, ok: false, status: response.status, error: toHebrewError(error) };
     }
+    // Done: nothing to resend.
+    settle();
 
     const data = await response.json().catch(() => null);
     return { queued: false, ok: true, data };
@@ -394,6 +411,21 @@ export type ParkedNote = { label: string; path: string; status: number | null; e
 /** Treat 4xx (except 408/429) as permanent — retrying won't help. */
 function isPermanentFailure(status: number): boolean {
   return status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+let againSoon: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Send what waits again in a few seconds — after a "still working" answer
+ * (lib/still-working.ts). Nothing else would: the queue is sent when the app
+ * opens or the connection comes back, and here the connection is fine.
+ */
+function sendAgainSoon(): void {
+  if (againSoon) return;
+  againSoon = setTimeout(() => {
+    againSoon = null;
+    void processQueue();
+  }, STILL_WORKING_RETRY_MS);
 }
 
 /** A delete route — "/api/…/delete". */
@@ -449,11 +481,20 @@ export async function processQueue(): Promise<ProcessResult> {
 
       const text = await response.text().catch(() => response.statusText);
       let error = text;
+      let json: { error?: string } | null = null;
       try {
-        const json = JSON.parse(text) as { error?: string };
+        json = JSON.parse(text) as { error?: string };
         if (json.error) error = json.error;
       } catch {}
       const hebrewError = toHebrewError(error);
+
+      // Its first send is still being worked on: it waits, and goes again
+      // shortly — not a failed try (it used to be counted as sent, and lost
+      // if that first send then failed).
+      if (isStillWorking(response.status, json)) {
+        sendAgainSoon();
+        break;
+      }
 
       // Deleting something that's already gone did what it was meant to — a
       // delete sent again because its first try (slow) did arrive after all.

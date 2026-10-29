@@ -880,8 +880,23 @@ const parked_saves = new Table(
   { localOnly: true, indexes: { by_row: ["tbl", "row_id"] } }
 );
 
+/**
+ * The copy's own id (one row, id 'this'), in the key of every change it sends
+ * (lib/powersync/copy-id.ts). Local only: a wipe takes it, the next copy
+ * gets a new one.
+ */
+const device_copy = new Table(
+  {
+    copy_id: text,
+    /** The changes waiting when it was made keep their old keys (up to this number). */
+    from_change: int,
+  },
+  { localOnly: true }
+);
+
 export const AppSchema = new Schema({
   parked_saves,
+  device_copy,
   users,
   user_directory,
   property_directory,

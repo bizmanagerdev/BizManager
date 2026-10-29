@@ -1,7 +1,9 @@
 import type { CommonPowerSyncDatabase, PowerSyncBackendConnector, PowerSyncCredentials } from "@powersync/web";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { withSentry } from "@/lib/sentry-lazy";
+import { isStillWorking } from "@/lib/still-working";
 import { POWERSYNC_URL } from "./config";
+import { changeKey, deviceCopyId } from "./copy-id";
 import {
   DEVICE_SAVE_REFUSED_EVENT,
   DEVICE_SAVE_SENT_EVENT,
@@ -117,6 +119,11 @@ async function send(
   // The login ran out (a phone woken after a while): a fresh one, and the same
   // change again at once — not a failure.
   if (res.status === 401 && !loginRefreshed && (await refreshedLogin())) return send(request, key, restore, true);
+  // Its first send is still being worked on (lib/still-working.ts): later.
+  // It used to be a 202, taken as sent — lost if that first send then failed.
+  if (res.status === 503 && isStillWorking(res.status, await res.clone().json().catch(() => null))) {
+    throw new RetryLater("still being saved", true);
+  }
   // Signed out, overloaded, or the server itself failing: later.
   if (res.status === 401 || res.status === 408 || res.status === 429 || res.status >= 500) {
     throw new RetryLater(`HTTP ${res.status}`, true);
@@ -191,6 +198,7 @@ export class BizConnector implements PowerSyncBackendConnector {
   async uploadData(database: CommonPowerSyncDatabase): Promise<void> {
     const transaction = await database.getNextCrudTransaction();
     if (!transaction) return;
+    const copy = await deviceCopyId(database);
     const currentRow = (id: string, table: "tasks" | "projects") =>
       database.getOptional<Record<string, unknown>>(
         table === "projects"
@@ -209,9 +217,10 @@ export class BizConnector implements PowerSyncBackendConnector {
         reportDropped(null, "no route for this change", { table: op.table, op: op.op });
         continue;
       }
-      // The row's id and the change's place in this device's queue: the same
-      // change always carries the same key, two changes never share one.
-      const key = `ps:${op.table}:${op.id}:${op.op}:${op.clientId}`;
+      // The copy's own id, the row's id and the change's place in this copy's
+      // queue: the same change always carries the same key, two changes never
+      // share one (lib/powersync/copy-id.ts).
+      const key = changeKey(copy, op);
       const restore = restoreForChange(op);
       const park = async (reason: string) => {
         const label = parkedLabel(request.kind, await rowName(database, op.table, op.id));

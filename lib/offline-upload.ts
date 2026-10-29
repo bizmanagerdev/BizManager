@@ -1,5 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { CONNECTION_EVENTS, queuedKeyFailed, queuedResultId, slowNotice, type QueueAfter } from "@/lib/offline-queue";
+import { isStillWorking, STILL_WORKING_RETRY_MS } from "@/lib/still-working";
 
 // ── Offline file-upload queue ─────────────────────────────────────────────────
 // The JSON write queue (lib/offline-queue.ts) can't hold binary, so photo/file
@@ -340,6 +341,19 @@ export async function offlineUpload(
     clearTimeout(timeoutTimer);
 
     if (!response.ok) {
+      // The same upload is on its way already (another tab sent it): it stays
+      // here and goes again shortly, as a slow one does — never refused.
+      if (await stillWorking(response)) {
+        if (keptId) {
+          sending.delete(keptId);
+          emit(CONNECTION_EVENTS.changed);
+        } else {
+          await enqueueUpload({ url, fields, parts, label, idempotencyKey });
+        }
+        uploadAgainSoon();
+        emit(CONNECTION_EVENTS.queued, { label, reason: "slow" });
+        return { queued: true, reason: "slow" };
+      }
       // A real refusal (a validation error): the person fixes it — nothing to resend.
       const error = await extractError(response);
       await settle();
@@ -397,6 +411,22 @@ function isPermanentFailure(status: number): boolean {
   return status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
+/** Answered "still working — send it again shortly" (lib/still-working.ts)? */
+async function stillWorking(response: Response): Promise<boolean> {
+  return response.status === 503 && isStillWorking(503, await response.clone().json().catch(() => null));
+}
+
+let againSoon: ReturnType<typeof setTimeout> | null = null;
+
+/** Send what waits again in a few seconds — after a "still working" answer, which nothing else would. */
+function uploadAgainSoon(): void {
+  if (againSoon) return;
+  againSoon = setTimeout(() => {
+    againSoon = null;
+    void processUploadQueue();
+  }, STILL_WORKING_RETRY_MS);
+}
+
 let processing = false;
 
 export async function processUploadQueue(): Promise<ProcessResult> {
@@ -437,6 +467,13 @@ export async function processUploadQueue(): Promise<ProcessResult> {
           await del(QUEUE_STORE, entry.id);
           processed++;
           continue;
+        }
+
+        // Its first send is still being worked on: it waits, and goes again
+        // shortly — not a failed try.
+        if (await stillWorking(response)) {
+          uploadAgainSoon();
+          break;
         }
 
         const hebrewError = await extractError(response);

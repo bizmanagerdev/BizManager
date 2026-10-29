@@ -115,6 +115,23 @@ describe("a photo upload / delivery confirmation (offlineUpload)", () => {
     expect(await refused).toMatchObject({ queued: false, ok: false, status: 403 });
     expect(await queue.getUploadQueueLength()).toBe(1); // only the dropped one
   });
+
+  it("answered 'still working' (the same upload on its way from another tab): waiting, never refused, not a failed try", async () => {
+    const stillWorking = () => new Response(JSON.stringify({ error: "עדיין מתבצעת", pending: true }), { status: 503 });
+    const sent = send();
+    await untilSent(1);
+    calls[0].resolve(stillWorking());
+    expect(await sent).toEqual({ queued: true, reason: "slow" });
+    const queue = await import("@/lib/offline-upload");
+    expect(await queue.getUploadQueueLength()).toBe(1);
+
+    const replay = queue.processUploadQueue();
+    await untilSent(2);
+    expect(keyOf(calls[1])).toBe(keyOf(calls[0]));
+    calls[1].resolve(stillWorking());
+    expect(await replay).toMatchObject({ processed: 0, failed: 0, remaining: 1 });
+    expect(await queue.getUploadFailedLength()).toBe(0);
+  });
 });
 
 describe("a create with an idempotency key (offlineFetch)", () => {

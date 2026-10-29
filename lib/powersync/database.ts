@@ -12,6 +12,7 @@ import { BizConnector } from "./connector";
 import { isConnectionDrop } from "./connection-drop";
 import { isServerReachable, syncConnectionDropped } from "@/lib/pwa/connection";
 import { POWERSYNC_ASSETS_BASE } from "./config";
+import { deviceCopyId } from "./copy-id";
 import { AppSchema } from "./schema";
 import { setLocalDatabase, setLocalSyncStatus, type LocalSyncStatus } from "./store";
 import {
@@ -214,6 +215,9 @@ export async function openLocalDatabase(authUid: string): Promise<CommonPowerSyn
 
     // Ask the browser not to evict the copy under storage pressure.
     void navigator.storage?.persist?.().catch(() => {});
+    // The copy's own id for the keys of its saves, made now — before anything
+    // is saved on it — if it's new (copy-id.ts).
+    void deviceCopyId(db);
 
     // The WebSocket, unless this device found it doesn't work here; a few
     // failed connections in a row — in the tab on screen — switch to the
