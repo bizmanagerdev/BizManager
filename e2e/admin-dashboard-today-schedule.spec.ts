@@ -12,6 +12,12 @@ import { createTestReminder, deleteTestReminder, getAdminUserId, getReminderStat
 // reminder due today and assigned to the admin fixture is enough — no task/
 // customer link needed. Same 10s undo window as MyTasksPanel (lib/undo-engine.ts).
 test.describe("admin — dashboard today card", () => {
+  // The card picks "today" off the browser's clock and the feed dates a reminder
+  // by Israel's calendar (lib/projectSchedule.ts). Every phone and PC that uses
+  // the app runs on Israel time; the CI browser runs on UTC, where from Israel's
+  // midnight to 02:00/03:00 "today" is still yesterday and the reminder isn't on it.
+  test.use({ timezoneId: "Asia/Jerusalem" });
+
   test("admin can mark a reminder done from the today card", async ({ page }) => {
     test.setTimeout(60_000);
     const adminId = await getAdminUserId();

@@ -1,11 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import { loadAttendanceSpark, SPARK_DAYS } from "@/lib/dashboard/sparklines";
+import { israelDateKey } from "@/lib/timezone";
 
+/**
+ * Israel's calendar, like the series it checks — the CI machine's clock is UTC,
+ * and from Israel's midnight to 02:00/03:00 its "today" is still yesterday.
+ */
 function isoDaysAgo(n: number): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [y, m, d] = israelDateKey().split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
 }
 
 function makeSupabase(rows: Array<{ clock_in: string }>, error: { message: string } | null = null) {
