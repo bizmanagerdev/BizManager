@@ -102,6 +102,20 @@ export async function checkConnection(): Promise<boolean> {
 }
 
 /**
+ * The device copy's sync connection just dropped (lib/powersync/database.ts):
+ * often the first sign the server is gone. A page drawn from the device asks
+ * the server nothing — a month changed on the cash-flow page — so no failed
+ * request says so, and the "no connection" bar waited for the next page
+ * (owner's Wi-Fi-off test, 2026-10-29). A ping says whether it's gone. Not
+ * while the app is off screen: a phone's sync drops in the background, and its
+ * ping may fail there with the network fine.
+ */
+export function syncConnectionDropped(): void {
+  if (!reachable || document.visibilityState === "hidden") return;
+  void checkConnection();
+}
+
+/**
  * Keep the state up to date for this page: the device's own word, the
  * service worker's, and a ping every few seconds while down. Returns a stop.
  */

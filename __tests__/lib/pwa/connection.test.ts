@@ -148,4 +148,56 @@ describe("does the server answer", () => {
     expect(calledOff).not.toHaveBeenCalled();
     stop();
   });
+
+  // A page drawn from the device asks the server nothing — a month changed on
+  // the cash-flow page — so no failed request tells; the bar waited for the
+  // next page (owner's Wi-Fi-off test, 2026-10-29).
+  describe("the device copy's sync connection dropping", () => {
+    const setVisible = (visible: boolean) =>
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (visible ? "visible" : "hidden") });
+    afterEach(() => setVisible(true));
+
+    it("on screen: a ping at once — down with no request of the page's own failing", async () => {
+      const connection = await load();
+      const stop = connection.watchConnection();
+      ping.mockRejectedValue(new TypeError("Failed to fetch"));
+      connection.syncConnectionDropped();
+      await settle();
+      expect(ping).toHaveBeenCalledTimes(1);
+      expect(connection.isServerReachable()).toBe(false);
+      stop();
+    });
+
+    it("the server still answering (the sync only reconnecting): nothing changes", async () => {
+      const connection = await load();
+      const stop = connection.watchConnection();
+      connection.syncConnectionDropped();
+      await settle();
+      expect(ping).toHaveBeenCalledTimes(1);
+      expect(connection.isServerReachable()).toBe(true);
+      stop();
+    });
+
+    it("off screen: no ping — a phone's sync drops in the background, and a ping there may fail with the network fine", async () => {
+      const connection = await load();
+      const stop = connection.watchConnection();
+      setVisible(false);
+      ping.mockRejectedValue(new TypeError("Failed to fetch"));
+      connection.syncConnectionDropped();
+      await settle();
+      expect(ping).not.toHaveBeenCalled();
+      expect(connection.isServerReachable()).toBe(true);
+      stop();
+    });
+
+    it("already known to be down: no extra ping (the 5-second check is on it)", async () => {
+      const connection = await load();
+      const stop = connection.watchConnection();
+      window.dispatchEvent(new Event("offline"));
+      connection.syncConnectionDropped();
+      await settle();
+      expect(ping).not.toHaveBeenCalled();
+      stop();
+    });
+  });
 });

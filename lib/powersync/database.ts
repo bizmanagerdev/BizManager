@@ -10,7 +10,7 @@ import {
 import { withSentry } from "@/lib/sentry-lazy";
 import { BizConnector } from "./connector";
 import { isConnectionDrop } from "./connection-drop";
-import { isServerReachable } from "@/lib/pwa/connection";
+import { isServerReachable, syncConnectionDropped } from "@/lib/pwa/connection";
 import { POWERSYNC_ASSETS_BASE } from "./config";
 import { AppSchema } from "./schema";
 import { setLocalDatabase, setLocalSyncStatus, type LocalSyncStatus } from "./store";
@@ -237,9 +237,13 @@ export async function openLocalDatabase(authUid: string): Promise<CommonPowerSyn
     transportWatch = watch;
     const stopFollowing = followTransport(watch);
 
+    let wasConnected = false;
     const unregister = db.registerListener({
       statusChanged: (status) => {
         setLocalSyncStatus(toLocalStatus(status));
+        // Connected a moment ago, not now: is the server still there?
+        if (wasConnected && !status.connected) syncConnectionDropped();
+        wasConnected = status.connected;
         if (status.connected) watch.connected();
         if (status.downloadError) {
           report("Sync download error", status.downloadError);
