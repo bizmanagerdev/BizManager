@@ -49,6 +49,11 @@ function getNumber(row: Row | null | undefined, key: string) {
   }
   return null;
 }
+// An order's day, for its pickers' labels — order_date is a timestamp, which
+// the server and the device copy each write their own way.
+function orderDay(row: Row) {
+  return (getString(row, "order_date") ?? "").slice(0, 10);
+}
 function looksLikeMissingSchema(msg: string) {
   const m = msg.toLowerCase();
   return m.includes("does not exist") || m.includes("could not find") || m.includes("schema cache");
@@ -197,7 +202,7 @@ export async function loadPaymentsCalendarView(supabase: SupabaseClient): Promis
       .map((r) => ({
         id: getString(r, "order_id") ?? "",
         name: getString(r, "customer_name") || `הזמנה ${(getString(r, "order_id") ?? "").slice(0, 8)}`,
-        subtitle: getString(r, "order_date") ?? undefined,
+        subtitle: orderDay(r) || undefined,
       }))
       .filter((o) => o.id),
     properties: propertyRows
@@ -212,8 +217,7 @@ export async function loadPaymentsCalendarView(supabase: SupabaseClient): Promis
     .map((r) => {
       const id = getString(r, "order_id") ?? "";
       const customer = getString(r, "customer_name") ?? "";
-      const date = getString(r, "order_date") ?? "";
-      return { id, label: customer ? `${customer} (${date})` : id };
+      return { id, label: customer ? `${customer} (${orderDay(r)})` : id };
     })
     .filter((o) => o.id);
 

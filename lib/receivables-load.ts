@@ -112,7 +112,9 @@ export async function loadOpenPromises(
     .from("payment_promises")
     .select(`id,customer_id,order_id,project_id,amount,promised_date,notes,${MONEY_CURRENCY_COLUMNS}`)
     .eq("status", "pending")
-    .gte("promised_date", fromIso);
+    .gte("promised_date", fromIso)
+    // One order on the server and the device copy: the items come out in it.
+    .order("id");
   if (error) return [];
   return ((data ?? []) as Row[])
     .map((r) => ({
@@ -146,7 +148,8 @@ export async function loadSettlementRows(
     .from("payments")
     .select("id,account_id,payment_date,due_date,amount_total,payment_method,payment_status,order_id,project_id,notes")
     .eq("payment_method", "credit_card")
-    .or(`payment_date.gte.${since},due_date.gte.${since}`);
+    .or(`payment_date.gte.${since},due_date.gte.${since}`)
+    .order("id");
   if (error) return [];
   const base = ((data ?? []) as Row[])
     .filter((r) => (str(r, "payment_status") ?? "").trim().toLowerCase() !== "rejected")
@@ -192,7 +195,8 @@ export async function loadLeasesAndBookedMonths(
   const { data, error } = await supabase
     .from("lease_agreements")
     .select("id,property_id,customer_id,start_date,end_date,monthly_rent_amount,rent_day_of_month,rent_calendar,rent_hebrew_day,period_months,status")
-    .in("status", ["active", "ended"]);
+    .in("status", ["active", "ended"])
+    .order("id");
   if (error || !data) return { leases: [], bookedMonths: new Map(), rentPayments: new Map() };
 
   // Running ones, and those that ended on a known day — what they didn't pay stays owed until paid (owner,
@@ -208,7 +212,8 @@ export async function loadLeasesAndBookedMonths(
       .from("payments")
       .select("property_id,payment_date,payment_status,amount_total,lease_id,rent_period_start,rent_periods,rent_allocation,counts_as_rent")
       .in("property_id", propertyIds)
-      .or(`payment_date.gte.${fromIso},rent_period_start.gte.${fromIso.slice(0, 10)}`),
+      .or(`payment_date.gte.${fromIso},rent_period_start.gte.${fromIso.slice(0, 10)}`)
+      .order("id"),
   ]);
 
   const labelById = new Map<string, string>();

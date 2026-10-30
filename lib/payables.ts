@@ -239,7 +239,9 @@ export async function loadProjectedSalaries(
 ): Promise<PaymentCalendarItem[]> {
   const { data: agrRows, error } = await supabase
     .from("salary_agreements")
-    .select("id,user_id,salary_type,monthly_salary,valid_from,valid_to,due_day_of_next_month");
+    .select("id,user_id,salary_type,monthly_salary,valid_from,valid_to,due_day_of_next_month")
+    // One order on the server and the device copy: the items come out in it.
+    .order("id");
   if (error || !agrRows?.length) return [];
 
   type AgrRow = {
@@ -356,7 +358,8 @@ export async function loadProjectedRecurringExpenses(
   const { data: tplRows, error } = await supabase
     .from("recurring_expense_templates")
     .select("id,template_name,category,amount,currency,is_variable_amount,auto_paid,description_template,notes_template,business_domain,account_id,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,end_date,created_at,is_active")
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .order("id");
   if (error || !tplRows?.length) return [];
 
   type Tpl = {
@@ -545,7 +548,8 @@ export async function loadCardChargeItems(
 ): Promise<PaymentCalendarItem[]> {
   const { data: chargeRows, error } = await supabase
     .from("card_statement_charges")
-    .select("id,statement_id,card_label,account_id,amount,charge_date,notes");
+    .select("id,statement_id,card_label,account_id,amount,charge_date,notes")
+    .order("id");
   if (error || !chargeRows?.length) return [];
 
   type ChargeRow = {

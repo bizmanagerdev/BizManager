@@ -260,7 +260,7 @@ describe("loadProjectedRecurringExpenses — lookback window", () => {
     return {
       from: (table: string) => ({
         select: () => ({
-          eq: () => Promise.resolve({ data: tables[table], error: null }),
+          eq: () => ({ order: () => Promise.resolve({ data: tables[table], error: null }) }),
           in: () => Promise.resolve({ data: tables[table], error: null }),
         }),
       }),
@@ -294,7 +294,7 @@ describe("loadCardChargeItems — real charges + one-per-card forecast", () => {
   function makeSupabase(rows: Record<string, unknown>[]) {
     return {
       from: () => ({
-        select: () => Promise.resolve({ data: rows, error: null }),
+        select: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }),
       }),
     } as never;
   }
@@ -473,6 +473,7 @@ describe("loadProjectedSalaries — monthly wages with an amount, hourly workers
         select: () => ({
           eq: () => Promise.resolve({ data: tables[table], error: null }),
           in: () => Promise.resolve({ data: tables[table], error: null }),
+          order: () => Promise.resolve({ data: tables[table], error: null }),
           then: (onF: (v: unknown) => unknown) => Promise.resolve({ data: tables[table], error: null }).then(onF),
         }),
       }),
