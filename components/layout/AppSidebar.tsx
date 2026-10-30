@@ -287,7 +287,7 @@ export function AppSidebar({ items, viewerRole }: Props) {
   // Loading /tasks ahead depends on this device's copy (isFullyPrefetched).
   const deviceCopyReady = !useDeviceCopyPending();
   // Shared with the top bar's brand corner so the two stay the same width.
-  const { collapsed, toggle: toggleCollapsed } = useSidebarCollapse();
+  const { collapsed, toggle: toggleCollapsed, menuResetCount } = useSidebarCollapse();
   // Mounted on a phone too (CSS hides it there): it keeps the counts fresh only
   // where it's the menu on screen.
   const navCounts = useNavCounts({ poll: useMediaQuery(DESKTOP_MENU_QUERY) });
@@ -355,6 +355,10 @@ export function AppSidebar({ items, viewerRole }: Props) {
       )}
     >
       <nav
+        // The logo (TopBar) starts the menu over: a new key forgets every group's
+        // open/closed choice and the scroll position together (owner, 2026-10-30).
+        // A group holding the page you land on still opens by itself.
+        key={menuResetCount}
         className={cn(
           "scroll-slim flex-1 space-y-0.5 overflow-y-auto overscroll-contain py-2",
           // Collapsed: a small inset, not zero — a full-bleed pill (tried first)

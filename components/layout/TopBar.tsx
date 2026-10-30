@@ -105,7 +105,7 @@ export function TopBar({
   initialMe,
   showSearch = true,
 }: Props) {
-  const { collapsed } = useSidebarCollapse();
+  const { collapsed, resetMenu } = useSidebarCollapse();
   const pageTitle = usePageTitle();
   // Global search spans customers, projects, orders and money — all staff-only
   // for a worker, so the box would only ever return doors he can't open. A page
@@ -244,6 +244,13 @@ export function TopBar({
         <Link
           href="/dashboard"
           aria-label={appName}
+          // Back to the very start, as when the site first opens: not just the
+          // dashboard but the menu too (owner, 2026-10-30). Ctrl/Shift-click opens
+          // another tab, and this tab's menu stays as it is.
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            resetMenu();
+          }}
           className={cn(
             // -ms-[16px], not -ms-4: this must cancel the header's own
             // px-[16px] EXACTLY, at any root font-size. -ms-4 is 1rem, which

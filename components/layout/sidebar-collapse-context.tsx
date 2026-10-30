@@ -1,15 +1,21 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 
 type SidebarCollapseValue = {
   collapsed: boolean;
   toggle: () => void;
+  /** Goes up by one each time the menu is put back to how it first opens. */
+  menuResetCount: number;
+  /** The logo: every group closed, the menu scrolled back to its top. */
+  resetMenu: () => void;
 };
 
 const SidebarCollapseContext = createContext<SidebarCollapseValue>({
   collapsed: false,
   toggle: () => {},
+  menuResetCount: 0,
+  resetMenu: () => {},
 });
 
 // Remembered per browser tab session, so a reload keeps the rail the way the
@@ -52,7 +58,12 @@ export function SidebarCollapseProvider({ children }: { children: ReactNode }) {
   // Server render (and hydration) always sees the expanded default.
   const collapsed = useSyncExternalStore(subscribe, readCollapsed, () => false);
   const toggle = useCallback(() => writeCollapsed(!readCollapsed()), []);
-  const value = useMemo(() => ({ collapsed, toggle }), [collapsed, toggle]);
+  const [menuResetCount, setMenuResetCount] = useState(0);
+  const resetMenu = useCallback(() => setMenuResetCount((count) => count + 1), []);
+  const value = useMemo(
+    () => ({ collapsed, toggle, menuResetCount, resetMenu }),
+    [collapsed, toggle, menuResetCount, resetMenu]
+  );
   return <SidebarCollapseContext.Provider value={value}>{children}</SidebarCollapseContext.Provider>;
 }
 
